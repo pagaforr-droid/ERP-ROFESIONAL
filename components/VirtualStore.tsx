@@ -2,389 +2,460 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Combo } from '../types';
-import { Search, ShoppingCart, Menu, X, Plus, Minus, Tag, Package, LogOut, FileText, User, ShieldCheck } from 'lucide-react';
+import { Search, ShoppingCart, Package, X, Plus, Minus, Tag, Filter, User, ShieldCheck, Heart, Info } from 'lucide-react';
 
 interface CartItem {
-  id: string; // ProductID or ComboID
-  type: 'PRODUCT' | 'COMBO';
-  name: string;
-  quantity: number;
-  unit: 'UND' | 'PKG' | 'COMBO';
-  price: number;
-  image?: string;
+   id: string;
+   type: 'PRODUCT' | 'COMBO';
+   name: string;
+   quantity: number;
+   unit: 'UND' | 'PKG' | 'COMBO';
+   price: number;
+   image?: string;
+   maxStock?: number;
 }
 
 export const VirtualStore: React.FC = () => {
-  const { products, promotions, combos, currentUser, clients, createOrder, logout } = useStore();
-  
-  // --- STATE ---
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [cart, setCart] = useState<CartItem[]>([]);
+   const { products, promotions, combos, currentUser, clients, createOrder, logout, batches } = useStore();
 
-  // --- CLIENT CONTEXT ---
-  const client = clients.find(c => c.id === currentUser?.client_id);
-  const isAdminView = !client; // If no client linked, assume admin preview
-  
-  // Safe Access for admins who don't have a linked client
-  const docType = (client?.doc_number?.length || 0) === 11 ? 'FACTURA' : 'BOLETA';
+   // --- STATE ---
+   const [activeTab, setActiveTab] = useState<'PRODUCTS' | 'COMBOS' | 'OFFERS'>('PRODUCTS');
+   const [searchTerm, setSearchTerm] = useState('');
+   const [selectedCategory, setSelectedCategory] = useState('ALL');
+   const [isCartOpen, setIsCartOpen] = useState(false);
+   const [cart, setCart] = useState<CartItem[]>([]);
 
-  // --- HELPERS ---
-  const getProductPrice = (product: Product, unit: 'UND' | 'PKG') => {
-    // Base Price (Directly from Store State - Confirmed)
-    let price = unit === 'PKG' ? product.price_package : product.price_unit;
-    
-    // Check Promos
-    const activePromo = promotions.find(p => 
-      p.is_active && 
-      p.product_ids.includes(product.id) && 
-      new Date() >= new Date(p.start_date) && 
-      new Date() <= new Date(p.end_date)
-    );
+   // --- CLIENT CONTEXT ---
+   const client = clients.find(c => c.id === currentUser?.client_id);
+   const isAdminView = !client;
+   const docType = (client?.doc_number?.length || 0) === 11 ? 'FACTURA' : 'BOLETA';
 
-    if (activePromo) {
-      if (activePromo.type === 'PERCENTAGE_DISCOUNT') {
-        price = price * (1 - activePromo.value / 100);
-      } else if (activePromo.type === 'FIXED_PRICE' && unit === 'UND') {
-        price = activePromo.value; // Only applies to units usually
+   // --- HELPERS ---
+   const getProductStock = (productId: string) => {
+      return batches
+         .filter(b => b.product_id === productId && new Date(b.expiration_date) > new Date())
+         .reduce((sum, b) => sum + b.quantity_current, 0);
+   };
+
+   const getProductPrice = (product: Product, unit: 'UND' | 'PKG') => {
+      let price = unit === 'PKG' ? product.price_package : product.price_unit;
+      const activePromo = promotions.find(p =>
+         p.is_active && p.product_ids.includes(product.id) &&
+         new Date() >= new Date(p.start_date) && new Date() <= new Date(p.end_date)
+      );
+
+      if (activePromo) {
+         if (activePromo.type === 'PERCENTAGE_DISCOUNT') {
+            price = price * (1 - activePromo.value / 100);
+         } else if (activePromo.type === 'FIXED_PRICE' && unit === 'UND') {
+            price = activePromo.value;
+         }
       }
-    }
-    return price;
-  };
+      return price;
+   };
 
-  const categories = useMemo<string[]>(() => ['ALL', ...Array.from(new Set(products.map(p => p.category))) as string[]], [products]);
+   const getActivePromo = (productId: string) => {
+      return promotions.find(p =>
+         p.is_active && p.product_ids.includes(productId) &&
+         new Date() >= new Date(p.start_date) && new Date() <= new Date(p.end_date)
+      );
+   };
 
-  const filteredItems = useMemo(() => {
-    const term = searchTerm.toLowerCase();
-    
-    // Products (Pulling from store.products)
-    const prods = products.filter(p => 
-      (selectedCategory === 'ALL' || p.category === selectedCategory) &&
-      (p.name.toLowerCase().includes(term) || p.brand.toLowerCase().includes(term)) &&
-      p.allow_sell // Only sellable items
-    ).map(p => ({ ...p, itemType: 'PRODUCT' as const }));
+   const categories = useMemo<string[]>(() => ['ALL', ...Array.from(new Set(products.map(p => p.category))) as string[]], [products]);
 
-    // Combos
-    const cmbs = combos.filter(c => 
-      c.is_active && 
-      (selectedCategory === 'ALL') &&
-      c.name.toLowerCase().includes(term)
-    ).map(c => ({ ...c, itemType: 'COMBO' as const }));
+   const filteredItems = useMemo(() => {
+      const term = searchTerm.toLowerCase();
 
-    return [...cmbs, ...prods];
-  }, [products, combos, searchTerm, selectedCategory]);
+      // 1. Filter Products
+      const prods = products.filter(p =>
+         (selectedCategory === 'ALL' || p.category === selectedCategory) &&
+         (p.name.toLowerCase().includes(term) || p.brand.toLowerCase().includes(term)) &&
+         p.allow_sell
+      );
 
-  // --- HANDLERS ---
-  const addToCart = (item: Product | Combo, type: 'PRODUCT' | 'COMBO', unit: 'UND' | 'PKG' = 'UND') => {
-    const existing = cart.find(x => x.id === item.id && x.unit === unit);
-    const price = type === 'PRODUCT' ? getProductPrice(item as Product, unit) : (item as Combo).price;
-    const name = item.name;
-    const image = (item as any).image_url;
+      // 2. Filter Combos
+      const cmbs = combos.filter(c =>
+         c.is_active &&
+         (selectedCategory === 'ALL') &&
+         c.name.toLowerCase().includes(term)
+      );
 
-    if (existing) {
-      setCart(cart.map(x => x.id === item.id && x.unit === unit ? { ...x, quantity: x.quantity + 1 } : x));
-    } else {
-      setCart([...cart, {
-        id: item.id,
-        type,
-        name,
-        quantity: 1,
-        unit: type === 'COMBO' ? 'COMBO' : unit,
-        price,
-        image
-      }]);
-    }
-    setIsCartOpen(true);
-  };
+      // 3. Return based on Active Tab
+      if (activeTab === 'COMBOS') {
+         return cmbs.map(c => ({ ...c, itemType: 'COMBO' as const }));
+      }
 
-  const updateQty = (index: number, delta: number) => {
-    const newCart = [...cart];
-    newCart[index].quantity += delta;
-    if (newCart[index].quantity <= 0) {
-      newCart.splice(index, 1);
-    }
-    setCart(newCart);
-  };
+      if (activeTab === 'OFFERS') {
+         // Products with promos OR Combos (usually offers)
+         const promotedProds = prods.filter(p => getActivePromo(p.id));
+         return [
+            ...cmbs.map(c => ({ ...c, itemType: 'COMBO' as const })),
+            ...promotedProds.map(p => ({ ...p, itemType: 'PRODUCT' as const }))
+         ];
+      }
 
-  const handleCheckout = () => {
-    if (isAdminView) {
-       alert("MODO ADMINISTRADOR: No tiene un cliente asignado para realizar el pedido real. Esta es solo una vista previa de funcionamiento.");
-       return;
-    }
-    if (!client) return; 
-    if (cart.length === 0) return;
+      // Default: Products
+      return prods.map(p => ({ ...p, itemType: 'PRODUCT' as const }));
 
-    // Convert Cart to OrderItems
-    const orderItems = cart.map(cItem => {
-       return {
-          product_id: cItem.id,
-          product_name: cItem.type === 'COMBO' ? `COMBO: ${cItem.name}` : cItem.name,
-          unit_type: cItem.unit,
-          quantity: cItem.quantity,
-          unit_price: cItem.price,
-          total_price: cItem.price * cItem.quantity,
-          is_promo: cItem.type === 'COMBO'
-       };
-    });
+   }, [products, combos, searchTerm, selectedCategory, activeTab]);
 
-    const total = orderItems.reduce((acc, i) => acc + i.total_price, 0);
+   // --- HANDLERS ---
+   const addToCart = (item: Product | Combo, type: 'PRODUCT' | 'COMBO', unit: 'UND' | 'PKG' = 'UND', qty: number = 1) => {
+      const existing = cart.find(x => x.id === item.id && x.unit === unit);
+      const price = type === 'PRODUCT' ? getProductPrice(item as Product, unit) : (item as Combo).price;
+      const name = item.name;
+      const image = (item as any).image_url;
+      // Stock logic would be clearer if real, for now just basic check or unlimited for Combos
+      const stock = type === 'PRODUCT' ? getProductStock(item.id) : 999;
 
-    createOrder({
-       id: crypto.randomUUID(),
-       code: `WEB-${Math.floor(Math.random()*100000)}`,
-       seller_id: 'WEB', // System seller
-       client_id: client.id,
-       client_name: client.name,
-       client_doc_type: client.doc_type,
-       client_doc_number: client.doc_number,
-       suggested_document_type: docType,
-       payment_method: 'CONTADO', 
-       delivery_date: new Date().toISOString(),
-       created_at: new Date().toISOString(),
-       total,
-       status: 'pending',
-       items: orderItems as any
-    });
+      if (existing) {
+         const newQty = existing.quantity + qty;
+         // if (newQty > stock) return alert("Stock insuficiente"); // Optional: Strict check
+         setCart(cart.map(x => x.id === item.id && x.unit === unit ? { ...x, quantity: newQty } : x));
+      } else {
+         // if (qty > stock) return alert("Stock insuficiente");
+         setCart([...cart, {
+            id: item.id, type, name, quantity: qty, unit: type === 'COMBO' ? 'COMBO' : unit, price, image, maxStock: stock
+         }]);
+      }
+      setIsCartOpen(true);
+   };
 
-    alert("¡Pedido realizado con éxito! Nuestro equipo lo procesará en breve.");
-    setCart([]);
-    setIsCartOpen(false);
-  };
+   const updateQty = (index: number, delta: number) => {
+      const newCart = [...cart];
+      newCart[index].quantity += delta;
+      if (newCart[index].quantity <= 0) {
+         newCart.splice(index, 1);
+      }
+      setCart(newCart);
+   };
 
-  return (
-    <div className="h-full flex flex-col bg-slate-100 font-sans">
-      
-      {/* --- ADMIN BANNER --- */}
-      {isAdminView && (
-         <div className="bg-slate-900 text-white px-4 py-2 flex justify-between items-center text-xs font-bold shadow-md z-30">
-            <div className="flex items-center">
-               <ShieldCheck className="w-4 h-4 mr-2 text-green-400" />
-               VISTA DE ADMINISTRADOR - Visualizando precios base del sistema
-            </div>
-            <div className="bg-slate-700 px-2 py-0.5 rounded">
-               Stock y Precios sincronizados con PriceManager
-            </div>
-         </div>
-      )}
+   const handleCheckout = () => {
+      if (isAdminView) {
+         alert("MODO ADMIN: No se puede generar pedido real sin cliente.");
+         return;
+      }
+      if (!client || cart.length === 0) return;
 
-      {/* --- HEADER --- */}
-      <header className="bg-white shadow-sm sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-4">
-               {/* Logo Area */}
-               <div className="bg-blue-600 p-1.5 rounded-lg">
-                  <Package className="h-6 w-6 text-white" />
+      const orderItems = cart.map(cItem => ({
+         product_id: cItem.id,
+         product_name: cItem.type === 'COMBO' ? `COMBO: ${cItem.name}` : cItem.name,
+         unit_type: cItem.unit,
+         quantity: cItem.quantity,
+         unit_price: cItem.price,
+         total_price: cItem.price * cItem.quantity,
+         is_promo: cItem.type === 'COMBO'
+      }));
+
+      const total = orderItems.reduce((acc, i) => acc + i.total_price, 0);
+
+      createOrder({
+         id: crypto.randomUUID(),
+         code: `WEB-${Math.floor(Math.random() * 100000)}`,
+         seller_id: 'WEB',
+         client_id: client.id,
+         client_name: client.name,
+         client_doc_type: client.doc_type,
+         client_doc_number: client.doc_number,
+         suggested_document_type: docType,
+         payment_method: 'CONTADO',
+         delivery_date: new Date().toISOString(),
+         created_at: new Date().toISOString(),
+         total,
+         status: 'pending',
+         items: orderItems as any
+      });
+
+      alert("¡Pedido enviado correctamente!");
+      setCart([]);
+      setIsCartOpen(false);
+   };
+
+   // --- SUB-COMPONENTS ---
+   const ProductCard = ({ item }: { item: Product & { itemType: 'PRODUCT' } }) => {
+      const [unit, setUnit] = useState<'UND' | 'PKG'>('UND');
+      const [qty, setQty] = useState(1);
+
+      const promo = getActivePromo(item.id);
+      const price = getProductPrice(item, unit);
+      const originalPrice = unit === 'PKG' ? item.price_package : item.price_unit;
+      const hasDiscount = price < originalPrice;
+      const stock = getProductStock(item.id);
+
+      return (
+         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-all flex flex-col items-stretch group h-full">
+            <div className="relative aspect-square bg-slate-100 overflow-hidden">
+               {item.image_url ? (
+                  <img src={item.image_url} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+               ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-300">
+                     <Package className="w-16 h-16 opacity-50" />
+                  </div>
+               )}
+               {hasDiscount && (
+                  <span className="absolute top-2 left-2 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-sm animate-pulse">
+                     OFERTA
+                  </span>
+               )}
+               <div className="absolute top-2 right-2 bg-black/50 text-white text-[10px] font-bold px-2 py-1 rounded backdrop-blur-sm">
+                  Stock: {stock}
                </div>
-               <span className="font-bold text-xl text-slate-800 hidden sm:block">Mi Tienda</span>
             </div>
 
-            {/* Search */}
-            <div className="flex-1 max-w-lg mx-4">
-               <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-5 w-5 text-slate-400" />
-                  <input 
-                     className="w-full pl-10 pr-4 py-2 rounded-full border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                     placeholder="Buscar productos, marcas..."
-                     value={searchTerm}
-                     onChange={e => setSearchTerm(e.target.value)}
-                  />
-               </div>
-            </div>
+            <div className="p-4 flex-1 flex flex-col">
+               <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{item.brand}</div>
+               <h3 className="font-bold text-slate-800 text-sm leading-tight mb-2 line-clamp-2 min-h-[2.5em]">{item.name}</h3>
 
-            {/* Actions */}
-            <div className="flex items-center gap-4">
-               <div className="text-right hidden md:block">
-                  <div className="text-xs text-slate-500">Bienvenido,</div>
-                  <div className="font-bold text-sm text-slate-800 truncate max-w-[150px]">
-                     {client?.name || <span className="text-orange-600 italic">ADMINISTRADOR</span>}
+               <div className="mt-auto pt-4 border-t border-slate-50">
+                  {/* Unit Selector */}
+                  {item.package_type && (
+                     <div className="flex bg-slate-100 rounded-lg p-1 mb-3">
+                        <button onClick={() => setUnit('UND')} className={`flex-1 text-[10px] font-bold py-1 rounded ${unit === 'UND' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}>
+                           UNIDAD
+                        </button>
+                        <button onClick={() => setUnit('PKG')} className={`flex-1 text-[10px] font-bold py-1 rounded ${unit === 'PKG' ? 'bg-white shadow text-slate-800' : 'text-slate-400 hover:text-slate-600'}`}>
+                           {item.package_type || 'CAJA'}
+                        </button>
+                     </div>
+                  )}
+
+                  {/* Price & Action */}
+                  <div className="flex justify-between items-end">
+                     <div>
+                        {hasDiscount && <div className="text-xs text-slate-400 line-through">S/ {originalPrice.toFixed(2)}</div>}
+                        <div className="text-xl font-bold text-slate-900">S/ {price.toFixed(2)}</div>
+                     </div>
+
+                     <button
+                        onClick={() => addToCart(item, 'PRODUCT', unit, 1)}
+                        disabled={stock <= 0}
+                        className="bg-slate-900 text-white p-2 rounded-lg hover:bg-slate-800 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                     >
+                        <Plus className="w-5 h-5" />
+                     </button>
                   </div>
                </div>
-               <button 
-                  className="relative p-2 text-slate-600 hover:text-blue-600 transition-colors"
-                  onClick={() => setIsCartOpen(true)}
-               >
-                  <ShoppingCart className="h-6 w-6" />
-                  {cart.length > 0 && (
-                     <span className="absolute top-0 right-0 h-5 w-5 bg-red-500 text-white text-xs font-bold flex items-center justify-center rounded-full">
-                        {cart.length}
-                     </span>
-                  )}
-               </button>
-               {currentUser?.role === 'CLIENT' && (
-                  <button onClick={logout} className="p-2 text-slate-400 hover:text-red-500" title="Cerrar Sesión">
-                     <LogOut className="h-5 w-5" />
+            </div>
+         </div>
+      );
+   };
+
+   const ComboCard = ({ item }: { item: Combo & { itemType: 'COMBO' } }) => {
+      return (
+         <div className="bg-white rounded-xl shadow-sm border border-purple-100 overflow-hidden hover:shadow-md transition-all flex flex-col group h-full relative">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-pink-500"></div>
+            <div className="relative aspect-video bg-purple-50 overflow-hidden">
+               {item.image_url ? (
+                  <img src={item.image_url} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+               ) : (
+                  <div className="w-full h-full flex items-center justify-center text-purple-200">
+                     <Tag className="w-16 h-16 opacity-50" />
+                  </div>
+               )}
+               <div className="absolute bottom-2 left-2 bg-purple-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm">
+                  PACK
+               </div>
+            </div>
+
+            <div className="p-4 flex-1 flex flex-col">
+               <h3 className="font-bold text-slate-800 text-base mb-1">{item.name}</h3>
+               <p className="text-xs text-slate-500 mb-4 line-clamp-2 flex-1">{item.description}</p>
+
+               <div className="flex justify-between items-end">
+                  <div className="text-2xl font-bold text-purple-700">S/ {item.price.toFixed(2)}</div>
+                  <button onClick={() => addToCart(item, 'COMBO', 'UND', 1)} className="bg-purple-600 text-white p-2 rounded-lg hover:bg-purple-700 active:scale-95 transition-all shadow-md shadow-purple-100">
+                     <Plus className="w-5 h-5" />
                   </button>
+               </div>
+            </div>
+         </div>
+      );
+   };
+
+   return (
+      <div className="h-full flex flex-col bg-slate-50 font-sans">
+
+         {/* --- ADMIN BANNER --- */}
+         {isAdminView && (
+            <div className="bg-slate-900 text-white px-4 py-2 flex justify-between items-center text-xs font-bold shadow-md z-30 sticky top-0">
+               <div className="flex items-center">
+                  <ShieldCheck className="w-4 h-4 mr-2 text-green-400" />
+                  VISTA DE ADMINISTRADOR
+               </div>
+               <div className="bg-slate-700 px-2 py-0.5 rounded">Precio Base</div>
+            </div>
+         )}
+
+         {/* --- HEADER --- */}
+         <header className="bg-white shadow-sm z-20 relative">
+            <div className="max-w-7xl mx-auto px-4">
+               <div className="flex justify-between items-center h-16">
+                  <div className="flex items-center gap-3">
+                     <div className="bg-blue-600 p-2 rounded-lg text-white transform rotate-3">
+                        <Package className="h-5 w-5" />
+                     </div>
+                     <div>
+                        <h1 className="font-bold text-lg text-slate-800 leading-none">Mi Tienda</h1>
+                        <span className="text-[10px] text-slate-400 font-bold tracking-widest uppercase">Virtual</span>
+                     </div>
+                  </div>
+
+                  {/* Global Search */}
+                  <div className="flex-1 max-w-lg mx-6 hidden md:block">
+                     <div className="relative group">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
+                        <input
+                           className="w-full pl-10 pr-4 py-2 rounded-full border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all text-sm"
+                           placeholder="Buscar en catálogo..."
+                           value={searchTerm}
+                           onChange={e => setSearchTerm(e.target.value)}
+                        />
+                     </div>
+                  </div>
+
+                  <button onClick={() => setIsCartOpen(true)} className="relative p-2 text-slate-600 hover:text-blue-600 transition-colors">
+                     <ShoppingCart className="h-6 w-6" />
+                     {cart.length > 0 && (
+                        <span className="absolute top-0 right-0 h-5 w-5 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full animate-bounce">
+                           {cart.length}
+                        </span>
+                     )}
+                  </button>
+               </div>
+
+               {/* Create Tabs Navigation */}
+               <div className="flex space-x-6 mt-2 border-b border-slate-100 overflow-x-auto hide-scrollbar">
+                  <button onClick={() => setActiveTab('PRODUCTS')} className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap px-2 ${activeTab === 'PRODUCTS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                     PRODUCTOS
+                  </button>
+                  <button onClick={() => setActiveTab('COMBOS')} className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap px-2 ${activeTab === 'COMBOS' ? 'border-purple-600 text-purple-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                     COMBOS Y PACKS
+                  </button>
+                  <button onClick={() => setActiveTab('OFFERS')} className={`pb-3 text-sm font-bold border-b-2 transition-colors whitespace-nowrap px-2 ${activeTab === 'OFFERS' ? 'border-pink-500 text-pink-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}>
+                     OFERTAS
+                  </button>
+               </div>
+            </div>
+         </header>
+
+         {/* --- MAIN CONTENT --- */}
+         <main className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50">
+            <div className="max-w-7xl mx-auto">
+
+               {/* Filters Row */}
+               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                  {/* Categories */}
+                  <div className="flex items-center gap-2 overflow-x-auto max-w-full pb-2 md:pb-0 hide-scrollbar">
+                     <div className="flex items-center bg-white border border-slate-200 rounded-lg p-1 shadow-sm">
+                        <Filter className="w-4 h-4 text-slate-400 ml-2 mr-1" />
+                        {categories.map(cat => (
+                           <button
+                              key={cat} onClick={() => setSelectedCategory(cat)}
+                              className={`text-xs font-bold px-3 py-1.5 rounded-md transition-all whitespace-nowrap ${selectedCategory === cat ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                           >
+                              {cat === 'ALL' ? 'Todos' : cat}
+                           </button>
+                        ))}
+                     </div>
+                  </div>
+
+                  {/* Mobile Search */}
+                  <div className="w-full md:hidden">
+                     <input
+                        className="w-full p-2 rounded-lg border border-slate-200 text-sm"
+                        placeholder="Buscar en catálogo..."
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                     />
+                  </div>
+               </div>
+
+               {/* Grid Results */}
+               {filteredItems.length === 0 ? (
+                  <div className="text-center py-20 opacity-50">
+                     <Search className="w-16 h-16 mx-auto mb-4 text-slate-300" />
+                     <p className="text-xl font-bold text-slate-400">No encontramos resultados</p>
+                     <p className="text-sm text-slate-400">Intenta con otra búsqueda o categoría</p>
+                  </div>
+               ) : (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                     {filteredItems.map((item: any) => (
+                        item.itemType === 'COMBO'
+                           ? <ComboCard key={item.id} item={item} />
+                           : <ProductCard key={item.id} item={item} />
+                     ))}
+                  </div>
                )}
             </div>
-          </div>
-        </div>
-        
-        {/* Category Nav */}
-        <div className="border-t border-slate-100 bg-white">
-           <div className="max-w-7xl mx-auto px-4 overflow-x-auto">
-              <div className="flex space-x-8 h-10 items-center">
-                 {categories.map(cat => (
-                    <button 
-                       key={cat}
-                       onClick={() => setSelectedCategory(cat)}
-                       className={`text-sm font-medium whitespace-nowrap border-b-2 h-full px-1 ${selectedCategory === cat ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
-                    >
-                       {cat === 'ALL' ? 'Todo' : cat}
-                    </button>
-                 ))}
-              </div>
-           </div>
-        </div>
-      </header>
+         </main>
 
-      {/* --- MAIN CONTENT --- */}
-      <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-         <div className="max-w-7xl mx-auto">
-            
-            {/* Banner Promos */}
-            <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-4">
-               <div className="bg-gradient-to-r from-purple-600 to-indigo-600 rounded-2xl p-6 text-white flex flex-col justify-center shadow-lg relative overflow-hidden">
-                  <div className="relative z-10">
-                     <span className="bg-white/20 text-xs font-bold px-2 py-1 rounded uppercase mb-2 inline-block">Oferta Especial</span>
-                     <h2 className="text-2xl font-bold mb-1">Combos Fiesteros</h2>
-                     <p className="text-purple-100 text-sm mb-4">Ahorra hasta 20% en packs seleccionados</p>
-                     <button onClick={() => { setSearchTerm(''); setSelectedCategory('ALL'); }} className="bg-white text-purple-700 px-4 py-2 rounded-lg font-bold text-sm shadow hover:bg-purple-50 w-fit">Ver Combos</button>
+         {/* --- CART DRAWER --- */}
+         {isCartOpen && (
+            <div className="fixed inset-0 z-50 flex justify-end">
+               <div className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity" onClick={() => setIsCartOpen(false)}></div>
+               <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col h-full animate-slide-in-right">
+                  <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-white">
+                     <h2 className="font-bold text-lg flex items-center text-slate-800"><ShoppingCart className="w-5 h-5 mr-2 text-blue-600" /> Tu Carrito</h2>
+                     <button onClick={() => setIsCartOpen(false)} className="bg-slate-50 p-2 rounded-full hover:bg-slate-100 transition-colors"><X className="w-5 h-5 text-slate-400" /></button>
                   </div>
-                  <Package className="absolute right-[-20px] bottom-[-20px] w-40 h-40 text-white/10 rotate-12" />
-               </div>
-               <div className="bg-gradient-to-r from-pink-500 to-rose-500 rounded-2xl p-6 text-white flex flex-col justify-center shadow-lg relative overflow-hidden">
-                  <div className="relative z-10">
-                     <span className="bg-white/20 text-xs font-bold px-2 py-1 rounded uppercase mb-2 inline-block">Liquidación</span>
-                     <h2 className="text-2xl font-bold mb-1">Descuentos por Caja</h2>
-                     <p className="text-rose-100 text-sm mb-4">Mejores precios para tu negocio</p>
-                  </div>
-                  <Tag className="absolute right-[-10px] bottom-[-10px] w-36 h-36 text-white/10" />
-               </div>
-            </div>
 
-            {/* Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-               {filteredItems.map((item: any) => {
-                  const isCombo = item.itemType === 'COMBO';
-                  const unitPrice = !isCombo ? getProductPrice(item, 'UND') : item.price;
-                  const pkgPrice = !isCombo ? getProductPrice(item, 'PKG') : 0;
-                  
-                  return (
-                     <div key={item.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-shadow flex flex-col">
-                        <div className="aspect-square bg-slate-100 relative overflow-hidden group">
-                           {item.image_url ? (
-                              <img src={item.image_url} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                           ) : (
-                              <div className="w-full h-full flex items-center justify-center text-slate-300">
-                                 {isCombo ? <Package className="w-16 h-16"/> : <Tag className="w-16 h-16"/>}
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
+                     {cart.map((item, idx) => (
+                        <div key={`${item.id}-${item.unit}`} className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex gap-3">
+                           <div className="w-16 h-16 bg-slate-100 rounded-lg flex-shrink-0 overflow-hidden relative">
+                              {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><Tag /></div>}
+                           </div>
+                           <div className="flex-1">
+                              <div className="flex justify-between items-start mb-1">
+                                 <h4 className="font-bold text-sm text-slate-800 line-clamp-1">{item.name}</h4>
+                                 <button onClick={() => {
+                                    const newCart = [...cart]; newCart.splice(idx, 1); setCart(newCart);
+                                 }}><X className="w-4 h-4 text-slate-300 hover:text-red-500" /></button>
                               </div>
-                           )}
-                           {isCombo && <div className="absolute top-2 left-2 bg-purple-600 text-white text-xs font-bold px-2 py-1 rounded shadow">COMBO</div>}
-                           {!isCombo && item.price_unit > unitPrice && <div className="absolute top-2 left-2 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded shadow">OFERTA</div>}
-                        </div>
-                        
-                        <div className="p-4 flex-1 flex flex-col">
-                           <div className="text-xs text-slate-500 mb-1 font-bold">{isCombo ? 'Pack Promocional' : item.brand}</div>
-                           <h3 className="font-bold text-slate-800 leading-tight mb-2 line-clamp-2">{item.name}</h3>
-                           
-                           <div className="mt-auto space-y-2">
-                              {isCombo ? (
-                                 <div className="flex justify-between items-center">
-                                    <span className="text-xl font-bold text-purple-700">S/ {unitPrice.toFixed(2)}</span>
-                                    <button onClick={() => addToCart(item, 'COMBO')} className="bg-slate-900 text-white p-2 rounded-lg hover:bg-slate-800"><Plus className="w-5 h-5"/></button>
+                              <div className="flex items-center gap-2 mb-2">
+                                 <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase">{item.unit === 'PKG' ? 'Caja' : item.unit}</span>
+                                 <span className="text-xs text-slate-400">S/ {item.price.toFixed(2)} c/u</span>
+                              </div>
+
+                              <div className="flex items-center justify-between">
+                                 <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                                    <button onClick={() => updateQty(idx, -1)} className="w-6 h-6 flex items-center justify-center hover:bg-white rounded shadow-sm text-slate-600"><Minus className="w-3 h-3" /></button>
+                                    <span className="text-sm font-bold w-6 text-center tabular-nums">{item.quantity}</span>
+                                    <button onClick={() => updateQty(idx, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-white rounded shadow-sm text-slate-600"><Plus className="w-3 h-3" /></button>
                                  </div>
-                              ) : (
-                                 <>
-                                    <div className="flex justify-between items-center border border-slate-100 rounded-lg p-2 bg-slate-50">
-                                       <div>
-                                          <span className="text-xs text-slate-500 block">Unidad</span>
-                                          <span className="font-bold text-slate-900">S/ {unitPrice.toFixed(2)}</span>
-                                       </div>
-                                       <button onClick={() => addToCart(item, 'PRODUCT', 'UND')} className="text-blue-600 hover:bg-blue-100 p-1.5 rounded"><Plus className="w-4 h-4"/></button>
-                                    </div>
-                                    {item.package_type && (
-                                       <div className="flex justify-between items-center border border-slate-100 rounded-lg p-2">
-                                          <div>
-                                             <span className="text-xs text-slate-500 block">{item.package_type} x{item.package_content}</span>
-                                             <span className="font-bold text-slate-900">S/ {pkgPrice.toFixed(2)}</span>
-                                          </div>
-                                          <button onClick={() => addToCart(item, 'PRODUCT', 'PKG')} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded"><Plus className="w-4 h-4"/></button>
-                                       </div>
-                                    )}
-                                 </>
-                              )}
-                           </div>
-                        </div>
-                     </div>
-                  );
-               })}
-            </div>
-         </div>
-      </main>
-
-      {/* --- CART DRAWER --- */}
-      {isCartOpen && (
-         <div className="fixed inset-0 z-50 flex justify-end">
-            <div className="fixed inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsCartOpen(false)}></div>
-            <div className="relative w-full max-w-md bg-white shadow-2xl flex flex-col h-full animate-fade-in-right">
-               <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
-                  <h2 className="font-bold text-lg flex items-center"><ShoppingCart className="w-5 h-5 mr-2"/> Tu Pedido</h2>
-                  <button onClick={() => setIsCartOpen(false)}><X className="w-6 h-6 text-slate-400 hover:text-slate-600"/></button>
-               </div>
-               
-               <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                  {cart.map((item, idx) => (
-                     <div key={`${item.id}-${item.unit}`} className="flex gap-3">
-                        <div className="w-16 h-16 bg-slate-100 rounded-lg flex-shrink-0 overflow-hidden">
-                           {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><Tag/></div>}
-                        </div>
-                        <div className="flex-1">
-                           <h4 className="font-bold text-sm text-slate-800 line-clamp-2">{item.name}</h4>
-                           <div className="text-xs text-slate-500 mb-2">{item.unit} | S/ {item.price.toFixed(2)}</div>
-                           <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-3 bg-slate-100 rounded-lg p-1">
-                                 <button onClick={() => updateQty(idx, -1)} className="p-1 hover:bg-white rounded shadow-sm"><Minus className="w-3 h-3"/></button>
-                                 <span className="text-sm font-bold w-4 text-center">{item.quantity}</span>
-                                 <button onClick={() => updateQty(idx, 1)} className="p-1 hover:bg-white rounded shadow-sm"><Plus className="w-3 h-3"/></button>
+                                 <span className="font-bold text-slate-900 text-sm">S/ {(item.price * item.quantity).toFixed(2)}</span>
                               </div>
-                              <span className="font-bold text-slate-900">S/ {(item.price * item.quantity).toFixed(2)}</span>
                            </div>
                         </div>
-                     </div>
-                  ))}
-                  {cart.length === 0 && <div className="text-center text-slate-400 py-10">Tu carrito está vacío.</div>}
-               </div>
-
-               <div className="p-4 border-t border-slate-200 bg-slate-50">
-                  {client ? (
-                     <div className="mb-4 bg-blue-50 p-3 rounded border border-blue-100 text-sm text-blue-800">
-                        <div className="font-bold flex items-center"><User className="w-3 h-3 mr-1"/> Datos Facturación</div>
-                        <p>{client.doc_type}: {client.doc_number}</p>
-                        <p className="text-xs mt-1">Se emitirá: <strong>{docType}</strong></p>
-                     </div>
-                  ) : (
-                     <div className="mb-4 text-orange-600 bg-orange-50 p-2 rounded text-xs font-bold border border-orange-200">
-                        * Vista Administrador: No se puede facturar sin cliente.
-                     </div>
-                  )}
-                  
-                  <div className="flex justify-between items-center mb-4">
-                     <span className="text-slate-600 font-bold">Total a Pagar</span>
-                     <span className="text-2xl font-bold text-slate-900">S/ {cart.reduce((a,b) => a + (b.price*b.quantity), 0).toFixed(2)}</span>
+                     ))}
+                     {cart.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+                           <ShoppingCart className="w-12 h-12 mb-4 opacity-20" />
+                           <p className="font-bold">Tu carrito está vacío</p>
+                           <p className="text-xs">¡Agrega productos para comenzar!</p>
+                        </div>
+                     )}
                   </div>
-                  <button 
-                     onClick={handleCheckout}
-                     disabled={cart.length === 0}
-                     className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 disabled:opacity-50 disabled:shadow-none transition-all"
-                  >
-                     Confirmar Pedido
-                  </button>
+
+                  <div className="p-4 bg-white border-t border-slate-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-10">
+                     <div className="flex justify-between items-center mb-4">
+                        <div>
+                           <span className="text-xs text-slate-400 font-bold block">TOTAL A PAGAR</span>
+                           <span className="text-2xl font-bold text-slate-900">S/ {cart.reduce((a, b) => a + (b.price * b.quantity), 0).toFixed(2)}</span>
+                        </div>
+                        <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-1 rounded-full">{cart.reduce((a, b) => a + b.quantity, 0)} items</span>
+                     </div>
+                     <button
+                        onClick={handleCheckout}
+                        disabled={cart.length === 0}
+                        className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                     >
+                        Confirmar Pedido <span className="text-blue-300">→</span>
+                     </button>
+                  </div>
                </div>
             </div>
-         </div>
-      )}
-    </div>
-  );
+         )}
+      </div>
+   );
 };

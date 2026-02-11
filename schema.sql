@@ -9,7 +9,37 @@ create table products (
   description text,
   min_stock int default 10,
   price decimal(10,2) not null,
+  image_url text, -- NEW
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- NEW: Promotions & Combos Tables
+create table promotions (
+  id uuid default uuid_generate_v4() primary key,
+  name text not null,
+  type text not null,
+  value decimal(10,2) not null,
+  product_ids text[], -- Array
+  start_date date,
+  end_date date,
+  is_active boolean default true,
+  channels text[], -- Array
+  allowed_seller_ids text[], -- Array
+  image_url text
+);
+
+create table combos (
+  id uuid default uuid_generate_v4() primary key,
+  name text not null,
+  description text,
+  price decimal(10,2) not null,
+  items jsonb, -- [{product_id, quantity, unit_type}]
+  start_date date,
+  end_date date,
+  is_active boolean default true,
+  channels text[], 
+  allowed_seller_ids text[],
+  image_url text
 );
 
 -- 2. Batches (Lotes) - CRITICAL for Traceability

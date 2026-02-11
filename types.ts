@@ -5,34 +5,34 @@ export interface Product {
   barcode?: string;
   name: string;
   description?: string;
-  
+
   // Presentation / Units
   unit_type: string; // e.g., 'BOTELLA'
   package_type?: string; // e.g., 'CAJA'
   package_content: number; // e.g., 12 (Factor de conversion)
-  
+
   // Hierarchy
   line: string; // e.g., 'LICORES'
   category: string; // e.g., 'RON'
   subcategory: string; // e.g., 'CARTAVIO'
   brand: string; // e.g., 'CARTAVIO'
-  
+
   // Relations
   supplier_id?: string;
-  
+
   // Technical
   weight: number;
   volume: number;
   tax_igv: number; // 18 default
   tax_isc: number;
-  
+
   // Inventory & Pricing
   min_stock: number;
   last_cost: number; // Costo de ultima compra (Base Unit)
   profit_margin: number; // Margen de ganancia %
   price_unit: number; // Precio calculado Unidad
   price_package: number; // Precio calculado Caja
-  
+
   is_active: boolean;
   allow_sell: boolean;
   image_url?: string; // NEW: For Store
@@ -61,6 +61,11 @@ export interface Promotion {
   end_date: string;
   is_active: boolean;
   min_quantity?: number; // Minimum units to trigger promo
+
+  // NEW FIELDS
+  channels: ('IN_STORE' | 'SELLER_APP')[]; // Where is this visible?
+  allowed_seller_ids: string[]; // Empty = All
+  image_url?: string; // Optional promo banner
 }
 
 export interface Combo {
@@ -77,6 +82,10 @@ export interface Combo {
   end_date: string;
   is_active: boolean;
   image_url?: string;
+
+  // NEW FIELDS
+  channels: ('IN_STORE' | 'SELLER_APP')[];
+  allowed_seller_ids: string[];
 }
 
 // === COMPANY SETTINGS ===
@@ -119,7 +128,7 @@ export interface ScheduledTransaction {
   beneficiary_type?: 'EMPLOYEE' | 'SUPPLIER' | 'OTHER';
   beneficiary_id?: string; // Link to Driver/Seller ID
   is_active: boolean;
-  auto_process?: boolean; 
+  auto_process?: boolean;
 }
 
 export interface CashMovement {
@@ -131,7 +140,7 @@ export interface CashMovement {
   amount: number;
   date: string; // ISO DateTime
   reference_id?: string; // Link to Sale ID, Purchase ID, or Dispatch ID
-  user_id?: string; 
+  user_id?: string;
 }
 
 // === COLLECTION NEW STRUCTURE ===
@@ -144,20 +153,20 @@ export interface CollectionRecord {
   amount_reported: number;
   date_reported: string;
   status: 'PENDING_VALIDATION' | 'VALIDATED' | 'REJECTED';
-  payment_method?: 'CASH' | 'TRANSFER' | 'CHECK'; 
+  payment_method?: 'CASH' | 'TRANSFER' | 'CHECK';
 }
 
 // === CLIENTS ===
 export interface Client {
   id: string;
-  code: string; 
-  
+  code: string;
+
   // Identity
   doc_type: 'RUC' | 'DNI';
-  doc_number: string; 
-  name: string; 
-  is_person: boolean; 
-  
+  doc_number: string;
+  name: string;
+  is_person: boolean;
+
   // Location / Contact
   ubigeo: string;
   address: string;
@@ -167,23 +176,23 @@ export interface Client {
   contact_name?: string;
 
   // Commercial
-  channel: string; 
-  business_type: string; 
+  channel: string;
+  business_type: string;
   category?: string;
   qualification?: string;
-  
+
   // Logic
-  zone_id: string; 
-  price_list_id: string; 
-  payment_condition: string; 
+  zone_id: string;
+  price_list_id: string;
+  payment_condition: string;
   credit_limit: number;
-  
+
   // Config
   is_active: boolean;
   is_agent_retention: boolean;
   is_agent_perception: boolean;
   apply_igv: boolean;
-  
+
   notes?: string;
 }
 
@@ -237,7 +246,7 @@ export interface Vehicle {
   brand: string;
   model: string;
   capacity_kg: number;
-  
+
   // Relations
   transporter_id: string;
   driver_id: string;
@@ -264,20 +273,20 @@ export interface Order {
   code: string; // Order Code e.g. PED-0001
   seller_id: string;
   client_id: string;
-  
+
   // Snapshot Data
   client_name: string;
   client_doc_type: 'RUC' | 'DNI';
   client_doc_number: string;
-  
+
   // Details
   suggested_document_type: 'FACTURA' | 'BOLETA';
   payment_method: 'CONTADO' | 'CREDITO';
   delivery_date: string;
-  
+
   total: number;
   status: 'pending' | 'processed' | 'rejected';
-  
+
   created_at: string;
   items: OrderItem[];
 }
@@ -291,6 +300,13 @@ export interface OrderItem {
   total_price: number;
   is_promo?: boolean;
   batch_allocations?: BatchAllocation[]; // NEW: Tracks committed stock
+
+  // NEW: Snapshot
+  combo_snapshot?: {
+    product_id: string;
+    quantity: number;
+    unit_type: 'UND' | 'PKG';
+  }[];
 }
 
 export interface Sale {
@@ -299,28 +315,28 @@ export interface Sale {
   series: string;
   number: string;
   payment_method: 'CONTADO' | 'CREDITO';
-  payment_status?: 'PAID' | 'PENDING'; 
+  payment_status?: 'PAID' | 'PENDING';
   collection_status?: 'NONE' | 'PARTIAL' | 'REPORTED' | 'COLLECTED'; // Expanded
-  
-  client_id?: string; 
+
+  client_id?: string;
   client_name: string;
   client_ruc: string;
   client_address: string;
-  
+
   subtotal: number;
   igv: number;
   total: number;
-  
+
   balance?: number; // NEW: Remaining amount to pay
 
-  observation?: string; 
+  observation?: string;
 
   status: 'pending' | 'completed' | 'canceled';
-  dispatch_status: 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'liquidated'; 
+  dispatch_status: 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'liquidated';
   created_at: string;
   items: SaleItem[];
-  
-  origin_order_id?: string; 
+
+  origin_order_id?: string;
 }
 
 export interface SaleItem {
@@ -329,20 +345,27 @@ export interface SaleItem {
   product_id?: string;
   product_sku: string;
   product_name: string;
-  
-  selected_unit: 'UND' | 'PKG' | string; 
-  quantity_presentation: number; 
-  quantity_base?: number; 
-  
+
+  selected_unit: 'UND' | 'PKG' | string;
+  quantity_presentation: number;
+  quantity_base?: number;
+
   unit_price: number;
   total_price: number;
-  
+
   // Discounts & Bonus
   discount_percent: number;
   discount_amount: number;
   is_bonus: boolean;
 
-  batch_allocations?: BatchAllocation[]; 
+  batch_allocations?: BatchAllocation[];
+
+  // NEW: Snapshot
+  combo_snapshot?: {
+    product_id: string;
+    quantity: number;
+    unit_type: 'UND' | 'PKG';
+  }[];
 }
 
 export interface BatchAllocation {
@@ -367,13 +390,13 @@ export type LiquidationAction = 'PAID' | 'CREDIT' | 'VOID' | 'PARTIAL_RETURN';
 export interface LiquidationDocument {
   sale_id: string;
   action: LiquidationAction;
-  
+
   // Financial Split
   amount_collected: number; // Efectivo real
   amount_credit: number;    // Cuenta por cobrar (incluye saldo de parciales)
   amount_void: number;      // Importe anulado
   amount_credit_note: number; // Importe de la NC
-  
+
   // Metadata for security/audit
   reason?: string; // Motivo anulación/NC
   credit_note_series?: string; // e.g. FC01-000023
@@ -406,53 +429,53 @@ export interface Purchase {
   supplier_id: string;
   supplier_name: string;
   warehouse_id: string; // Added
-  
+
   // Document Info
   document_type: string; // FACTURA, GUIA
   document_number: string;
-  
+
   // Dates
   issue_date: string; // Fecha Emision
   entry_date: string; // Fecha Ingreso (Real)
   due_date: string; // Vencimiento
   accounting_date?: string; // Fecha Contable
-  
+
   // Info
   observation?: string; // Glosa
-  
+
   // Financials
   currency: 'PEN' | 'USD';
   exchange_rate: number;
-  
+
   subtotal: number; // Base Imponible
   igv: number;      // Impuesto
   total: number;    // Total Final
-  
+
   payment_status: 'PAID' | 'PENDING';
-  
+
   items: PurchaseItem[];
 }
 
 export interface PurchaseItem {
   product_id: string;
-  
+
   // Units
   unit_type: 'UND' | 'PKG';
   quantity_presentation: number; // What user typed
   factor: number; // Conversion factor used
   quantity_base: number; // Converted to units
-  
+
   // Costs
   unit_value: number; // Valor Unitario (Sin IGV)
   unit_price: number; // Precio Unitario (Con IGV)
-  
+
   total_value: number; // Valor Venta Total (Subtotal Linea)
   total_cost: number; // Importe Total (Total Linea)
-  
+
   // Traceability
   batch_code: string;
   expiration_date: string;
-  
+
   is_bonus: boolean; // Gratuito
 }
 
@@ -481,30 +504,30 @@ export interface AttendanceRecord {
   status: 'OPEN' | 'CLOSED';
 }
 
-export type ViewState = 
-  | 'dashboard' 
-  | 'products' 
-  | 'purchases' 
-  | 'sales' 
-  | 'cash-flow' 
+export type ViewState =
+  | 'dashboard'
+  | 'products'
+  | 'purchases'
+  | 'sales'
+  | 'cash-flow'
   | 'mobile-orders'
   | 'collection-consolidation' // NEW
   | 'order-processing'
-  | 'inventory' 
-  | 'dispatch' 
-  | 'dispatch-liquidation' 
-  | 'document-manager' 
-  | 'reports' 
-  | 'kardex' 
-  | 'users' 
-  | 'attendance' 
-  | 'clients' 
-  | 'suppliers' 
-  | 'warehouses' 
+  | 'inventory'
+  | 'dispatch'
+  | 'dispatch-liquidation'
+  | 'document-manager'
+  | 'reports'
+  | 'kardex'
+  | 'users'
+  | 'attendance'
+  | 'clients'
+  | 'suppliers'
+  | 'warehouses'
   | 'logistics'
   | 'territory'
   | 'company-settings'
   | 'print-batch'
   | 'promo-manager'
-  | 'price-manager' 
+  | 'price-manager'
   | 'virtual-store';
