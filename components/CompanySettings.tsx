@@ -4,7 +4,7 @@ import { Building, Settings, FileText, Image, Save, Hash, Upload } from 'lucide-
 import { DocumentSeries } from '../types';
 
 export const CompanySettings: React.FC = () => {
-  const { company, updateCompany, updateSeries } = useStore();
+  const { company, updateCompany, updateSeries, addSeries, removeSeries } = useStore();
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'SERIES'>('GENERAL');
 
   // Local state for the form
@@ -179,7 +179,7 @@ export const CompanySettings: React.FC = () => {
                         current_number: 1,
                         is_active: false
                       };
-                      store.addSeries(newSeries);
+                      addSeries(newSeries);
                     }}
                     className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-xs font-bold"
                   >
@@ -244,7 +244,7 @@ export const CompanySettings: React.FC = () => {
                       <button
                         onClick={() => {
                           if (confirm('¿Seguro que desea eliminar esta serie?')) {
-                            store.removeSeries(series.id);
+                            removeSeries(series.id);
                           }
                         }}
                         className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50"

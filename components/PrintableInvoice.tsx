@@ -284,7 +284,7 @@ export const PrintableInvoice: React.FC<Props> = ({ company, sales, onClose }) =
    }, []);
 
    return (
-      <div className="fixed inset-0 bg-slate-800/90 z-[9999] flex justify-center overflow-auto p-4 print:p-0 print:bg-white print:static print:overflow-visible">
+      <div className="fixed inset-0 bg-slate-800/90 z-[99999] flex justify-center overflow-auto p-4 print:p-0 print:bg-white print:fixed print:inset-0 print:overflow-visible print:block">
 
          {/* Controls */}
          <div className="fixed top-4 right-4 flex gap-2 print:hidden z-50">
@@ -297,7 +297,7 @@ export const PrintableInvoice: React.FC<Props> = ({ company, sales, onClose }) =
          </div>
 
          {/* DOCUMENT FLOW CONTAINER */}
-         <div>
+         <div className="print:w-[210mm] print:mx-auto">
             {sales.map((sale, index) => (
                <div
                   key={sale.id}
@@ -339,13 +339,25 @@ export const PrintableInvoice: React.FC<Props> = ({ company, sales, onClose }) =
             print-color-adjust: exact;
             -webkit-print-color-adjust: exact;
             color: black;
+            background-color: white;
+            margin: 0;
+            padding: 0;
           }
           * {
             color: black !important;
             border-color: black !important;
           }
-          /* Hide everything else */
-          body > *:not(#root) { display: none; }
+          
+          /* Show ONLY our printable container by making it overlay everything */
+          #root {
+             position: absolute;
+             top: 0;
+             left: 0;
+             width: 100%;
+          }
+          
+          /* Hide non-printable app UI elements by default classes */
+          .print\\:hidden { display: none !important; }
         }
       `}</style>
       </div>

@@ -5,7 +5,7 @@ import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlu
 import { PrintableInvoice } from './PrintableInvoice';
 
 export const NewSale: React.FC = () => {
-   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales } = useStore();
+   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber } = useStore();
 
    // --- REFS FOR FOCUS MANAGEMENT ---
    const productInputRef = useRef<HTMLInputElement>(null);
@@ -350,7 +350,7 @@ export const NewSale: React.FC = () => {
       if (!selectedClientId && !clientData.name) { alert("Ingrese datos del cliente"); return; }
       if (!series) { alert("No hay una serie asignada a este tipo de documento. Configure una en los Ajustes de Empresa."); return; }
 
-      const correlative = store.getNextDocumentNumber(docType, series);
+      const correlative = getNextDocumentNumber(docType, series);
 
       if (!correlative) {
          alert("Error al obtener la serie. Verifique la configuración de la empresa.");
@@ -402,11 +402,11 @@ export const NewSale: React.FC = () => {
             </div>
 
             {/* Row 1: Document Data */}
-            <div className="flex items-center gap-2 mt-1">
-               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded border border-slate-200">
-                  <label className="font-bold text-slate-600 w-10">Tipo</label>
+            <div className="flex items-center gap-3 mt-1 py-1">
+               <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
+                  <label className="font-bold text-slate-700 text-sm">Tipo</label>
                   <select
-                     className="border border-slate-300 rounded px-1 py-0.5 w-24 bg-white"
+                     className="border border-slate-300 rounded px-2 py-1 flex-1 bg-white text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
                      value={docType}
                      onChange={(e: any) => {
                         setDocType(e.target.value);
@@ -425,10 +425,10 @@ export const NewSale: React.FC = () => {
                      <option value="BOLETA">BOLETA</option>
                   </select>
                </div>
-               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded border border-slate-200">
-                  <label className="font-bold text-slate-600">Serie y Correlativo</label>
+               <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
+                  <label className="font-bold text-slate-700 text-sm">Serie y Correlativo</label>
                   <select
-                     className="w-16 text-center border border-slate-300 rounded px-1 py-0.5 font-bold bg-white text-slate-900"
+                     className="w-20 text-center border border-slate-300 rounded px-1 py-1 text-sm font-bold bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
                      value={series}
                      onChange={(e) => {
                         setSeries(e.target.value);
@@ -441,18 +441,18 @@ export const NewSale: React.FC = () => {
                         <option key={s.id} value={s.series}>{s.series}</option>
                      ))}
                   </select>
-                  <input className="w-20 text-center border border-transparent px-1 py-0.5 font-bold bg-transparent text-slate-700 pointer-events-none" value={docNumber} readOnly />
+                  <input className="w-24 text-center border border-transparent px-1 py-1 text-sm font-bold bg-transparent text-slate-800 pointer-events-none" value={docNumber} readOnly />
                </div>
-               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded border border-slate-200">
-                  <label className="font-bold text-slate-600">Moneda</label>
-                  <select className="border border-slate-300 rounded px-1 py-0.5 w-20 bg-white" value={currency} onChange={e => setCurrency(e.target.value)} disabled={isViewMode}>
+               <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
+                  <label className="font-bold text-slate-700 text-sm">Moneda</label>
+                  <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={currency} onChange={e => setCurrency(e.target.value)} disabled={isViewMode}>
                      <option value="SOLES">SOLES</option>
                      <option value="DOLAR">DOLAR</option>
                   </select>
                </div>
-               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded border border-slate-200">
-                  <label className="font-bold text-slate-600">F. Emision</label>
-                  <input type="date" className="border border-slate-300 rounded px-1 py-0.5 w-24 bg-white" defaultValue={new Date().toISOString().split('T')[0]} disabled={isViewMode} />
+               <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
+                  <label className="font-bold text-slate-700 text-sm">F. Emision</label>
+                  <input type="date" className="border border-slate-300 rounded px-2 py-1 text-sm bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" defaultValue={new Date().toISOString().split('T')[0]} disabled={isViewMode} />
                </div>
                {isViewMode && <div className="ml-4 px-3 py-1 bg-yellow-200 text-yellow-800 font-bold rounded animate-pulse">MODO VISUALIZACIÓN</div>}
                {!series && !isViewMode && <div className="ml-4 px-3 py-1 bg-red-100 text-red-800 text-[10px] font-bold rounded border border-red-300">¡DEBE CONFIGURAR UNA SERIE EN AJUSTES!</div>}
@@ -745,58 +745,65 @@ export const NewSale: React.FC = () => {
 
          {/* === SEARCH MODAL === */}
          {isSearchModalOpen && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
-               <div className="bg-white w-full max-w-3xl rounded-lg shadow-2xl flex flex-col max-h-[80vh]">
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+               <div className="bg-white w-full max-w-5xl rounded-lg shadow-2xl flex flex-col max-h-[85vh]">
                   <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100 rounded-t-lg">
-                     <h3 className="font-bold text-slate-700 flex items-center"><Search className="w-5 h-5 mr-2" /> Buscar Documento</h3>
+                     <h3 className="font-bold text-slate-700 flex items-center text-lg"><Search className="w-5 h-5 mr-2" /> Buscar Documento</h3>
                      <button onClick={() => setIsSearchModalOpen(false)} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
                   </div>
                   <div className="p-4 bg-slate-50 border-b border-slate-200">
                      <input
                         autoFocus
-                        className="w-full border border-slate-300 rounded p-2 text-lg"
+                        className="w-full border border-slate-300 rounded p-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none"
                         placeholder="Buscar por Nro Documento, RUC o Nombre Cliente..."
                         value={saleSearchTerm}
                         onChange={e => setSaleSearchTerm(e.target.value)}
                      />
                   </div>
-                  <div className="flex-1 overflow-auto p-0">
-                     <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0">
+                  {/* Table Wrapper to handle sticky header corner cases */}
+                  <div className="flex-1 overflow-auto bg-white rounded-b-lg relative">
+                     <table className="w-full text-left text-sm border-collapse">
+                        <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-200 z-10 shadow-sm">
                            <tr>
-                              <th className="p-3">Documento</th>
-                              <th className="p-3">Fecha</th>
-                              <th className="p-3">Cliente</th>
-                              <th className="p-3 text-right">Total</th>
-                              <th className="p-3 text-center">Estado</th>
-                              <th className="p-3"></th>
+                              <th className="p-4">Documento</th>
+                              <th className="p-4">Fecha</th>
+                              <th className="p-4">Cliente</th>
+                              <th className="p-4 text-right">Total</th>
+                              <th className="p-4 text-center">Estado</th>
+                              <th className="p-4"></th>
                            </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                            {filteredSales.map(s => (
-                              <tr key={s.id} className="hover:bg-blue-50">
-                                 <td className="p-3 font-mono font-bold text-blue-700">{s.series}-{s.number}</td>
-                                 <td className="p-3 text-slate-500">{new Date(s.created_at).toLocaleDateString()}</td>
-                                 <td className="p-3">
-                                    <div className="font-bold text-slate-800">{s.client_name}</div>
-                                    <div className="text-xs text-slate-500">{s.client_ruc}</div>
+                              <tr key={s.id} className="hover:bg-blue-50 transition-colors">
+                                 <td className="p-4">
+                                    <span className="font-bold text-blue-700 text-[15px]">{s.series}-{s.number}</span>
                                  </td>
-                                 <td className="p-3 text-right font-bold text-slate-900">S/ {s.total.toFixed(2)}</td>
-                                 <td className="p-3 text-center">
-                                    <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded text-xs font-bold">COMPLETADO</span>
+                                 <td className="p-4">
+                                    <span className="text-slate-600 font-medium text-[15px]">{new Date(s.created_at).toLocaleDateString()}</span>
                                  </td>
-                                 <td className="p-3 text-right">
+                                 <td className="p-4">
+                                    <div className="font-bold text-slate-800 text-[15px]">{s.client_name}</div>
+                                    <div className="text-[13px] text-slate-500">{s.client_ruc}</div>
+                                 </td>
+                                 <td className="p-4 text-right">
+                                    <span className="font-black text-slate-900 text-[16px]">S/ {s.total.toFixed(2)}</span>
+                                 </td>
+                                 <td className="p-4 text-center">
+                                    <span className="bg-green-100 text-green-800 px-3 py-1 rounded text-xs font-bold ring-1 ring-green-300">COMPLETADO</span>
+                                 </td>
+                                 <td className="p-4 text-right">
                                     <button
                                        onClick={() => loadSale(s)}
-                                       className="bg-white border border-slate-300 px-3 py-1 rounded text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center ml-auto"
+                                       className="bg-white border border-slate-300 px-4 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center ml-auto transition-all hover:border-slate-400"
                                     >
-                                       <Eye className="w-3 h-3 mr-1" /> Ver
+                                       <Eye className="w-4 h-4 mr-1.5 text-slate-500" /> Ver
                                     </button>
                                  </td>
                               </tr>
                            ))}
                            {filteredSales.length === 0 && (
-                              <tr><td colSpan={6} className="p-8 text-center text-slate-400">No se encontraron documentos.</td></tr>
+                              <tr><td colSpan={6} className="p-8 text-center text-slate-400 text-base">No se encontraron documentos que coincidan con su búsqueda.</td></tr>
                            )}
                         </tbody>
                      </table>
