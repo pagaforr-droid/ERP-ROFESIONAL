@@ -193,6 +193,9 @@ interface AppState {
    // Actions
    updateCompany: (config: Partial<CompanyConfig>) => void;
    updateSeries: (series: DocumentSeries) => void;
+   addSeries: (series: DocumentSeries) => void;    // NEW
+   removeSeries: (seriesId: string) => void;       // NEW
+   getNextDocumentNumber: (type: DocumentSeries['type'], seriesStr?: string) => { series: string, number: string } | null; // NEW
 
    addProduct: (product: Product) => void;
    updateProduct: (product: Product) => void;
@@ -215,48 +218,48 @@ interface AppState {
    processDispatchLiquidation: (liquidation: DispatchLiquidation) => void;
 
    // Master Data Actions
-   addClient: (client: Client) => void;
-   updateClient: (client: Client) => void;
+   addClient: (Client) => void;
+   updateClient: (Client) => void;
    batchUpdateClientZone: (clientIds: string[], zoneId: string) => void;
-   addSupplier: (supplier: Supplier) => void;
-   addWarehouse: (warehouse: Warehouse) => void;
+   addSupplier: (Supplier) => void;
+   addWarehouse: (Warehouse) => void;
 
    // Logistics Actions
-   addDriver: (driver: Driver) => void;
-   addTransporter: (transporter: Transporter) => void;
-   addVehicle: (vehicle: Vehicle) => void;
-   updateVehicle: (vehicle: Vehicle) => void;
+   addDriver: (Driver) => void;
+   addTransporter: (Transporter) => void;
+   addVehicle: (Vehicle) => void;
+   updateVehicle: (Vehicle) => void;
 
    // Territory Actions
-   addSeller: (seller: Seller) => void;
-   updateSeller: (seller: Seller) => void;
-   addZone: (zone: Zone) => void;
+   addSeller: (Seller) => void;
+   updateSeller: (Seller) => void;
+   addZone: (Zone) => void;
 
    // Pricing Actions
-   addPriceList: (list: PriceList) => void;
-   updatePriceList: (list: PriceList) => void;
+   addPriceList: (PriceList) => void;
+   updatePriceList: (PriceList) => void;
 
    // Cash Flow Actions
-   addCashMovement: (movement: CashMovement) => void;
-   addExpenseCategory: (category: ExpenseCategory) => void;
-   updateExpenseCategory: (category: ExpenseCategory) => void;
+   addCashMovement: (CashMovement) => void;
+   addExpenseCategory: (ExpenseCategory) => void;
+   updateExpenseCategory: (ExpenseCategory) => void;
    deleteExpenseCategory: (id: string) => void;
-   addScheduledTransaction: (tx: ScheduledTransaction) => void;
-   updateScheduledTransaction: (tx: ScheduledTransaction) => void;
+   addScheduledTransaction: (ScheduledTransaction) => void;
+   updateScheduledTransaction: (ScheduledTransaction) => void;
    processScheduledTransaction: (txId: string) => void;
 
    // User Actions
-   addUser: (user: User) => void;
-   updateUser: (user: User) => void;
+   addUser: (User) => void;
+   updateUser: (User) => void;
    clockIn: (userId: string) => void;
    clockOut: (userId: string) => void;
-   updateAttendanceRecord: (record: AttendanceRecord) => void;
+   updateAttendanceRecord: (AttendanceRecord) => void;
 
    // Promo Actions
-   addPromotion: (promo: Promotion) => void;
-   updatePromotion: (promo: Promotion) => void;
-   addCombo: (combo: Combo) => void;
-   updateCombo: (combo: Combo) => void;
+   addPromotion: (Promotion) => void;
+   updatePromotion: (Promotion) => void;
+   addCombo: (Combo) => void;
+   updateCombo: (Combo) => void;
 
    // Auth Actions
    setCurrentUser: (userId: string) => void;
@@ -299,12 +302,55 @@ export const useStore = create<AppState>((set, get) => ({
    collectionRecords: [],
 
    updateCompany: (config) => set((s) => ({ company: { ...s.company, ...config } })),
+
    updateSeries: (updatedSeries) => set((s) => ({
       company: {
          ...s.company,
          series: s.company.series.map(ser => ser.id === updatedSeries.id ? updatedSeries : ser)
       }
    })),
+
+   addSeries: (newSeries) => set((s) => ({
+      company: {
+         ...s.company,
+         series: [...s.company.series, newSeries]
+      }
+   })),
+
+   removeSeries: (seriesId) => set((s) => ({
+      company: {
+         ...s.company,
+         series: s.company.series.filter(ser => ser.id !== seriesId)
+      }
+   })),
+
+   getNextDocumentNumber: (type, seriesStr) => {
+      const state = get();
+      // Find the specific series, or the first active one of that type
+      const seriesObj = seriesStr
+         ? state.company.series.find(s => s.type === type && s.series === seriesStr)
+         : state.company.series.find(s => s.type === type && s.is_active);
+
+      if (!seriesObj) return null;
+
+      // Increment in state
+      const nextNum = seriesObj.current_number + 1;
+
+      // Update state synchronously without replacing the whole object tree immediately (Zustand will handle it)
+      set(s => ({
+         company: {
+            ...s.company,
+            series: s.company.series.map(ser =>
+               ser.id === seriesObj.id ? { ...ser, current_number: nextNum } : ser
+            )
+         }
+      }));
+
+      return {
+         series: seriesObj.series,
+         number: String(nextNum).padStart(8, '0')
+      };
+   },
 
    addProduct: (product) => set((state) => ({ products: [...state.products, product] })),
    updateProduct: (product) => set((state) => ({ products: state.products.map(p => p.id === product.id ? product : p) })),
@@ -667,12 +713,68 @@ export const useStore = create<AppState>((set, get) => ({
 
    updatePurchase: (purchase) => true,
 
-   createDispatch: (dispatch) => set((state) => ({ dispatchSheets: [dispatch, ...state.dispatchSheets] })),
+   createDispatch: (dispatch) => set((state) => {
+      let finalCode = dispatch.code;
+      if (!finalCode || finalCode === 'TBD') {
+         // Attempt to auto-generate GUIA series
+         const nextCorrelative = state.getNextDocumentNumber('GUIA');
+         if (nextCorrelative) {
+            finalCode = `${nextCorrelative.series}-${nextCorrelative.number}`;
+         } else {
+            // Fallback
+            finalCode = `HR-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
+         }
+      }
+      return { dispatchSheets: [{ ...dispatch, code: finalCode }, ...state.dispatchSheets] };
+   }),
    updateSaleStatus: (saleIds, status) => set((state) => ({
       sales: state.sales.map(s => saleIds.includes(s.id) ? { ...s, dispatch_status: status } : s)
    })),
 
-   processDispatchLiquidation: (liquidation) => set(s => ({ dispatchLiquidations: [liquidation, ...s.dispatchLiquidations] })),
+   processDispatchLiquidation: (liquidation) => set((s) => {
+      // Create a copy of the series state to increment sequentially
+      let currentSeriesState = [...s.company.series];
+
+      const updatedDocs = liquidation.documents.map(doc => {
+         if (doc.action === 'PARTIAL_RETURN' && (!doc.credit_note_series || doc.credit_note_series === 'TBD')) {
+            // Find active NC series
+            const ncSeries = currentSeriesState.find(ser => ser.type === 'NOTA_CREDITO' && ser.is_active);
+            if (ncSeries) {
+               const nextNum = ncSeries.current_number + 1;
+
+               // Update local copy of series state
+               currentSeriesState = currentSeriesState.map(ser =>
+                  ser.id === ncSeries.id ? { ...ser, current_number: nextNum } : ser
+               );
+
+               return {
+                  ...doc,
+                  credit_note_series: `${ncSeries.series}-${String(nextNum).padStart(8, '0')}`
+               };
+            } else {
+               // Fallback if no active NC series is configured
+               return {
+                  ...doc,
+                  credit_note_series: `NC01-${Math.floor(Math.random() * 10000).toString().padStart(6, '0')}`
+               };
+            }
+         }
+         return doc;
+      });
+
+      const finalLiquidation = {
+         ...liquidation,
+         documents: updatedDocs
+      };
+
+      return {
+         dispatchLiquidations: [finalLiquidation, ...s.dispatchLiquidations],
+         company: {
+            ...s.company,
+            series: currentSeriesState
+         }
+      };
+   }),
 
    getBatchesForProduct: (productId) => {
       return get().batches
