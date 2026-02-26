@@ -217,6 +217,7 @@ interface AppState {
    updateSaleStatus: (saleIds: string[], status: Sale['dispatch_status']) => void;
    updateSunatStatus: (type: 'sale' | 'dispatch', id: string, status: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED', message?: string) => void;
    processDispatchLiquidation: (liquidation: DispatchLiquidation) => void;
+   markDocumentsAsPrinted: (saleIds: string[]) => void;
 
    // Master Data Actions
    addClient: (Client) => void;
@@ -745,6 +746,10 @@ export const useStore = create<AppState>((set, get) => ({
          };
       }
    }),
+
+   markDocumentsAsPrinted: (saleIds) => set((state) => ({
+      sales: state.sales.map(s => saleIds.includes(s.id) ? { ...s, printed: true, printed_at: new Date().toISOString() } : s)
+   })),
 
    processDispatchLiquidation: (liquidation) => set((s) => {
       // Create a copy of the series state to increment sequentially

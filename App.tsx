@@ -98,8 +98,8 @@ export default function App() {
           setIsSidebarOpen(false);
         }}
         className={`flex items-center space-x-3 w-full p-2.5 rounded-lg transition-colors text-sm ${currentView === view
-            ? 'bg-accent text-white shadow-md'
-            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+          ? 'bg-accent text-white shadow-md'
+          : 'text-slate-300 hover:bg-slate-800 hover:text-white'
           }`}
       >
         <Icon className="h-5 w-5" />
@@ -124,7 +124,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-100 overflow-hidden">
+    <div className="flex h-screen print:h-auto bg-slate-100 overflow-hidden print:overflow-visible">
       {isSidebarOpen && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"
@@ -215,7 +215,7 @@ export default function App() {
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col h-screen overflow-hidden">
+      <div className="flex-1 flex flex-col h-screen print:h-auto overflow-hidden print:overflow-visible">
         <header className="bg-white h-16 border-b border-slate-200 flex items-center justify-between px-6 lg:px-8 shadow-sm">
           <button onClick={() => setIsSidebarOpen(true)} className="p-2 -ml-2 text-slate-600 lg:hidden hover:bg-slate-100 rounded-md">
             <Menu className="h-6 w-6" />
@@ -235,7 +235,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-6 lg:p-8 bg-slate-100">
+        <main className="flex-1 overflow-y-auto print:overflow-visible p-6 lg:p-8 bg-slate-100">
           {currentView === 'mobile-orders' ? (
             <div className="h-full mx-auto max-w-md bg-white shadow-2xl overflow-hidden rounded-xl border border-slate-200">
               {renderContent()}

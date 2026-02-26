@@ -345,6 +345,10 @@ export interface Sale {
   sunat_sent_at?: string;
   sunat_message?: string;
 
+  // === Print Status ===
+  printed?: boolean;
+  printed_at?: string;
+
   items: SaleItem[];
 
   origin_order_id?: string;

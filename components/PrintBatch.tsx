@@ -11,6 +11,7 @@ export const PrintBatch: React.FC = () => {
    const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
    const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
    const [docType, setDocType] = useState('ALL');
+   const [printStatusFilter, setPrintStatusFilter] = useState<'PENDING' | 'PRINTED'>('PENDING'); // NEW: Added filter
    const [searchTerm, setSearchTerm] = useState('');
 
    // Selection
@@ -18,17 +19,25 @@ export const PrintBatch: React.FC = () => {
 
    // Print State
    const [isPrinting, setIsPrinting] = useState(false);
+   const { markDocumentsAsPrinted } = useStore();
+
+   const handlePrintClose = () => {
+      setIsPrinting(false);
+      markDocumentsAsPrinted(selectedIds);
+      setSelectedIds([]); // Clear selection after printing
+   };
 
    // --- FILTER LOGIC ---
    const filteredSales = sales.filter(s => {
       const date = s.created_at.split('T')[0];
       const matchesDate = date >= dateFrom && date <= dateTo;
       const matchesType = docType === 'ALL' || s.document_type === docType;
+      const matchesPrintStatus = printStatusFilter === 'PENDING' ? !s.printed : s.printed;
       const matchesSearch = s.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
          s.number.includes(searchTerm) ||
          s.series.includes(searchTerm);
 
-      return matchesDate && matchesType && matchesSearch;
+      return matchesDate && matchesType && matchesPrintStatus && matchesSearch;
    });
 
    const handleToggleSelect = (id: string) => {
@@ -52,7 +61,7 @@ export const PrintBatch: React.FC = () => {
             <PrintableInvoice
                company={company}
                sales={salesToPrint}
-               onClose={() => setIsPrinting(false)}
+               onClose={handlePrintClose}
             />
          )}
 
@@ -95,6 +104,13 @@ export const PrintBatch: React.FC = () => {
                      <option value="BOLETA">BOLETA</option>
                   </select>
                </div>
+               <div className="w-40">
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Estado Impresión</label>
+                  <select className="w-full border border-slate-300 p-2 rounded text-sm bg-white" value={printStatusFilter} onChange={e => setPrintStatusFilter(e.target.value as any)}>
+                     <option value="PENDING">POR IMPRIMIR</option>
+                     <option value="PRINTED">YA IMPRESOS</option>
+                  </select>
+               </div>
                <div className="flex-1 min-w-[200px]">
                   <label className="block text-xs font-bold text-slate-600 mb-1">Búsqueda Rápida</label>
                   <div className="relative">
@@ -109,7 +125,7 @@ export const PrintBatch: React.FC = () => {
                </div>
                <div>
                   <button
-                     onClick={() => { setDateFrom(new Date().toISOString().split('T')[0]); setDateTo(new Date().toISOString().split('T')[0]); setDocType('ALL'); setSearchTerm(''); }}
+                     onClick={() => { setDateFrom(new Date().toISOString().split('T')[0]); setDateTo(new Date().toISOString().split('T')[0]); setDocType('ALL'); setPrintStatusFilter('PENDING'); setSearchTerm(''); }}
                      className="text-xs text-blue-600 font-bold hover:underline"
                   >
                      Limpiar Filtros
@@ -169,7 +185,11 @@ export const PrintBatch: React.FC = () => {
                            </td>
                            <td className="p-3 text-right font-bold text-slate-900">S/ {s.total.toFixed(2)}</td>
                            <td className="p-3 text-center">
-                              <FileText className="w-4 h-4 mx-auto text-slate-400" />
+                              {s.printed ? (
+                                 <span className="bg-green-100 text-green-800 text-[10px] font-bold px-2 py-1 rounded border border-green-200">IMPRESO</span>
+                              ) : (
+                                 <span className="bg-amber-100 text-amber-800 text-[10px] font-bold px-2 py-1 rounded border border-amber-200">PENDIENTE</span>
+                              )}
                            </td>
                         </tr>
                      ))}
