@@ -112,7 +112,7 @@ const MOCK_SALES: Sale[] = [
 const MOCK_USERS: User[] = [
    {
       id: 'u1', username: 'admin', password: '123456', name: 'Admin General', role: 'ADMIN', requires_attendance: false, is_active: true,
-      permissions: ['dashboard', 'reports', 'kardex', 'sales', 'document-manager', 'print-batch', 'mobile-orders', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store']
+      permissions: ['dashboard', 'reports', 'kardex', 'sales', 'document-manager', 'print-batch', 'mobile-orders', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager']
    },
    {
       id: 'u2', username: 'vendedor1', password: '123', name: 'Tomas Linares', role: 'SELLER', requires_attendance: true, is_active: true,
@@ -215,6 +215,7 @@ interface AppState {
    updatePurchase: (purchase: Purchase) => boolean;
    createDispatch: (dispatch: DispatchSheet) => void;
    updateSaleStatus: (saleIds: string[], status: Sale['dispatch_status']) => void;
+   updateSunatStatus: (type: 'sale' | 'dispatch', id: string, status: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED', message?: string) => void;
    processDispatchLiquidation: (liquidation: DispatchLiquidation) => void;
 
    // Master Data Actions
@@ -387,7 +388,8 @@ export const useStore = create<AppState>((set, get) => ({
          ...sale,
          payment_status: sale.payment_method === 'CONTADO' ? 'PAID' : 'PENDING',
          collection_status: sale.payment_method === 'CONTADO' ? 'COLLECTED' : 'NONE',
-         balance: sale.payment_method === 'CONTADO' ? 0 : sale.total
+         balance: sale.payment_method === 'CONTADO' ? 0 : sale.total,
+         sunat_status: 'PENDING'
       } as Sale;
 
       return { sales: [finalSale, ...state.sales], batches: newBatches };
@@ -574,6 +576,7 @@ export const useStore = create<AppState>((set, get) => ({
             status: 'completed',
             dispatch_status: 'pending',
             created_at: new Date().toISOString(),
+            sunat_status: 'PENDING',
             items: saleItems,
             origin_order_id: order.id
          };
@@ -725,11 +728,23 @@ export const useStore = create<AppState>((set, get) => ({
             finalCode = `HR-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
          }
       }
-      return { dispatchSheets: [{ ...dispatch, code: finalCode }, ...state.dispatchSheets] };
+      return { dispatchSheets: [{ ...dispatch, code: finalCode, sunat_status: 'PENDING' }, ...state.dispatchSheets] };
    }),
    updateSaleStatus: (saleIds, status) => set((state) => ({
       sales: state.sales.map(s => saleIds.includes(s.id) ? { ...s, dispatch_status: status } : s)
    })),
+
+   updateSunatStatus: (type, id, status, message) => set((state) => {
+      if (type === 'sale') {
+         return {
+            sales: state.sales.map(s => s.id === id ? { ...s, sunat_status: status, sunat_message: message, sunat_sent_at: status !== 'PENDING' ? new Date().toISOString() : s.sunat_sent_at } : s)
+         };
+      } else {
+         return {
+            dispatchSheets: state.dispatchSheets.map(d => d.id === id ? { ...d, sunat_status: status, sunat_message: message, sunat_sent_at: status !== 'PENDING' ? new Date().toISOString() : d.sunat_sent_at } : d)
+         };
+      }
+   }),
 
    processDispatchLiquidation: (liquidation) => set((s) => {
       // Create a copy of the series state to increment sequentially

@@ -107,6 +107,11 @@ export interface CompanyConfig {
   email?: string;
   phone?: string;
   series: DocumentSeries[];
+
+  // SUNAT
+  sunat_provider?: 'PSE' | 'OSE' | 'SUNAT' | ''; // Proveedor e.g. Nubefact/APIPeru
+  sunat_api_url?: string;
+  sunat_api_token?: string;
 }
 
 // === CASH FLOW & EXPENSES ===
@@ -334,6 +339,12 @@ export interface Sale {
   status: 'pending' | 'completed' | 'canceled';
   dispatch_status: 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'liquidated';
   created_at: string;
+
+  // === SUNAT Integration ===
+  sunat_status?: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED';
+  sunat_sent_at?: string;
+  sunat_message?: string;
+
   items: SaleItem[];
 
   origin_order_id?: string;
@@ -381,6 +392,11 @@ export interface DispatchSheet {
   status: 'pending' | 'in_transit' | 'completed';
   date: string;
   sale_ids: string[];
+
+  // === SUNAT Integration ===
+  sunat_status?: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED';
+  sunat_sent_at?: string;
+  sunat_message?: string;
 }
 
 // === LIQUIDATION TYPES ===
@@ -530,4 +546,5 @@ export type ViewState =
   | 'print-batch'
   | 'promo-manager'
   | 'price-manager'
-  | 'virtual-store';
+  | 'virtual-store'
+  | 'sunat-manager';

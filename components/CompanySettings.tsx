@@ -5,7 +5,7 @@ import { DocumentSeries } from '../types';
 
 export const CompanySettings: React.FC = () => {
   const { company, updateCompany, updateSeries, addSeries, removeSeries } = useStore();
-  const [activeTab, setActiveTab] = useState<'GENERAL' | 'SERIES'>('GENERAL');
+  const [activeTab, setActiveTab] = useState<'GENERAL' | 'SERIES' | 'SUNAT'>('GENERAL');
 
   // Local state for the form
   const [formData, setFormData] = useState({
@@ -15,6 +15,9 @@ export const CompanySettings: React.FC = () => {
     igv_percent: company.igv_percent,
     email: company.email || '',
     phone: company.phone || '',
+    sunat_provider: company.sunat_provider || '',
+    sunat_api_url: company.sunat_api_url || '',
+    sunat_api_token: company.sunat_api_token || '',
   });
 
   const handleGeneralSave = (e: React.FormEvent) => {
@@ -58,6 +61,12 @@ export const CompanySettings: React.FC = () => {
           className={`px-6 py-3 font-bold text-sm flex items-center ${activeTab === 'SERIES' ? 'text-blue-700 border-b-2 border-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
         >
           <Hash className="w-4 h-4 mr-2" /> Series y Correlativos
+        </button>
+        <button
+          onClick={() => setActiveTab('SUNAT')}
+          className={`px-6 py-3 font-bold text-sm flex items-center ${activeTab === 'SUNAT' ? 'text-blue-700 border-b-2 border-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+        >
+          <FileText className="w-4 h-4 mr-2" /> Facturación Electrónica
         </button>
       </div>
 
@@ -161,7 +170,7 @@ export const CompanySettings: React.FC = () => {
               </div>
             </div>
           </form>
-        ) : (
+        ) : activeTab === 'SERIES' ? (
           <div className="max-w-4xl mx-auto">
             <div className="bg-yellow-50 p-4 rounded border border-yellow-200 mb-6 flex items-start">
               <div className="bg-yellow-100 p-2 rounded-full mr-3 text-yellow-700">
@@ -260,6 +269,65 @@ export const CompanySettings: React.FC = () => {
               </tbody>
             </table>
           </div>
+        ) : (
+          <form onSubmit={handleGeneralSave} className="max-w-3xl mx-auto">
+            <div className="bg-blue-50 p-4 rounded border border-blue-200 mb-6 flex items-start">
+              <div className="bg-blue-100 p-2 rounded-full mr-3 text-blue-700">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-bold text-blue-800 text-sm">Configuración de Proveedor (PSE/OSE)</h4>
+                <p className="text-xs text-blue-700 mt-1">
+                  Ingresa las credenciales proporcionadas por tu proveedor de facturación electrónica (Ej. Nubefact, APIPeru, Facturador PRO). Estos datos son utilizados para conectar el sistema con SUNAT.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Proveedor de Sistema Electrónico</label>
+                <select
+                  className="w-full border border-slate-300 p-2 rounded text-slate-900 font-bold bg-white"
+                  value={formData.sunat_provider}
+                  onChange={e => setFormData({ ...formData, sunat_provider: e.target.value as any })}
+                >
+                  <option value="">-- Seleccionar Proveedor --</option>
+                  <option value="NUBEFACT">NubeFact</option>
+                  <option value="APIPERU">API Perú</option>
+                  <option value="FACTURADOR_PRO">Facturador PRO (Facturador SUNAT)</option>
+                  <option value="SUNAT">Facturación Directa SUNAT (Clave SOL)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">URL de API (Endpoint REST)</label>
+                <input
+                  type="url"
+                  placeholder="https://api.proveedor.com/v1/facturacion"
+                  className="w-full border border-slate-300 p-2 rounded text-slate-900 font-mono text-sm"
+                  value={formData.sunat_api_url}
+                  onChange={e => setFormData({ ...formData, sunat_api_url: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Token de Autorización (API Key / Token)</label>
+                <input
+                  type="password"
+                  placeholder="................................"
+                  className="w-full border border-slate-300 p-2 rounded text-slate-900 font-mono text-sm"
+                  value={formData.sunat_api_token}
+                  onChange={e => setFormData({ ...formData, sunat_api_token: e.target.value })}
+                />
+              </div>
+
+              <div className="flex justify-end mt-6 pt-4 border-t border-slate-100">
+                <button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2 rounded font-bold flex items-center">
+                  <Save className="w-4 h-4 mr-2" /> Guardar Credenciales API
+                </button>
+              </div>
+            </div>
+          </form>
         )}
       </div>
     </div>
