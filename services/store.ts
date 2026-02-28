@@ -1,6 +1,5 @@
-
 import { create } from 'zustand';
-import { Product, Batch, Sale, Vehicle, DispatchSheet, Client, Supplier, Warehouse, Driver, Transporter, Purchase, Zone, PriceList, Seller, Order, SaleItem, BatchAllocation, CompanyConfig, DocumentSeries, CashMovement, ExpenseCategory, ScheduledTransaction, DispatchLiquidation, User, AttendanceRecord, Promotion, Combo, CollectionRecord, OrderItem } from '../types';
+import { Product, Batch, Sale, Vehicle, DispatchSheet, Client, Supplier, Warehouse, Driver, Transporter, Purchase, Zone, PriceList, Seller, Order, SaleItem, BatchAllocation, CompanyConfig, DocumentSeries, CashMovement, ExpenseCategory, ScheduledTransaction, DispatchLiquidation, User, AttendanceRecord, Promotion, Combo, CollectionRecord, OrderItem, AutoPromotion } from '../types';
 
 // Helper for UUID generation
 const generateUUID = () => {
@@ -135,7 +134,18 @@ const MOCK_COMBOS: Combo[] = [
    {
       id: 'combo1', name: 'PACK FIESTA', description: '1 Ron Cartavio + 2 Coca Cola (Simulada)', price: 40.00, is_active: true, start_date: '2024-01-01', end_date: '2024-12-31',
       items: [{ product_id: 'p2', quantity: 1, unit_type: 'UND' }],
-      channels: ['IN_STORE', 'SELLER_APP'], allowed_seller_ids: []
+      channels: ['IN_STORE', 'SELLER_APP'], allowed_seller_ids: [],
+      target_client_categories: [], target_price_list_ids: []
+   }
+];
+
+const MOCK_AUTO_PROMOTIONS: AutoPromotion[] = [
+   {
+      id: 'apromo1', name: 'BONIF. CUSQUEÑA', description: 'Por la compra de 24 und, llévate 2 und gratis.',
+      is_active: true, start_date: '2024-01-01', end_date: '2024-12-31',
+      condition_type: 'BUY_X_PRODUCT', condition_product_id: 'p4', condition_amount: 24,
+      reward_product_id: 'p4', reward_quantity: 2, reward_unit_type: 'UND',
+      channels: ['IN_STORE', 'SELLER_APP'], target_client_categories: [], target_price_list_ids: []
    }
 ];
 
@@ -180,6 +190,7 @@ interface AppState {
    // Promos
    promotions: Promotion[];
    combos: Combo[];
+   autoPromotions: AutoPromotion[];
 
    // Auth State
    currentUser: User | null;
@@ -268,6 +279,8 @@ interface AppState {
    updatePromotion: (Promotion) => void;
    addCombo: (Combo) => void;
    updateCombo: (Combo) => void;
+   addAutoPromotion: (AutoPromotion) => void;
+   updateAutoPromotion: (AutoPromotion) => void;
 
    // Auth Actions
    setCurrentUser: (userId: string) => void;
@@ -306,6 +319,7 @@ export const useStore = create<AppState>((set, get) => ({
    attendanceRecords: [],
    promotions: MOCK_PROMOTIONS,
    combos: MOCK_COMBOS,
+   autoPromotions: MOCK_AUTO_PROMOTIONS,
    currentUser: null,
    collectionRecords: [],
 
@@ -975,10 +989,19 @@ export const useStore = create<AppState>((set, get) => ({
    clockOut: (userId) => { },
    updateAttendanceRecord: (record) => { },
 
-   addPromotion: (p) => set(s => ({ promotions: [...s.promotions, p] })),
-   updatePromotion: (p) => set(s => ({ promotions: s.promotions.map(x => x.id === p.id ? p : x) })),
-   addCombo: (c) => set(s => ({ combos: [...s.combos, c] })),
-   updateCombo: (c) => set(s => ({ combos: s.combos.map(x => x.id === c.id ? c : x) })),
+   // Promo Actions
+   addPromotion: (promo) => set((state) => ({ promotions: [...state.promotions, promo] })),
+   updatePromotion: (promo) => set((state) => ({
+      promotions: state.promotions.map(p => p.id === promo.id ? promo : p)
+   })),
+   addCombo: (combo) => set((state) => ({ combos: [...state.combos, combo] })),
+   updateCombo: (combo) => set((state) => ({
+      combos: state.combos.map(c => c.id === combo.id ? combo : c)
+   })),
+   addAutoPromotion: (ap) => set((state) => ({ autoPromotions: [...state.autoPromotions, ap] })),
+   updateAutoPromotion: (ap) => set((state) => ({
+      autoPromotions: state.autoPromotions.map(a => a.id === ap.id ? ap : a)
+   })),
 
    setCurrentUser: (userId) => set(s => ({
       currentUser: s.users.find(u => u.id === userId) || null

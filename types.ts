@@ -66,6 +66,8 @@ export interface Promotion {
   channels: ('IN_STORE' | 'SELLER_APP')[]; // Where is this visible?
   allowed_seller_ids: string[]; // Empty = All
   image_url?: string; // Optional promo banner
+  target_client_categories?: string[]; // e.g. ['MINORISTA', 'MAYORISTA']
+  target_price_list_ids?: string[]; // e.g. ['pl1']
 }
 
 export interface Combo {
@@ -86,6 +88,34 @@ export interface Combo {
   // NEW FIELDS
   channels: ('IN_STORE' | 'SELLER_APP')[];
   allowed_seller_ids: string[];
+  target_client_categories?: string[];
+  target_price_list_ids?: string[];
+}
+
+export interface AutoPromotion {
+  id: string;
+  name: string;
+  description: string;
+  is_active: boolean;
+  start_date: string;
+  end_date: string;
+
+  // Condición
+  condition_type: 'BUY_X_PRODUCT' | 'SPEND_Y_CATEGORY' | 'SPEND_Y_TOTAL';
+  condition_product_id?: string;
+  condition_category?: string;
+  condition_supplier_id?: string;
+  condition_amount: number; // e.g., Buy 12 units, or Spend 100 soles
+
+  // Premio
+  reward_product_id: string;
+  reward_quantity: number;
+  reward_unit_type: 'UND' | 'PKG'; // Usually UND
+
+  // Segmentación
+  channels: ('IN_STORE' | 'SELLER_APP')[];
+  target_client_categories?: string[];
+  target_price_list_ids?: string[];
 }
 
 // === COMPANY SETTINGS ===
@@ -359,31 +389,28 @@ export interface Sale {
   printed_at?: string;
 
   items: SaleItem[];
-
   origin_order_id?: string;
 }
 
 export interface SaleItem {
-  id: string; // Optional if constructed
+  id: string; // Optional if we just create it on the fly, but good for react keys. In DB it would be auto-generated or missing until save. Let's make it optional if not using. Actually NewSale generates it.
   sale_id?: string;
-  product_id?: string;
+  product_id: string;
   product_sku: string;
   product_name: string;
-
-  selected_unit: 'UND' | 'PKG' | string;
-  quantity_presentation: number;
-  quantity_base?: number;
-
+  selected_unit: 'UND' | 'PKG';
+  quantity_presentation: number; // Qty user typed (e.g., 2 boxes)
+  quantity_base: number; // Base units (e.g., 2 boxes * 12 = 24 total)
   unit_price: number;
-  total_price: number;
-
-  // Discounts & Bonus
   discount_percent: number;
   discount_amount: number;
+  total_price: number;
   is_bonus: boolean;
-
-  batch_allocations?: BatchAllocation[];
-
+  auto_promo_id?: string; // Links this item to the auto promotion that granted it
+  batch_allocations: BatchAllocation[];
+  // added helper fields that might have mismatched from NewSale:
+  quantity?: number; // fallback/alias
+  batches?: any[]; // alias fallback for older code referencing it
   // NEW: Snapshot
   combo_snapshot?: {
     product_id: string;

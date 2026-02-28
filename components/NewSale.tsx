@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, BatchAllocation, SaleItem, Client, Sale } from '../types';
-import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye } from 'lucide-react';
+import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion } from '../types';
+import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap } from 'lucide-react';
 import { PrintableInvoice } from './PrintableInvoice';
 
 export const NewSale: React.FC = () => {
-   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser } = useStore();
+   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions } = useStore();
 
    // --- REFS FOR FOCUS MANAGEMENT ---
    const productInputRef = useRef<HTMLInputElement>(null);
@@ -173,6 +173,10 @@ export const NewSale: React.FC = () => {
    };
 
    // Recalculate prices based on selected Price List
+   const removeFromCart = (index: number) => {
+      const newItems = cart.filter((_, i) => i !== index);
+      applyAutoPromotions(newItems);
+   };
    const handleUpdatePrices = () => {
       if (cart.length === 0) return;
       if (!clientData.price_list_id) { alert("Seleccione una lista de precios primero."); return; }
@@ -204,7 +208,89 @@ export const NewSale: React.FC = () => {
       });
 
       setCart(updatedCart);
+      applyAutoPromotions(updatedCart);
       alert("Precios actualizados según la lista seleccionada.");
+   };
+
+   // --- AUTO PROMOTIONS LOGIC ---
+   const applyAutoPromotions = (currentCart: SaleItem[]) => {
+      // 1. Remove existing auto-promotions from cart first to recalculate cleanly
+      let newCart = currentCart.filter(item => !item.auto_promo_id);
+
+      // 2. Filter active auto promos for current conditions (channels, price list)
+      const validPromos = autoPromotions.filter(ap => {
+         if (!ap.is_active) return false;
+         // Check dates
+         const today = new Date().toISOString().split('T')[0];
+         if (today < ap.start_date || today > ap.end_date) return false;
+         // Check channel
+         if (!ap.channels?.includes('IN_STORE')) return false;
+         // Check price list
+         if (ap.target_price_list_ids?.length > 0 &&
+            clientData.price_list_id &&
+            !ap.target_price_list_ids.includes('ALL') &&
+            !ap.target_price_list_ids.includes(clientData.price_list_id)) return false;
+         return true;
+      });
+
+      // 3. Check conditions and apply rewards
+      validPromos.forEach(ap => {
+         let applies = false;
+         let multiplyFactor = 0; // How many times the reward is given
+
+         if (ap.condition_type === 'BUY_X_PRODUCT') {
+            const qtyBought = newCart
+               .filter(item => item.product_id === ap.condition_product_id && !item.is_bonus)
+               .reduce((sum, item) => sum + item.quantity_presentation, 0); // Simplified assuming UND/PKG math handled earlier or exact match
+
+            if (qtyBought >= ap.condition_amount) {
+               applies = true;
+               multiplyFactor = Math.floor(qtyBought / ap.condition_amount);
+            }
+         } else if (ap.condition_type === 'SPEND_Y_TOTAL') {
+            const totalSpent = newCart.reduce((sum, item) => sum + item.total_price, 0);
+            if (totalSpent >= ap.condition_amount) {
+               applies = true;
+               multiplyFactor = Math.floor(totalSpent / ap.condition_amount);
+            }
+         } else if (ap.condition_type === 'SPEND_Y_CATEGORY') {
+            const catSpent = newCart.reduce((sum, item) => {
+               const p = products.find(prod => prod.id === item.product_id);
+               if (p?.category === ap.condition_category) return sum + item.total_price;
+               return sum;
+            }, 0);
+            if (catSpent >= ap.condition_amount) {
+               applies = true;
+               multiplyFactor = Math.floor(catSpent / ap.condition_amount);
+            }
+         }
+
+         if (applies && multiplyFactor > 0) {
+            const rewardProd = products.find(p => p.id === ap.reward_product_id);
+            if (rewardProd) {
+               const rewardQty = ap.reward_quantity * multiplyFactor;
+               newCart.push({
+                  id: crypto.randomUUID(),
+                  product_id: rewardProd.id,
+                  product_sku: rewardProd.sku,
+                  product_name: rewardProd.name,
+                  quantity_base: rewardQty * (rewardProd.package_content || 1), // Assuming base units, simpler for bonifications
+                  batch_allocations: [], // Auto-allocate later
+                  quantity: rewardQty, // Base quantity alias
+                  quantity_presentation: rewardQty,
+                  unit_price: 0,
+                  discount_percent: 100,
+                  discount_amount: 0, // Since unit price is 0
+                  total_price: 0,
+                  selected_unit: ap.reward_unit_type as 'UND' | 'PKG',
+                  is_bonus: true,
+                  auto_promo_id: ap.id // Tag it
+               });
+            }
+         }
+      });
+
+      setCart(newCart);
    };
 
    // --- HANDLERS: CLIENT ---
@@ -310,61 +396,70 @@ export const NewSale: React.FC = () => {
       if (!selectedProduct) return;
       if (quantity <= 0) { alert("Cantidad inválida"); return; }
 
-      // 1. Stock Check (FIFO)
-      const conversionFactor = unitType === 'PKG' ? (selectedProduct.package_content || 1) : 1;
+      const prod = selectedProduct;
+      const conversionFactor = unitType === 'PKG' ? (prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
-      const availableBatches = getBatchesForProduct(selectedProduct.id);
+      const availableBatches = getBatchesForProduct(prod.id);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
-
-      // --- DUPLICATE CHECK ---
-      const existingItemIndex = cart.findIndex(item => item.product_id === selectedProduct.id && item.selected_unit === unitType);
-      if (existingItemIndex >= 0) {
-         const confirmAction = window.confirm(
-            `El producto "${selectedProduct.name}" ya está en la lista.\n¿Desea agregar esta cantidad como una nueva línea? (Cancelar para omitir)`
-         );
-         if (!confirmAction) return; // Allow duplicate line if they click OK, could also just sum if we wanted
-      }
 
       if (totalStock < requiredBaseUnits) {
          alert(`Stock insuficiente. Disponible: ${totalStock} unid. Requerido: ${requiredBaseUnits} unid.`);
          return;
       }
 
-      // 2. Allocate Batches
+      // Allocate Batches
       let remaining = requiredBaseUnits;
-      const allocations: BatchAllocation[] = [];
+      const selectedBatches: BatchAllocation[] = [];
       for (const batch of availableBatches) {
          if (remaining <= 0) break;
          const take = Math.min(remaining, batch.quantity_current);
-         allocations.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
+         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
          remaining -= take;
       }
 
-      // 3. Create Item
-      const finalPrice = isBonus ? 0 : unitPrice;
-      const total = isBonus ? 0 : calculateTotal(quantity, finalPrice, discountPercent);
-      const discountAmt = (quantity * finalPrice) * (discountPercent / 100);
+      let initialNewCart = [...cart];
 
-      const newItem: SaleItem = {
-         id: crypto.randomUUID(),
-         sale_id: '',
-         product_id: selectedProduct.id,
-         product_sku: selectedProduct.sku,
-         product_name: selectedProduct.name,
-         selected_unit: unitType,
-         quantity_presentation: quantity,
-         quantity_base: requiredBaseUnits,
-         unit_price: finalPrice,
-         total_price: total,
-         discount_percent: discountPercent,
-         discount_amount: discountAmt,
-         is_bonus: isBonus,
-         batch_allocations: allocations
-      };
+      const existingItemIndex = initialNewCart.findIndex(item => item.product_id === prod.id && item.selected_unit === unitType && !item.is_bonus && !item.auto_promo_id);
 
-      setCart([...cart, newItem]);
+      if (existingItemIndex >= 0) {
+         if (window.confirm(`El producto "${prod.name}" ya existe en la lista. ¿Desea sumar la cantidad?`)) {
+            const existing = initialNewCart[existingItemIndex];
+            const newQty = existing.quantity_presentation + quantity;
+            const newPrice = calculateTotal(newQty, unitPrice, discountPercent);
+            initialNewCart[existingItemIndex] = {
+               ...existing,
+               quantity_presentation: newQty,
+               quantity: unitType === 'PKG' ? newQty * prod.units_per_package : newQty,
+               total_price: newPrice,
+               discount_percent: discountPercent,
+               discount_amount: (newQty * unitPrice) * (discountPercent / 100)
+            };
+         } else {
+            return;
+         }
+      } else {
+         const newItem: SaleItem = {
+            id: crypto.randomUUID(),
+            sale_id: '',
+            product_id: prod.id,
+            product_sku: prod.sku,
+            product_name: prod.name,
+            selected_unit: unitType,
+            quantity_presentation: quantity,
+            quantity_base: requiredBaseUnits,
+            unit_price: unitPrice,
+            total_price: calculateTotal(quantity, unitPrice, discountPercent),
+            discount_percent: discountPercent,
+            discount_amount: (quantity * unitPrice) * (discountPercent / 100),
+            is_bonus: isBonus,
+            batch_allocations: selectedBatches
+         };
+         initialNewCart = [...initialNewCart, newItem];
+      }
 
-      // 4. Reset & Refocus
+      applyAutoPromotions(initialNewCart);
+
+      // Reset
       setSelectedProduct(null);
       setProductSearch('');
       setQuantity(1);
@@ -778,7 +873,7 @@ export const NewSale: React.FC = () => {
 
                   <button
                      ref={addButtonRef}
-                     onClick={handleAddToCart}
+                     onClick={tryAddToCart}
                      disabled={!selectedProduct}
                      className="bg-accent hover:bg-blue-700 text-white p-1.5 rounded shadow-sm disabled:opacity-50 focus:ring-2 focus:ring-blue-500 outline-none"
                   >
@@ -802,28 +897,44 @@ export const NewSale: React.FC = () => {
 
             {/* Body of Grid */}
             <div className="flex-1 overflow-auto bg-white">
-               {cart.map((item, idx) => (
-                  <div key={item.id} className={`flex border-b border-slate-100 text-xs py-1 px-1 hover:bg-yellow-50 items-center ${item.is_bonus ? 'bg-green-50' : ''}`}>
-                     <div className="w-8 text-center text-slate-400">{idx + 1}</div>
-                     <div className="w-24 px-2 font-mono text-slate-600">{item.product_sku}</div>
-                     <div className="flex-1 px-2 font-medium text-slate-800 truncate">
-                        {item.product_name}
-                        {item.is_bonus && <span className="ml-2 text-[9px] bg-green-200 text-green-800 px-1 rounded font-bold">BONIFICACIÓN</span>}
-                     </div>
-                     <div className="w-16 text-right px-2 font-bold">{item.quantity_presentation}</div>
-                     <div className="w-20 text-center px-2 text-[10px] text-slate-500">{item.selected_unit === 'UND' ? 'UNIDAD' : 'CAJA'}</div>
-                     <div className="w-20 text-right px-2 text-slate-600">{item.unit_price.toFixed(2)}</div>
-                     <div className="w-16 text-right px-2 text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</div>
-                     <div className="w-24 text-right px-2 font-bold text-slate-900">{item.total_price.toFixed(2)}</div>
-                     <div className="w-8 text-center">
-                        {!isViewMode && (
-                           <button onClick={() => setCart(cart.filter(x => x.id !== item.id))} className="text-red-400 hover:text-red-600">
-                              <Trash2 className="w-3.5 h-3.5" />
-                           </button>
-                        )}
-                     </div>
-                  </div>
-               ))}
+               <table className="w-full text-left text-xs">
+                  <tbody>
+                     {cart.map((item, index) => {
+                        const prod = products.find(p => p.id === item.product_id);
+                        const autoPromo = item.auto_promo_id ? autoPromotions.find(ap => ap.id === item.auto_promo_id) : null;
+                        return (
+                           <tr key={item.id} className={`border-b border-slate-100 ${item.is_bonus ? 'bg-orange-50' : 'hover:bg-slate-50'}`}>
+                              <td className="p-2 w-8 text-center text-xs font-bold text-slate-700">{index + 1}</td>
+                              <td className="p-2 w-24 font-mono text-slate-600">{item.product_sku}</td>
+                              <td className="p-2 flex-1">
+                                 <div className="font-bold text-xs text-slate-800">
+                                    {item.product_name}
+                                    {autoPromo && <span className="ml-2 text-[9px] bg-green-500 text-white px-1 py-0.5 rounded shadow-sm inline-flex items-center"><Zap className="w-2 h-2 mr-1" />{autoPromo.name}</span>}
+                                    {item.is_bonus && !autoPromo && <span className="ml-2 text-[9px] bg-orange-500 text-white px-1 py-0.5 rounded shadow-sm">BONIF</span>}
+                                 </div>
+                                 <div className="text-[10px] text-slate-500 flex items-center gap-2">
+                                    {prod?.sku} | {prod?.brand}
+                                 </div>
+                              </td>
+                              <td className="p-2 w-16 text-right font-bold">{item.quantity_presentation}</td>
+                              <td className="p-2 w-20 text-center text-[10px] text-slate-500">{item.selected_unit === 'UND' ? 'UNIDAD' : 'CAJA'}</td>
+                              <td className="p-2 w-20 text-right text-slate-600">{item.unit_price.toFixed(2)}</td>
+                              <td className="p-2 w-16 text-right text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</td>
+                              <td className="p-2 w-24 text-right font-bold text-slate-900">{item.total_price.toFixed(2)}</td>
+                              <td className="p-2 w-8 text-right">
+                                 <button
+                                    onClick={() => removeFromCart(index)}
+                                    className={`text-red-400 hover:bg-red-50 p-1 rounded transition-colors ${item.auto_promo_id ? 'opacity-50 cursor-not-allowed hidden' : ''}`}
+                                    disabled={isViewMode || !!item.auto_promo_id}
+                                 >
+                                    <Trash2 className="w-4 h-4" />
+                                 </button>
+                              </td>
+                           </tr>
+                        );
+                     })}
+                  </tbody>
+               </table>
                {cart.length === 0 && <div className="p-8 text-center text-slate-400 italic">No hay productos. Use la barra superior para agregar (ENTER para seleccionar).</div>}
             </div>
          </div>

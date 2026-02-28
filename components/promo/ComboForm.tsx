@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../services/store';
 import { Combo, Product } from '../../types';
 import { Save, X, Search, Trash2, Image as ImageIcon, Plus } from 'lucide-react';
@@ -23,6 +23,30 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
 
     const [prodSearch, setProdSearch] = useState('');
     const [showProductSearch, setShowProductSearch] = useState(false);
+    const [categoryFilter, setCategoryFilter] = useState('');
+    const [supplierFilter, setSupplierFilter] = useState('');
+
+    // Extraer categorías únicas para el filtro
+    const categories = useMemo(() => {
+        const cats = products.map(p => p.category).filter(Boolean);
+        return Array.from(new Set(cats));
+    }, [products]);
+
+    // Extraer marcas/proveedores únicos
+    const brands = useMemo(() => {
+        const brs = products.map(p => p.brand).filter(Boolean);
+        return Array.from(new Set(brs));
+    }, [products]);
+
+    // Filtered Products for efficient rendering
+    const filteredProducts = useMemo(() => {
+        return products.filter(p => {
+            const matchesSearch = p.name.toLowerCase().includes(prodSearch.toLowerCase()) || p.sku.includes(prodSearch);
+            const matchesCategory = categoryFilter ? p.category === categoryFilter : true;
+            const matchesSupplier = supplierFilter ? p.brand === supplierFilter : true;
+            return matchesSearch && matchesCategory && matchesSupplier;
+        }).slice(0, 30); // Limit
+    }, [products, prodSearch, categoryFilter, supplierFilter]);
 
     useEffect(() => {
         if (initialData) {
@@ -183,20 +207,34 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
                             </button>
 
                             {showProductSearch && (
-                                <div className="absolute right-0 top-8 w-72 bg-white shadow-xl border border-slate-200 rounded-lg z-20">
-                                    <input
-                                        autoFocus
-                                        className="w-full p-2 border-b text-xs outline-none"
-                                        placeholder="Buscar..."
-                                        value={prodSearch}
-                                        onChange={e => setProdSearch(e.target.value)}
-                                    />
-                                    <div className="max-h-48 overflow-auto">
-                                        {products.filter(p => p.name.toLowerCase().includes(prodSearch.toLowerCase())).slice(0, 20).map(p => (
-                                            <div key={p.id} onClick={() => addItem(p.id)} className="p-2 hover:bg-purple-50 cursor-pointer text-xs border-b border-slate-50">
-                                                {p.name}
+                                <div className="absolute right-0 top-8 w-[400px] bg-white shadow-xl border border-slate-200 rounded-lg z-20 overflow-hidden">
+                                    <div className="bg-slate-50 p-2 border-b flex flex-col gap-2">
+                                        <input
+                                            autoFocus
+                                            className="w-full p-1.5 border border-slate-300 rounded text-xs outline-none"
+                                            placeholder="Buscar..."
+                                            value={prodSearch}
+                                            onChange={e => setProdSearch(e.target.value)}
+                                        />
+                                        <div className="flex gap-2">
+                                            <select className="flex-1 border border-slate-300 p-1.5 rounded text-[10px] bg-white" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+                                                <option value="">Todas las Categorías</option>
+                                                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                            </select>
+                                            <select className="flex-1 border border-slate-300 p-1.5 rounded text-[10px] bg-white" value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)}>
+                                                <option value="">Todas las Marcas</option>
+                                                {brands.map(b => <option key={b} value={b}>{b}</option>)}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="max-h-60 overflow-auto">
+                                        {filteredProducts.map(p => (
+                                            <div key={p.id} onClick={() => addItem(p.id)} className="p-2 hover:bg-purple-50 cursor-pointer text-xs border-b border-slate-50 flex justify-between">
+                                                <span>{p.name} <span className="text-[9px] text-slate-400 block">{p.brand} | {p.category}</span></span>
+                                                <span className="font-bold text-slate-600 ml-2">S/ {p.price_unit.toFixed(2)}</span>
                                             </div>
                                         ))}
+                                        {filteredProducts.length === 0 && <div className="p-4 text-center text-slate-400 text-xs text-italic">No hay coincidencias</div>}
                                     </div>
                                 </div>
                             )}

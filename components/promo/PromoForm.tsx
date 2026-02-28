@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../services/store';
 import { Promotion, Product } from '../../types';
-import { Save, X, Search, CheckSquare, Square, Image as ImageIcon } from 'lucide-react';
+import { Save, X, Search, CheckSquare, Square, Image as ImageIcon, Filter } from 'lucide-react';
 
 interface PromoFormProps {
     initialData?: Partial<Promotion> | null;
@@ -24,6 +24,20 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
     });
 
     const [searchTerm, setSearchTerm] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState('');
+    const [supplierFilter, setSupplierFilter] = useState('');
+
+    // Extraer categorías únicas para el filtro
+    const categories = useMemo(() => {
+        const cats = products.map(p => p.category).filter(Boolean);
+        return Array.from(new Set(cats));
+    }, [products]);
+
+    // Extraer marcas/proveedores únicos
+    const brands = useMemo(() => {
+        const brs = products.map(p => p.brand).filter(Boolean);
+        return Array.from(new Set(brs));
+    }, [products]);
 
     useEffect(() => {
         if (initialData) {
@@ -73,10 +87,30 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
     };
 
     // Filtered Products for efficient rendering
-    const filteredProducts = products.filter(p =>
-        p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.sku.includes(searchTerm)
-    ).slice(0, 100); // Limit to 100 for performance if searching empty
+    const filteredProducts = useMemo(() => {
+        return products.filter(p => {
+            const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.includes(searchTerm);
+            const matchesCategory = categoryFilter ? p.category === categoryFilter : true;
+            const matchesSupplier = supplierFilter ? p.brand === supplierFilter : true;
+            return matchesSearch && matchesCategory && matchesSupplier;
+        }).slice(0, 100); // Limit to 100 for performance if searching empty
+    }, [products, searchTerm, categoryFilter, supplierFilter]);
+
+    // Add all filtered to selection
+    const selectAllFiltered = () => {
+        const filteredIds = filteredProducts.map(p => p.id);
+        const currentIds = formData.product_ids || [];
+        const newIds = Array.from(new Set([...currentIds, ...filteredIds]));
+        setFormData({ ...formData, product_ids: newIds });
+    };
+
+    // Remove all filtered from selection
+    const deselectAllFiltered = () => {
+        const filteredIds = filteredProducts.map(p => p.id);
+        const currentIds = formData.product_ids || [];
+        const newIds = currentIds.filter(id => !filteredIds.includes(id));
+        setFormData({ ...formData, product_ids: newIds });
+    };
 
     return (
         <div className="h-full flex flex-col bg-white rounded-lg shadow-sm border border-slate-200">
@@ -174,17 +208,31 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
                 </div>
 
                 {/* Product Selection */}
-                <div className="border-t pt-4 flex flex-col h-64">
-                    <div className="flex justify-between items-center mb-2">
-                        <label className="block text-xs font-bold text-slate-600">Productos Aplicables ({formData.product_ids?.length})</label>
-                        <div className="relative w-48">
-                            <Search className="absolute left-2 top-2 w-3 h-3 text-slate-400" />
-                            <input
-                                className="w-full pl-7 border border-slate-300 rounded p-1 text-xs"
-                                placeholder="Buscar producto..."
-                                value={searchTerm}
-                                onChange={e => setSearchTerm(e.target.value)}
-                            />
+                <div className="border-t pt-4 flex flex-col h-72">
+                    <div className="flex justify-between items-end mb-2">
+                        <label className="block text-xs font-bold text-slate-600">Productos Aplicables ({formData.product_ids?.length} sel.)</label>
+
+                        <div className="flex gap-2 items-center">
+                            <button type="button" onClick={selectAllFiltered} className="text-[10px] bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 font-bold">Seleccionar Visibles</button>
+                            <button type="button" onClick={deselectAllFiltered} className="text-[10px] bg-red-100 text-red-700 px-2 py-1 rounded hover:bg-red-200 font-bold">Deseleccionar Visibles</button>
+                            <div className="h-4 w-px bg-slate-300 mx-1"></div>
+                            <div className="relative w-32">
+                                <Search className="absolute left-2 top-1.5 w-3 h-3 text-slate-400" />
+                                <input
+                                    className="w-full pl-6 border border-slate-300 rounded p-1 text-[10px]"
+                                    placeholder="Buscar producto..."
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <select className="border border-slate-300 p-1 rounded text-[10px] bg-white w-32" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
+                                <option value="">- Todas las Categorías -</option>
+                                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                            <select className="border border-slate-300 p-1 rounded text-[10px] bg-white w-32" value={supplierFilter} onChange={e => setSupplierFilter(e.target.value)}>
+                                <option value="">- Todas las Marcas -</option>
+                                {brands.map(b => <option key={b} value={b}>{b}</option>)}
+                            </select>
                         </div>
                     </div>
 
