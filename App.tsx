@@ -25,13 +25,14 @@ import { PriceManager } from './components/PriceManager';
 import { VirtualStore } from './components/VirtualStore';
 import { CollectionConsolidation } from './components/CollectionConsolidation'; // NEW
 import { SunatManager } from './components/SunatManager';
+import { CreditNotes } from './components/CreditNotes';
 import { Login } from './components/Login';
-import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight } from 'lucide-react';
 import { ViewState } from './types';
 import { useStore } from './services/store';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation'>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { company, currentUser, logout } = useStore();
 
@@ -67,6 +68,7 @@ export default function App() {
       case 'cash-flow': return <CashFlow />;
       case 'collection-consolidation': return <CollectionConsolidation />; // NEW ROUTE
       case 'sunat-manager': return <SunatManager />;
+      case 'credit-notes': return <CreditNotes />;
       case 'products': return <ProductManagement />;
       case 'clients': return <ClientManagement />;
       case 'suppliers': return <MasterData type="suppliers" />;
@@ -153,6 +155,7 @@ export default function App() {
 
           <Section title="Comercial">
             <NavItem view="sales" icon={ShoppingCart} label="Venta Directa" />
+            <NavItem view="credit-notes" icon={ArrowLeftRight} label="Devoluciones y NC" />
             <NavItem view="order-processing" icon={FileCheck} label="Procesar Pedidos" />
             <NavItem view="price-manager" icon={DollarSign} label="Gestión de Precios" />
             <NavItem view="promo-manager" icon={Gift} label="Ofertas & Combos" />

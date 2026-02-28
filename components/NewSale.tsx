@@ -5,13 +5,18 @@ import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlu
 import { PrintableInvoice } from './PrintableInvoice';
 
 export const NewSale: React.FC = () => {
-   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber } = useStore();
+   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser } = useStore();
 
    // --- REFS FOR FOCUS MANAGEMENT ---
    const productInputRef = useRef<HTMLInputElement>(null);
    const qtyInputRef = useRef<HTMLInputElement>(null);
+   const unitSelectRef = useRef<HTMLSelectElement>(null);
    const priceInputRef = useRef<HTMLInputElement>(null);
    const discountInputRef = useRef<HTMLInputElement>(null);
+   const addButtonRef = useRef<HTMLButtonElement>(null);
+
+   // --- ADMIN LOCK STATE ---
+   const [priceLocked, setPriceLocked] = useState(true);
 
    // --- HEADER STATE ---
    const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
@@ -58,6 +63,11 @@ export const NewSale: React.FC = () => {
    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
    const [saleSearchTerm, setSaleSearchTerm] = useState('');
    const [isViewMode, setIsViewMode] = useState(false); // If true, we are viewing a past sale
+   const [isEditMode, setIsEditMode] = useState(false); // If true, we are actively modifying a past sale
+   const [originalSale, setOriginalSale] = useState<Sale | null>(null);
+
+   // --- HISTORY MODAL STATE ---
+   const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
 
    // --- PRINT STATE ---
    const [saleToPrint, setSaleToPrint] = useState<Sale | null>(null);
@@ -65,7 +75,8 @@ export const NewSale: React.FC = () => {
    // --- FILTERING LOGIC ---
    const filteredClients = clients.filter(c =>
       c.name.toLowerCase().includes(clientSearch.toLowerCase()) ||
-      c.doc_number.includes(clientSearch)
+      c.doc_number.includes(clientSearch) ||
+      (c.code && c.code.toLowerCase().includes(clientSearch.toLowerCase()))
    );
 
    const filteredProducts = products.filter(p =>
@@ -96,6 +107,8 @@ export const NewSale: React.FC = () => {
 
    const handleNewSale = () => {
       setIsViewMode(false);
+      setIsEditMode(false);
+      setOriginalSale(null);
       setCart([]);
       setSelectedClientId('');
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '' });
@@ -114,8 +127,15 @@ export const NewSale: React.FC = () => {
       }
    };
 
-   const loadSale = (sale: Sale) => {
-      setIsViewMode(true);
+   const loadSale = (sale: Sale, mode: 'VIEW' | 'EDIT' = 'VIEW') => {
+      if (mode === 'EDIT' && (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED')) {
+         alert('No se puede modificar un comprobante enviado o aceptado por SUNAT.');
+         return;
+      }
+      setIsViewMode(mode === 'VIEW');
+      setIsEditMode(mode === 'EDIT');
+      if (mode === 'EDIT') setOriginalSale(sale);
+
       setDocType(sale.document_type as any);
       setSeries(sale.series);
       setDocNumber(sale.number);
@@ -236,6 +256,18 @@ export const NewSale: React.FC = () => {
    };
 
    const selectProduct = (p: Product) => {
+      // --- DUPLICATE ALERT ---
+      const isDuplicate = cart.some(item => item.product_id === p.id);
+      if (isDuplicate) {
+         const confirmAction = window.confirm(`¡ADVERTENCIA!\nEl producto "${p.name}" ya se encuentra en el detalle.\n¿Desea continuar agregándolo?`);
+         if (!confirmAction) {
+            setProductSearch('');
+            setShowProductSuggestions(false);
+            productInputRef.current?.focus();
+            return;
+         }
+      }
+
       setSelectedProduct(p);
       setProductSearch(p.name);
       setShowProductSuggestions(false);
@@ -251,9 +283,17 @@ export const NewSale: React.FC = () => {
       setDiscountPercent(0);
       setIsBonus(false);
 
-      // Move focus to Qty
-      setTimeout(() => qtyInputRef.current?.focus(), 50);
+      // Lock prices by default for the new line
+      setPriceLocked(true);
+
+      // Move focus to Qty and highlight text
+      setTimeout(() => {
+         qtyInputRef.current?.focus();
+         qtyInputRef.current?.select();
+      }, 50);
    };
+
+
 
    const handleUnitChange = (type: 'UND' | 'PKG') => {
       setUnitType(type);
@@ -275,6 +315,15 @@ export const NewSale: React.FC = () => {
       const requiredBaseUnits = quantity * conversionFactor;
       const availableBatches = getBatchesForProduct(selectedProduct.id);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
+
+      // --- DUPLICATE CHECK ---
+      const existingItemIndex = cart.findIndex(item => item.product_id === selectedProduct.id && item.selected_unit === unitType);
+      if (existingItemIndex >= 0) {
+         const confirmAction = window.confirm(
+            `El producto "${selectedProduct.name}" ya está en la lista.\n¿Desea agregar esta cantidad como una nueva línea? (Cancelar para omitir)`
+         );
+         if (!confirmAction) return; // Allow duplicate line if they click OK, could also just sum if we wanted
+      }
 
       if (totalStock < requiredBaseUnits) {
          alert(`Stock insuficiente. Disponible: ${totalStock} unid. Requerido: ${requiredBaseUnits} unid.`);
@@ -325,21 +374,58 @@ export const NewSale: React.FC = () => {
       setTimeout(() => productInputRef.current?.focus(), 50);
    };
 
-   const handleInputKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLInputElement> | 'ADD') => {
+   const handleInputKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<any> | 'ADD' | 'BONUS_TOGGLE') => {
       if (e.key === 'Enter') {
          e.preventDefault();
          if (nextRef === 'ADD') {
-            handleAddToCart();
-         } else {
-            nextRef.current?.focus();
-            nextRef.current?.select();
+            addButtonRef.current?.focus();
+         } else if (nextRef === 'BONUS_TOGGLE') {
+            setIsBonus(prev => !prev);
+         } else if (nextRef.current) {
+            nextRef.current.focus();
+            if (nextRef.current.select) {
+               nextRef.current.select();
+            }
          }
+      } else if (e.key === 'Escape') {
+         // Reset entry
+         setSelectedProduct(null);
+         setProductSearch('');
+         setTimeout(() => productInputRef.current?.focus(), 50);
+      }
+   };
+
+   // --- ADMIN AUTHORIZATION FOR BONUS / DISCOUNT ---
+   const [showAdminAuthModal, setShowAdminAuthModal] = useState<{ isOpen: boolean, triggerAction: () => void, targetActionName: string }>({ isOpen: false, triggerAction: () => { }, targetActionName: '' });
+   const [adminPasswordInput, setAdminPasswordInput] = useState('');
+
+   const requestAdminAuth = (action: () => void, actionName: string) => {
+      setShowAdminAuthModal({ isOpen: true, triggerAction: action, targetActionName: actionName });
+      setTimeout(() => document.getElementById('admin-password-input')?.focus(), 100);
+   };
+
+   const verifyAdminAndExecute = () => {
+      const adminUser = users.find(u => u.role === 'ADMIN' && u.password === adminPasswordInput);
+      if (adminUser) {
+         showAdminAuthModal.triggerAction();
+         setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' });
+         setAdminPasswordInput('');
+      } else {
+         alert("Contraseña incorrecta o el usuario no es administrador.");
+      }
+   };
+
+   const tryAddToCart = () => {
+      if (isBonus || discountPercent > 0) {
+         requestAdminAuth(handleAddToCart, 'Autorizar Descuento / Bonificación');
+      } else {
+         handleAddToCart();
       }
    };
 
    // --- FINAL SAVE ---
    const handleSaveSale = () => {
-      if (isViewMode) {
+      if (isViewMode && !isEditMode) {
          // If viewing history, just print current
          const currentSale = sales.find(s => s.series === series && s.number === docNumber);
          if (currentSale) setSaleToPrint(currentSale);
@@ -350,18 +436,22 @@ export const NewSale: React.FC = () => {
       if (!selectedClientId && !clientData.name) { alert("Ingrese datos del cliente"); return; }
       if (!series) { alert("No hay una serie asignada a este tipo de documento. Configure una en los Ajustes de Empresa."); return; }
 
+      // --- CONFIRMATION MODAL ---
+      const confirmSave = window.confirm(`¿Está seguro que desea ${isEditMode ? 'MODIFICAR' : 'emitir'} el comprobante ${docType} ${series}?`);
+      if (!confirmSave) return;
+
       const correlative = getNextDocumentNumber(docType, series);
 
-      if (!correlative) {
+      if (!correlative && !isEditMode) {
          alert("Error al obtener la serie. Verifique la configuración de la empresa.");
          return;
       }
 
       const newSaleData: Sale = {
-         id: crypto.randomUUID(),
+         id: isEditMode && originalSale ? originalSale.id : crypto.randomUUID(),
          document_type: docType,
-         series: correlative.series,
-         number: correlative.number,
+         series: isEditMode ? series : correlative!.series,
+         number: isEditMode ? docNumber : correlative!.number,
          payment_method: paymentMethod,
          client_name: clientData.name || 'CLIENTE VARIOS',
          client_ruc: clientData.doc_number || '00000000',
@@ -370,12 +460,22 @@ export const NewSale: React.FC = () => {
          igv,
          total: grandTotal,
          status: 'completed',
-         dispatch_status: 'pending',
-         created_at: new Date().toISOString(),
-         items: cart
+         dispatch_status: isEditMode && originalSale ? originalSale.dispatch_status : 'pending',
+         created_at: isEditMode && originalSale ? originalSale.created_at : new Date().toISOString(),
+         items: cart,
+         sunat_status: isEditMode && originalSale ? originalSale.sunat_status : 'PENDING'
       };
 
-      createSale(newSaleData);
+      if (isEditMode && originalSale) {
+         const result = updateSaleDetailed(newSaleData, originalSale, currentUser?.name || 'ADMIN');
+         if (!result.success) {
+            alert(result.msg);
+            return;
+         }
+         alert(result.msg);
+      } else {
+         createSale(newSaleData);
+      }
 
       // Trigger Print
       setSaleToPrint(newSaleData);
@@ -454,88 +554,91 @@ export const NewSale: React.FC = () => {
                   <label className="font-bold text-slate-700 text-sm">F. Emision</label>
                   <input type="date" className="border border-slate-300 rounded px-2 py-1 text-sm bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" defaultValue={new Date().toISOString().split('T')[0]} disabled={isViewMode} />
                </div>
-               {isViewMode && <div className="ml-4 px-3 py-1 bg-yellow-200 text-yellow-800 font-bold rounded animate-pulse">MODO VISUALIZACIÓN</div>}
-               {!series && !isViewMode && <div className="ml-4 px-3 py-1 bg-red-100 text-red-800 text-[10px] font-bold rounded border border-red-300">¡DEBE CONFIGURAR UNA SERIE EN AJUSTES!</div>}
             </div>
+            {isViewMode && <div className="ml-4 px-3 py-1 bg-yellow-200 text-yellow-800 font-bold rounded animate-pulse">MODO VISUALIZACIÓN</div>}
+            {isEditMode && <div className="ml-4 px-3 py-1 bg-red-600 text-white font-bold rounded animate-pulse relative pr-8">
+               MODIFICANDO DOCUMENTO
+               <button onClick={handleNewSale} className="absolute right-1 top-1.5 hover:text-red-200"><X className="w-4 h-4" /></button>
+            </div>}
+            {!series && !isViewMode && !isEditMode && <div className="ml-4 px-3 py-1 bg-red-100 text-red-800 text-[10px] font-bold rounded border border-red-300">¡DEBE CONFIGURAR UNA SERIE EN AJUSTES!</div>}
+         </div>
 
-            {/* Row 2: Client Data */}
-            <div className="flex items-start gap-2">
-               <div className="flex-1 grid grid-cols-12 gap-1 bg-slate-100 p-1.5 rounded border border-slate-200">
-                  <div className="col-span-2 relative">
-                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Cod Cliente / Buscar</label>
-                     <div className="relative">
-                        <Search className="absolute left-1 top-1 w-3 h-3 text-slate-400" />
-                        <input
-                           className="w-full pl-5 pr-1 py-0.5 border border-slate-300 rounded text-slate-900 font-bold focus:bg-yellow-50 disabled:bg-slate-200"
-                           placeholder="Buscar..."
-                           value={clientSearch}
-                           onChange={e => { setClientSearch(e.target.value); setShowClientSuggestions(true); }}
-                           onFocus={() => setShowClientSuggestions(true)}
-                           onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
-                           disabled={isViewMode}
-                        />
-                        {showClientSuggestions && clientSearch && (
-                           <div className="absolute top-full left-0 w-[300px] bg-white border border-slate-400 shadow-xl z-50 max-h-48 overflow-auto">
-                              {filteredClients.map(c => (
-                                 <div key={c.id} onMouseDown={() => selectClient(c)} className="p-2 hover:bg-blue-100 cursor-pointer border-b border-slate-100">
-                                    <div className="font-bold text-slate-800">{c.name}</div>
-                                    <div className="text-[10px] text-slate-500">{c.doc_number} | {c.address}</div>
-                                 </div>
-                              ))}
-                              {filteredClients.length === 0 && <div className="p-2 text-slate-400 italic">No encontrado</div>}
-                           </div>
-                        )}
-                     </div>
+         {/* Row 2: Client Data */}
+         <div className="flex items-start gap-2">
+            <div className="flex-1 grid grid-cols-12 gap-1 bg-slate-100 p-1.5 rounded border border-slate-200">
+               <div className="col-span-2 relative">
+                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Cod Cliente / Buscar</label>
+                  <div className="relative">
+                     <Search className="absolute left-1 top-1 w-3 h-3 text-slate-400" />
+                     <input
+                        className="w-full pl-5 pr-1 py-0.5 border border-slate-300 rounded text-slate-900 font-bold focus:bg-yellow-50 disabled:bg-slate-200"
+                        placeholder="Buscar..."
+                        value={clientSearch}
+                        onChange={e => { setClientSearch(e.target.value); setShowClientSuggestions(true); }}
+                        onFocus={() => setShowClientSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
+                        disabled={isViewMode}
+                     />
+                     {showClientSuggestions && clientSearch && (
+                        <div className="absolute top-full left-0 w-[300px] bg-white border border-slate-400 shadow-xl z-50 max-h-48 overflow-auto">
+                           {filteredClients.map(c => (
+                              <div key={c.id} onMouseDown={() => selectClient(c)} className="p-2 hover:bg-blue-100 cursor-pointer border-b border-slate-100">
+                                 <div className="font-bold text-slate-800">{c.name}</div>
+                                 <div className="text-[10px] text-slate-500">{c.doc_number} | {c.address}</div>
+                              </div>
+                           ))}
+                           {filteredClients.length === 0 && <div className="p-2 text-slate-400 italic">No encontrado</div>}
+                        </div>
+                     )}
                   </div>
-                  <div className="col-span-5">
-                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Razón Social</label>
-                     <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200" value={clientData.name} onChange={e => setClientData({ ...clientData, name: e.target.value })} disabled={isViewMode} />
-                  </div>
-                  <div className="col-span-2">
-                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">RUC/DNI</label>
-                     <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-slate-50 text-slate-800 font-mono disabled:bg-slate-200" value={clientData.doc_number} onChange={e => setClientData({ ...clientData, doc_number: e.target.value })} disabled={isViewMode} />
-                  </div>
-                  <div className="col-span-3">
-                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Lista Precio</label>
-                     <div className="flex gap-1">
-                        <select
-                           className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200"
-                           value={clientData.price_list_id}
-                           onChange={e => setClientData({ ...clientData, price_list_id: e.target.value })}
-                           disabled={isViewMode}
-                        >
-                           <option value="">-- General --</option>
-                           {priceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
-                        </select>
-                        <button
-                           onClick={handleUpdatePrices}
-                           disabled={isViewMode}
-                           className="bg-blue-100 border border-blue-300 text-blue-700 px-1.5 rounded hover:bg-blue-200 disabled:opacity-50"
-                           title="Actualizar Precios en Carrito"
-                        >
-                           <RefreshCw className="w-3.5 h-3.5" />
-                        </button>
-                     </div>
-                  </div>
-                  <div className="col-span-9">
-                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Dirección</label>
-                     <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-slate-50 text-slate-600 disabled:bg-slate-200" value={clientData.address} onChange={e => setClientData({ ...clientData, address: e.target.value })} disabled={isViewMode} />
-                  </div>
-                  <div className="col-span-3">
-                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Forma Pago</label>
-                     <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)} disabled={isViewMode}>
-                        <option value="CONTADO">CONTADO</option>
-                        <option value="CREDITO">CREDITO</option>
+               </div>
+               <div className="col-span-5">
+                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Razón Social</label>
+                  <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200" value={clientData.name} onChange={e => setClientData({ ...clientData, name: e.target.value })} disabled={isViewMode} />
+               </div>
+               <div className="col-span-2">
+                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">RUC/DNI</label>
+                  <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-slate-50 text-slate-800 font-mono disabled:bg-slate-200" value={clientData.doc_number} onChange={e => setClientData({ ...clientData, doc_number: e.target.value })} disabled={isViewMode} />
+               </div>
+               <div className="col-span-3">
+                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Lista Precio</label>
+                  <div className="flex gap-1">
+                     <select
+                        className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200"
+                        value={clientData.price_list_id}
+                        onChange={e => setClientData({ ...clientData, price_list_id: e.target.value })}
+                        disabled={isViewMode}
+                     >
+                        <option value="">-- General --</option>
+                        {priceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
                      </select>
+                     <button
+                        onClick={handleUpdatePrices}
+                        disabled={isViewMode}
+                        className="bg-blue-100 border border-blue-300 text-blue-700 px-1.5 rounded hover:bg-blue-200 disabled:opacity-50"
+                        title="Actualizar Precios en Carrito"
+                     >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                     </button>
                   </div>
+               </div>
+               <div className="col-span-9">
+                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Dirección</label>
+                  <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-slate-50 text-slate-600 disabled:bg-slate-200" value={clientData.address} onChange={e => setClientData({ ...clientData, address: e.target.value })} disabled={isViewMode} />
+               </div>
+               <div className="col-span-3">
+                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Forma Pago</label>
+                  <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)} disabled={isViewMode}>
+                     <option value="CONTADO">CONTADO</option>
+                     <option value="CREDITO">CREDITO</option>
+                  </select>
                </div>
             </div>
          </div>
-
          {/* === GRID SECTION === */}
          <div className="flex-1 bg-white border border-slate-400 flex flex-col shadow-sm">
             {/* Entry Row (Simulating Grid Input) */}
-            {!isViewMode && (
+            {(!isViewMode || isEditMode) && (
                <div className="bg-blue-50 border-b border-blue-200 p-1 flex items-end gap-1">
                   <div className="flex-1 relative">
                      <label className="block text-[10px] font-bold text-blue-800 mb-0.5 ml-1">Producto (Buscar por Nombre o Código)</label>
@@ -595,7 +698,7 @@ export const NewSale: React.FC = () => {
                         className="w-full border border-blue-300 rounded py-1 px-1 text-center font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
                         value={quantity}
                         onChange={e => setQuantity(Number(e.target.value))}
-                        onKeyDown={e => handleInputKeyDown(e, priceInputRef)}
+                        onKeyDown={e => handleInputKeyDown(e, unitSelectRef)}
                         disabled={!selectedProduct}
                      />
                   </div>
@@ -604,9 +707,11 @@ export const NewSale: React.FC = () => {
                      <label className="block text-[10px] font-bold text-blue-800 mb-0.5">Unidad</label>
                      <div className="relative">
                         <select
+                           ref={unitSelectRef}
                            className="w-full border border-blue-300 rounded py-1 px-1 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none"
                            value={unitType}
                            onChange={e => handleUnitChange(e.target.value as any)}
+                           onKeyDown={e => handleInputKeyDown(e, addButtonRef as any)}
                            disabled={!selectedProduct}
                         >
                            <option value="UND">UND</option>
@@ -616,16 +721,30 @@ export const NewSale: React.FC = () => {
                      </div>
                   </div>
 
-                  <div className="w-20">
-                     <label className="block text-[10px] font-bold text-blue-800 mb-0.5 text-right">Precio</label>
+                  <div className="w-20 relative">
+                     <div className="flex justify-between items-center mb-0.5">
+                        <label className="block text-[10px] font-bold text-blue-800">Precio</label>
+                        {selectedProduct && (
+                           <button
+                              onClick={() => {
+                                 if (priceLocked) requestAdminAuth(() => setPriceLocked(false), 'Desbloquear Precio/Descuento');
+                                 else setPriceLocked(true);
+                              }}
+                              className={`text-[8px] px-1 rounded font-bold ${priceLocked ? 'bg-slate-200 text-slate-500 hover:bg-slate-300' : 'bg-red-500 text-white animate-pulse'}`}
+                              title={priceLocked ? 'Desbloquear Precio (Admin)' : 'Bloquear Precio'}
+                           >
+                              {priceLocked ? 'BLOQ' : 'LIBRE'}
+                           </button>
+                        )}
+                     </div>
                      <input
                         ref={priceInputRef}
                         type="number"
-                        className="w-full border border-blue-300 rounded py-1 px-1 text-right text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                        className="w-full border border-blue-300 rounded py-1 px-1 text-right text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-200"
                         value={unitPrice}
                         onChange={e => setUnitPrice(Number(e.target.value))}
                         onKeyDown={e => handleInputKeyDown(e, discountInputRef)}
-                        disabled={!selectedProduct || isBonus}
+                        disabled={!selectedProduct || isBonus || priceLocked}
                      />
                   </div>
 
@@ -634,17 +753,20 @@ export const NewSale: React.FC = () => {
                      <input
                         ref={discountInputRef}
                         type="number"
-                        className="w-full border border-blue-300 rounded py-1 px-1 text-right text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                        className="w-full border border-blue-300 rounded py-1 px-1 text-right text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-200"
                         value={discountPercent}
                         onChange={e => setDiscountPercent(Number(e.target.value))}
                         onKeyDown={e => handleInputKeyDown(e, 'ADD')}
-                        disabled={!selectedProduct || isBonus}
+                        disabled={!selectedProduct || isBonus || priceLocked}
                      />
                   </div>
 
                   <div className="w-16 flex items-center justify-center pb-1">
                      <label className="flex items-center text-[10px] font-bold text-blue-800 cursor-pointer">
-                        <input type="checkbox" className="mr-1" checked={isBonus} onChange={e => setIsBonus(e.target.checked)} />
+                        <input type="checkbox" className="mr-1" checked={isBonus} onChange={e => {
+                           if (e.target.checked) requestAdminAuth(() => setIsBonus(true), 'Autorizar Bonificación');
+                           else setIsBonus(false);
+                        }} onKeyDown={e => handleInputKeyDown(e, 'ADD')} />
                         Bonif.
                      </label>
                   </div>
@@ -655,9 +777,10 @@ export const NewSale: React.FC = () => {
                   </div>
 
                   <button
+                     ref={addButtonRef}
                      onClick={handleAddToCart}
                      disabled={!selectedProduct}
-                     className="bg-accent hover:bg-blue-700 text-white p-1.5 rounded shadow-sm disabled:opacity-50"
+                     className="bg-accent hover:bg-blue-700 text-white p-1.5 rounded shadow-sm disabled:opacity-50 focus:ring-2 focus:ring-blue-500 outline-none"
                   >
                      <Plus className="w-5 h-5" />
                   </button>
@@ -744,69 +867,169 @@ export const NewSale: React.FC = () => {
          </div>
 
          {/* === SEARCH MODAL === */}
-         {isSearchModalOpen && (
+         {
+            isSearchModalOpen && (
+               <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+                  <div className="bg-white w-full max-w-5xl rounded-lg shadow-2xl flex flex-col max-h-[85vh]">
+                     <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100 rounded-t-lg">
+                        <h3 className="font-bold text-slate-700 flex items-center text-lg"><Search className="w-5 h-5 mr-2" /> Buscar Documento</h3>
+                        <button onClick={() => setIsSearchModalOpen(false)} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
+                     </div>
+                     <div className="p-4 bg-slate-50 border-b border-slate-200">
+                        <input
+                           autoFocus
+                           className="w-full border border-slate-300 rounded p-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                           placeholder="Buscar por Nro Documento, RUC o Nombre Cliente..."
+                           value={saleSearchTerm}
+                           onChange={e => setSaleSearchTerm(e.target.value)}
+                        />
+                     </div>
+                     {/* Table Wrapper to handle sticky header corner cases */}
+                     <div className="flex-1 overflow-auto bg-white rounded-b-lg relative">
+                        <table className="w-full text-left text-sm border-collapse">
+                           <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-200 z-10 shadow-sm">
+                              <tr>
+                                 <th className="p-4">Documento</th>
+                                 <th className="p-4">Fecha</th>
+                                 <th className="p-4">Cliente</th>
+                                 <th className="p-4 text-right">Total</th>
+                                 <th className="p-4 text-center">Estado</th>
+                                 <th className="p-4"></th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-slate-100">
+                              {filteredSales.map(s => (
+                                 <tr key={s.id} className="hover:bg-blue-50 transition-colors">
+                                    <td className="p-4">
+                                       <span className="font-bold text-blue-700 text-[15px]">{s.series}-{s.number}</span>
+                                    </td>
+                                    <td className="p-4">
+                                       <span className="text-slate-600 font-medium text-[15px]">{new Date(s.created_at).toLocaleDateString()}</span>
+                                    </td>
+                                    <td className="p-4">
+                                       <div className="font-bold text-slate-800 text-[15px]">{s.client_name}</div>
+                                       <div className="text-[13px] text-slate-500">{s.client_ruc}</div>
+                                    </td>
+                                    <td className="p-4 text-right">
+                                       <span className="font-black text-slate-900 text-[16px]">S/ {s.total.toFixed(2)}</span>
+                                    </td>
+                                    <td className="p-4 text-center">
+                                       <span className={`px-3 py-1 rounded text-xs font-bold ring-1 ${s.sunat_status === 'ACCEPTED' ? 'bg-green-100 ring-green-300 text-green-800' : s.sunat_status === 'SENT' ? 'bg-blue-100 ring-blue-300 text-blue-800' : 'bg-slate-100 ring-slate-300 text-slate-800'}`}>{s.sunat_status || 'PENDING'}</span>
+                                    </td>
+                                    <td className="p-4 text-right flex gap-2 justify-end">
+                                       <button
+                                          onClick={() => setShowHistoryModal({ isOpen: true, sale: s })}
+                                          className="bg-white border border-slate-300 px-3 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
+                                          title="Ver Historial"
+                                       >
+                                          H.
+                                       </button>
+                                       <button
+                                          onClick={() => loadSale(s, 'VIEW')}
+                                          className="bg-white border border-slate-300 px-4 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
+                                       >
+                                          <Eye className="w-4 h-4 mr-1.5 text-slate-500" /> Ver
+                                       </button>
+                                       <button
+                                          onClick={() => requestAdminAuth(() => loadSale(s, 'EDIT'), 'Modificar Documento')}
+                                          disabled={s.sunat_status === 'SENT' || s.sunat_status === 'ACCEPTED'}
+                                          className="bg-yellow-500 border border-yellow-600 px-4 py-1.5 rounded text-[13px] font-bold text-white hover:bg-yellow-600 shadow-sm flex items-center transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                          title={s.sunat_status === 'SENT' || s.sunat_status === 'ACCEPTED' ? 'No se puede modificar doc enviado a SUNAT' : 'Modificar Doc'}
+                                       >
+                                          Modificar
+                                       </button>
+                                    </td>
+                                 </tr>
+                              ))}
+                              {filteredSales.length === 0 && (
+                                 <tr><td colSpan={6} className="p-8 text-center text-slate-400 text-base">No se encontraron documentos que coincidan con su búsqueda.</td></tr>
+                              )}
+                           </tbody>
+                        </table>
+                     </div>
+                  </div>
+               </div>
+            )}
+
+         {/* === HISTORY MODAL === */}
+         {showHistoryModal.isOpen && showHistoryModal.sale && (
             <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-               <div className="bg-white w-full max-w-5xl rounded-lg shadow-2xl flex flex-col max-h-[85vh]">
-                  <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100 rounded-t-lg">
-                     <h3 className="font-bold text-slate-700 flex items-center text-lg"><Search className="w-5 h-5 mr-2" /> Buscar Documento</h3>
-                     <button onClick={() => setIsSearchModalOpen(false)} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
+               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
+                  <div className="flex justify-between items-center bg-slate-100 rounded-t-lg mb-4">
+                     <h3 className="font-bold text-slate-800 text-lg flex items-center"><Eye className="w-5 h-5 mr-2 text-slate-500" /> Historial de Documento: {showHistoryModal.sale.series}-{showHistoryModal.sale.number}</h3>
+                     <button onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
                   </div>
-                  <div className="p-4 bg-slate-50 border-b border-slate-200">
-                     <input
-                        autoFocus
-                        className="w-full border border-slate-300 rounded p-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                        placeholder="Buscar por Nro Documento, RUC o Nombre Cliente..."
-                        value={saleSearchTerm}
-                        onChange={e => setSaleSearchTerm(e.target.value)}
-                     />
-                  </div>
-                  {/* Table Wrapper to handle sticky header corner cases */}
-                  <div className="flex-1 overflow-auto bg-white rounded-b-lg relative">
+
+                  <div className="flex-1 overflow-auto border border-slate-200 rounded">
                      <table className="w-full text-left text-sm border-collapse">
-                        <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-200 z-10 shadow-sm">
+                        <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0">
                            <tr>
-                              <th className="p-4">Documento</th>
-                              <th className="p-4">Fecha</th>
-                              <th className="p-4">Cliente</th>
-                              <th className="p-4 text-right">Total</th>
-                              <th className="p-4 text-center">Estado</th>
-                              <th className="p-4"></th>
+                              <th className="p-3 border-b border-slate-200">Fecha</th>
+                              <th className="p-3 border-b border-slate-200">Acción</th>
+                              <th className="p-3 border-b border-slate-200">Usuario</th>
+                              <th className="p-3 border-b border-slate-200">Detalles</th>
                            </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
-                           {filteredSales.map(s => (
-                              <tr key={s.id} className="hover:bg-blue-50 transition-colors">
-                                 <td className="p-4">
-                                    <span className="font-bold text-blue-700 text-[15px]">{s.series}-{s.number}</span>
-                                 </td>
-                                 <td className="p-4">
-                                    <span className="text-slate-600 font-medium text-[15px]">{new Date(s.created_at).toLocaleDateString()}</span>
-                                 </td>
-                                 <td className="p-4">
-                                    <div className="font-bold text-slate-800 text-[15px]">{s.client_name}</div>
-                                    <div className="text-[13px] text-slate-500">{s.client_ruc}</div>
-                                 </td>
-                                 <td className="p-4 text-right">
-                                    <span className="font-black text-slate-900 text-[16px]">S/ {s.total.toFixed(2)}</span>
-                                 </td>
-                                 <td className="p-4 text-center">
-                                    <span className="bg-green-100 text-green-800 px-3 py-1 rounded text-xs font-bold ring-1 ring-green-300">COMPLETADO</span>
-                                 </td>
-                                 <td className="p-4 text-right">
-                                    <button
-                                       onClick={() => loadSale(s)}
-                                       className="bg-white border border-slate-300 px-4 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center ml-auto transition-all hover:border-slate-400"
-                                    >
-                                       <Eye className="w-4 h-4 mr-1.5 text-slate-500" /> Ver
-                                    </button>
-                                 </td>
+                        <tbody>
+                           {/* Base creation event */}
+                           <tr className="hover:bg-slate-50">
+                              <td className="p-3 border-b border-slate-100">{new Date(showHistoryModal.sale.created_at).toLocaleString()}</td>
+                              <td className="p-3 border-b border-slate-100 font-bold text-green-700">CREADO</td>
+                              <td className="p-3 border-b border-slate-100 italic">Sistema</td>
+                              <td className="p-3 border-b border-slate-100 text-slate-500">Documento Inicial</td>
+                           </tr>
+                           {/* Render actual history events */}
+                           {showHistoryModal.sale.history && showHistoryModal.sale.history.map((evt, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50">
+                                 <td className="p-3 border-b border-slate-100">{new Date(evt.date).toLocaleString()}</td>
+                                 <td className="p-3 border-b border-slate-100 font-bold text-blue-700">{evt.action}</td>
+                                 <td className="p-3 border-b border-slate-100 font-medium">{evt.user_id}</td>
+                                 <td className="p-3 border-b border-slate-100 text-slate-600">{evt.details || '-'}</td>
                               </tr>
                            ))}
-                           {filteredSales.length === 0 && (
-                              <tr><td colSpan={6} className="p-8 text-center text-slate-400 text-base">No se encontraron documentos que coincidan con su búsqueda.</td></tr>
-                           )}
                         </tbody>
                      </table>
+                  </div>
+
+                  <div className="mt-4 flex justify-end">
+                     <button onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded">
+                        Cerrar
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* === ADMIN PASSWORD MODAL === */}
+         {showAdminAuthModal.isOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
+                  <h3 className="font-bold text-slate-800 text-lg mb-2">Se requiere autorización</h3>
+                  <p className="text-sm text-slate-600 mb-4">Ingrese la contraseña de administrador para: <strong>{showAdminAuthModal.targetActionName}</strong></p>
+
+                  <input
+                     id="admin-password-input"
+                     type="password"
+                     className="w-full border border-slate-300 rounded p-2 mb-4 text-center text-lg tracking-widest focus:ring-2 focus:ring-blue-500 outline-none"
+                     placeholder="Contraseña..."
+                     value={adminPasswordInput}
+                     onChange={e => setAdminPasswordInput(e.target.value)}
+                     onKeyDown={e => { if (e.key === 'Enter') verifyAdminAndExecute(); else if (e.key === 'Escape') setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' }); }}
+                  />
+
+                  <div className="flex gap-2 justify-end">
+                     <button
+                        onClick={() => setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' })}
+                        className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 font-bold text-sm"
+                     >
+                        Cancelar (ESC)
+                     </button>
+                     <button
+                        onClick={verifyAdminAndExecute}
+                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold text-sm"
+                     >
+                        Autorizar (ENTER)
+                     </button>
                   </div>
                </div>
             </div>

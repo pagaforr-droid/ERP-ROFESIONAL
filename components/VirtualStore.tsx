@@ -172,7 +172,7 @@ export const VirtualStore: React.FC = () => {
    };
 
    // --- SUB-COMPONENTS ---
-   const ProductCard = ({ item }: { item: Product & { itemType: 'PRODUCT' } }) => {
+   const ProductCard: React.FC<{ item: Product & { itemType: 'PRODUCT' } }> = ({ item }) => {
       const [unit, setUnit] = useState<'UND' | 'PKG'>('UND');
       const [qty, setQty] = useState(1);
 
@@ -240,7 +240,7 @@ export const VirtualStore: React.FC = () => {
       );
    };
 
-   const ComboCard = ({ item }: { item: Combo & { itemType: 'COMBO' } }) => {
+   const ComboCard: React.FC<{ item: Combo & { itemType: 'COMBO' } }> = ({ item }) => {
       return (
          <div className="bg-white rounded-xl shadow-sm border border-purple-100 overflow-hidden hover:shadow-md transition-all flex flex-col group h-full relative">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-pink-500"></div>

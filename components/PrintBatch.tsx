@@ -102,6 +102,7 @@ export const PrintBatch: React.FC = () => {
                      <option value="ALL">TODOS</option>
                      <option value="FACTURA">FACTURA</option>
                      <option value="BOLETA">BOLETA</option>
+                     <option value="NOTA_CREDITO">NOTA DE CRÉDITO</option>
                   </select>
                </div>
                <div className="w-40">
@@ -173,8 +174,8 @@ export const PrintBatch: React.FC = () => {
                               />
                            </td>
                            <td className="p-3">
-                              <span className={`font-bold font-mono px-2 py-0.5 rounded text-xs ${s.document_type === 'FACTURA' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>
-                                 {s.document_type.substring(0, 1)}
+                              <span className={`font-bold font-mono px-2 py-0.5 rounded text-xs ${s.document_type === 'FACTURA' ? 'bg-purple-100 text-purple-800' : s.document_type === 'NOTA_CREDITO' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}`}>
+                                 {s.document_type === 'NOTA_CREDITO' ? 'NC' : s.document_type.substring(0, 1)}
                               </span>
                               <span className="font-bold text-slate-700 ml-2">{s.series}-{s.number}</span>
                            </td>

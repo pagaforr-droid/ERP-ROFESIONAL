@@ -161,7 +161,7 @@ const InvoiceHalf: React.FC<{ company: CompanyConfig; sale: Sale; label?: string
             <div className="w-[40%] border border-black rounded-lg p-0.5 text-center">
                <h2 className="font-bold text-[9px] mb-[1px] text-black">R.U.C. {company.ruc}</h2>
                <div className="bg-slate-100 py-[1px] font-bold text-[9px] mb-[1px] uppercase border-y border-black text-black">
-                  {sale.document_type === 'FACTURA' ? 'FACTURA ELECTRONICA' : 'BOLETA DE VENTA ELECTRONICA'}
+                  {sale.document_type === 'FACTURA' ? 'FACTURA ELECTRONICA' : sale.document_type === 'NOTA_CREDITO' ? 'NOTA DE CREDITO ELECTRONICA' : 'BOLETA DE VENTA ELECTRONICA'}
                </div>
                <h3 className="font-bold text-[10px] text-black">{sale.series}-{sale.number}</h3>
             </div>

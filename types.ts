@@ -314,6 +314,13 @@ export interface OrderItem {
   }[];
 }
 
+export interface SaleHistoryEvent {
+  date: string;
+  action: string;
+  user_id: string; // or user name for display
+  details?: string;
+}
+
 export interface Sale {
   id: string;
   document_type: 'FACTURA' | 'BOLETA' | 'NOTA DE CREDITO' | string; // Expanded for NC
@@ -322,6 +329,8 @@ export interface Sale {
   payment_method: 'CONTADO' | 'CREDITO';
   payment_status?: 'PAID' | 'PENDING';
   collection_status?: 'NONE' | 'PARTIAL' | 'REPORTED' | 'COLLECTED'; // Expanded
+
+  history?: SaleHistoryEvent[]; // NEW: Audit history
 
   client_id?: string;
   client_name: string;
@@ -551,4 +560,5 @@ export type ViewState =
   | 'promo-manager'
   | 'price-manager'
   | 'virtual-store'
-  | 'sunat-manager';
+  | 'sunat-manager'
+  | 'credit-notes';

@@ -112,7 +112,7 @@ const MOCK_SALES: Sale[] = [
 const MOCK_USERS: User[] = [
    {
       id: 'u1', username: 'admin', password: '123456', name: 'Admin General', role: 'ADMIN', requires_attendance: false, is_active: true,
-      permissions: ['dashboard', 'reports', 'kardex', 'sales', 'document-manager', 'print-batch', 'mobile-orders', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager']
+      permissions: ['dashboard', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager']
    },
    {
       id: 'u2', username: 'vendedor1', password: '123', name: 'Tomas Linares', role: 'SELLER', requires_attendance: true, is_active: true,
@@ -204,6 +204,7 @@ interface AppState {
 
    // Sales & Orders
    createSale: (sale: Sale) => void;
+   createCreditNote: (creditNote: Sale, originalSaleId: string, returnedItems: SaleItem[]) => void;
    createOrder: (order: Order) => void;
    updateOrder: (order: Order) => void;
    processOrderToSale: (orderId: string, series: string, number: string) => { success: boolean, msg: string };
@@ -218,6 +219,11 @@ interface AppState {
    updateSunatStatus: (type: 'sale' | 'dispatch', id: string, status: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED', message?: string) => void;
    processDispatchLiquidation: (liquidation: DispatchLiquidation) => void;
    markDocumentsAsPrinted: (saleIds: string[]) => void;
+
+   // Auditory and Modifications
+   addSaleHistoryEvent: (saleId: string, event: import('../types').SaleHistoryEvent) => void;
+   returnItemsToKardex: (items: SaleItem[]) => void;
+   updateSaleDetailed: (updatedSale: Sale, originalSale: Sale, userId: string) => { success: boolean, msg: string };
 
    // Master Data Actions
    addClient: (Client) => void;
@@ -392,8 +398,50 @@ export const useStore = create<AppState>((set, get) => ({
          balance: sale.payment_method === 'CONTADO' ? 0 : sale.total,
          sunat_status: 'PENDING'
       } as Sale;
-
       return { sales: [finalSale, ...state.sales], batches: newBatches };
+   }),
+
+   createCreditNote: (creditNote, originalSaleId, returnedItems) => set((state) => {
+      // 1. Revert Items to Kardex (Add stock back)
+      const newBatches = [...state.batches];
+      returnedItems.forEach(item => {
+         item.batch_allocations?.forEach(alloc => {
+            const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
+            if (batchIndex >= 0) {
+               newBatches[batchIndex] = {
+                  ...newBatches[batchIndex],
+                  quantity_current: newBatches[batchIndex].quantity_current + alloc.quantity
+               };
+            }
+         });
+      });
+
+      // 2. Add Credit Note to Sales
+      const finalizedCN = {
+         ...creditNote,
+         payment_status: 'PAID', // credit notes are technically 'paid' outwards
+         collection_status: 'NONE',
+         balance: 0,
+         sunat_status: 'PENDING'
+      } as Sale;
+
+      let allSales = [finalizedCN, ...state.sales];
+
+      // 3. Apply to original Sale balance if needed
+      allSales = allSales.map(s => {
+         if (s.id === originalSaleId) {
+            const currentBalance = s.balance !== undefined ? s.balance : s.total;
+            const newBalance = Math.max(0, currentBalance - finalizedCN.total);
+            return {
+               ...s,
+               balance: newBalance,
+               payment_status: newBalance <= 0 && s.payment_status !== 'PAID' ? 'PAID' : s.payment_status
+            };
+         }
+         return s;
+      });
+
+      return { batches: newBatches, sales: allSales };
    }),
 
    // Updated createOrder with FIFO Allocation
@@ -523,7 +571,7 @@ export const useStore = create<AppState>((set, get) => ({
          if (seriesObj) seriesObj.current_number = nextNum;
 
          // Try to enrich client address if missing from order snapshot
-         let address = order.client_address || '';
+         let address = (order as any).client_address || '';
          if (!address) {
             const client = s.clients.find(c => c.id === order.client_id || c.doc_number === order.client_doc_number);
             address = client?.address || '';
@@ -795,6 +843,90 @@ export const useStore = create<AppState>((set, get) => ({
          }
       };
    }),
+
+   addSaleHistoryEvent: (saleId, event) => set((s) => {
+      const sale = s.sales.find(x => x.id === saleId);
+      if (!sale) return s;
+      const history = sale.history || [];
+      return {
+         sales: s.sales.map(item => item.id === saleId ? { ...item, history: [...history, event] } : item)
+      };
+   }),
+
+   returnItemsToKardex: (items) => set((s) => {
+      let currentBatches = [...s.batches];
+      items.forEach(item => {
+         item.batch_allocations?.forEach(alloc => {
+            const batchIndex = currentBatches.findIndex(b => b.id === alloc.batch_id);
+            if (batchIndex >= 0) {
+               currentBatches[batchIndex] = {
+                  ...currentBatches[batchIndex],
+                  quantity_current: currentBatches[batchIndex].quantity_current + alloc.quantity
+               };
+            }
+         });
+      });
+      return { batches: currentBatches };
+   }),
+
+   updateSaleDetailed: (updatedSale, originalSale, userId) => {
+      let success = true;
+      let msg = "Venta actualizada correctamente.";
+
+      set((s) => {
+         if (originalSale.sunat_status === 'SENT' || originalSale.sunat_status === 'ACCEPTED') {
+            success = false;
+            msg = "No se puede modificar un documento ya emitido a SUNAT.";
+            return s;
+         }
+
+         // 1. Revert original items
+         let nextBatches = [...s.batches];
+         originalSale.items.forEach(item => {
+            item.batch_allocations?.forEach(alloc => {
+               const bIndex = nextBatches.findIndex(b => b.id === alloc.batch_id);
+               if (bIndex >= 0) {
+                  nextBatches[bIndex] = {
+                     ...nextBatches[bIndex],
+                     quantity_current: nextBatches[bIndex].quantity_current + alloc.quantity
+                  };
+               }
+            });
+         });
+
+         // 2. Apply new items (they already have batch allocations from NewSale before saving)
+         updatedSale.items.forEach(item => {
+            item.batch_allocations?.forEach(alloc => {
+               const bIndex = nextBatches.findIndex(b => b.id === alloc.batch_id);
+               if (bIndex >= 0) {
+                  // We could check if it goes negative, but we trust NewSale checks it first
+                  nextBatches[bIndex] = {
+                     ...nextBatches[bIndex],
+                     quantity_current: nextBatches[bIndex].quantity_current - alloc.quantity
+                  };
+               }
+            });
+         });
+
+         // 3. Add to history
+         const event: import('../types').SaleHistoryEvent = {
+            date: new Date().toISOString(),
+            action: 'MODIFIED',
+            user_id: userId,
+            details: `Subtotal original: ${originalSale.subtotal.toFixed(2)} -> Nuevo: ${updatedSale.subtotal.toFixed(2)}`
+         };
+
+         const newHistory = [...(updatedSale.history || []), event];
+         const finalSale = { ...updatedSale, history: newHistory };
+
+         return {
+            batches: nextBatches,
+            sales: s.sales.map(sale => sale.id === updatedSale.id ? finalSale : sale)
+         };
+      });
+
+      return { success, msg };
+   },
 
    getBatchesForProduct: (productId) => {
       return get().batches
