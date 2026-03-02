@@ -198,10 +198,11 @@ export interface CollectionPlanilla {
   date: string; // ISO DateTime
   total_amount: number;
   record_count: number;
-  status: 'ACTIVE' | 'ANNULLED';
+  status: 'ACTIVE' | 'ANNULLED' | 'EDITING';
   user_id?: string; // User who consolidated it
   cash_movement_id?: string; // Link to generated cash movement
   records: string[]; // List of IDs of the `CollectionRecord` included
+  glosa?: string;
 }
 
 // === CLIENTS ===

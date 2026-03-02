@@ -221,9 +221,10 @@ interface AppState {
    updateOrder: (order: Order) => void;
    batchProcessOrders: (orderIds: string[]) => void;
    reportCollection: (saleId: string, sellerId: string, amount: number) => void;
-   consolidateCollections: (recordIds: string[], userId?: string) => void;
-   manualLiquidation: (payments: { saleId: string, amount: number }[], userId?: string) => void;
+   consolidateCollections: (recordIds: string[], userId?: string, metadata?: { editPlanillaId?: string, editPlanillaCode?: string }) => void;
+   manualLiquidation: (payments: { saleId: string, amount: number }[], userId?: string, metadata?: { date: string, glosa: string, editPlanillaId?: string, editPlanillaCode?: string }) => void;
    annulCollectionPlanilla: (planillaId: string, userId?: string) => void;
+   revertPlanillaForEdit: (planillaId: string) => void;
    removeRecordFromPlanilla: (planillaId: string, recordId: string) => void;
 
    createPurchase: (purchase: Purchase) => void;
@@ -701,7 +702,7 @@ export const useStore = create<AppState>((set, get) => ({
       };
    }),
 
-   consolidateCollections: (recordIds, userId) => set(s => {
+   consolidateCollections: (recordIds, userId, metadata) => set(s => {
       const selectedRecords = s.collectionRecords.filter(r => recordIds.includes(r.id) && r.status === 'PENDING_VALIDATION');
       if (selectedRecords.length === 0) return s;
 
@@ -710,9 +711,19 @@ export const useStore = create<AppState>((set, get) => ({
       const sellerNamesSet = new Set<string>();
       let totalTotal = 0;
 
-      // Autogenerate Planilla Code
-      const planillaCode = `PLAN-${String(s.collectionPlanillas.length + 1).padStart(4, '0')}`;
-      const planillaId = generateUUID();
+      // Autogenerate Planilla Code or reuse existing
+      const maxPlanillaNum = s.collectionPlanillas.reduce((max, p) => {
+         const num = parseInt(p.code.replace('PLAN-', ''), 10);
+         return isNaN(num) ? max : Math.max(max, num);
+      }, 0);
+
+      let planillaId = generateUUID();
+      let planillaCode = `PLAN-${String(maxPlanillaNum + 1).padStart(4, '0')}`;
+
+      if (metadata?.editPlanillaId && metadata?.editPlanillaCode) {
+         planillaId = metadata.editPlanillaId;
+         planillaCode = metadata.editPlanillaCode;
+      }
 
       selectedRecords.forEach(rec => {
          const recIndex = updatedRecords.findIndex(r => r.id === rec.id);
@@ -763,6 +774,15 @@ export const useStore = create<AppState>((set, get) => ({
          records: selectedRecords.map(r => r.id)
       };
 
+      if (metadata?.editPlanillaId) {
+         const pIndex = s.collectionPlanillas.findIndex(x => x.id === metadata.editPlanillaId);
+         if (pIndex > -1) {
+            const updated = [...s.collectionPlanillas];
+            updated[pIndex] = newPlanilla;
+            return { collectionRecords: updatedRecords, sales: updatedSales, cashMovements: [newMovement, ...s.cashMovements], collectionPlanillas: updated };
+         }
+      }
+
       return {
          collectionRecords: updatedRecords,
          sales: updatedSales,
@@ -771,16 +791,28 @@ export const useStore = create<AppState>((set, get) => ({
       };
    }),
 
-   manualLiquidation: (payments, userId) => set(s => {
+   manualLiquidation: (payments, userId, metadata) => set(s => {
       if (payments.length === 0) return s;
 
       const updatedSales = [...s.sales];
       const newRecords: CollectionRecord[] = [];
       let totalCollected = 0;
 
-      const planillaCode = `PLAN-${String(s.collectionPlanillas.length + 1).padStart(4, '0')}`;
-      const planillaId = generateUUID();
-      const dateNow = new Date().toISOString();
+      const maxPlanillaNum = s.collectionPlanillas.reduce((max, p) => {
+         const num = parseInt(p.code.replace('PLAN-', ''), 10);
+         return isNaN(num) ? max : Math.max(max, num);
+      }, 0);
+
+      let planillaId = generateUUID();
+      let planillaCode = `PLAN-${String(maxPlanillaNum + 1).padStart(4, '0')}`;
+
+      if (metadata?.editPlanillaId && metadata?.editPlanillaCode) {
+         planillaId = metadata.editPlanillaId;
+         planillaCode = metadata.editPlanillaCode;
+      }
+
+      const dateNow = metadata?.date || new Date().toISOString();
+      const planillaGlosa = metadata?.glosa || `Cobranza Directa en Oficina`;
 
       payments.forEach(payment => {
          const saleIndex = updatedSales.findIndex(sale => sale.id === payment.saleId);
@@ -820,7 +852,7 @@ export const useStore = create<AppState>((set, get) => ({
          id: cashMovementId,
          type: 'INCOME',
          category_name: 'COBRANZA MANUAL',
-         description: `Liquidación Manual ${planillaCode} - Cobranza Directa en Oficina`,
+         description: `Liquidación Manual ${planillaCode} - ${planillaGlosa}`,
          amount: totalCollected,
          date: dateNow,
          user_id: userId || 'ADMIN',
@@ -836,8 +868,18 @@ export const useStore = create<AppState>((set, get) => ({
          status: 'ACTIVE',
          user_id: userId,
          cash_movement_id: cashMovementId,
-         records: newRecords.map(r => r.id)
+         records: newRecords.map(r => r.id),
+         glosa: metadata?.glosa
       };
+
+      if (metadata?.editPlanillaId) {
+         const pIndex = s.collectionPlanillas.findIndex(x => x.id === metadata.editPlanillaId);
+         if (pIndex > -1) {
+            const updated = [...s.collectionPlanillas];
+            updated[pIndex] = newPlanilla;
+            return { sales: updatedSales, collectionRecords: [...s.collectionRecords, ...newRecords], cashMovements: [newMovement, ...s.cashMovements], collectionPlanillas: updated };
+         }
+      }
 
       return {
          sales: updatedSales,
@@ -865,7 +907,11 @@ export const useStore = create<AppState>((set, get) => ({
          const recIndex = updatedRecords.findIndex(r => r.id === recordId);
          if (recIndex > -1) {
             const rec = updatedRecords[recIndex];
-            updatedRecords[recIndex] = { ...rec, status: 'PENDING_VALIDATION', planilla_id: undefined };
+            if (rec.seller_id === 'MANUAL') {
+               // Soft delete by omitting it from updatedRecords happens later via filter
+            } else {
+               updatedRecords[recIndex] = { ...rec, status: 'PENDING_VALIDATION', planilla_id: undefined };
+            }
 
             // Revert Sale balance
             const saleIndex = updatedSales.findIndex(sale => sale.id === rec.sale_id);
@@ -886,9 +932,65 @@ export const useStore = create<AppState>((set, get) => ({
          }
       });
 
-      // Handle CashMovement (remove it or create reversing entry)
-      // Here we will just remove the original entry if it exists to keep it simple and clean.
-      // Or we can add an expense. Removing is cleaner for a "Void/Anulación".
+      // Handle CashMovement
+      const updatedCashMovements = s.cashMovements.filter(cm => cm.id !== planilla.cash_movement_id);
+
+      // Clean out MANUAL dummy records
+      const cleanedRecords = updatedRecords.filter(r => !(planilla.records.includes(r.id) && r.seller_id === 'MANUAL'));
+
+      return {
+         collectionPlanillas: updatedPlanillas,
+         collectionRecords: cleanedRecords,
+         sales: updatedSales,
+         cashMovements: updatedCashMovements
+      };
+   }),
+
+   revertPlanillaForEdit: (planillaId) => set(s => {
+      const planillaIndex = s.collectionPlanillas.findIndex(p => p.id === planillaId);
+      if (planillaIndex === -1) return s;
+
+      const planilla = s.collectionPlanillas[planillaIndex];
+      // Allow editing if ACTIVE or even if ANNULLED (but usually ACTIVE)
+
+      const updatedPlanillas = [...s.collectionPlanillas];
+      // Mark as EDITING and unlink cash movement and records (they will be regenerated on next process)
+      updatedPlanillas[planillaIndex] = { ...planilla, status: 'EDITING', cash_movement_id: undefined, records: [] };
+
+      // Revert records
+      let updatedRecords = [...s.collectionRecords];
+      const updatedSales = [...s.sales];
+
+      planilla.records.forEach(recordId => {
+         const recIndex = updatedRecords.findIndex(r => r.id === recordId);
+         if (recIndex > -1) {
+            const rec = updatedRecords[recIndex];
+            // If it's manual, we simply let it be filtered out. Otherwise, reset status.
+            if (rec.seller_id !== 'MANUAL') {
+               updatedRecords[recIndex] = { ...rec, status: 'PENDING_VALIDATION', planilla_id: undefined };
+            }
+
+            // Revert Sale balance
+            const saleIndex = updatedSales.findIndex(sale => sale.id === rec.sale_id);
+            if (saleIndex > -1) {
+               const sale = updatedSales[saleIndex];
+               const currentBalance = sale.balance !== undefined ? sale.balance : 0;
+               const newBalance = currentBalance + rec.amount_reported;
+
+               const isFullyUnpaid = newBalance >= sale.total - 0.1;
+               updatedSales[saleIndex] = {
+                  ...sale,
+                  balance: newBalance,
+                  payment_status: 'PENDING',
+                  collection_status: isFullyUnpaid ? 'NONE' : 'PARTIAL'
+               };
+            }
+         }
+      });
+
+      // Erase MANUAL dummy records created for this planilla
+      updatedRecords = updatedRecords.filter(r => !(planilla.records.includes(r.id) && r.seller_id === 'MANUAL'));
+
       const updatedCashMovements = s.cashMovements.filter(cm => cm.id !== planilla.cash_movement_id);
 
       return {
