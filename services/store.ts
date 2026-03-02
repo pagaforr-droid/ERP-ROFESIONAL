@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Product, Batch, Sale, Vehicle, DispatchSheet, Client, Supplier, Warehouse, Driver, Transporter, Purchase, Zone, PriceList, Seller, Order, SaleItem, BatchAllocation, CompanyConfig, DocumentSeries, CashMovement, ExpenseCategory, ScheduledTransaction, DispatchLiquidation, User, AttendanceRecord, Promotion, Combo, CollectionRecord, OrderItem, AutoPromotion } from '../types';
+import { Product, Batch, Sale, Vehicle, DispatchSheet, Client, Supplier, Warehouse, Driver, Transporter, Purchase, Zone, PriceList, Seller, Order, SaleItem, BatchAllocation, CompanyConfig, DocumentSeries, CashMovement, ExpenseCategory, ScheduledTransaction, DispatchLiquidation, User, AttendanceRecord, Promotion, Combo, CollectionRecord, CollectionPlanilla, OrderItem, AutoPromotion } from '../types';
 
 // Helper for UUID generation
 const generateUUID = () => {
@@ -200,6 +200,7 @@ interface AppState {
    expenseCategories: ExpenseCategory[];
    scheduledTransactions: ScheduledTransaction[];
    collectionRecords: CollectionRecord[];
+   collectionPlanillas: CollectionPlanilla[];
 
    // Actions
    updateCompany: (config: Partial<CompanyConfig>) => void;
@@ -218,10 +219,12 @@ interface AppState {
    createCreditNote: (creditNote: Sale, originalSaleId: string, returnedItems: SaleItem[]) => void;
    createOrder: (order: Order) => void;
    updateOrder: (order: Order) => void;
-   processOrderToSale: (orderId: string, series: string, number: string) => { success: boolean, msg: string };
    batchProcessOrders: (orderIds: string[]) => void;
    reportCollection: (saleId: string, sellerId: string, amount: number) => void;
-   consolidateCollections: (recordIds: string[]) => void;
+   consolidateCollections: (recordIds: string[], userId?: string) => void;
+   manualLiquidation: (payments: { saleId: string, amount: number }[], userId?: string) => void;
+   annulCollectionPlanilla: (planillaId: string, userId?: string) => void;
+   removeRecordFromPlanilla: (planillaId: string, recordId: string) => void;
 
    createPurchase: (purchase: Purchase) => void;
    updatePurchase: (purchase: Purchase) => boolean;
@@ -322,6 +325,7 @@ export const useStore = create<AppState>((set, get) => ({
    autoPromotions: MOCK_AUTO_PROMOTIONS,
    currentUser: null,
    collectionRecords: [],
+   collectionPlanillas: [],
 
    updateCompany: (config) => set((s) => ({ company: { ...s.company, ...config } })),
 
@@ -604,7 +608,7 @@ export const useStore = create<AppState>((set, get) => ({
                product_id: item.product_id,
                product_sku: product?.sku || 'UNK',
                product_name: item.product_name,
-               selected_unit: item.unit_type,
+               selected_unit: item.unit_type === 'COMBO' ? 'UND' : item.unit_type,
                quantity_presentation: item.quantity,
                quantity_base: requiredBase,
                unit_price: item.unit_price,
@@ -697,8 +701,8 @@ export const useStore = create<AppState>((set, get) => ({
       };
    }),
 
-   consolidateCollections: (recordIds) => set(s => {
-      const selectedRecords = s.collectionRecords.filter(r => recordIds.includes(r.id));
+   consolidateCollections: (recordIds, userId) => set(s => {
+      const selectedRecords = s.collectionRecords.filter(r => recordIds.includes(r.id) && r.status === 'PENDING_VALIDATION');
       if (selectedRecords.length === 0) return s;
 
       const updatedRecords = [...s.collectionRecords];
@@ -706,9 +710,15 @@ export const useStore = create<AppState>((set, get) => ({
       const sellerNamesSet = new Set<string>();
       let totalTotal = 0;
 
+      // Autogenerate Planilla Code
+      const planillaCode = `PLAN-${String(s.collectionPlanillas.length + 1).padStart(4, '0')}`;
+      const planillaId = generateUUID();
+
       selectedRecords.forEach(rec => {
          const recIndex = updatedRecords.findIndex(r => r.id === rec.id);
-         if (recIndex > -1) updatedRecords[recIndex] = { ...rec, status: 'VALIDATED' };
+         if (recIndex > -1) {
+            updatedRecords[recIndex] = { ...rec, status: 'VALIDATED', planilla_id: planillaId };
+         }
 
          const saleIndex = updatedSales.findIndex(sale => sale.id === rec.sale_id);
          if (saleIndex > -1) {
@@ -728,20 +738,238 @@ export const useStore = create<AppState>((set, get) => ({
       });
 
       const sellerNames = Array.from(sellerNamesSet).map(n => n.split(' ')[0]).join(', ');
+
+      const cashMovementId = generateUUID();
       const newMovement: CashMovement = {
-         id: generateUUID(),
+         id: cashMovementId,
          type: 'INCOME',
          category_name: 'COBRANZA MASIVA',
-         description: `Planilla de Cobranza - Vendedores: ${sellerNames} cobranzas del dia`,
+         description: `Planilla de Cobranza ${planillaCode} - Vendedores: ${sellerNames}`,
          amount: totalTotal,
          date: new Date().toISOString(),
-         user_id: 'ADMIN'
+         user_id: userId || 'ADMIN',
+         reference_id: planillaId
+      };
+
+      const newPlanilla: CollectionPlanilla = {
+         id: planillaId,
+         code: planillaCode,
+         date: new Date().toISOString(),
+         total_amount: totalTotal,
+         record_count: selectedRecords.length,
+         status: 'ACTIVE',
+         user_id: userId,
+         cash_movement_id: cashMovementId,
+         records: selectedRecords.map(r => r.id)
       };
 
       return {
          collectionRecords: updatedRecords,
          sales: updatedSales,
-         cashMovements: [newMovement, ...s.cashMovements]
+         cashMovements: [newMovement, ...s.cashMovements],
+         collectionPlanillas: [newPlanilla, ...s.collectionPlanillas]
+      };
+   }),
+
+   manualLiquidation: (payments, userId) => set(s => {
+      if (payments.length === 0) return s;
+
+      const updatedSales = [...s.sales];
+      const newRecords: CollectionRecord[] = [];
+      let totalCollected = 0;
+
+      const planillaCode = `PLAN-${String(s.collectionPlanillas.length + 1).padStart(4, '0')}`;
+      const planillaId = generateUUID();
+      const dateNow = new Date().toISOString();
+
+      payments.forEach(payment => {
+         const saleIndex = updatedSales.findIndex(sale => sale.id === payment.saleId);
+         if (saleIndex > -1) {
+            const sale = updatedSales[saleIndex];
+            const currentBalance = sale.balance !== undefined ? sale.balance : sale.total;
+            const newBalance = Math.max(0, currentBalance - payment.amount);
+            const isPaidOff = newBalance < 0.1;
+
+            updatedSales[saleIndex] = {
+               ...sale,
+               balance: newBalance,
+               payment_status: isPaidOff ? 'PAID' : 'PENDING',
+               collection_status: isPaidOff ? 'COLLECTED' : 'PARTIAL'
+            };
+
+            const recordId = generateUUID();
+            newRecords.push({
+               id: recordId,
+               sale_id: sale.id,
+               seller_id: 'MANUAL', // Indicator that it didn't come from a seller app
+               client_name: sale.client_name,
+               document_ref: `${sale.series}-${sale.number}`,
+               amount_reported: payment.amount,
+               date_reported: dateNow,
+               status: 'VALIDATED', // Automatically validated
+               payment_method: 'CASH',
+               planilla_id: planillaId
+            });
+
+            totalCollected += payment.amount;
+         }
+      });
+
+      const cashMovementId = generateUUID();
+      const newMovement: CashMovement = {
+         id: cashMovementId,
+         type: 'INCOME',
+         category_name: 'COBRANZA MANUAL',
+         description: `Liquidación Manual ${planillaCode} - Cobranza Directa en Oficina`,
+         amount: totalCollected,
+         date: dateNow,
+         user_id: userId || 'ADMIN',
+         reference_id: planillaId
+      };
+
+      const newPlanilla: CollectionPlanilla = {
+         id: planillaId,
+         code: planillaCode,
+         date: dateNow,
+         total_amount: totalCollected,
+         record_count: newRecords.length,
+         status: 'ACTIVE',
+         user_id: userId,
+         cash_movement_id: cashMovementId,
+         records: newRecords.map(r => r.id)
+      };
+
+      return {
+         sales: updatedSales,
+         collectionRecords: [...s.collectionRecords, ...newRecords],
+         cashMovements: [newMovement, ...s.cashMovements],
+         collectionPlanillas: [newPlanilla, ...s.collectionPlanillas]
+      };
+   }),
+
+   annulCollectionPlanilla: (planillaId, userId) => set(s => {
+      const planillaIndex = s.collectionPlanillas.findIndex(p => p.id === planillaId);
+      if (planillaIndex === -1) return s;
+
+      const planilla = s.collectionPlanillas[planillaIndex];
+      if (planilla.status === 'ANNULLED') return s; // already annulled
+
+      const updatedPlanillas = [...s.collectionPlanillas];
+      updatedPlanillas[planillaIndex] = { ...planilla, status: 'ANNULLED' };
+
+      const updatedRecords = [...s.collectionRecords];
+      const updatedSales = [...s.sales];
+
+      // Revert Records and Sales
+      planilla.records.forEach(recordId => {
+         const recIndex = updatedRecords.findIndex(r => r.id === recordId);
+         if (recIndex > -1) {
+            const rec = updatedRecords[recIndex];
+            updatedRecords[recIndex] = { ...rec, status: 'PENDING_VALIDATION', planilla_id: undefined };
+
+            // Revert Sale balance
+            const saleIndex = updatedSales.findIndex(sale => sale.id === rec.sale_id);
+            if (saleIndex > -1) {
+               const sale = updatedSales[saleIndex];
+               const currentBalance = sale.balance !== undefined ? sale.balance : 0;
+               const newBalance = currentBalance + rec.amount_reported;
+
+               // Reverse status
+               const isFullyUnpaid = newBalance >= sale.total - 0.1; // adding tolerance
+               updatedSales[saleIndex] = {
+                  ...sale,
+                  balance: newBalance,
+                  payment_status: 'PENDING',
+                  collection_status: isFullyUnpaid ? 'NONE' : 'PARTIAL'
+               };
+            }
+         }
+      });
+
+      // Handle CashMovement (remove it or create reversing entry)
+      // Here we will just remove the original entry if it exists to keep it simple and clean.
+      // Or we can add an expense. Removing is cleaner for a "Void/Anulación".
+      const updatedCashMovements = s.cashMovements.filter(cm => cm.id !== planilla.cash_movement_id);
+
+      return {
+         collectionPlanillas: updatedPlanillas,
+         collectionRecords: updatedRecords,
+         sales: updatedSales,
+         cashMovements: updatedCashMovements
+      };
+   }),
+
+   removeRecordFromPlanilla: (planillaId, recordId) => set(s => {
+      const planillaIndex = s.collectionPlanillas.findIndex(p => p.id === planillaId);
+      if (planillaIndex === -1) return s;
+
+      const planilla = s.collectionPlanillas[planillaIndex];
+      if (planilla.status === 'ANNULLED') return s; // Should not edit annulled
+
+      const recordIndex = s.collectionRecords.findIndex(r => r.id === recordId);
+      if (recordIndex === -1) return s;
+
+      const record = s.collectionRecords[recordIndex];
+      if (record.planilla_id !== planillaId) return s;
+
+      // 1. Update Planilla
+      const updatedPlanillas = [...s.collectionPlanillas];
+      const updatedRecordIds = planilla.records.filter(id => id !== recordId);
+
+      // If we remove the last record, annul the planilla
+      if (updatedRecordIds.length === 0) {
+         // Fallback to full annul
+         // We will just let the next steps happen but set the planilla to annulled
+         updatedPlanillas[planillaIndex] = { ...planilla, records: [], total_amount: 0, record_count: 0, status: 'ANNULLED' };
+      } else {
+         updatedPlanillas[planillaIndex] = {
+            ...planilla,
+            records: updatedRecordIds,
+            total_amount: planilla.total_amount - record.amount_reported,
+            record_count: updatedRecordIds.length
+         };
+      }
+
+      // 2. Revert Record
+      const updatedRecords = [...s.collectionRecords];
+      updatedRecords[recordIndex] = { ...record, status: 'PENDING_VALIDATION', planilla_id: undefined };
+
+      // 3. Revert Sale
+      const updatedSales = [...s.sales];
+      const saleIndex = updatedSales.findIndex(sale => sale.id === record.sale_id);
+      if (saleIndex > -1) {
+         const sale = updatedSales[saleIndex];
+         const currentBalance = sale.balance !== undefined ? sale.balance : 0;
+         const newBalance = currentBalance + record.amount_reported;
+
+         const isFullyUnpaid = newBalance >= sale.total - 0.1;
+         updatedSales[saleIndex] = {
+            ...sale,
+            balance: newBalance,
+            payment_status: 'PENDING',
+            collection_status: isFullyUnpaid ? 'NONE' : 'PARTIAL'
+         };
+      }
+
+      // 4. Update Cash Movement
+      let updatedCashMovements = [...s.cashMovements];
+      if (updatedPlanillas[planillaIndex].status === 'ANNULLED') {
+         updatedCashMovements = updatedCashMovements.filter(cm => cm.id !== planilla.cash_movement_id);
+      } else {
+         const cmIndex = updatedCashMovements.findIndex(cm => cm.id === planilla.cash_movement_id);
+         if (cmIndex > -1) {
+            updatedCashMovements[cmIndex] = {
+               ...updatedCashMovements[cmIndex],
+               amount: updatedPlanillas[planillaIndex].total_amount
+            };
+         }
+      }
+
+      return {
+         collectionPlanillas: updatedPlanillas,
+         collectionRecords: updatedRecords,
+         sales: updatedSales,
+         cashMovements: updatedCashMovements
       };
    }),
 

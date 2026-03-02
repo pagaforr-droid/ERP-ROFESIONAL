@@ -174,7 +174,7 @@ export interface CashMovement {
   description: string;
   amount: number;
   date: string; // ISO DateTime
-  reference_id?: string; // Link to Sale ID, Purchase ID, or Dispatch ID
+  reference_id?: string; // Link to Sale ID, Purchase ID, Dispatch ID, or Planilla ID
   user_id?: string;
 }
 
@@ -189,6 +189,19 @@ export interface CollectionRecord {
   date_reported: string;
   status: 'PENDING_VALIDATION' | 'VALIDATED' | 'REJECTED';
   payment_method?: 'CASH' | 'TRANSFER' | 'CHECK';
+  planilla_id?: string; // Link to Planilla
+}
+
+export interface CollectionPlanilla {
+  id: string;
+  code: string; // e.g., "PLAN-0001"
+  date: string; // ISO DateTime
+  total_amount: number;
+  record_count: number;
+  status: 'ACTIVE' | 'ANNULLED';
+  user_id?: string; // User who consolidated it
+  cash_movement_id?: string; // Link to generated cash movement
+  records: string[]; // List of IDs of the `CollectionRecord` included
 }
 
 // === CLIENTS ===
