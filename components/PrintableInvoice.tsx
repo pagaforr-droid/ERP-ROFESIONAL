@@ -213,7 +213,7 @@ const InvoiceHalf: React.FC<{ company: CompanyConfig; sale: Sale; label?: string
                         <td className="text-center py-[1.5mm]">{item.quantity_presentation}</td>
                         <td className="text-center py-[1.5mm]">{item.selected_unit === 'PKG' ? 'CJA' : 'UND'}</td>
                         <td className="px-1 py-[1.5mm] uppercase tracking-tighter truncate max-w-[120px]">
-                           {item.product_name} {item.is_bonus ? '**BONIF**' : ''}
+                           {item.product_name} {item.is_bonus ? '- BONIFICACIÓN' : ''}
                         </td>
                         <td className="text-right px-1 py-[1.5mm]">{item.unit_price.toFixed(2)}</td>
                         <td className="text-right px-1 py-[1.5mm]">{item.discount_amount > 0 ? item.discount_amount.toFixed(2) : ''}</td>

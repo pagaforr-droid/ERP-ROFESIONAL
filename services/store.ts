@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Product, Batch, Sale, Vehicle, DispatchSheet, Client, Supplier, Warehouse, Driver, Transporter, Purchase, Zone, PriceList, Seller, Order, SaleItem, BatchAllocation, CompanyConfig, DocumentSeries, CashMovement, ExpenseCategory, ScheduledTransaction, DispatchLiquidation, User, AttendanceRecord, Promotion, Combo, CollectionRecord, CollectionPlanilla, OrderItem, AutoPromotion } from '../types';
+import { calculatePromotions } from '../utils/promotions';
 
 // Helper for UUID generation
 const generateUUID = () => {
@@ -146,6 +147,78 @@ const MOCK_AUTO_PROMOTIONS: AutoPromotion[] = [
       condition_type: 'BUY_X_PRODUCT', condition_product_id: 'p4', condition_amount: 24,
       reward_product_id: 'p4', reward_quantity: 2, reward_unit_type: 'UND',
       channels: ['IN_STORE', 'SELLER_APP'], target_client_categories: [], target_price_list_ids: []
+   }
+];
+
+const MOCK_ORDERS: Order[] = [
+   {
+      id: generateUUID(),
+      code: 'PED-1001',
+      client_id: 'c1',
+      client_name: 'BODEGA LAS PALMERAS',
+      client_doc_number: '20123456780', // RUC -> FACTURA
+      client_doc_type: 'RUC',
+      seller_id: 'u2',
+      payment_method: 'CONTADO',
+      status: 'pending',
+      total: 240.00,
+      suggested_document_type: 'FACTURA',
+      created_at: new Date(Date.now() - 100000).toISOString(),
+      delivery_date: new Date(Date.now() + 86400000).toISOString(),
+      items: [
+         { product_id: 'p4', product_name: 'CERVEZA CUSQUEÑA TRIGO * 330 ML', unit_price: 5.00, quantity: 48, total_price: 240.00, unit_type: 'UND', is_bonus: false, batch_allocations: [] },
+         { product_id: 'p4', product_name: 'CERVEZA CUSQUEÑA TRIGO * 330 ML', unit_price: 0, quantity: 4, total_price: 0, unit_type: 'UND', is_bonus: true, batch_allocations: [] }
+      ]
+   },
+   {
+      id: generateUUID(),
+      code: 'PED-1002',
+      client_id: 'c2',
+      client_name: 'MINIMARKET EL SOL',
+      client_doc_number: '70123456', // DNI -> BOLETA
+      client_doc_type: 'DNI',
+      seller_id: 'u2',
+      payment_method: 'CREDITO',
+      status: 'pending',
+      total: 69.80,
+      suggested_document_type: 'BOLETA',
+      created_at: new Date(Date.now() - 50000).toISOString(),
+      delivery_date: new Date(Date.now() + 86400000).toISOString(),
+      items: [
+         { product_id: 'p1', product_name: 'WHISKY JOHNNIE WALKER RED LABEL * 750 ML', unit_price: 69.80, quantity: 1, total_price: 69.80, unit_type: 'UND', is_bonus: false, batch_allocations: [] }
+      ]
+   },
+   {
+      id: generateUUID(), code: 'PED-1003', client_id: 'c3', client_name: 'COMERCIAL ROSITA', client_doc_number: '20555555551', client_doc_type: 'RUC', seller_id: 'u3', payment_method: 'CONTADO', status: 'pending', total: 53.00, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 40000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
+      items: [{ product_id: 'p3', product_name: 'VODKA RUSSKAYA * 750 ML', unit_price: 23.00, quantity: 2, total_price: 46.00, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
+   },
+   {
+      id: generateUUID(), code: 'PED-1004', client_id: 'c1', client_name: 'BODEGA LAS PALMERAS', client_doc_number: '20123456780', client_doc_type: 'RUC', seller_id: 'u3', payment_method: 'CREDITO', status: 'pending', total: 107.40, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 35000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
+      items: [{ product_id: 'p4', product_name: 'CERVEZA CUSQUEÑA TRIGO * 330 ML', unit_price: 5.37, quantity: 20, total_price: 107.40, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
+   },
+   {
+      id: generateUUID(), code: 'PED-1005', client_id: 'c2', client_name: 'MINIMARKET EL SOL', client_doc_number: '70123456', client_doc_type: 'DNI', seller_id: 'u1', payment_method: 'CONTADO', status: 'pending', total: 27.95, suggested_document_type: 'BOLETA', created_at: new Date(Date.now() - 30000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
+      items: [{ product_id: 'p2', product_name: 'RON CARTAVIO BLACK * 750 ML', unit_price: 27.95, quantity: 1, total_price: 27.95, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
+   },
+   {
+      id: generateUUID(), code: 'PED-1006', client_id: 'c3', client_name: 'COMERCIAL ROSITA', client_doc_number: '20555555551', client_doc_type: 'RUC', seller_id: 'u1', payment_method: 'CREDITO', status: 'pending', total: 69.80, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 25000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
+      items: [{ product_id: 'p1', product_name: 'WHISKY JOHNNIE WALKER RED LABEL * 750 ML', unit_price: 69.80, quantity: 1, total_price: 69.80, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
+   },
+   {
+      id: generateUUID(), code: 'PED-1007', client_id: 'c1', client_name: 'BODEGA LAS PALMERAS', client_doc_number: '20123456780', client_doc_type: 'RUC', seller_id: 'u2', payment_method: 'CONTADO', status: 'pending', total: 23.00, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 20000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
+      items: [{ product_id: 'p3', product_name: 'VODKA RUSSKAYA * 750 ML', unit_price: 23.00, quantity: 1, total_price: 23.00, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
+   },
+   {
+      id: generateUUID(), code: 'PED-1008', client_id: 'c2', client_name: 'MINIMARKET EL SOL', client_doc_number: '70123456', client_doc_type: 'DNI', seller_id: 'u2', payment_method: 'CREDITO', status: 'pending', total: 53.70, suggested_document_type: 'BOLETA', created_at: new Date(Date.now() - 15000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
+      items: [{ product_id: 'p4', product_name: 'CERVEZA CUSQUEÑA TRIGO * 330 ML', unit_price: 5.37, quantity: 10, total_price: 53.70, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
+   },
+   {
+      id: generateUUID(), code: 'PED-1009', client_id: 'c3', client_name: 'COMERCIAL ROSITA', client_doc_number: '20555555551', client_doc_type: 'RUC', seller_id: 'u3', payment_method: 'CONTADO', status: 'pending', total: 69.80, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 10000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
+      items: [{ product_id: 'p1', product_name: 'WHISKY JOHNNIE WALKER RED LABEL * 750 ML', unit_price: 69.80, quantity: 1, total_price: 69.80, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
+   },
+   {
+      id: generateUUID(), code: 'PED-1010', client_id: 'c1', client_name: 'BODEGA LAS PALMERAS', client_doc_number: '20123456780', client_doc_type: 'RUC', seller_id: 'u1', payment_method: 'CREDITO', status: 'pending', total: 27.95, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 5000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
+      items: [{ product_id: 'p2', product_name: 'RON CARTAVIO BLACK * 750 ML', unit_price: 27.95, quantity: 1, total_price: 27.95, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
    }
 ];
 
@@ -299,8 +372,10 @@ export const useStore = create<AppState>((set, get) => ({
    products: MOCK_PRODUCTS,
    batches: MOCK_BATCHES,
    sales: MOCK_SALES,
-   orders: [],
-   vehicles: [],
+   orders: MOCK_ORDERS,
+   vehicles: [
+      { id: 'v1', plate: 'X2A-987', brand: 'HINO', model: '300', capacity_kg: 5000, transporter_id: 't1', driver_id: 'd1' }
+   ],
    dispatchSheets: [],
    dispatchLiquidations: [],
    clients: MOCK_CLIENTS,
@@ -310,8 +385,12 @@ export const useStore = create<AppState>((set, get) => ({
       { id: 'sup3', name: 'SANTIAGO QUEIROLO', ruc: '20555566666', address: 'LIMA' }
    ],
    warehouses: [{ id: 'wh1', name: 'ALMACEN PRINCIPAL', address: 'AV. CULTURA' }],
-   drivers: [],
-   transporters: [],
+   drivers: [
+      { id: 'd1', dni: '45678912', license: 'A-IIIc', name: 'JUAN CHOFER', address: 'AV. CULTURA 123', phone: '987654321' }
+   ],
+   transporters: [
+      { id: 't1', ruc: '20601234568', name: 'LOGISTICA CUSCO EIRL', address: 'CUSCO' }
+   ],
    sellers: MOCK_SELLERS,
    purchases: [],
    zones: MOCK_ZONES,
@@ -398,6 +477,47 @@ export const useStore = create<AppState>((set, get) => ({
    createSale: (sale) => set((state) => {
       // Basic implementation for direct sales
       const newBatches = [...state.batches];
+
+      // Auto-recalculate promos to ensure data integrity
+      // Since sale.items are SaleItem[], we temporarily map to OrderItem structure for calculatePromotions
+      // and map back. In a real scenario, calculatePromotions might be generalized.
+      const orderItemsContent: OrderItem[] = sale.items.map(i => ({
+         product_id: i.product_id,
+         product_name: i.product_name,
+         unit_type: i.selected_unit === 'UND' || i.selected_unit === 'PKG' ? i.selected_unit : 'UND',
+         quantity: i.quantity_presentation,
+         unit_price: i.unit_price,
+         total_price: i.total_price,
+         is_promo: i.is_bonus
+      }));
+
+      const validatedItems = calculatePromotions(orderItemsContent, state.autoPromotions, state.products);
+
+      // Map back to SaleItem (combining with original IDs if possible)
+      sale.items = validatedItems.map((vi, idx) => {
+         const originalItem = sale.items.find(si => si.product_id === vi.product_id && (si.selected_unit === vi.unit_type || (si.selected_unit !== 'UND' && si.selected_unit !== 'PKG')));
+         return {
+            id: originalItem ? originalItem.id : generateUUID(),
+            product_id: vi.product_id,
+            product_sku: originalItem?.product_sku || 'PROMO',
+            product_name: vi.product_name,
+            selected_unit: (vi.unit_type === 'UND' || vi.unit_type === 'PKG') ? vi.unit_type : 'UND', // Fallback for promos which might not have COMBO type legally in SaleItem
+            quantity_presentation: vi.quantity,
+            quantity_base: vi.quantity * (vi.unit_type === 'PKG' ? (state.products.find(p => p.id === vi.product_id)?.package_content || 1) : 1),
+            unit_price: vi.unit_price,
+            total_price: vi.total_price,
+            discount_percent: 0,
+            discount_amount: 0,
+            is_bonus: !!vi.is_promo,
+            batch_allocations: originalItem?.batch_allocations || []
+         };
+      });
+
+      // Recalculate totals
+      sale.subtotal = sale.items.reduce((acc, item) => acc + item.total_price, 0) / 1.18;
+      sale.igv = sale.items.reduce((acc, item) => acc + item.total_price, 0) - sale.subtotal;
+      sale.total = sale.items.reduce((acc, item) => acc + item.total_price, 0);
+
       sale.items.forEach(item => {
          item.batch_allocations?.forEach(alloc => {
             const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
@@ -467,8 +587,12 @@ export const useStore = create<AppState>((set, get) => ({
    createOrder: (order) => set(s => {
       const newBatches = [...s.batches];
 
+      // Auto-recalculate promos to ensure data integrity
+      const validatedItems = calculatePromotions(order.items, s.autoPromotions, s.products);
+      order.total = validatedItems.reduce((acc, item) => acc + item.total_price, 0);
+
       // 1. Process allocations for each item in the order
-      const processedItems: OrderItem[] = order.items.map(item => {
+      const processedItems: OrderItem[] = validatedItems.map(item => {
          let allocations: BatchAllocation[] = [];
          let comboSnapshot: any[] | undefined = undefined;
 
@@ -565,8 +689,12 @@ export const useStore = create<AppState>((set, get) => ({
       const selectedOrders = s.orders.filter(o => orderIds.includes(o.id));
       if (selectedOrders.length === 0) return s;
 
-      // Sort by creation date to assign series in order
-      selectedOrders.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      // Sort by seller_id first (to group by seller), then by creation date to assign series in order
+      selectedOrders.sort((a, b) => {
+         if (a.seller_id < b.seller_id) return -1;
+         if (a.seller_id > b.seller_id) return 1;
+         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      });
 
       const newSales: Sale[] = [];
       const updatedOrders = [...s.orders];
@@ -616,7 +744,7 @@ export const useStore = create<AppState>((set, get) => ({
                total_price: item.total_price,
                discount_percent: 0,
                discount_amount: 0,
-               is_bonus: false,
+               is_bonus: item.is_bonus || false,
                batch_allocations: item.batch_allocations || []
             };
             return saleItem;

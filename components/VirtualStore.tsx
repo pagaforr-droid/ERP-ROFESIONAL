@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Combo } from '../types';
 import { Search, ShoppingCart, Package, X, Plus, Minus, Tag, Filter, User, ShieldCheck, Heart, Info } from 'lucide-react';
+import { calculatePromotions } from '../utils/promotions';
 
 interface CartItem {
    id: string;
@@ -16,14 +17,14 @@ interface CartItem {
 }
 
 export const VirtualStore: React.FC = () => {
-   const { products, promotions, combos, currentUser, clients, createOrder, logout, batches } = useStore();
+   const { products, promotions, combos, currentUser, clients, createOrder, logout, batches, autoPromotions } = useStore();
 
    // --- STATE ---
    const [activeTab, setActiveTab] = useState<'PRODUCTS' | 'COMBOS' | 'OFFERS'>('PRODUCTS');
    const [searchTerm, setSearchTerm] = useState('');
    const [selectedCategory, setSelectedCategory] = useState('ALL');
    const [isCartOpen, setIsCartOpen] = useState(false);
-   const [cart, setCart] = useState<CartItem[]>([]);
+   const [cart, setCart] = useState<any[]>([]); // Using any to be compatible with OrderItem temporarily in this view
 
    // --- CLIENT CONTEXT ---
    const client = clients.find(c => c.id === currentUser?.client_id);
@@ -101,33 +102,37 @@ export const VirtualStore: React.FC = () => {
 
    // --- HANDLERS ---
    const addToCart = (item: Product | Combo, type: 'PRODUCT' | 'COMBO', unit: 'UND' | 'PKG' = 'UND', qty: number = 1) => {
-      const existing = cart.find(x => x.id === item.id && x.unit === unit);
+      const existing = cart.find(x => x.product_id === item.id && x.unit_type === unit);
       const price = type === 'PRODUCT' ? getProductPrice(item as Product, unit) : (item as Combo).price;
       const name = item.name;
       const image = (item as any).image_url;
       // Stock logic would be clearer if real, for now just basic check or unlimited for Combos
       const stock = type === 'PRODUCT' ? getProductStock(item.id) : 999;
 
+      let newCart = [...cart];
       if (existing) {
          const newQty = existing.quantity + qty;
          // if (newQty > stock) return alert("Stock insuficiente"); // Optional: Strict check
-         setCart(cart.map(x => x.id === item.id && x.unit === unit ? { ...x, quantity: newQty } : x));
+         newCart = newCart.map(x => x.product_id === item.id && x.unit_type === unit ? { ...x, quantity: newQty, total_price: price * newQty } : x);
       } else {
          // if (qty > stock) return alert("Stock insuficiente");
-         setCart([...cart, {
-            id: item.id, type, name, quantity: qty, unit: type === 'COMBO' ? 'COMBO' : unit, price, image, maxStock: stock
-         }]);
+         newCart.push({
+            product_id: item.id, type, product_name: name, quantity: qty, unit_type: type === 'COMBO' ? 'COMBO' : unit, unit_price: price, total_price: price * qty, image, maxStock: stock, is_promo: type === 'COMBO' && false // COMBO is not an auto promo
+         });
       }
+
+      setCart(calculatePromotions(newCart, autoPromotions, products));
       setIsCartOpen(true);
    };
 
    const updateQty = (index: number, delta: number) => {
-      const newCart = [...cart];
+      let newCart = [...cart];
       newCart[index].quantity += delta;
+      newCart[index].total_price = newCart[index].unit_price * newCart[index].quantity;
       if (newCart[index].quantity <= 0) {
          newCart.splice(index, 1);
       }
-      setCart(newCart);
+      setCart(calculatePromotions(newCart, autoPromotions, products));
    };
 
    const handleCheckout = () => {
@@ -137,14 +142,14 @@ export const VirtualStore: React.FC = () => {
       }
       if (!client || cart.length === 0) return;
 
-      const orderItems = cart.map(cItem => ({
-         product_id: cItem.id,
-         product_name: cItem.type === 'COMBO' ? `COMBO: ${cItem.name}` : cItem.name,
-         unit_type: cItem.unit,
+      const orderItems = cart.map((cItem: any) => ({
+         product_id: cItem.product_id,
+         product_name: cItem.type === 'COMBO' ? `COMBO: ${cItem.product_name}` : cItem.product_name,
+         unit_type: cItem.unit_type,
          quantity: cItem.quantity,
-         unit_price: cItem.price,
-         total_price: cItem.price * cItem.quantity,
-         is_promo: cItem.type === 'COMBO'
+         unit_price: cItem.unit_price,
+         total_price: cItem.total_price,
+         is_promo: cItem.is_promo || cItem.type === 'COMBO'
       }));
 
       const total = orderItems.reduce((acc, i) => acc + i.total_price, 0);
@@ -400,34 +405,59 @@ export const VirtualStore: React.FC = () => {
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50">
-                     {cart.map((item, idx) => (
-                        <div key={`${item.id}-${item.unit}`} className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex gap-3">
-                           <div className="w-16 h-16 bg-slate-100 rounded-lg flex-shrink-0 overflow-hidden relative">
-                              {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><Tag /></div>}
-                           </div>
-                           <div className="flex-1">
-                              <div className="flex justify-between items-start mb-1">
-                                 <h4 className="font-bold text-sm text-slate-800 line-clamp-1">{item.name}</h4>
-                                 <button onClick={() => {
-                                    const newCart = [...cart]; newCart.splice(idx, 1); setCart(newCart);
-                                 }}><X className="w-4 h-4 text-slate-300 hover:text-red-500" /></button>
-                              </div>
-                              <div className="flex items-center gap-2 mb-2">
-                                 <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase">{item.unit === 'PKG' ? 'Caja' : item.unit}</span>
-                                 <span className="text-xs text-slate-400">S/ {item.price.toFixed(2)} c/u</span>
-                              </div>
-
-                              <div className="flex items-center justify-between">
-                                 <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-                                    <button onClick={() => updateQty(idx, -1)} className="w-6 h-6 flex items-center justify-center hover:bg-white rounded shadow-sm text-slate-600"><Minus className="w-3 h-3" /></button>
-                                    <span className="text-sm font-bold w-6 text-center tabular-nums">{item.quantity}</span>
-                                    <button onClick={() => updateQty(idx, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-white rounded shadow-sm text-slate-600"><Plus className="w-3 h-3" /></button>
+                     {cart.map((item, idx) => {
+                        if (item.is_promo) {
+                           return (
+                              <div key={`${item.product_id}-${item.unit_type}-${idx}`} className="bg-green-50 p-3 rounded-xl shadow-sm border border-green-200 flex gap-3 animate-fade-in-up">
+                                 <div className="w-16 h-16 bg-green-100 rounded-lg flex-shrink-0 flex items-center justify-center text-green-500">
+                                    <Tag className="w-8 h-8" />
                                  </div>
-                                 <span className="font-bold text-slate-900 text-sm">S/ {(item.price * item.quantity).toFixed(2)}</span>
+                                 <div className="flex-1">
+                                    <div className="flex justify-between items-start mb-1">
+                                       <div className="flex items-center">
+                                          <div className="bg-green-200 text-green-800 text-[10px] px-1.5 py-0.5 rounded mr-2 font-bold uppercase">Premio</div>
+                                          <h4 className="font-bold text-sm text-green-900 line-clamp-1">{item.product_name}</h4>
+                                       </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-4">
+                                       <span className="text-sm font-bold w-6 tabular-nums text-green-800">{item.quantity}</span>
+                                       <span className="text-[10px] font-bold bg-green-200 text-green-800 px-1.5 py-0.5 rounded uppercase">{item.unit_type === 'PKG' ? 'Caja' : item.unit_type}</span>
+                                       <span className="font-bold text-green-700 text-sm italic ml-auto">¡GRATIS!</span>
+                                    </div>
+                                 </div>
+                              </div>
+                           );
+                        }
+
+                        return (
+                           <div key={`${item.product_id}-${item.unit_type}`} className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex gap-3">
+                              <div className="w-16 h-16 bg-slate-100 rounded-lg flex-shrink-0 overflow-hidden relative">
+                                 {item.image ? <img src={item.image} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300"><Tag /></div>}
+                              </div>
+                              <div className="flex-1">
+                                 <div className="flex justify-between items-start mb-1">
+                                    <h4 className="font-bold text-sm text-slate-800 line-clamp-1">{item.product_name}</h4>
+                                    <button onClick={() => {
+                                       const newCart = [...cart]; newCart.splice(idx, 1); setCart(calculatePromotions(newCart, autoPromotions, products));
+                                    }}><X className="w-4 h-4 text-slate-300 hover:text-red-500" /></button>
+                                 </div>
+                                 <div className="flex items-center gap-2 mb-2">
+                                    <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase">{item.unit_type === 'PKG' ? 'Caja' : item.unit_type}</span>
+                                    <span className="text-xs text-slate-400">S/ {item.unit_price.toFixed(2)} c/u</span>
+                                 </div>
+
+                                 <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                                       <button onClick={() => updateQty(idx, -1)} className="w-6 h-6 flex items-center justify-center hover:bg-white rounded shadow-sm text-slate-600"><Minus className="w-3 h-3" /></button>
+                                       <span className="text-sm font-bold w-6 text-center tabular-nums">{item.quantity}</span>
+                                       <button onClick={() => updateQty(idx, 1)} className="w-6 h-6 flex items-center justify-center hover:bg-white rounded shadow-sm text-slate-600"><Plus className="w-3 h-3" /></button>
+                                    </div>
+                                    <span className="font-bold text-slate-900 text-sm">S/ {item.total_price.toFixed(2)}</span>
+                                 </div>
                               </div>
                            </div>
-                        </div>
-                     ))}
+                        )
+                     })}
                      {cart.length === 0 && (
                         <div className="flex flex-col items-center justify-center h-64 text-slate-400">
                            <ShoppingCart className="w-12 h-12 mb-4 opacity-20" />
@@ -441,7 +471,7 @@ export const VirtualStore: React.FC = () => {
                      <div className="flex justify-between items-center mb-4">
                         <div>
                            <span className="text-xs text-slate-400 font-bold block">TOTAL A PAGAR</span>
-                           <span className="text-2xl font-bold text-slate-900">S/ {cart.reduce((a, b) => a + (b.price * b.quantity), 0).toFixed(2)}</span>
+                           <span className="text-2xl font-bold text-slate-900">S/ {cart.reduce((a, b) => a + b.total_price, 0).toFixed(2)}</span>
                         </div>
                         <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-1 rounded-full">{cart.reduce((a, b) => a + b.quantity, 0)} items</span>
                      </div>

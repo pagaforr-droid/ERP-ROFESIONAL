@@ -348,6 +348,7 @@ export interface OrderItem {
   unit_price: number;
   total_price: number;
   is_promo?: boolean;
+  is_bonus?: boolean; // Indicates if this item is a bonus/gift
   batch_allocations?: BatchAllocation[]; // NEW: Tracks committed stock
 
   // NEW: Snapshot
