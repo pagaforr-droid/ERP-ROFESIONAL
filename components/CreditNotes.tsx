@@ -30,8 +30,9 @@ export const CreditNotes: React.FC = () => {
             setOriginalSale(found);
             // Reset returns
             const initialReturns: Record<string, { qty: number, unit: 'UND' | 'PKG' }> = {};
-            found.items.forEach(item => {
-                initialReturns[item.id] = { qty: 0, unit: item.selected_unit as 'UND' | 'PKG' };
+            found.items.forEach((item, idx) => {
+                const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
+                initialReturns[itemKey] = { qty: 0, unit: item.selected_unit as 'UND' | 'PKG' };
             });
             setReturnQuantities(initialReturns);
             setGeneratedNC(null);
@@ -46,8 +47,9 @@ export const CreditNotes: React.FC = () => {
         if (!originalSale) return [];
 
         const list: SaleItem[] = [];
-        originalSale.items.forEach(item => {
-            const retState = returnQuantities[item.id];
+        originalSale.items.forEach((item, idx) => {
+            const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
+            const retState = returnQuantities[itemKey];
             if (!retState || retState.qty <= 0) return;
 
             const product = products.find(p => p.id === item.product_id);
@@ -212,12 +214,13 @@ export const CreditNotes: React.FC = () => {
                         </div>
 
                         <div className="flex-1 overflow-auto divide-y divide-slate-100">
-                            {originalSale.items.map(item => {
+                            {originalSale.items.map((item, idx) => {
+                                const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
                                 const originalQty = item.quantity_presentation;
                                 const product = products.find(p => p.id === item.product_id);
                                 const packageContent = product?.package_content || 1;
 
-                                const retState = returnQuantities[item.id] || { qty: 0, unit: item.selected_unit as 'UND' | 'PKG' };
+                                const retState = returnQuantities[itemKey] || { qty: 0, unit: item.selected_unit as 'UND' | 'PKG' };
                                 const returnQty = retState.qty;
                                 const returnUnit = retState.unit;
 
@@ -230,7 +233,7 @@ export const CreditNotes: React.FC = () => {
                                 const itemReturnTotalUI = item.total_price * ratio;
 
                                 return (
-                                    <div key={item.id} className={`flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors ${returnQty > 0 ? 'bg-indigo-50/30' : ''}`}>
+                                    <div key={itemKey} className={`flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors ${returnQty > 0 ? 'bg-indigo-50/30' : ''}`}>
                                         <div className="flex-1">
                                             <div className="font-bold text-slate-800">{item.product_name}</div>
                                             <div className="text-[10px] text-slate-500">{item.product_sku} | {item.selected_unit === 'UND' ? 'Unidad' : 'Caja'} {item.is_bonus && '| Bonif.'}</div>
@@ -255,19 +258,16 @@ export const CreditNotes: React.FC = () => {
                                                     if (returnUnit === 'PKG' && q * packageContent > maxBaseQty) q = Math.floor(maxBaseQty / packageContent);
                                                     else if (returnUnit === 'UND' && q > maxBaseQty) q = maxBaseQty;
                                                     if (q < 0) q = 0;
-                                                    setReturnQuantities(prev => ({ ...prev, [item.id]: { ...prev[item.id], qty: q } }));
+                                                    setReturnQuantities(prev => ({ ...prev, [itemKey]: { ...prev[itemKey], qty: q } }));
                                                 }}
-                                                disabled={item.is_bonus} // If it's a bonus, returning it yields 0 value. Could allow return but value is 0.
-                                                title={item.is_bonus ? "Las bonificaciones devuelven stock pero no valor monetario" : ""}
                                             />
                                             <select
                                                 className="w-20 border border-indigo-200 rounded p-1 text-xs font-bold text-indigo-700 focus:ring-2 focus:ring-indigo-500 outline-none appearance-none bg-white font-mono"
                                                 value={returnUnit}
-                                                onChange={e => setReturnQuantities(prev => ({ ...prev, [item.id]: { qty: 0, unit: e.target.value as 'UND' | 'PKG' } }))}
-                                                disabled={item.is_bonus}
+                                                onChange={e => setReturnQuantities(prev => ({ ...prev, [itemKey]: { qty: 0, unit: e.target.value as 'UND' | 'PKG' } }))}
                                             >
                                                 <option value="UND">UND</option>
-                                                {product?.package_type && <option value="PKG">{product.package_type.substring(0, 3).toUpperCase()}</option>}
+                                                {product?.package_type && !item.is_bonus && <option value="PKG">{product.package_type.substring(0, 3).toUpperCase()}</option>}
                                             </select>
                                         </div>
                                         <div className="w-24 text-right font-bold text-slate-800">

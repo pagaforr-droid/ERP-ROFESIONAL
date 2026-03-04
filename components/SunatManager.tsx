@@ -20,12 +20,12 @@ export const SunatManager: React.FC = () => {
     };
 
     // Logic to get Expiration based on rules: Facturas (3 days), Boletas (6 days), Guias (Same day/1 day)
-    const getExpirationStatus = (type: 'FACTURA' | 'BOLETA' | 'NOTA DE CREDITO' | 'GUIA', emissionDate: string) => {
+    const getExpirationStatus = (type: 'FACTURA' | 'BOLETA' | 'NOTA_CREDITO' | 'GUIA', emissionDate: string) => {
         const days = getDaysSince(emissionDate);
         let limit = 3;
         if (type === 'FACTURA') limit = 3;
         if (type === 'BOLETA') limit = 6;
-        if (type === 'NOTA DE CREDITO') limit = 3; // SUNAT rule: NC related to Facturas have the same 3 calendar day limit.
+        if (type === 'NOTA_CREDITO') limit = 3; // SUNAT rule: NC related to Facturas have the same 3 calendar day limit.
         if (type === 'GUIA') limit = 1;
 
         if (days > limit) return { text: 'VENCIDO', color: 'text-red-600 bg-red-100 border-red-300' };
@@ -38,7 +38,7 @@ export const SunatManager: React.FC = () => {
         let filtered: any[] = [];
         if (activeTab === 'facturas' || activeTab === 'boletas' || activeTab === 'notas_credito') {
             // Filter sales
-            const typeFilter = activeTab === 'facturas' ? 'FACTURA' : (activeTab === 'boletas' ? 'BOLETA' : 'NOTA DE CREDITO');
+            const typeFilter = activeTab === 'facturas' ? 'FACTURA' : (activeTab === 'boletas' ? 'BOLETA' : 'NOTA_CREDITO');
             filtered = sales.filter(s => s.document_type === typeFilter);
         } else if (activeTab === 'guias') {
             filtered = dispatchSheets.map(d => ({
@@ -92,7 +92,7 @@ export const SunatManager: React.FC = () => {
                 pending++;
                 let type: any = 'FACTURA';
                 if (d.document_type === 'BOLETA') type = 'BOLETA';
-                if (d.document_type === 'NOTA DE CREDITO') type = 'NOTA DE CREDITO';
+                if (d.document_type === 'NOTA_CREDITO') type = 'NOTA_CREDITO';
                 if (d.document_type === 'GUIA') type = 'GUIA';
 
                 const exp = getExpirationStatus(type, d.created_at);
@@ -384,7 +384,7 @@ export const SunatManager: React.FC = () => {
                                 const isSending = sendingIds.has(d.id);
                                 const exp = getExpirationStatus(
                                     activeTab === 'guias' ? 'GUIA' :
-                                        (activeTab === 'notas_credito' ? 'NOTA DE CREDITO' :
+                                        (activeTab === 'notas_credito' ? 'NOTA_CREDITO' :
                                             (activeTab === 'facturas' ? 'FACTURA' : 'BOLETA')),
                                     d.created_at
                                 );

@@ -31,7 +31,7 @@ export const PrintBatch: React.FC = () => {
    const filteredSales = sales.filter(s => {
       const date = s.created_at.split('T')[0];
       const matchesDate = date >= dateFrom && date <= dateTo;
-      const matchesType = docType === 'ALL' || s.document_type === docType;
+      const matchesType = docType === 'ALL' || s.document_type === docType || (docType === 'NOTA_CREDITO' && s.document_type === 'NOTA DE CREDITO');
       const matchesPrintStatus = printStatusFilter === 'PENDING' ? !s.printed : s.printed;
       const matchesSearch = s.client_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
          s.number.includes(searchTerm) ||
@@ -174,8 +174,8 @@ export const PrintBatch: React.FC = () => {
                               />
                            </td>
                            <td className="p-3">
-                              <span className={`font-bold font-mono px-2 py-0.5 rounded text-xs ${s.document_type === 'FACTURA' ? 'bg-purple-100 text-purple-800' : s.document_type === 'NOTA_CREDITO' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}`}>
-                                 {s.document_type === 'NOTA_CREDITO' ? 'NC' : s.document_type.substring(0, 1)}
+                              <span className={`font-bold font-mono px-2 py-0.5 rounded text-xs ${s.document_type === 'FACTURA' ? 'bg-purple-100 text-purple-800' : s.document_type.includes('NOTA') ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}`}>
+                                 {s.document_type.includes('NOTA') ? 'NC' : s.document_type.substring(0, 1)}
                               </span>
                               <span className="font-bold text-slate-700 ml-2">{s.series}-{s.number}</span>
                            </td>

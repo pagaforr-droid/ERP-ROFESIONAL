@@ -368,7 +368,7 @@ export interface SaleHistoryEvent {
 
 export interface Sale {
   id: string;
-  document_type: 'FACTURA' | 'BOLETA' | 'NOTA DE CREDITO' | string; // Expanded for NC
+  document_type: 'FACTURA' | 'BOLETA' | 'NOTA_CREDITO' | string; // Expanded for NC
   series: string;
   number: string;
   payment_method: 'CONTADO' | 'CREDITO';
