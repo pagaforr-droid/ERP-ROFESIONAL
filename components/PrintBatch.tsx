@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/store';
 import { Printer, Search, Filter, Calendar, CheckSquare, Square, FileText } from 'lucide-react';
-import { PrintableInvoice } from './PrintableInvoice';
+import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
 import { Sale } from '../types';
 
 export const PrintBatch: React.FC = () => {
@@ -21,10 +21,23 @@ export const PrintBatch: React.FC = () => {
    const [isPrinting, setIsPrinting] = useState(false);
    const { markDocumentsAsPrinted } = useStore();
 
-   const handlePrintClose = () => {
-      setIsPrinting(false);
-      markDocumentsAsPrinted(selectedIds);
-      setSelectedIds([]); // Clear selection after printing
+   const handlePrintBatch = async () => {
+      if (selectedIds.length === 0) return;
+      setIsPrinting(true);
+
+      // Allow UI to show "Generando..." before blocking thread
+      setTimeout(() => {
+         try {
+            generateMassiveInvoicePDF(company, salesToPrint);
+            markDocumentsAsPrinted(selectedIds);
+            setSelectedIds([]); // Clear selection after printing
+         } catch (error) {
+            console.error("Error generating PDF:", error);
+            alert("Ocurrió un error al generar el PDF matemático.");
+         } finally {
+            setIsPrinting(false);
+         }
+      }, 50);
    };
 
    // --- FILTER LOGIC ---
@@ -56,14 +69,7 @@ export const PrintBatch: React.FC = () => {
 
    return (
       <div className="h-full flex flex-col space-y-4">
-         {/* PRINT OVERLAY */}
-         {isPrinting && (
-            <PrintableInvoice
-               company={company}
-               sales={salesToPrint}
-               onClose={handlePrintClose}
-            />
-         )}
+         {/* THE OLD PRINT OVERLAY IS REMOVED INTENTIONALLY */}
 
          <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold text-slate-800 flex items-center">
@@ -71,10 +77,12 @@ export const PrintBatch: React.FC = () => {
             </h2>
             {selectedIds.length > 0 && (
                <button
-                  onClick={() => setIsPrinting(true)}
-                  className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2 rounded font-bold shadow-lg flex items-center animate-pulse"
+                  onClick={handlePrintBatch}
+                  disabled={isPrinting}
+                  className={`px-6 py-2 rounded font-bold shadow-lg flex items-center transition-all ${isPrinting ? 'bg-slate-500 cursor-not-allowed text-slate-200' : 'bg-slate-900 hover:bg-slate-800 text-white animate-pulse'}`}
                >
-                  <Printer className="w-5 h-5 mr-2" /> IMPRIMIR ({selectedIds.length}) DOCUMENTOS
+                  <Printer className={`w-5 h-5 mr-2 ${isPrinting ? 'animate-bounce' : ''}`} />
+                  {isPrinting ? 'GENERANDO PDF MATEMÁTICO...' : `IMPRIMIR (${selectedIds.length}) DOCUMENTOS`}
                </button>
             )}
          </div>

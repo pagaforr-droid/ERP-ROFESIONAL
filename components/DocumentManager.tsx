@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Sale, LiquidationDocument } from '../types';
 import { Search, Printer, Eye, FileText, Filter, X, Calendar, Download } from 'lucide-react';
-import { PrintableInvoice } from './PrintableInvoice';
+import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
 
 // Normalized interface for display purposes
 interface DisplayDocument {
@@ -30,7 +30,6 @@ export const DocumentManager: React.FC = () => {
    const [searchTerm, setSearchTerm] = useState('');
 
    const [selectedDoc, setSelectedDoc] = useState<DisplayDocument | null>(null); // For Modal Detail
-   const [printDoc, setPrintDoc] = useState<Sale | null>(null); // For Printing
 
    // --- DATA UNIFICATION ---
    const allDocuments: DisplayDocument[] = useMemo(() => {
@@ -78,7 +77,9 @@ export const DocumentManager: React.FC = () => {
 
    // --- HANDLERS ---
    const handlePrint = (doc: DisplayDocument) => {
-      setPrintDoc(doc.originalRef);
+      if (doc.originalRef) {
+         generateMassiveInvoicePDF(company, [doc.originalRef]);
+      }
    };
 
    const getBadgeColor = (type: string) => {
@@ -90,14 +91,6 @@ export const DocumentManager: React.FC = () => {
 
    return (
       <div className="flex flex-col h-full space-y-4">
-         {/* PRINT COMPONENT */}
-         {printDoc && (
-            <PrintableInvoice
-               company={company}
-               sales={[printDoc]}
-               onClose={() => setPrintDoc(null)}
-            />
-         )}
 
          {/* HEADER */}
          <div className="flex justify-between items-center">

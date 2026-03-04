@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Sale, SaleItem } from '../types';
 import { Search, FileText, ArrowLeftRight, CheckCircle2, ShieldAlert, FilePlus } from 'lucide-react';
-import { PrintableInvoice } from './PrintableInvoice';
+import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
 
 export const CreditNotes: React.FC = () => {
     const { sales, products, company, createCreditNote, getNextDocumentNumber, currentUser } = useStore();
@@ -145,17 +145,14 @@ export const CreditNotes: React.FC = () => {
         };
 
         createCreditNote(newNC, originalSale.id, returnedItemsList);
-        setGeneratedNC(newNC);
+        // Show preview immediately using PDF Generator
+        generateMassiveInvoicePDF(company, [newNC]);
         alert('¡Nota de Crédito generada y Kardex actualizado con éxito!');
     };
 
     return (
         <div className="flex flex-col h-full font-sans text-sm relative space-y-4">
-
-            {generatedNC && (
-                <PrintableInvoice company={company} sales={[generatedNC]} onClose={() => setGeneratedNC(null)} />
-            )}
-
+            {/* PDF Generation handled programmatically */}
             <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold text-slate-800 flex items-center">
                     <ArrowLeftRight className="mr-2 text-indigo-600 w-6 h-6" /> Notas de Crédito y Devoluciones

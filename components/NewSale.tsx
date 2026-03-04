@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap } from 'lucide-react';
-import { PrintableInvoice } from './PrintableInvoice';
+import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
 
 export const NewSale: React.FC = () => {
    const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions } = useStore();
@@ -573,7 +573,7 @@ export const NewSale: React.FC = () => {
       }
 
       // Trigger Print
-      setSaleToPrint(newSaleData);
+      generateMassiveInvoicePDF(company, [newSaleData]);
 
       handleNewSale(); // automatically resets to next doc number
    };
@@ -582,7 +582,7 @@ export const NewSale: React.FC = () => {
       <div className="flex flex-col h-full bg-slate-200 p-2 font-sans text-xs relative">
 
          {/* PRINT COMPONENT OVERLAY */}
-         {saleToPrint && <PrintableInvoice company={company} sales={[saleToPrint]} onClose={() => setSaleToPrint(null)} />}
+         {/* PDF Generator handles printing programmatically now */}
 
          {/* === HEADER SECTION === */}
          <div className="bg-white p-2 rounded shadow-sm border border-slate-300 mb-2 space-y-2 relative">
