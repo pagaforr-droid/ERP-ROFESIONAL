@@ -37,7 +37,6 @@ export function calculatePromotions(
                     const rewardQty = timesMet * promo.reward_quantity;
 
                     // Deduplicate if multiple rules give the same product?
-                    // For simplicity, we just aggregate them as new lines
                     newBonusItems.push({
                         product_id: rewardProduct.id,
                         product_name: rewardProduct.name,
@@ -45,7 +44,8 @@ export function calculatePromotions(
                         quantity: rewardQty,
                         unit_price: 0,
                         total_price: 0,
-                        is_promo: true // Locked, zero-price item
+                        is_promo: true, // Locked, zero-price item
+                        auto_promo_id: promo.id
                     });
                 }
             }

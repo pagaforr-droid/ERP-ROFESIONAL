@@ -349,6 +349,9 @@ export interface OrderItem {
   total_price: number;
   is_promo?: boolean;
   is_bonus?: boolean; // Indicates if this item is a bonus/gift
+  auto_promo_id?: string; // NEW: Propagate promo ID
+  discount_percent?: number; // NEW: Propagate discounts
+  discount_amount?: number; // NEW
   batch_allocations?: BatchAllocation[]; // NEW: Tracks committed stock
 
   // NEW: Snapshot

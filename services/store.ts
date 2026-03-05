@@ -490,7 +490,10 @@ export const useStore = create<AppState>((set, get) => ({
          quantity: i.quantity_presentation,
          unit_price: i.unit_price,
          total_price: i.total_price,
-         is_promo: i.is_bonus
+         is_promo: i.is_bonus,
+         auto_promo_id: i.auto_promo_id,
+         discount_percent: i.discount_percent,
+         discount_amount: i.discount_amount
       }));
 
       const validatedItems = calculatePromotions(orderItemsContent, state.autoPromotions, state.products);
@@ -508,9 +511,10 @@ export const useStore = create<AppState>((set, get) => ({
             quantity_base: vi.quantity * (vi.unit_type === 'PKG' ? (state.products.find(p => p.id === vi.product_id)?.package_content || 1) : 1),
             unit_price: vi.unit_price,
             total_price: vi.total_price,
-            discount_percent: 0,
-            discount_amount: 0,
+            discount_percent: vi.discount_percent || originalItem?.discount_percent || 0,
+            discount_amount: vi.discount_amount || originalItem?.discount_amount || 0,
             is_bonus: !!vi.is_promo,
+            auto_promo_id: vi.auto_promo_id || originalItem?.auto_promo_id,
             batch_allocations: originalItem?.batch_allocations || []
          };
       });
@@ -744,9 +748,10 @@ export const useStore = create<AppState>((set, get) => ({
                quantity_base: requiredBase,
                unit_price: item.unit_price,
                total_price: item.total_price,
-               discount_percent: 0,
-               discount_amount: 0,
+               discount_percent: item.discount_percent || 0,
+               discount_amount: item.discount_amount || 0,
                is_bonus: item.is_bonus || false,
+               auto_promo_id: item.auto_promo_id,
                batch_allocations: item.batch_allocations || []
             };
             return saleItem;

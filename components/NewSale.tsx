@@ -177,6 +177,52 @@ export const NewSale: React.FC = () => {
       const newItems = cart.filter((_, i) => i !== index);
       applyAutoPromotions(newItems);
    };
+
+   const handleCartItemQtyChange = (index: number, newQtyStr: string) => {
+      const newQty = parseInt(newQtyStr, 10);
+      if (isNaN(newQty) || newQty <= 0) return;
+
+      const item = cart[index];
+      const product = products.find(p => p.id === item.product_id);
+      if (!product) return;
+
+      // Validate Stock
+      const conversionFactor = item.selected_unit === 'PKG' ? (product.package_content || 1) : 1;
+      const requiredBaseUnits = newQty * conversionFactor;
+      const availableBatches = getBatchesForProduct(product.id);
+      const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
+
+      if (totalStock < requiredBaseUnits) {
+         alert(`Stock insuficiente. Disponible: ${totalStock} unid. Requerido: ${requiredBaseUnits} unid.`);
+         return;
+      }
+
+      // Re-Allocate Batches
+      let remaining = requiredBaseUnits;
+      const selectedBatches: BatchAllocation[] = [];
+      for (const batch of availableBatches) {
+         if (remaining <= 0) break;
+         const take = Math.min(remaining, batch.quantity_current);
+         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
+         remaining -= take;
+      }
+
+      const updatedCart = [...cart];
+
+      const newPrice = calculateTotal(newQty, item.unit_price, item.discount_percent);
+      updatedCart[index] = {
+         ...item,
+         quantity_presentation: newQty,
+         quantity_base: requiredBaseUnits,
+         total_price: newPrice,
+         discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100),
+         batch_allocations: selectedBatches
+      };
+
+      setCart(updatedCart);
+      applyAutoPromotions(updatedCart);
+   };
+
    const handleUpdatePrices = () => {
       if (cart.length === 0) return;
       if (!clientData.price_list_id) { alert("Seleccione una lista de precios primero."); return; }
@@ -241,7 +287,7 @@ export const NewSale: React.FC = () => {
          if (ap.condition_type === 'BUY_X_PRODUCT') {
             const qtyBought = newCart
                .filter(item => item.product_id === ap.condition_product_id && !item.is_bonus)
-               .reduce((sum, item) => sum + item.quantity_presentation, 0); // Simplified assuming UND/PKG math handled earlier or exact match
+               .reduce((sum, item) => sum + item.quantity_base, 0);
 
             if (qtyBought >= ap.condition_amount) {
                applies = true;
@@ -429,7 +475,7 @@ export const NewSale: React.FC = () => {
             initialNewCart[existingItemIndex] = {
                ...existing,
                quantity_presentation: newQty,
-               quantity: unitType === 'PKG' ? newQty * prod.units_per_package : newQty,
+               quantity: unitType === 'PKG' ? newQty * (prod.package_content || 1) : newQty,
                total_price: newPrice,
                discount_percent: discountPercent,
                discount_amount: (newQty * unitPrice) * (discountPercent / 100)
@@ -916,7 +962,34 @@ export const NewSale: React.FC = () => {
                                     {prod?.sku} | {prod?.brand}
                                  </div>
                               </td>
-                              <td className="p-2 w-16 text-right font-bold">{item.quantity_presentation}</td>
+                              <td className="p-2 w-16 text-right font-bold">
+                                 {(!item.is_bonus && !item.auto_promo_id && !isViewMode) ? (
+                                    <input
+                                       type="number"
+                                       min="1"
+                                       className="w-full text-right bg-blue-50 border border-blue-300 rounded px-1 py-0.5 focus:ring-1 focus:ring-blue-500 outline-none"
+                                       value={item.quantity_presentation || ''}
+                                       onChange={e => {
+                                          const val = e.target.value;
+                                          // Update purely visually first to allow typing empty strings before valid numbers
+                                          const newCart = [...cart];
+                                          newCart[index] = { ...newCart[index], quantity_presentation: val as any };
+                                          setCart(newCart);
+                                       }}
+                                       onBlur={e => {
+                                          let val = parseInt(e.target.value, 10);
+                                          if (isNaN(val) || val <= 0) val = 1; // Fallback to 1 if empty or invalid
+                                          handleCartItemQtyChange(index, val.toString());
+                                       }}
+                                       onKeyDown={e => {
+                                          if (e.key === 'Enter') {
+                                             e.preventDefault();
+                                             (e.target as HTMLInputElement).blur(); // Trigger recalculation
+                                          }
+                                       }}
+                                    />
+                                 ) : item.quantity_presentation}
+                              </td>
                               <td className="p-2 w-20 text-center text-[10px] text-slate-500">{item.selected_unit === 'UND' ? 'UNIDAD' : 'CAJA'}</td>
                               <td className="p-2 w-20 text-right text-slate-600">{item.unit_price.toFixed(2)}</td>
                               <td className="p-2 w-16 text-right text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</td>
