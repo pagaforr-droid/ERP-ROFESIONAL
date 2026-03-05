@@ -3,7 +3,7 @@ import { useStore } from '../services/store';
 import { CashMovement, ExpenseCategory, ScheduledTransaction } from '../types';
 import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, BarChart3, Briefcase, Store, Truck, Coins } from 'lucide-react';
 
-type Tab = 'DASHBOARD' | 'MOVEMENTS' | 'PLANNER' | 'CONFIG';
+type Tab = 'SESSION' | 'DASHBOARD' | 'MOVEMENTS' | 'PLANNER' | 'CONFIG';
 
 export const CashFlow: React.FC = () => {
    const store = useStore();
@@ -171,24 +171,66 @@ export const CashFlow: React.FC = () => {
       const [modalType, setModalType] = useState<'INCOME' | 'EXPENSE'>('INCOME');
 
       // Form State
+      const [editId, setEditId] = useState<string | null>(null);
+      const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
       const [amount, setAmount] = useState(0);
       const [desc, setDesc] = useState('');
       const [catId, setCatId] = useState('');
 
+      const openModal = (type: 'INCOME' | 'EXPENSE', movement?: CashMovement) => {
+         setModalType(type);
+         if (movement) {
+            setEditId(movement.id);
+            setCatId(movement.category_id || '');
+            setAmount(movement.amount);
+            setDesc(movement.description);
+            setDate(movement.date.split('T')[0]);
+         } else {
+            setEditId(null);
+            setCatId('');
+            setAmount(0);
+            setDesc('');
+            setDate(new Date().toISOString().split('T')[0]);
+         }
+         setShowModal(true);
+      };
+
       const handleSubmit = () => {
-         if (amount <= 0 || !catId) return;
+         if (amount <= 0 || !catId || !date) return;
          const cat = store.expenseCategories.find(c => c.id === catId);
-         store.addCashMovement({
-            id: crypto.randomUUID(),
-            type: modalType,
-            category_name: cat?.name || 'GENERIC',
-            category_id: catId,
-            amount,
-            description: desc || 'Movimiento manual',
-            date: new Date().toISOString()
-         });
+
+         if (editId) {
+            const existing = store.cashMovements.find(m => m.id === editId);
+            if (existing) {
+               store.updateCashMovement({
+                  ...existing,
+                  category_name: cat?.name || 'GENERIC',
+                  category_id: catId,
+                  amount,
+                  description: desc || 'Movimiento manual',
+                  date: new Date(date + 'T12:00:00Z').toISOString() // Force date string
+               });
+            }
+         } else {
+            store.addCashMovement({
+               id: crypto.randomUUID(),
+               type: modalType,
+               category_name: cat?.name || 'GENERIC',
+               category_id: catId,
+               amount,
+               description: desc || 'Movimiento manual',
+               date: new Date(date + 'T12:00:00Z').toISOString(),
+               user_id: store.currentUser?.name || store.currentUser?.id
+            });
+         }
+
          setShowModal(false);
-         setAmount(0); setDesc(''); setCatId('');
+      };
+
+      const handleDelete = (id: string) => {
+         if (confirm("¿Estás seguro de eliminar este movimiento? Afectará el cuadre de caja actual.")) {
+            store.deleteCashMovement(id);
+         }
       };
 
       return (
@@ -196,10 +238,10 @@ export const CashFlow: React.FC = () => {
             <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
                <h3 className="font-bold text-slate-700">Registro Detallado</h3>
                <div className="flex gap-2">
-                  <button onClick={() => { setModalType('INCOME'); setShowModal(true); }} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold hover:bg-green-700 flex items-center shadow-sm">
+                  <button onClick={() => openModal('INCOME')} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm font-bold hover:bg-green-700 flex items-center shadow-sm">
                      <Plus className="w-4 h-4 mr-1" /> Ingreso
                   </button>
-                  <button onClick={() => { setModalType('EXPENSE'); setShowModal(true); }} className="bg-red-600 text-white px-3 py-1.5 rounded text-sm font-bold hover:bg-red-700 flex items-center shadow-sm">
+                  <button onClick={() => openModal('EXPENSE')} className="bg-red-600 text-white px-3 py-1.5 rounded text-sm font-bold hover:bg-red-700 flex items-center shadow-sm">
                      <Minus className="w-4 h-4 mr-1" /> Gasto
                   </button>
                </div>
@@ -213,7 +255,9 @@ export const CashFlow: React.FC = () => {
                         <th className="p-3">Tipo</th>
                         <th className="p-3">Categoría</th>
                         <th className="p-3">Descripción</th>
+                        <th className="p-3">Responsable</th>
                         <th className="p-3 text-right">Monto</th>
+                        <th className="p-3 w-16"></th>
                      </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -239,8 +283,23 @@ export const CashFlow: React.FC = () => {
                                  <span className="text-[9px] text-slate-400 font-mono mt-0.5">{m.id}</span>
                               </div>
                            </td>
+                           <td className="p-3 text-slate-600">
+                              <div className="flex items-center gap-1 text-xs">
+                                 <User className="w-3 h-3 text-slate-400" />
+                                 {m.user_id || 'SISTEMA'}
+                              </div>
+                           </td>
                            <td className={`p-3 text-right font-bold ${m.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
                               {m.type === 'INCOME' ? '+' : '-'} S/ {m.amount.toFixed(2)}
+                           </td>
+                           <td className="p-3">
+                              {/* Show Edit/Delete only for pure manual entries. Automatics have reference_id matching SALE or LIQ */}
+                              {(!m.id.startsWith('SALE-') && !m.id.startsWith('PUR-') && !m.reference_id && m.category_name !== 'LIQUIDACION RUTA' && m.category_name !== 'COBRANZA MANUAL') && (
+                                 <div className="flex gap-2 justify-end">
+                                    <button onClick={() => openModal(m.type, m)} className="p-1 text-slate-400 hover:text-blue-600 transition-colors"><Settings className="w-4 h-4" /></button>
+                                    <button onClick={() => handleDelete(m.id)} className="p-1 text-slate-400 hover:text-red-600 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                 </div>
+                              )}
                            </td>
                         </tr>
                      ))}
@@ -257,6 +316,10 @@ export const CashFlow: React.FC = () => {
                         Registrar {modalType === 'INCOME' ? 'Ingreso' : 'Gasto'}
                      </h3>
                      <div className="space-y-4">
+                        <div>
+                           <label className="block text-xs font-bold text-slate-600 mb-1">Fecha</label>
+                           <input type="date" className="w-full border border-slate-300 p-2 rounded bg-slate-50 font-bold text-slate-700" value={date} onChange={e => setDate(e.target.value)} />
+                        </div>
                         <div>
                            <label className="block text-xs font-bold text-slate-600 mb-1">Categoría</label>
                            <select className="w-full border border-slate-300 p-2 rounded" value={catId} onChange={e => setCatId(e.target.value)}>
@@ -312,7 +375,13 @@ export const CashFlow: React.FC = () => {
 
       const handleProcess = (txId: string) => {
          if (confirm("¿Confirmar pago de esta cuota? Se generará el egreso y se actualizará la próxima fecha.")) {
-            store.processScheduledTransaction(txId);
+            store.processScheduledTransaction(txId, store.currentUser?.name || store.currentUser?.id || 'SISTEMA');
+         }
+      };
+
+      const handleDeletePlanner = (txId: string) => {
+         if (confirm("¿Eliminar este gasto programado? No se generarán más egresos automáticos para él.")) {
+            store.deleteScheduledTransaction(txId);
          }
       };
 
@@ -358,9 +427,14 @@ export const CashFlow: React.FC = () => {
                                  </td>
                                  <td className="p-3 text-right font-bold text-slate-900">S/ {t.amount.toFixed(2)}</td>
                                  <td className="p-3 text-center">
-                                    <button onClick={() => handleProcess(t.id)} className="bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1 rounded text-xs font-bold border border-green-200 flex items-center mx-auto transition-colors">
-                                       <CheckCircle className="w-3 h-3 mr-1" /> Procesar Pago
-                                    </button>
+                                    <div className="flex items-center justify-center gap-2">
+                                       <button onClick={() => handleProcess(t.id)} className="bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1 rounded text-xs font-bold border border-green-200 flex items-center transition-colors">
+                                          <CheckCircle className="w-3 h-3 mr-1" /> Procesar Pago
+                                       </button>
+                                       <button onClick={() => handleDeletePlanner(t.id)} className="p-1 text-slate-400 hover:bg-red-100 hover:text-red-600 rounded transition-colors" title="Eliminar Programación">
+                                          <Trash2 className="w-4 h-4" />
+                                       </button>
+                                    </div>
                                  </td>
                               </tr>
                            );
@@ -514,6 +588,264 @@ export const CashFlow: React.FC = () => {
       );
    };
 
+   // ====================
+   // SESSION ARQUEO VIEW
+   // ====================
+   const SessionView = () => {
+      const activeSession = store.currentCashSession;
+
+      const [openingAmount, setOpeningAmount] = useState(0);
+
+      // Denominations State for Closing
+      const [b200, setB200] = useState(0); const [b100, setB100] = useState(0); const [b50, setB50] = useState(0); const [b20, setB20] = useState(0); const [b10, setB10] = useState(0);
+      const [m5, setM5] = useState(0); const [m2, setM2] = useState(0); const [m1, setM1] = useState(0); const [m05, setM05] = useState(0); const [m02, setM02] = useState(0); const [m01, setM01] = useState(0);
+      const [vouchers, setVouchers] = useState(0); const [transfers, setTransfers] = useState(0);
+
+      // Live Calculation inside shift
+      let liveIncome = 0; let liveExpense = 0;
+      if (activeSession) {
+         // Gather movements strictly within this session's time bound
+         const mVs = store.cashMovements.filter(m => new Date(m.date) >= new Date(activeSession.open_time) && m.reference_id !== activeSession.id);
+         liveIncome += mVs.filter(m => m.type === 'INCOME').reduce((a, b) => a + b.amount, 0);
+         liveExpense += mVs.filter(m => m.type === 'EXPENSE').reduce((a, b) => a + b.amount, 0);
+         // Gather Sales
+         const saleVs = store.sales.filter(s => s.payment_method === 'CONTADO' && !s.document_type.includes('NOTA') && new Date(s.created_at) >= new Date(activeSession.open_time));
+         liveIncome += saleVs.reduce((a, b) => a + b.total, 0);
+      }
+
+      const expectedCurrentBalance = activeSession ? activeSession.system_opening_amount + liveIncome - liveExpense : 0;
+
+      const totalCashDeclared = (b200 * 200) + (b100 * 100) + (b50 * 50) + (b20 * 20) + (b10 * 10) +
+         (m5 * 5) + (m2 * 2) + (m1 * 1) + (m05 * 0.5) + (m02 * 0.2) + (m01 * 0.1);
+      const totalDeclared = totalCashDeclared + vouchers + transfers;
+
+      const handleOpen = () => {
+         if (openingAmount < 0) return;
+         store.openCashSession(openingAmount, store.currentUser?.name || store.currentUser?.id || 'SISTEMA');
+         setOpeningAmount(0);
+      };
+
+      const handleClose = () => {
+         if (!activeSession) return;
+         if (confirm("¿Confirmar el cierre de caja y guardar el arqueo final? Esta acción no se puede deshacer.")) {
+            store.closeCashSession(activeSession.id, {
+               declared_cash: totalCashDeclared,
+               declared_vouchers: vouchers,
+               declared_transfers: transfers,
+               declared_total: totalDeclared,
+               details: { b200, b100, b50, b20, b10, m5, m2, m1, m05, m02, m01 }
+            }, store.currentUser?.name || store.currentUser?.id || 'SISTEMA');
+
+            // Reset inputs
+            setB200(0); setB100(0); setB50(0); setB20(0); setB10(0);
+            setM5(0); setM2(0); setM1(0); setM05(0); setM02(0); setM01(0);
+            setVouchers(0); setTransfers(0);
+         }
+      };
+
+      if (!activeSession) {
+         return (
+            <div className="flex flex-col items-center justify-center h-full animate-fade-in">
+               <div className="bg-white p-8 rounded-2xl shadow-lg border border-slate-200 text-center max-w-md w-full">
+                  <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                     <Briefcase className="w-10 h-10" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-slate-800 mb-2">Caja Cerrada</h3>
+                  <p className="text-slate-500 mb-8">Inicia tu turno de caja ingresando el monto base inicial (sencillo) con el que arrancas.</p>
+
+                  <div className="text-left mb-6">
+                     <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">Monto Inicial en Efectivo (S/)</label>
+                     <input type="number"
+                        className="w-full border-2 border-slate-200 focus:border-emerald-500 p-4 rounded-xl text-2xl font-black text-center text-slate-700 bg-slate-50 transition-colors"
+                        value={openingAmount} onChange={e => setOpeningAmount(Number(e.target.value))} autoFocus />
+                  </div>
+
+                  <button onClick={handleOpen} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-md transition-all active:scale-95 text-lg">
+                     APERTURAR CAJA
+                  </button>
+
+                  {/* Previous Sessions Lists */}
+                  <div className="mt-8 text-left border-t border-slate-100 pt-6">
+                     <h4 className="font-bold text-slate-600 mb-3 text-xs uppercase">Últimos Cierres Registrados</h4>
+                     <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                        {store.cashSessions.filter(s => s.status === 'CLOSED').slice(0, 5).map(s => (
+                           <div key={s.id} className="p-3 bg-slate-50 rounded-lg border border-slate-200 flex justify-between items-center">
+                              <div>
+                                 <p className="font-bold text-slate-700 text-sm">{new Date(s.close_time!).toLocaleString()}</p>
+                                 <p className="text-xs text-slate-500">Cajero: {s.closed_by}</p>
+                              </div>
+                              <div className="text-right">
+                                 <p className="font-bold text-slate-800">S/ {s.declared_total.toFixed(2)}</p>
+                                 <p className={`text-xs font-bold ${s.difference < 0 ? 'text-red-500' : s.difference > 0 ? 'text-green-500' : 'text-slate-400'}`}>
+                                    Dif: {s.difference > 0 ? '+' : ''}{s.difference.toFixed(2)}
+                                 </p>
+                              </div>
+                           </div>
+                        ))}
+                        {store.cashSessions.filter(s => s.status === 'CLOSED').length === 0 && <p className="text-center text-xs italic text-slate-400 py-4">Sin historial previo.</p>}
+                     </div>
+                  </div>
+               </div>
+            </div>
+         );
+      }
+
+      return (
+         <div className="flex gap-6 h-full animate-fade-in">
+            {/* Control Panel / Summary */}
+            <div className="w-1/3 flex flex-col gap-4">
+               <div className="bg-slate-900 p-6 rounded-2xl shadow-lg relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-4 opacity-10">
+                     <Coins className="w-24 h-24" />
+                  </div>
+                  <div className="relative z-10 flex items-center justify-between">
+                     <div>
+                        <p className="text-emerald-400 font-bold text-xs uppercase tracking-wider mb-1 flex items-center"><CheckCircle className="w-3 h-3 mr-1" /> TURNO ACTIVO</p>
+                        <p className="text-slate-300 text-xs">Cajero: <span className="text-white font-bold">{activeSession.opened_by}</span></p>
+                        <p className="text-slate-300 text-xs">Abrió: <span className="text-white">{new Date(activeSession.open_time).toLocaleTimeString()}</span></p>
+                     </div>
+                  </div>
+
+                  <div className="mt-6 space-y-3 relative z-10">
+                     <div className="flex justify-between items-center text-sm border-b border-slate-700 pb-2">
+                        <span className="text-slate-400">Saldo Inicial</span>
+                        <span className="text-white font-bold">S/ {activeSession.system_opening_amount.toFixed(2)}</span>
+                     </div>
+                     <div className="flex justify-between items-center text-sm border-b border-slate-700 pb-2">
+                        <span className="text-slate-400">Total Ingresos (+ Ventas)</span>
+                        <span className="text-emerald-400 font-bold">+ S/ {liveIncome.toFixed(2)}</span>
+                     </div>
+                     <div className="flex justify-between items-center text-sm border-b border-slate-700 pb-2">
+                        <span className="text-slate-400">Total Egresos</span>
+                        <span className="text-red-400 font-bold">- S/ {liveExpense.toFixed(2)}</span>
+                     </div>
+                     <div className="flex justify-between items-center pt-2">
+                        <span className="text-slate-300 font-bold uppercase text-xs">Debería Haber (Sistema)</span>
+                        <span className="text-white text-2xl font-black">S/ {expectedCurrentBalance.toFixed(2)}</span>
+                     </div>
+                  </div>
+               </div>
+
+               <div className="bg-white p-6 rounded-2xl shadow border border-slate-200 flex-1 flex flex-col">
+                  <h3 className="font-bold text-slate-800 flex items-center mb-4"><BarChart3 className="w-5 h-5 mr-2 text-indigo-500" /> Resumen de Declaración</h3>
+
+                  <div className="space-y-4 flex-1">
+                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+                        <span className="text-slate-600 font-bold text-sm">Efectivo Físico</span>
+                        <span className="text-slate-900 font-black">S/ {totalCashDeclared.toFixed(2)}</span>
+                     </div>
+                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+                        <span className="text-slate-600 font-bold text-sm">Tarjetas / Vouchers</span>
+                        <span className="text-slate-900 font-black">S/ {vouchers.toFixed(2)}</span>
+                     </div>
+                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
+                        <span className="text-slate-600 font-bold text-sm">Yape / Plin / Transf.</span>
+                        <span className="text-slate-900 font-black">S/ {transfers.toFixed(2)}</span>
+                     </div>
+                  </div>
+
+                  <div className="border-t border-slate-200 pt-4 mt-auto">
+                     <div className="flex justify-between items-center px-2 mb-4">
+                        <span className="text-slate-800 font-bold text-lg">Total Físico:</span>
+                        <span className="text-indigo-600 font-black text-2xl">S/ {totalDeclared.toFixed(2)}</span>
+                     </div>
+
+                     <div className={`p-4 rounded-xl text-center mb-6 animate-fade-in ${totalDeclared === 0 ? 'bg-slate-50 text-slate-500 border border-slate-200'
+                           : (totalDeclared - expectedCurrentBalance) === 0 ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+                              : 'bg-red-50 border border-red-200 text-red-700'
+                        }`}>
+                        <p className="text-xs font-bold uppercase mb-1">Diferencia de Arqueo</p>
+                        {totalDeclared === 0 ? (
+                           <span className="font-bold text-lg">Ingresa los montos conteados</span>
+                        ) : (
+                           <span className="font-black text-2xl">
+                              {(totalDeclared - expectedCurrentBalance) > 0 ? '+' : ''}{(totalDeclared - expectedCurrentBalance).toFixed(2)}
+                           </span>
+                        )}
+                     </div>
+
+                     <button onClick={handleClose} disabled={totalDeclared === 0 && expectedCurrentBalance > 0} className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold py-4 rounded-xl shadow-md transition-all active:scale-95 text-lg flex justify-center items-center">
+                        <Save className="w-5 h-5 mr-2" /> GENERAR CIERRE
+                     </button>
+                  </div>
+               </div>
+            </div>
+
+            {/* Detailed Count Interface */}
+            <div className="flex-1 bg-white p-6 rounded-2xl shadow border border-slate-200 overflow-y-auto">
+               <h3 className="font-bold text-xl text-slate-800 mb-6 flex items-center border-b border-slate-100 pb-4">
+                  Contador de Billetes y Monedas
+               </h3>
+
+               <div className="grid grid-cols-2 gap-8">
+                  {/* Billetes */}
+                  <div>
+                     <h4 className="font-bold text-slate-500 mb-4 text-xs uppercase tracking-widest border-l-4 border-emerald-500 pl-2">Billetes</h4>
+                     <div className="space-y-3">
+                        {[
+                           { val: 200, label: 'S/ 200.00', state: b200, setter: setB200 },
+                           { val: 100, label: 'S/ 100.00', state: b100, setter: setB100 },
+                           { val: 50, label: 'S/ 50.00', state: b50, setter: setB50 },
+                           { val: 20, label: 'S/ 20.00', state: b20, setter: setB20 },
+                           { val: 10, label: 'S/ 10.00', state: b10, setter: setB10 },
+                        ].map(item => (
+                           <div key={item.val} className="flex items-center gap-3">
+                              <span className="w-24 text-right font-bold text-slate-700">{item.label}</span>
+                              <span className="text-slate-300">x</span>
+                              <input type="number" min="0" className="w-20 border border-slate-300 p-2 rounded text-center font-bold text-lg text-emerald-700 bg-emerald-50 focus:ring-emerald-500" value={item.state} onChange={e => item.setter(Math.max(0, parseInt(e.target.value) || 0))} />
+                              <span className="w-24 font-bold text-slate-400 text-right">= S/ {(item.val * item.state).toFixed(2)}</span>
+                           </div>
+                        ))}
+                     </div>
+                  </div>
+
+                  {/* Monedas */}
+                  <div>
+                     <h4 className="font-bold text-slate-500 mb-4 text-xs uppercase tracking-widest border-l-4 border-amber-500 pl-2">Monedas</h4>
+                     <div className="space-y-3">
+                        {[
+                           { val: 5, label: 'S/ 5.00', state: m5, setter: setM5 },
+                           { val: 2, label: 'S/ 2.00', state: m2, setter: setM2 },
+                           { val: 1, label: 'S/ 1.00', state: m1, setter: setM1 },
+                           { val: 0.5, label: 'S/ 0.50', state: m05, setter: setM05 },
+                           { val: 0.2, label: 'S/ 0.20', state: m02, setter: setM02 },
+                           { val: 0.1, label: 'S/ 0.10', state: m01, setter: setM01 },
+                        ].map(item => (
+                           <div key={item.val} className="flex items-center gap-3">
+                              <span className="w-24 text-right font-bold text-slate-700">{item.label}</span>
+                              <span className="text-slate-300">x</span>
+                              <input type="number" min="0" className="w-20 border border-slate-300 p-2 rounded text-center font-bold text-lg text-amber-700 bg-amber-50 focus:ring-amber-500" value={item.state} onChange={e => item.setter(Math.max(0, parseInt(e.target.value) || 0))} />
+                              <span className="w-24 font-bold text-slate-400 text-right">= S/ {(item.val * item.state).toFixed(2)}</span>
+                           </div>
+                        ))}
+                     </div>
+                  </div>
+               </div>
+
+               {/* Digital / Other */}
+               <h4 className="font-bold text-slate-500 mt-10 border-b border-slate-100 pb-4 text-xs uppercase tracking-widest border-l-4 border-indigo-500 pl-2">Saldos No Efectivo (Digitales / Tarjetas)</h4>
+               <div className="grid grid-cols-2 gap-8 mt-6">
+                  <div>
+                     <label className="block text-sm font-bold text-slate-700 mb-2">Total en Vouchers (Tarjetas / POS)</label>
+                     <div className="flex items-center">
+                        <span className="px-4 py-3 bg-slate-100 border border-slate-300 border-r-0 rounded-l font-bold text-slate-500">S/</span>
+                        <input type="number" min="0" step="0.01" className="w-full border border-slate-300 p-3 rounded-r font-black text-xl text-indigo-700 focus:ring-indigo-500" value={vouchers} onChange={e => setVouchers(Math.max(0, parseFloat(e.target.value) || 0))} />
+                     </div>
+                  </div>
+                  <div>
+                     <label className="block text-sm font-bold text-slate-700 mb-2">Total en Yape / Plin / Transferencias</label>
+                     <div className="flex items-center">
+                        <span className="px-4 py-3 bg-slate-100 border border-slate-300 border-r-0 rounded-l font-bold text-slate-500">S/</span>
+                        <input type="number" min="0" step="0.01" className="w-full border border-slate-300 p-3 rounded-r font-black text-xl text-indigo-700 focus:ring-indigo-500" value={transfers} onChange={e => setTransfers(Math.max(0, parseFloat(e.target.value) || 0))} />
+                     </div>
+                  </div>
+               </div>
+
+            </div>
+         </div>
+      );
+   };
+
    return (
       <div className="flex flex-col h-full space-y-4 font-sans text-sm">
          {/* Top Bar */}
@@ -533,6 +865,7 @@ export const CashFlow: React.FC = () => {
          {/* Navigation */}
          <div className="flex space-x-1 bg-slate-200 p-1 rounded-lg w-fit">
             {[
+               { id: 'SESSION', label: 'Arqueo Caja', icon: Store },
                { id: 'DASHBOARD', label: 'Dashboard', icon: PieChart },
                { id: 'MOVEMENTS', label: 'Movimientos', icon: ArrowRight },
                { id: 'PLANNER', label: 'Programación (Sueldos/Fijos)', icon: Clock },
@@ -550,6 +883,7 @@ export const CashFlow: React.FC = () => {
 
          {/* Content Area */}
          <div className="flex-1 overflow-hidden">
+            {activeTab === 'SESSION' && <SessionView />}
             {activeTab === 'DASHBOARD' && <DashboardView />}
             {activeTab === 'MOVEMENTS' && <MovementsView />}
             {activeTab === 'PLANNER' && <PlannerView />}

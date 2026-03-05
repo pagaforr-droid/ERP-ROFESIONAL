@@ -166,6 +166,37 @@ export interface ScheduledTransaction {
   auto_process?: boolean;
 }
 
+export interface CashRegisterSession {
+  id: string;
+  open_time: string;
+  close_time?: string;
+  opened_by: string; // user id
+  closed_by?: string;
+  status: 'OPEN' | 'CLOSED';
+
+  // System Calculated Totals
+  system_opening_amount: number;
+  system_income: number;    // All incomes during this session time
+  system_expense: number;   // All expenses during this session time
+  system_expected_close: number; // opening + income - expense
+
+  // User Declared Totals (Physical Count)
+  declared_cash: number;       // Sum of all bills and coins
+  declared_transfers: number;  // Yape/Plin/Transferencias
+  declared_vouchers: number;   // Tarjetas de debito/credito/cheques
+  declared_total: number;
+
+  // Difference
+  difference: number; // declared - expected
+
+  // Detailed Count Breakdown (JSON string or object)
+  details?: {
+    b200: number; b100: number; b50: number; b20: number; b10: number;
+    m5: number; m2: number; m1: number; m05: number; m02: number; m01: number;
+    other_docs?: { type: string, amount: number }[]; // For vouchers/yape records
+  };
+}
+
 export interface CashMovement {
   id: string;
   type: 'INCOME' | 'EXPENSE';

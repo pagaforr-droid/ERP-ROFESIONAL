@@ -274,6 +274,8 @@ interface AppState {
    scheduledTransactions: ScheduledTransaction[];
    collectionRecords: CollectionRecord[];
    collectionPlanillas: CollectionPlanilla[];
+   cashSessions: import('../types').CashRegisterSession[];
+   currentCashSession: import('../types').CashRegisterSession | null;
 
    // Actions
    updateCompany: (config: Partial<CompanyConfig>) => void;
@@ -339,12 +341,17 @@ interface AppState {
 
    // Cash Flow Actions
    addCashMovement: (CashMovement) => void;
+   updateCashMovement: (CashMovement) => void;
+   deleteCashMovement: (id: string) => void;
    addExpenseCategory: (ExpenseCategory) => void;
    updateExpenseCategory: (ExpenseCategory) => void;
    deleteExpenseCategory: (id: string) => void;
    addScheduledTransaction: (ScheduledTransaction) => void;
    updateScheduledTransaction: (ScheduledTransaction) => void;
-   processScheduledTransaction: (txId: string) => void;
+   deleteScheduledTransaction: (id: string) => void;
+   processScheduledTransaction: (txId: string, userId: string) => void;
+   openCashSession: (amount: number, userId: string) => void;
+   closeCashSession: (sessionId: string, details: Omit<import('../types').CashRegisterSession, 'id' | 'open_time' | 'opened_by' | 'status' | 'system_opening_amount' | 'system_income' | 'system_expense' | 'system_expected_close' | 'difference'>, userId: string) => void;
 
    // User Actions
    addUser: (User) => void;
@@ -408,6 +415,8 @@ export const useStore = create<AppState>((set, get) => ({
    currentUser: null,
    collectionRecords: [],
    collectionPlanillas: [],
+   cashSessions: [],
+   currentCashSession: null,
 
    updateCompany: (config) => set((s) => ({ company: { ...s.company, ...config } })),
 
@@ -1716,13 +1725,153 @@ export const useStore = create<AppState>((set, get) => ({
    updatePriceList: (list) => set(s => ({ priceLists: s.priceLists.map(l => l.id === list.id ? list : l) })),
 
    addCashMovement: (m) => set(s => ({ cashMovements: [m, ...s.cashMovements] })),
+   updateCashMovement: (m) => set(s => ({ cashMovements: s.cashMovements.map(cm => cm.id === m.id ? m : cm) })),
+   deleteCashMovement: (id) => set(s => ({ cashMovements: s.cashMovements.filter(cm => cm.id !== id) })),
    addExpenseCategory: (c) => set(s => ({ expenseCategories: [...s.expenseCategories, c] })),
    updateExpenseCategory: (c) => set(s => ({ expenseCategories: s.expenseCategories.map(cat => cat.id === c.id ? c : cat) })),
    deleteExpenseCategory: (id) => set(s => ({ expenseCategories: s.expenseCategories.filter(c => c.id !== id) })),
 
    addScheduledTransaction: (tx) => set(s => ({ scheduledTransactions: [...s.scheduledTransactions, tx] })),
    updateScheduledTransaction: (tx) => set(s => ({ scheduledTransactions: s.scheduledTransactions.map(t => t.id === tx.id ? tx : t) })),
-   processScheduledTransaction: (txId) => { },
+   deleteScheduledTransaction: (id) => set(s => ({ scheduledTransactions: s.scheduledTransactions.filter(t => t.id !== id) })),
+
+   processScheduledTransaction: (txId, userId) => set(s => {
+      const tx = s.scheduledTransactions.find(t => t.id === txId);
+      if (!tx || !tx.is_active) return s;
+
+      const cat = s.expenseCategories.find(c => c.id === tx.category_id);
+
+      // 1. Create the Expense Movement
+      const newMovement: import('../types').CashMovement = {
+         id: crypto.randomUUID(),
+         type: 'EXPENSE',
+         category_id: tx.category_id,
+         category_name: cat?.name || 'GASTO PROGRAMADO',
+         description: `Pago Automático: ${tx.name}`,
+         amount: tx.amount,
+         date: new Date().toISOString(),
+         reference_id: tx.id,
+         user_id: userId
+      };
+
+      // 2. Adjust Next Due Date or Mark Inactive
+      let newNextDate = new Date(tx.next_due_date);
+      let newIsActive = true;
+
+      if (tx.frequency === 'MONTHLY') {
+         newNextDate.setUTCMonth(newNextDate.getUTCMonth() + 1);
+      } else if (tx.frequency === 'WEEKLY') {
+         newNextDate.setUTCDate(newNextDate.getUTCDate() + 7);
+      } else if (tx.frequency === 'BIWEEKLY') {
+         newNextDate.setUTCDate(newNextDate.getUTCDate() + 14);
+      } else if (tx.frequency === 'ONETIME') {
+         newIsActive = false;
+      }
+
+      const updatedTx = {
+         ...tx,
+         is_active: newIsActive,
+         next_due_date: newNextDate.toISOString().split('T')[0]
+      };
+
+      return {
+         cashMovements: [newMovement, ...s.cashMovements],
+         scheduledTransactions: s.scheduledTransactions.map(t => t.id === tx.id ? updatedTx : t)
+      };
+   }),
+
+   openCashSession: (amount, userId) => set(s => {
+      if (s.currentCashSession) return s; // Already open
+
+      const newSession: import('../types').CashRegisterSession = {
+         id: crypto.randomUUID(),
+         open_time: new Date().toISOString(),
+         opened_by: userId,
+         status: 'OPEN',
+         system_opening_amount: amount,
+         system_income: 0,
+         system_expense: 0,
+         system_expected_close: amount,
+         declared_cash: 0,
+         declared_transfers: 0,
+         declared_vouchers: 0,
+         declared_total: 0,
+         difference: 0
+      };
+
+      // Create an initial cash movement for traceability if needed (optional, but good practice)
+      const openMovement: import('../types').CashMovement = {
+         id: crypto.randomUUID(),
+         type: 'INCOME',
+         category_name: 'APERTURA CAJA',
+         description: `Saldo inicial declarado al abrir caja`,
+         amount: amount,
+         date: new Date().toISOString(),
+         user_id: userId,
+         reference_id: newSession.id
+      };
+
+      return {
+         cashSessions: [newSession, ...s.cashSessions],
+         currentCashSession: newSession,
+         cashMovements: [openMovement, ...s.cashMovements]
+      };
+   }),
+
+   closeCashSession: (sessionId, details, userId) => set(s => {
+      const session = s.cashSessions.find(x => x.id === sessionId);
+      if (!session || session.status === 'CLOSED') return s;
+
+      const closeTime = new Date().toISOString();
+
+      // 1. Calculate real SYSTEM totals during this timeframe
+      // Only get movements that happened between open_time and right now.
+      // Exclude the 'APERTURA CAJA' movement itself because it's already in system_opening_amount
+      const sessionMovements = s.cashMovements.filter(m =>
+         new Date(m.date) >= new Date(session.open_time) &&
+         new Date(m.date) <= new Date(closeTime) &&
+         m.reference_id !== session.id // exclude the opener
+      );
+
+      // Add Sales built-in incomes (CONTADO) during this session timeframe
+      const sessionSales = s.sales.filter(sale =>
+         sale.payment_method === 'CONTADO' &&
+         !sale.document_type.includes('NOTA') &&
+         new Date(sale.created_at) >= new Date(session.open_time) &&
+         new Date(sale.created_at) <= new Date(closeTime)
+      );
+
+      // Summarize
+      const manualIncome = sessionMovements.filter(m => m.type === 'INCOME').reduce((acc, m) => acc + m.amount, 0);
+      const manualExpense = sessionMovements.filter(m => m.type === 'EXPENSE').reduce((acc, m) => acc + m.amount, 0);
+
+      const salesIncome = sessionSales.reduce((acc, sale) => acc + sale.total, 0);
+
+      const totalIncome = manualIncome + salesIncome;
+      const totalExpense = manualExpense;
+
+      const expectedClose = session.system_opening_amount + totalIncome - totalExpense;
+
+      // 2. Finalize Difference & Session
+      const diff = details.declared_total - expectedClose;
+
+      const closedSession: import('../types').CashRegisterSession = {
+         ...session,
+         ...details,
+         close_time: closeTime,
+         closed_by: userId,
+         status: 'CLOSED',
+         system_income: totalIncome,
+         system_expense: totalExpense,
+         system_expected_close: expectedClose,
+         difference: diff
+      };
+
+      return {
+         cashSessions: s.cashSessions.map(c => c.id === sessionId ? closedSession : c),
+         currentCashSession: null // Clear active session
+      };
+   }),
 
    addUser: (user) => set(s => ({ users: [...s.users, user] })),
    updateUser: (user) => set(s => {
