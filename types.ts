@@ -336,6 +336,9 @@ export interface Order {
   total: number;
   status: 'pending' | 'processed' | 'rejected';
 
+  observation?: string;
+  delivery_address?: string;
+
   created_at: string;
   items: OrderItem[];
 }

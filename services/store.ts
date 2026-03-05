@@ -292,7 +292,7 @@ interface AppState {
    createCreditNote: (creditNote: Sale, originalSaleId: string, returnedItems: SaleItem[]) => void;
    createOrder: (order: Order) => void;
    updateOrder: (order: Order) => void;
-   batchProcessOrders: (orderIds: string[]) => void;
+   batchProcessOrders: (orderIds: string[], targetSeries?: { FACTURA?: string, BOLETA?: string }) => void;
    reportCollection: (saleId: string, sellerId: string, amount: number) => void;
    consolidateCollections: (recordIds: string[], userId?: string, metadata?: { editPlanillaId?: string, editPlanillaCode?: string }) => void;
    manualLiquidation: (payments: { saleId: string, amount: number }[], userId?: string, metadata?: { date: string, glosa: string, editPlanillaId?: string, editPlanillaCode?: string }) => void;
@@ -691,7 +691,7 @@ export const useStore = create<AppState>((set, get) => ({
    },
 
    // === UPDATED: BATCH PROCESS ORDERS (ROBUST VERSION) ===
-   batchProcessOrders: (orderIds) => set(s => {
+   batchProcessOrders: (orderIds, targetSeries) => set(s => {
       const selectedOrders = s.orders.filter(o => orderIds.includes(o.id));
       if (selectedOrders.length === 0) return s;
 
@@ -713,7 +713,12 @@ export const useStore = create<AppState>((set, get) => ({
          const docType = ruc.length === 11 ? 'FACTURA' : 'BOLETA';
 
          // Find series config
-         const seriesObj = currentSeriesState.find(ser => ser.type === docType && ser.is_active);
+         let seriesObj;
+         if (targetSeries && targetSeries[docType as 'FACTURA' | 'BOLETA']) {
+            seriesObj = currentSeriesState.find(ser => ser.type === docType && ser.series === targetSeries[docType as 'FACTURA' | 'BOLETA']);
+         } else {
+            seriesObj = currentSeriesState.find(ser => ser.type === docType && ser.is_active);
+         }
          const seriesStr = seriesObj ? seriesObj.series : (docType === 'FACTURA' ? 'F001' : 'B001');
 
          // Increment Number

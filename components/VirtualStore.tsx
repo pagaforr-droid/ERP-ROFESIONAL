@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Combo } from '../types';
-import { Search, ShoppingCart, Package, X, Plus, Minus, Tag, Filter, User, ShieldCheck, Heart, Info } from 'lucide-react';
+import { Search, ShoppingCart, Package, X, Plus, Minus, Tag, Filter, User, ShieldCheck, Heart, Info, LogOut } from 'lucide-react';
 import { calculatePromotions } from '../utils/promotions';
 
 interface CartItem {
@@ -25,6 +25,13 @@ export const VirtualStore: React.FC = () => {
    const [selectedCategory, setSelectedCategory] = useState('ALL');
    const [isCartOpen, setIsCartOpen] = useState(false);
    const [cart, setCart] = useState<any[]>([]); // Using any to be compatible with OrderItem temporarily in this view
+   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+   const [checkoutData, setCheckoutData] = useState({
+      phone: '',
+      docType: 'BOLETA',
+      address: '',
+      notes: ''
+   });
 
    // --- CLIENT CONTEXT ---
    const client = clients.find(c => c.id === currentUser?.client_id);
@@ -135,12 +142,27 @@ export const VirtualStore: React.FC = () => {
       setCart(calculatePromotions(newCart, autoPromotions, products));
    };
 
-   const handleCheckout = () => {
+   const handleCheckoutLaunch = () => {
       if (isAdminView) {
          alert("MODO ADMIN: No se puede generar pedido real sin cliente.");
          return;
       }
       if (!client || cart.length === 0) return;
+
+      setCheckoutData({
+         phone: '',
+         docType: (client.doc_number?.length || 0) === 11 ? 'FACTURA' : 'BOLETA',
+         address: client.address || '',
+         notes: ''
+      });
+      setIsCheckoutModalOpen(true);
+   };
+
+   const confirmCheckout = () => {
+      if (!checkoutData.phone.trim()) {
+         alert("El número de teléfono/celular es obligatorio.");
+         return;
+      }
 
       const orderItems = cart.map((cItem: any) => ({
          product_id: cItem.product_id,
@@ -153,26 +175,30 @@ export const VirtualStore: React.FC = () => {
       }));
 
       const total = orderItems.reduce((acc, i) => acc + i.total_price, 0);
+      const combinedNotes = `Teléfono: ${checkoutData.phone}\n${checkoutData.notes ? 'Notas: ' + checkoutData.notes : ''}`;
 
       createOrder({
          id: crypto.randomUUID(),
          code: `WEB-${Math.floor(Math.random() * 100000)}`,
          seller_id: 'WEB',
-         client_id: client.id,
-         client_name: client.name,
-         client_doc_type: client.doc_type,
-         client_doc_number: client.doc_number,
-         suggested_document_type: docType,
+         client_id: client!.id,
+         client_name: client!.name,
+         client_doc_type: client!.doc_type,
+         client_doc_number: client!.doc_number,
+         suggested_document_type: checkoutData.docType as any,
          payment_method: 'CONTADO',
          delivery_date: new Date().toISOString(),
          created_at: new Date().toISOString(),
          total,
          status: 'pending',
+         observation: combinedNotes,
+         delivery_address: checkoutData.address,
          items: orderItems as any
       });
 
-      alert("¡Pedido enviado correctamente!");
+      alert("¡Pedido enviado correctamente! Nos comunicaremos contigo en breve.");
       setCart([]);
+      setIsCheckoutModalOpen(false);
       setIsCartOpen(false);
    };
 
@@ -318,14 +344,35 @@ export const VirtualStore: React.FC = () => {
                      </div>
                   </div>
 
-                  <button onClick={() => setIsCartOpen(true)} className="relative p-2 text-slate-600 hover:text-blue-600 transition-colors">
-                     <ShoppingCart className="h-6 w-6" />
-                     {cart.length > 0 && (
-                        <span className="absolute top-0 right-0 h-5 w-5 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full animate-bounce">
-                           {cart.length}
-                        </span>
-                     )}
-                  </button>
+                  <div className="flex items-center gap-1 md:gap-4">
+                     <button onClick={() => setIsCartOpen(true)} className="relative p-2 text-slate-600 hover:text-blue-600 transition-colors">
+                        <ShoppingCart className="h-6 w-6" />
+                        {cart.length > 0 && (
+                           <span className="absolute top-0 right-0 h-5 w-5 bg-red-500 text-white text-[10px] font-bold flex items-center justify-center rounded-full animate-bounce">
+                              {cart.length}
+                           </span>
+                        )}
+                     </button>
+
+                     <div className="h-6 w-px bg-slate-200 hidden md:block"></div>
+
+                     <div className="flex items-center gap-2">
+                        {!isAdminView && (
+                           <div className="hidden md:flex flex-col items-end mr-2">
+                              <span className="text-xs font-bold text-slate-800">{currentUser?.name}</span>
+                              <span className="text-[10px] text-slate-500">{client?.doc_number}</span>
+                           </div>
+                        )}
+                        <button
+                           onClick={logout}
+                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors text-sm font-bold shadow-sm"
+                           title="Cerrar Sesión"
+                        >
+                           <LogOut className="w-4 h-4" />
+                           <span className="hidden md:inline">Salir</span>
+                        </button>
+                     </div>
+                  </div>
                </div>
 
                {/* Create Tabs Navigation */}
@@ -476,12 +523,119 @@ export const VirtualStore: React.FC = () => {
                         <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-1 rounded-full">{cart.reduce((a, b) => a + b.quantity, 0)} items</span>
                      </div>
                      <button
-                        onClick={handleCheckout}
+                        onClick={handleCheckoutLaunch}
                         disabled={cart.length === 0}
                         className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 disabled:shadow-none disabled:cursor-not-allowed flex items-center justify-center gap-2"
                      >
                         Confirmar Pedido <span className="text-blue-300">→</span>
                      </button>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* --- CHECKOUT CONFIRMATION MODAL --- */}
+         {isCheckoutModalOpen && !isAdminView && client && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={() => setIsCheckoutModalOpen(false)}></div>
+               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative z-10 flex flex-col animate-scale-up overflow-hidden">
+                  <div className="bg-blue-600 p-6 text-white text-center">
+                     <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-90" />
+                     <h2 className="text-2xl font-black tracking-tight">Casi Listo</h2>
+                     <p className="text-blue-100 text-sm mt-1">Confirma tus datos para finalizar el pedido</p>
+                  </div>
+
+                  <div className="p-6 space-y-5 flex-1 overflow-y-auto max-h-[60vh]">
+
+                     {/* Client Info Readonly */}
+                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 flex items-start gap-3">
+                        <div className="bg-blue-100 p-2 rounded-lg text-blue-600">
+                           <User className="w-5 h-5" />
+                        </div>
+                        <div>
+                           <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-0.5">Cliente</div>
+                           <div className="font-bold text-slate-800 leading-none mb-1">{client.name}</div>
+                           <div className="text-sm text-slate-500">{client.doc_type}: {client.doc_number}</div>
+                        </div>
+                     </div>
+
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Doc Type Selection */}
+                        <div className="col-span-1">
+                           <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Comprobante</label>
+                           <select
+                              value={checkoutData.docType}
+                              onChange={e => setCheckoutData({ ...checkoutData, docType: e.target.value })}
+                              className="w-full border-slate-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-slate-50 text-slate-800 font-medium py-2 px-3"
+                           >
+                              <option value="BOLETA">Boleta de Venta</option>
+                              {(client.doc_number?.length === 11) && <option value="FACTURA">Factura Electrónica</option>}
+                           </select>
+                           {client.doc_number?.length !== 11 && (
+                              <p className="text-[10px] text-slate-400 mt-1 italic">* Factura solo disponible con RUC válido 11 dígitos.</p>
+                           )}
+                        </div>
+
+                        {/* Phone Number */}
+                        <div className="col-span-1">
+                           <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Celular / Teléfono <span className="text-red-500">*</span></label>
+                           <input
+                              type="tel"
+                              value={checkoutData.phone}
+                              onChange={e => setCheckoutData({ ...checkoutData, phone: e.target.value })}
+                              placeholder="Ej: 987654321"
+                              className="w-full border-slate-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-slate-50 text-slate-800 font-medium py-2 px-3"
+                              autoFocus
+                           />
+                        </div>
+                     </div>
+
+                     {/* Delivery Address */}
+                     <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Dirección de Envío</label>
+                        <input
+                           type="text"
+                           value={checkoutData.address}
+                           onChange={e => setCheckoutData({ ...checkoutData, address: e.target.value })}
+                           placeholder="Ingresa la dirección detallada"
+                           className="w-full border-slate-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-slate-50 text-slate-800 py-2 px-3"
+                        />
+                     </div>
+
+                     {/* Notes */}
+                     <div>
+                        <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wide">Notas u Observaciones (Opcional)</label>
+                        <textarea
+                           value={checkoutData.notes}
+                           onChange={e => setCheckoutData({ ...checkoutData, notes: e.target.value })}
+                           placeholder="Referencia de llegada, horario disponible, etc."
+                           className="w-full border-slate-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring-blue-500 bg-slate-50 text-slate-800 py-2 px-3 resize-none h-20"
+                        ></textarea>
+                     </div>
+
+                  </div>
+
+                  <div className="bg-slate-50 border-t border-slate-100 p-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+                     <div className="w-full md:w-auto text-center md:text-left">
+                        <span className="text-xs text-slate-500 font-bold block">TOTAL A PAGAR</span>
+                        <span className="text-3xl font-black text-blue-600 leading-none">
+                           S/ {cart.reduce((a, b) => a + b.total_price, 0).toFixed(2)}
+                        </span>
+                     </div>
+                     <div className="flex w-full md:w-auto gap-3">
+                        <button
+                           onClick={() => setIsCheckoutModalOpen(false)}
+                           className="flex-1 md:flex-none px-6 py-3 bg-white border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition-colors shadow-sm"
+                        >
+                           Volver
+                        </button>
+                        <button
+                           onClick={confirmCheckout}
+                           className="flex-1 md:flex-none px-8 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl hover:from-blue-700 hover:to-indigo-700 shadow-md shadow-blue-200 transition-all hover:scale-[1.02] active:scale-95 flex items-center justify-center"
+                        >
+                           ¡Enviar Pedido!
+                        </button>
+                     </div>
                   </div>
                </div>
             </div>

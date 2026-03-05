@@ -4,7 +4,7 @@ import { useStore } from '../services/store';
 import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText } from 'lucide-react';
 
 export const OrderProcessing: React.FC = () => {
-   const { orders, sellers, batchProcessOrders, clients, zones } = useStore();
+   const { orders, sellers, batchProcessOrders, clients, zones, company } = useStore();
 
    // Filters
    const [filterSeller, setFilterSeller] = useState('ALL');
@@ -19,6 +19,9 @@ export const OrderProcessing: React.FC = () => {
    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
    const [isProcessing, setIsProcessing] = useState(false);
    const [processResult, setProcessResult] = useState<{ facturas: number, boletas: number } | null>(null);
+
+   // Target Series
+   const [targetSeries, setTargetSeries] = useState<{ FACTURA?: string, BOLETA?: string }>({});
 
    // Filter Logic
    const filteredOrders = orders.filter(o => {
@@ -79,6 +82,16 @@ export const OrderProcessing: React.FC = () => {
    // 2. Open Modal
    const handleRequestProcess = () => {
       if (selectedIds.size === 0) return;
+
+      // Auto-select the first active series of each type as default
+      const defaultTargets: { FACTURA?: string, BOLETA?: string } = {};
+      const activeFacturaSeries = company.series.find(s => s.type === 'FACTURA' && s.is_active);
+      const activeBoletaSeries = company.series.find(s => s.type === 'BOLETA' && s.is_active);
+
+      if (activeFacturaSeries) defaultTargets.FACTURA = activeFacturaSeries.series;
+      if (activeBoletaSeries) defaultTargets.BOLETA = activeBoletaSeries.series;
+
+      setTargetSeries(defaultTargets);
       setProcessResult(null);
       setIsConfirmOpen(true);
    };
@@ -95,7 +108,7 @@ export const OrderProcessing: React.FC = () => {
          await new Promise(resolve => setTimeout(resolve, 1500));
 
          // Action
-         batchProcessOrders(Array.from(selectedIds));
+         batchProcessOrders(Array.from(selectedIds), targetSeries);
 
          // Update Local State for Result View
          setProcessResult({
@@ -170,17 +183,49 @@ export const OrderProcessing: React.FC = () => {
                            </p>
 
                            <div className="space-y-2 mb-6">
-                              <div className="flex justify-between items-center p-3 bg-blue-50 rounded border border-blue-100">
-                                 <div className="flex items-center font-bold text-blue-800">
-                                    <FileText className="w-4 h-4 mr-2" /> FACTURAS
+                              <div className="flex flex-col p-3 bg-blue-50 rounded border border-blue-100 gap-2">
+                                 <div className="flex justify-between items-center w-full">
+                                    <div className="flex items-center font-bold text-blue-800">
+                                       <FileText className="w-4 h-4 mr-2" /> FACTURAS
+                                    </div>
+                                    <span className="text-lg font-bold text-slate-700">{processSummary.facturas}</span>
                                  </div>
-                                 <span className="text-lg font-bold text-slate-700">{processSummary.facturas}</span>
+                                 {processSummary.facturas > 0 && (
+                                    <div className="flex items-center gap-2 mt-1">
+                                       <label className="text-xs font-bold text-blue-700 whitespace-nowrap">Serie destino:</label>
+                                       <select
+                                          className="text-xs border-blue-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-blue-500 bg-white"
+                                          value={targetSeries.FACTURA || ''}
+                                          onChange={e => setTargetSeries(prev => ({ ...prev, FACTURA: e.target.value }))}
+                                       >
+                                          {company.series.filter(s => s.type === 'FACTURA').map(s => (
+                                             <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
+                                          ))}
+                                       </select>
+                                    </div>
+                                 )}
                               </div>
-                              <div className="flex justify-between items-center p-3 bg-purple-50 rounded border border-purple-100">
-                                 <div className="flex items-center font-bold text-purple-800">
-                                    <FileText className="w-4 h-4 mr-2" /> BOLETAS
+                              <div className="flex flex-col p-3 bg-purple-50 rounded border border-purple-100 gap-2">
+                                 <div className="flex justify-between items-center w-full">
+                                    <div className="flex items-center font-bold text-purple-800">
+                                       <FileText className="w-4 h-4 mr-2" /> BOLETAS
+                                    </div>
+                                    <span className="text-lg font-bold text-slate-700">{processSummary.boletas}</span>
                                  </div>
-                                 <span className="text-lg font-bold text-slate-700">{processSummary.boletas}</span>
+                                 {processSummary.boletas > 0 && (
+                                    <div className="flex items-center gap-2 mt-1">
+                                       <label className="text-xs font-bold text-purple-700 whitespace-nowrap">Serie destino:</label>
+                                       <select
+                                          className="text-xs border-purple-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-purple-500 bg-white"
+                                          value={targetSeries.BOLETA || ''}
+                                          onChange={e => setTargetSeries(prev => ({ ...prev, BOLETA: e.target.value }))}
+                                       >
+                                          {company.series.filter(s => s.type === 'BOLETA').map(s => (
+                                             <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
+                                          ))}
+                                       </select>
+                                    </div>
+                                 )}
                               </div>
                               <div className="flex justify-between items-center pt-2 border-t border-slate-100 mt-2">
                                  <span className="font-bold text-slate-500">Total Venta:</span>
