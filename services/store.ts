@@ -356,8 +356,8 @@ interface AppState {
    // User Actions
    addUser: (User) => void;
    updateUser: (User) => void;
-   clockIn: (userId: string) => void;
-   clockOut: (userId: string) => void;
+   clockIn: (userId: string, photo?: string, location?: { lat: number, lng: number }) => void;
+   clockOut: (userId: string, photo?: string, location?: { lat: number, lng: number }) => void;
    updateAttendanceRecord: (AttendanceRecord) => void;
 
    // Promo Actions
@@ -1881,9 +1881,48 @@ export const useStore = create<AppState>((set, get) => ({
          currentUser
       };
    }),
-   clockIn: (userId) => { },
-   clockOut: (userId) => { },
-   updateAttendanceRecord: (record) => { },
+   clockIn: (userId, photo, location) => set(s => {
+      const today = new Date().toISOString().split('T')[0];
+      const newRecord: import('../types').AttendanceRecord = {
+         id: crypto.randomUUID(),
+         user_id: userId,
+         date: today,
+         check_in: new Date().toISOString(),
+         photo_in: photo,
+         location_in: location,
+         total_hours: 0,
+         status: 'OPEN'
+      };
+      return { attendanceRecords: [...s.attendanceRecords, newRecord] };
+   }),
+
+   clockOut: (userId, photo, location) => set(s => {
+      const today = new Date().toISOString().split('T')[0];
+      return {
+         attendanceRecords: s.attendanceRecords.map(r => {
+            if (r.user_id === userId && r.date === today && r.status === 'OPEN') {
+               const checkOut = new Date();
+               const checkIn = new Date(r.check_in);
+               const diffMs = checkOut.getTime() - checkIn.getTime();
+               const totalHours = diffMs / (1000 * 60 * 60);
+
+               return {
+                  ...r,
+                  check_out: checkOut.toISOString(),
+                  photo_out: photo,
+                  location_out: location,
+                  total_hours: totalHours,
+                  status: 'CLOSED'
+               };
+            }
+            return r;
+         })
+      };
+   }),
+
+   updateAttendanceRecord: (record) => set(s => ({
+      attendanceRecords: s.attendanceRecords.map(r => r.id === record.id ? record : r)
+   })),
 
    // Promo Actions
    addPromotion: (promo) => set((state) => ({ promotions: [...state.promotions, promo] })),

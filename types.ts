@@ -595,6 +595,7 @@ export interface User {
   name: string;
   role: 'ADMIN' | 'SELLER' | 'WAREHOUSE' | 'LOGISTICS' | 'CLIENT'; // Added CLIENT
   client_id?: string; // If role is CLIENT, link to Client ID
+  avatar_url?: string; // NEW: Custom user avatar
   requires_attendance: boolean;
   is_active: boolean;
   pin_code?: string; // For quick attendance
@@ -608,6 +609,10 @@ export interface AttendanceRecord {
   date: string; // YYYY-MM-DD
   check_in: string; // ISO Timestamp
   check_out?: string; // ISO Timestamp
+  photo_in?: string; // NEW: base64 image upon entry
+  photo_out?: string; // NEW: base64 image upon exit
+  location_in?: { lat: number, lng: number }; // NEW: GPS upon entry
+  location_out?: { lat: number, lng: number }; // NEW: GPS upon exit
   total_hours: number;
   status: 'OPEN' | 'CLOSED';
 }
