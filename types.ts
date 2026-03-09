@@ -251,6 +251,7 @@ export interface Client {
   ubigeo: string;
   address: string;
   reference?: string;
+  branches?: string[]; // Multiple delivery addresses
   phone?: string;
   email?: string;
   contact_name?: string;

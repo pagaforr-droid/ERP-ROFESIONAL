@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Order, OrderItem, Client, Product, Sale } from '../types';
-import { Search, ShoppingCart, User, ArrowRight, Save, Plus, Minus, X, ChevronLeft, MapPin, Clock, Edit, FileText, Wallet, CheckCircle, TrendingUp, Loader2, Hourglass, DollarSign, LogOut } from 'lucide-react';
+import { Search, ShoppingCart, User, ArrowRight, Save, Plus, Minus, X, ChevronLeft, MapPin, Clock, Edit, FileText, Wallet, CheckCircle, TrendingUp, Loader2, Hourglass, DollarSign, LogOut, ChevronDown } from 'lucide-react';
 import { calculatePromotions } from '../utils/promotions';
 
 type ViewMode = 'SELLER_SELECT' | 'CLIENT_LIST' | 'CLIENT_DETAIL' | 'PRODUCT_SELECT';
@@ -18,6 +18,8 @@ export const MobileOrders: React.FC = () => {
    // --- CONTEXT STATE ---
    const [currentSellerId, setCurrentSellerId] = useState('');
    const [currentClient, setCurrentClient] = useState<Client | null>(null);
+   const [selectedAddress, setSelectedAddress] = useState<string>('');
+   const [showBranchSelector, setShowBranchSelector] = useState(false);
 
    // --- FILTER STATE ---
    const [clientSearchTerm, setClientSearchTerm] = useState('');
@@ -94,7 +96,7 @@ export const MobileOrders: React.FC = () => {
    const filteredProducts = useMemo(() => {
       const term = prodSearch.toLowerCase();
       return products.filter(p => {
-         const matchesSearch = p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term);
+         const matchesSearch = p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term) || (p.barcode && p.barcode.toLowerCase().includes(term));
          const matchesCategory = selectedCategory === 'TODOS' || p.category === selectedCategory;
          return matchesSearch && matchesCategory;
       });
@@ -141,6 +143,8 @@ export const MobileOrders: React.FC = () => {
    const handleClientSelect = (client: Client) => {
       setEditingOrderId(null);
       setCurrentClient(client);
+      setSelectedAddress(client.address);
+      setShowBranchSelector(false);
       setPaymentMethod(client.payment_condition === 'CONTADO' ? 'CONTADO' : 'CREDITO');
       setCart([]);
       setClientTab('ORDER'); // Default to order
@@ -151,6 +155,7 @@ export const MobileOrders: React.FC = () => {
       if (order.status !== 'pending') { alert("Solo se pueden editar pedidos pendientes."); return; }
       const client = clients.find(c => c.id === order.client_id) || null;
       setCurrentClient(client);
+      setSelectedAddress(order.delivery_address || client?.address || '');
       setPaymentMethod(order.payment_method);
       setCart(order.items);
       setEditingOrderId(order.id);
@@ -235,6 +240,7 @@ export const MobileOrders: React.FC = () => {
          client_doc_number: currentClient.doc_number,
          suggested_document_type: docType,
          payment_method: paymentMethod,
+         delivery_address: selectedAddress,
          delivery_date: new Date().toISOString(),
          total: cartTotal,
          status: 'pending' as const,
@@ -519,11 +525,64 @@ export const MobileOrders: React.FC = () => {
             {/* Header */}
             <div className="bg-white shadow-sm p-4 sticky top-0 z-10">
                <div className="flex justify-between items-start mb-2">
-                  <div>
+                  <div className="flex-1">
                      <h2 className="font-bold text-lg text-slate-900 leading-tight">{currentClient?.name}</h2>
-                     <div className="text-xs text-slate-500">{currentClient?.doc_type}: {currentClient?.doc_number}</div>
+                     <div className="text-xs text-slate-500 mb-2">{currentClient?.doc_type}: {currentClient?.doc_number}</div>
+
+                     {/* Branches Selector */}
+                     <div className="relative mt-2">
+                        <div
+                           className={`flex items-start gap-1 p-2 bg-slate-50 border rounded-lg ${currentClient?.branches?.length ? 'cursor-pointer hover:bg-blue-50 border-blue-200' : 'border-slate-200'}`}
+                           onClick={() => {
+                              if (currentClient?.branches?.length) {
+                                 setShowBranchSelector(!showBranchSelector);
+                              }
+                           }}
+                        >
+                           <MapPin className={`w-4 h-4 mt-0.5 shrink-0 ${currentClient?.branches?.length ? 'text-blue-600' : 'text-slate-400'}`} />
+                           <div className="flex-1 right-2">
+                              <div className="text-xs font-bold text-slate-700 leading-tight pr-4">
+                                 {selectedAddress}
+                              </div>
+                              <div className="text-[9px] text-slate-400 uppercase mt-0.5 font-bold">Dirección de Entrega</div>
+                           </div>
+                           {currentClient?.branches?.length ? (
+                              <ChevronDown className={`w-4 h-4 text-blue-500 transition-transform ${showBranchSelector ? 'rotate-180' : ''}`} />
+                           ) : null}
+                        </div>
+
+                        {showBranchSelector && currentClient?.branches?.length && (
+                           <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg z-50 overflow-hidden break-words">
+                              <div className="bg-slate-100 px-3 py-2 border-b border-slate-200 font-bold text-xs text-slate-600 uppercase">
+                                 Seleccione Dirección Alternativa
+                              </div>
+                              <div className="max-h-48 overflow-y-auto">
+                                 {[currentClient.address, ...(currentClient.branches || [])].map((addr, idx) => (
+                                    <div
+                                       key={idx}
+                                       onClick={() => {
+                                          setSelectedAddress(addr);
+                                          setShowBranchSelector(false);
+                                       }}
+                                       className="px-3 py-3 border-b border-slate-100 hover:bg-blue-50 cursor-pointer flex items-start gap-2"
+                                    >
+                                       <MapPin className={`w-4 h-4 mt-0.5 shrink-0 ${selectedAddress === addr ? 'text-blue-600' : 'text-slate-400'}`} />
+                                       <div>
+                                          <div className={`text-sm leading-tight ${selectedAddress === addr ? 'font-bold text-blue-900' : 'font-medium text-slate-700'}`}>
+                                             {addr}
+                                          </div>
+                                          {idx === 0 && <span className="text-[10px] bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded uppercase font-bold mt-1 inline-block">Sede Principal</span>}
+                                          {idx > 0 && <span className="text-[10px] bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded uppercase font-bold mt-1 inline-block">Sucursal</span>}
+                                       </div>
+                                    </div>
+                                 ))}
+                              </div>
+                           </div>
+                        )}
+                     </div>
+
                   </div>
-                  <button onClick={() => setViewMode('CLIENT_LIST')} className="bg-slate-100 p-2 rounded-full text-slate-600"><X className="w-4 h-4" /></button>
+                  <button onClick={() => setViewMode('CLIENT_LIST')} className="bg-slate-100 p-2 rounded-full text-slate-600 ml-2"><X className="w-4 h-4" /></button>
                </div>
 
                {/* Tabs */}

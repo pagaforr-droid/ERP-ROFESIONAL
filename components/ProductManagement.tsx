@@ -2,12 +2,18 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/store';
 import { Product } from '../types';
-import { Search, Save, Plus, ArrowLeft, Barcode, DollarSign } from 'lucide-react';
+import { Search, Save, Plus, ArrowLeft, Barcode, DollarSign, Upload } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export const ProductManagement: React.FC = () => {
-  const { products, suppliers, addProduct, updateProduct } = useStore();
+  const {
+    products, suppliers, addProduct, updateProduct,
+    categories, subcategories, brands, unitTypes, packageTypes,
+    addCategory, addSubcategory, addBrand, addUnitType, addPackageType
+  } = useStore();
   const [viewMode, setViewMode] = useState<'LIST' | 'DETAIL'>('LIST');
   const [activeTab, setActiveTab] = useState<'DETALLE' | 'PRECIOS'>('DETALLE');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -60,6 +66,89 @@ export const ProductManagement: React.FC = () => {
       addProduct({ ...formData, id: crypto.randomUUID() } as Product);
     }
     setViewMode('LIST');
+  };
+
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: 'binary' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        let importedCount = 0;
+        let skippedCount = 0;
+
+        data.forEach((row: any) => {
+          const skuStr = String(row.sku || row.SKU || row.codigo || row.Codigo || '').trim();
+          if (!skuStr) {
+            skippedCount++;
+            return;
+          }
+
+          // Check for duplicate in existing products
+          const existing = products.find(p => p.sku === skuStr);
+          if (existing) {
+            skippedCount++;
+            return; // Skip if it already exists to be safe
+          }
+
+          const newProduct: Product = {
+            id: crypto.randomUUID(),
+            sku: skuStr,
+            barcode: String(row.barcode || row.Barcode || row.codigo_barras || skuStr),
+            name: String(row.name || row.Name || row.nombre || row.Nombre || 'Sin Nombre'),
+            unit_type: String(row.unit_type || row.unidad || 'BOTELLA').toUpperCase(),
+            package_type: String(row.package_type || row.empaque || 'CAJA').toUpperCase(),
+            package_content: Number(row.package_content || row.factor || 1),
+            line: String(row.line || row.linea || ''),
+            category: String(row.category || row.categoria || ''),
+            subcategory: String(row.subcategory || row.subcategoria || ''),
+            brand: String(row.brand || row.marca || ''),
+            weight: Number(row.weight || row.peso || 0),
+            volume: Number(row.volume || row.volumen || 0),
+            tax_igv: Number(row.tax_igv || row.igv || 18),
+            tax_isc: Number(row.tax_isc || row.isc || 0),
+            min_stock: Number(row.min_stock || row.stock_minimo || 10),
+            last_cost: Number(row.last_cost || row.costo || 0),
+            profit_margin: Number(row.profit_margin || row.margen || 30),
+            price_unit: Number(row.price_unit || row.precio_unidad || 0),
+            price_package: Number(row.price_package || row.precio_caja || 0),
+            is_active: true,
+            allow_sell: true
+          };
+
+          // Basic recalculation if prices are 0 but cost is set
+          if (newProduct.price_unit === 0 && newProduct.last_cost > 0) {
+            const unitPrice = newProduct.last_cost * (1 + (newProduct.profit_margin / 100));
+            newProduct.price_unit = parseFloat(unitPrice.toFixed(2));
+            if (newProduct.price_package === 0) {
+              newProduct.price_package = parseFloat((unitPrice * newProduct.package_content * 0.95).toFixed(2));
+            }
+          }
+
+          addProduct(newProduct);
+          importedCount++;
+        });
+
+        alert(`Importación completada.\nAgregados: ${importedCount}\nOmitidos (Duplicados o sin código): ${skippedCount}`);
+
+        // Clear input to allow re-import of same file if needed
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+
+      } catch (error) {
+        console.error("Error importing file:", error);
+        alert("Ocurrió un error al importar el archivo. Asegúrese de que el formato sea correcto.");
+      }
+    };
+    reader.readAsBinaryString(file);
   };
 
   // Pricing Calculation Helper
@@ -149,27 +238,47 @@ export const ProductManagement: React.FC = () => {
                   <div className="grid grid-cols-12 gap-4">
                     <div className="col-span-4">
                       <label className="block text-xs font-bold text-slate-600 mb-1">Psnt UND (Base)</label>
-                      <select
-                        className="w-full border border-slate-300 p-2 rounded text-sm text-slate-900"
-                        value={formData.unit_type}
-                        onChange={e => setFormData({ ...formData, unit_type: e.target.value })}
-                      >
-                        <option value="BOTELLA">BOTELLA</option>
-                        <option value="UNIDAD">UNIDAD</option>
-                        <option value="LATA">LATA</option>
-                      </select>
+                      <div className="flex justify-between items-center mb-1">
+                        <select
+                          className="w-full border border-slate-300 p-2 rounded text-sm text-slate-900"
+                          value={formData.unit_type}
+                          onChange={e => setFormData({ ...formData, unit_type: e.target.value })}
+                        >
+                          <option value="">Seleccione...</option>
+                          {unitTypes.map(u => <option key={u} value={u}>{u}</option>)}
+                        </select>
+                        <button type="button" onClick={() => {
+                          const val = prompt('Nueva Unidad Base:');
+                          if (val) {
+                            addUnitType(val.toUpperCase());
+                            setFormData({ ...formData, unit_type: val.toUpperCase() })
+                          }
+                        }} className="ml-1 bg-slate-200 text-slate-700 hover:bg-slate-300 p-1.5 rounded flex items-center shadow-sm">
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                     <div className="col-span-4">
                       <label className="block text-xs font-bold text-slate-600 mb-1">Psnt EMP (Empaque)</label>
-                      <select
-                        className="w-full border border-slate-300 p-2 rounded text-sm text-slate-900"
-                        value={formData.package_type}
-                        onChange={e => setFormData({ ...formData, package_type: e.target.value })}
-                      >
-                        <option value="CAJA">CAJA</option>
-                        <option value="PAQUETE">PAQUETE</option>
-                        <option value="DISPLAY">DISPLAY</option>
-                      </select>
+                      <div className="flex justify-between items-center mb-1">
+                        <select
+                          className="w-full border border-slate-300 p-2 rounded text-sm text-slate-900"
+                          value={formData.package_type}
+                          onChange={e => setFormData({ ...formData, package_type: e.target.value })}
+                        >
+                          <option value="">Seleccione...</option>
+                          {packageTypes.map(p => <option key={p} value={p}>{p}</option>)}
+                        </select>
+                        <button type="button" onClick={() => {
+                          const val = prompt('Nuevo Empaque:');
+                          if (val) {
+                            addPackageType(val.toUpperCase());
+                            setFormData({ ...formData, package_type: val.toUpperCase() })
+                          }
+                        }} className="ml-1 bg-slate-200 text-slate-700 hover:bg-slate-300 p-1.5 rounded flex items-center shadow-sm">
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                     <div className="col-span-4">
                       <label className="block text-xs font-bold text-slate-600 mb-1">Contiene (Factor)</label>
@@ -197,12 +306,40 @@ export const ProductManagement: React.FC = () => {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Categoría</label>
-                        <input className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900" value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} />
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-xs font-bold text-slate-600">Categoría</label>
+                          <button type="button" onClick={() => {
+                            const val = prompt('Nueva Categoría:');
+                            if (val) {
+                              addCategory(val.toUpperCase());
+                              setFormData({ ...formData, category: val.toUpperCase() })
+                            }
+                          }} className="bg-slate-200 text-slate-700 hover:bg-slate-300 p-0.5 rounded text-[10px] flex items-center shadow-sm">
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <select className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900 focus:ring-2 focus:ring-accent outline-none" value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}>
+                          <option value="">Seleccione...</option>
+                          {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Sub-Cat</label>
-                        <input className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900" value={formData.subcategory} onChange={e => setFormData({ ...formData, subcategory: e.target.value })} />
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-xs font-bold text-slate-600">Sub-Cat</label>
+                          <button type="button" onClick={() => {
+                            const val = prompt('Nueva Sub-Categoría:');
+                            if (val) {
+                              addSubcategory(val.toUpperCase());
+                              setFormData({ ...formData, subcategory: val.toUpperCase() })
+                            }
+                          }} className="bg-slate-200 text-slate-700 hover:bg-slate-300 p-0.5 rounded text-[10px] flex items-center shadow-sm">
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <select className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900 focus:ring-2 focus:ring-accent outline-none" value={formData.subcategory} onChange={e => setFormData({ ...formData, subcategory: e.target.value })}>
+                          <option value="">Seleccione...</option>
+                          {subcategories.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
                       </div>
                     </div>
                     <div className="col-span-6 space-y-3">
@@ -214,8 +351,22 @@ export const ProductManagement: React.FC = () => {
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs font-bold text-slate-600 mb-1">Marca</label>
-                        <input className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900" value={formData.brand} onChange={e => setFormData({ ...formData, brand: e.target.value })} />
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-xs font-bold text-slate-600">Marca</label>
+                          <button type="button" onClick={() => {
+                            const val = prompt('Nueva Marca:');
+                            if (val) {
+                              addBrand(val.toUpperCase());
+                              setFormData({ ...formData, brand: val.toUpperCase() })
+                            }
+                          }} className="bg-slate-200 text-slate-700 hover:bg-slate-300 p-0.5 rounded text-[10px] flex items-center shadow-sm">
+                            <Plus className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <select className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900 focus:ring-2 focus:ring-accent outline-none" value={formData.brand} onChange={e => setFormData({ ...formData, brand: e.target.value })}>
+                          <option value="">Seleccione...</option>
+                          {brands.map(b => <option key={b} value={b}>{b}</option>)}
+                        </select>
                       </div>
                     </div>
                   </div>
@@ -320,9 +471,21 @@ export const ProductManagement: React.FC = () => {
     <div className="space-y-4 h-full flex flex-col">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold text-slate-800">Maestro de Productos</h2>
-        <button onClick={handleNew} className="bg-slate-900 text-white px-4 py-2 rounded flex items-center">
-          <Plus className="w-4 h-4 mr-2" /> Nuevo
-        </button>
+        <div className="flex gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImport}
+            accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+            className="hidden"
+          />
+          <button onClick={() => fileInputRef.current?.click()} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center shadow-sm">
+            <Upload className="w-4 h-4 mr-2" /> Importar Excel
+          </button>
+          <button onClick={handleNew} className="bg-slate-900 text-white px-4 py-2 rounded flex items-center shadow-sm">
+            <Plus className="w-4 h-4 mr-2" /> Nuevo
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded shadow border border-slate-200 flex-1 flex flex-col">

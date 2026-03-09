@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/store';
 import { Client } from '../types';
-import { Search, Save, Plus, ArrowLeft, User, MapPin, Briefcase, FileText } from 'lucide-react';
+import { Search, Save, Plus, ArrowLeft, User, MapPin, Briefcase, FileText, Trash2 } from 'lucide-react';
 
 export const ClientManagement: React.FC = () => {
    const { clients, zones, priceLists, addClient, updateClient } = useStore();
@@ -32,6 +32,7 @@ export const ClientManagement: React.FC = () => {
    };
 
    const [formData, setFormData] = useState<Partial<Client>>(initialFormState);
+   const [newBranch, setNewBranch] = useState('');
 
    const filteredClients = clients.filter(c =>
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -96,7 +97,12 @@ export const ClientManagement: React.FC = () => {
                >
                   Datos Secundarios
                </button>
-               <button className="px-4 py-3 font-bold text-slate-400 cursor-not-allowed">Sucursales</button>
+               <button
+                  onClick={() => setActiveTab('BRANCHES')}
+                  className={`px-4 py-3 font-bold ${activeTab === 'BRANCHES' ? 'bg-white border-t-2 border-blue-600 text-blue-700' : 'text-slate-600 hover:bg-slate-300'}`}
+               >
+                  Sucursales
+               </button>
             </div>
 
             {/* Content Area */}
@@ -261,6 +267,91 @@ export const ClientManagement: React.FC = () => {
                                  Esta lista se seleccionará automáticamente al crear un pedido.
                               </p>
                            </div>
+                        </div>
+                     </div>
+                  )}
+
+                  {/* --- TAB: BRANCHES --- */}
+                  {activeTab === 'BRANCHES' && (
+                     <div className="space-y-4">
+                        <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+                           <h3 className="font-bold text-blue-800 mb-2">Agregar Sucursal / Dirección Adicional</h3>
+                           <div className="flex gap-2">
+                              <input
+                                 className="flex-1 border border-blue-300 rounded px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase"
+                                 placeholder="Ingrese la nueva dirección de entrega..."
+                                 value={newBranch}
+                                 onChange={e => setNewBranch(e.target.value)}
+                                 onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                       e.preventDefault();
+                                       if (newBranch.trim()) {
+                                          setFormData({
+                                             ...formData,
+                                             branches: [...(formData.branches || []), newBranch.trim().toUpperCase()]
+                                          });
+                                          setNewBranch('');
+                                       }
+                                    }
+                                 }}
+                              />
+                              <button
+                                 type="button"
+                                 onClick={() => {
+                                    if (newBranch.trim()) {
+                                       setFormData({
+                                          ...formData,
+                                          branches: [...(formData.branches || []), newBranch.trim().toUpperCase()]
+                                       });
+                                       setNewBranch('');
+                                    }
+                                 }}
+                                 className="bg-blue-600 text-white px-4 py-2 rounded font-bold flex items-center hover:bg-blue-700"
+                              >
+                                 <Plus className="w-5 h-5 mr-1" /> Add
+                              </button>
+                           </div>
+                        </div>
+
+                        <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                           <table className="w-full text-left">
+                              <thead className="bg-slate-100 text-slate-700 font-bold text-sm">
+                                 <tr>
+                                    <th className="p-3">#</th>
+                                    <th className="p-3 w-full">Dirección de Entrega</th>
+                                    <th className="p-3 text-center">Acciones</th>
+                                 </tr>
+                              </thead>
+                              <tbody>
+                                 {(!formData.branches || formData.branches.length === 0) && (
+                                    <tr>
+                                       <td colSpan={3} className="p-4 text-center text-slate-400 italic">No hay sucursales registradas.</td>
+                                    </tr>
+                                 )}
+                                 {formData.branches?.map((branch, index) => (
+                                    <tr key={index} className="border-t border-slate-100 hover:bg-slate-50">
+                                       <td className="p-3 font-bold text-slate-500">{index + 1}</td>
+                                       <td className="p-3 text-slate-800 font-medium">{branch}</td>
+                                       <td className="p-3 text-center">
+                                          <button
+                                             type="button"
+                                             onClick={() => {
+                                                if (confirm('¿Eliminar esta sucursal?')) {
+                                                   const newBranches = [...formData.branches!];
+                                                   newBranches.splice(index, 1);
+                                                   setFormData({ ...formData, branches: newBranches });
+                                                }
+                                             }}
+                                             className="text-red-500 hover:bg-red-50 p-1.5 rounded"
+                                             title="Eliminar"
+                                          >
+                                             <Trash2 className="w-4 h-4" />
+                                          </button>
+                                       </td>
+                                    </tr>
+                                 ))}
+                              </tbody>
+                           </table>
                         </div>
                      </div>
                   )}

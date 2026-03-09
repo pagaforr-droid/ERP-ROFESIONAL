@@ -13,6 +13,10 @@ const generateUUID = () => {
    });
 };
 
+const extractUniqueValues = (products: Product[], key: keyof Product): string[] => {
+   return Array.from(new Set(products.map(p => String(p[key] || '')).filter(Boolean))).sort();
+};
+
 const MOCK_PRODUCTS: Product[] = [
    {
       id: 'p1', sku: 'WH-001', barcode: '7750001001', name: 'WHISKY JOHNNIE WALKER RED LABEL * 750 ML',
@@ -65,7 +69,7 @@ const MOCK_BATCHES: Batch[] = [
 ];
 
 const MOCK_CLIENTS: Client[] = [
-   { id: 'c1', code: 'CL-001', doc_type: 'RUC', doc_number: '20601234567', name: 'DISTRIBUIDORA SANTA ROSA SAC', is_person: false, address: 'AV. LA CULTURA 200', ubigeo: '080101', channel: 'MAYORISTA', business_type: 'DISTRIBUIDORA', zone_id: 'z1', price_list_id: 'pl1', payment_condition: 'CREDITO', credit_limit: 5000, is_active: true, is_agent_retention: false, is_agent_perception: true, apply_igv: true },
+   { id: 'c1', code: 'CL-001', doc_type: 'RUC', doc_number: '20601234567', name: 'DISTRIBUIDORA SANTA ROSA SAC', is_person: false, address: 'AV. LA CULTURA 200', branches: ['SUCURSAL SAN SEBASTIAN', 'ALMACEN PRINCIPAL'], ubigeo: '080101', channel: 'MAYORISTA', business_type: 'DISTRIBUIDORA', zone_id: 'z1', price_list_id: 'pl1', payment_condition: 'CREDITO', credit_limit: 5000, is_active: true, is_agent_retention: false, is_agent_perception: true, apply_igv: true },
    { id: 'c2', code: 'CL-002', doc_type: 'RUC', doc_number: '20459876543', name: 'MINIMARKET EL TIO SAC', is_person: false, address: 'JR. LOS ANDES 450', ubigeo: '080102', channel: 'MINORISTA', business_type: 'MINIMARKET', zone_id: 'z2', price_list_id: 'pl2', payment_condition: 'CONTADO', credit_limit: 0, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
    { id: 'c3', code: 'CL-003', doc_type: 'DNI', doc_number: '44556677', name: 'JUAN CARLOS MAMANI', is_person: true, address: 'AV. SOL 888', ubigeo: '080101', channel: 'MINORISTA', business_type: 'BODEGA', zone_id: 'z1', price_list_id: 'pl2', payment_condition: 'CONTADO', credit_limit: 0, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
    { id: 'c4', code: 'CL-004', doc_type: 'RUC', doc_number: '20501234123', name: 'LICORERIA EL PUNTO', is_person: false, address: 'CALLE MARURI 320', ubigeo: '080101', channel: 'MINORISTA', business_type: 'LICORERIA', zone_id: 'z1', price_list_id: 'pl2', payment_condition: 'CREDITO', credit_limit: 2000, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
@@ -265,6 +269,13 @@ interface AppState {
    combos: Combo[];
    autoPromotions: AutoPromotion[];
 
+   // Classifications
+   categories: string[];
+   subcategories: string[];
+   brands: string[];
+   unitTypes: string[];
+   packageTypes: string[];
+
    // Auth State
    currentUser: User | null;
 
@@ -283,6 +294,13 @@ interface AppState {
    addSeries: (series: DocumentSeries) => void;    // NEW
    removeSeries: (seriesId: string) => void;       // NEW
    getNextDocumentNumber: (type: DocumentSeries['type'], seriesStr?: string) => { series: string, number: string } | null; // NEW
+
+   // Classification Actions
+   addCategory: (category: string) => void;
+   addSubcategory: (subcategory: string) => void;
+   addBrand: (brand: string) => void;
+   addUnitType: (unitType: string) => void;
+   addPackageType: (packageType: string) => void;
 
    addProduct: (product: Product) => void;
    updateProduct: (product: Product) => void;
@@ -410,6 +428,13 @@ export const useStore = create<AppState>((set, get) => ({
    users: MOCK_USERS,
    attendanceRecords: [],
    promotions: MOCK_PROMOTIONS,
+
+   // Classifications initial state
+   categories: extractUniqueValues(MOCK_PRODUCTS, 'category'),
+   subcategories: extractUniqueValues(MOCK_PRODUCTS, 'subcategory'),
+   brands: extractUniqueValues(MOCK_PRODUCTS, 'brand'),
+   unitTypes: extractUniqueValues(MOCK_PRODUCTS, 'unit_type'),
+   packageTypes: extractUniqueValues(MOCK_PRODUCTS, 'package_type'),
    combos: MOCK_COMBOS,
    autoPromotions: MOCK_AUTO_PROMOTIONS,
    currentUser: null,
@@ -467,10 +492,30 @@ export const useStore = create<AppState>((set, get) => ({
          series: seriesObj.series,
          number: String(nextNum).padStart(8, '0')
       };
-   },
+   },   // Classification Actions
+   addCategory: (category: string) => set((state) => ({ categories: Array.from(new Set([...state.categories, category])).sort() })),
+   addSubcategory: (subcategory: string) => set((state) => ({ subcategories: Array.from(new Set([...state.subcategories, subcategory])).sort() })),
+   addBrand: (brand: string) => set((state) => ({ brands: Array.from(new Set([...state.brands, brand])).sort() })),
+   addUnitType: (unitType: string) => set((state) => ({ unitTypes: Array.from(new Set([...state.unitTypes, unitType])).sort() })),
+   addPackageType: (packageType: string) => set((state) => ({ packageTypes: Array.from(new Set([...state.packageTypes, packageType])).sort() })),
 
-   addProduct: (product) => set((state) => ({ products: [...state.products, product] })),
-   updateProduct: (product) => set((state) => ({ products: state.products.map(p => p.id === product.id ? product : p) })),
+
+   addProduct: (product) => set((state) => ({
+      products: [...state.products, product],
+      categories: Array.from(new Set([...state.categories, product.category])).filter(Boolean).sort(),
+      subcategories: Array.from(new Set([...state.subcategories, product.subcategory])).filter(Boolean).sort(),
+      brands: Array.from(new Set([...state.brands, product.brand])).filter(Boolean).sort(),
+      unitTypes: Array.from(new Set([...state.unitTypes, product.unit_type])).filter(Boolean).sort(),
+      packageTypes: Array.from(new Set([...state.packageTypes, product.package_type || ''])).filter(Boolean).sort(),
+   })),
+   updateProduct: (product) => set((state) => ({
+      products: state.products.map(p => p.id === product.id ? product : p),
+      categories: Array.from(new Set([...state.categories, product.category])).filter(Boolean).sort(),
+      subcategories: Array.from(new Set([...state.subcategories, product.subcategory])).filter(Boolean).sort(),
+      brands: Array.from(new Set([...state.brands, product.brand])).filter(Boolean).sort(),
+      unitTypes: Array.from(new Set([...state.unitTypes, product.unit_type])).filter(Boolean).sort(),
+      packageTypes: Array.from(new Set([...state.packageTypes, product.package_type || ''])).filter(Boolean).sort(),
+   })),
 
    batchUpdateProductPrices: (updates) => set((state) => {
       const newProducts = state.products.map(p => {
