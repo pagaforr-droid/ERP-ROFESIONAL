@@ -116,7 +116,7 @@ const MOCK_SALES: Sale[] = [
 const MOCK_USERS: User[] = [
    {
       id: 'u1', username: 'admin', password: '123456', name: 'Admin General', role: 'ADMIN', requires_attendance: false, is_active: true,
-      permissions: ['dashboard', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager']
+      permissions: ['dashboard', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'mobile-delivery', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager']
    },
    {
       id: 'u2', username: 'vendedor1', password: '123', name: 'Tomas Linares', role: 'SELLER', requires_attendance: true, is_active: true,
@@ -323,7 +323,9 @@ interface AppState {
    createPurchase: (purchase: Purchase) => void;
    updatePurchase: (purchase: Purchase) => boolean;
    createDispatch: (dispatch: DispatchSheet) => void;
+   updateDispatchStatus: (dispatchId: string, status: DispatchSheet['status']) => void;
    updateSaleStatus: (saleIds: string[], status: Sale['dispatch_status']) => void;
+   updateSaleDeliveryStatus: (saleId: string, status: Sale['dispatch_status'], details?: { reason?: string; photo?: string; location?: { lat: number; lng: number } }) => void;
    updateSunatStatus: (type: 'sale' | 'dispatch', id: string, status: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED', message?: string) => void;
    processDispatchLiquidation: (liquidation: DispatchLiquidation) => void;
    markDocumentsAsPrinted: (saleIds: string[]) => void;
@@ -1317,8 +1319,28 @@ export const useStore = create<AppState>((set, get) => ({
       }
       return { dispatchSheets: [{ ...dispatch, code: finalCode, sunat_status: 'PENDING' }, ...state.dispatchSheets] };
    }),
-   updateSaleStatus: (saleIds, status) => set((state) => ({
-      sales: state.sales.map(s => saleIds.includes(s.id) ? { ...s, dispatch_status: status } : s)
+
+   updateDispatchStatus: (dispatchId, status) => set((s) => ({
+      dispatchSheets: s.dispatchSheets.map(ds => ds.id === dispatchId ? { ...ds, status } : ds)
+   })),
+
+   updateSaleStatus: (saleIds, status) => set((s) => ({
+      sales: s.sales.map(sale => saleIds.includes(sale.id) ? { ...sale, dispatch_status: status } : sale)
+   })),
+
+   updateSaleDeliveryStatus: (saleId, status, details) => set((s) => ({
+      sales: s.sales.map(sale => {
+         if (sale.id === saleId) {
+            return {
+               ...sale,
+               dispatch_status: status,
+               delivery_reason: details?.reason !== undefined ? details.reason : sale.delivery_reason,
+               delivery_photo: details?.photo !== undefined ? details.photo : sale.delivery_photo,
+               delivery_location: details?.location !== undefined ? details.location : sale.delivery_location,
+            };
+         }
+         return sale;
+      })
    })),
 
    updateSunatStatus: (type, id, status, message) => set((state) => {

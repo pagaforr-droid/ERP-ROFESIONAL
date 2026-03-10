@@ -13,6 +13,7 @@ import { MobileOrders } from './components/MobileOrders';
 import { OrderProcessing } from './components/OrderProcessing';
 import { CompanySettings } from './components/CompanySettings';
 import { PrintBatch } from './components/PrintBatch';
+import { MobileDelivery } from './components/MobileDelivery';
 import { CashFlow } from './components/CashFlow';
 import { DispatchLiquidationComp } from './components/DispatchLiquidation';
 import { DocumentManager } from './components/DocumentManager';
@@ -79,6 +80,7 @@ export default function App() {
       case 'order-processing': return <OrderProcessing />;
       case 'company-settings': return <CompanySettings />;
       case 'print-batch': return <PrintBatch />;
+      case 'mobile-delivery': return <MobileDelivery />;
       case 'document-manager': return <DocumentManager />;
       case 'reports': return <StrategicReports />;
       case 'kardex': return <Kardex />;
@@ -174,6 +176,7 @@ export default function App() {
           <Section title="Logística">
             <NavItem view="dispatch" icon={Truck} label="Despacho y Rutas" />
             <NavItem view="dispatch-liquidation" icon={FileInput} label="Liquidación Rutas" />
+            <NavItem view="mobile-delivery" icon={Smartphone} label="App Reparto" />
             <NavItem view="kardex" icon={PackageSearch} label="Kardex & Inventario" />
             <NavItem view="inventory" icon={ClipboardList} label="Ingreso Mercadería" />
           </Section>
@@ -239,7 +242,7 @@ export default function App() {
         </header>
 
         <main className="flex-1 overflow-y-auto print:overflow-visible p-6 lg:p-8 bg-slate-100">
-          {currentView === 'mobile-orders' ? (
+          {currentView === 'mobile-orders' || currentView === 'mobile-delivery' ? (
             <div className="h-full mx-auto max-w-md bg-white shadow-2xl overflow-hidden rounded-xl border border-slate-200">
               {renderContent()}
             </div>

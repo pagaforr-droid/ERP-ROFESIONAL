@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { DispatchSheet, Sale, LiquidationDocument, DispatchLiquidation } from '../types';
-import { Search, CheckCircle, AlertTriangle, ArrowRight, Printer, XCircle, FileText, Ban, DollarSign, CreditCard, ShieldAlert, Save, Package, HelpCircle, User, Calendar, RotateCcw, Plus, ListChecks } from 'lucide-react';
+import { Search, CheckCircle, AlertTriangle, ArrowRight, Printer, XCircle, FileText, Ban, DollarSign, CreditCard, ShieldAlert, Save, Package, HelpCircle, User, Calendar, RotateCcw, Plus, ListChecks, Camera, MapPin, Image as ImageIcon, X } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -39,8 +39,9 @@ export const DispatchLiquidationComp: React.FC = () => {
    const [extraSaleIds, setExtraSaleIds] = useState<string[]>([]); // To track manually added documents
 
    // --- MODALS STATE ---
-   const [activeModal, setActiveModal] = useState<'NONE' | 'VOID' | 'PARTIAL' | 'CONFIRM_FINALIZE' | 'ADD_EXTRA' | 'CHANGE_TYPE'>('NONE');
+   const [activeModal, setActiveModal] = useState<'NONE' | 'VOID' | 'PARTIAL' | 'CONFIRM_FINALIZE' | 'ADD_EXTRA' | 'CHANGE_TYPE' | 'PHOTO'>('NONE');
    const [targetSaleId, setTargetSaleId] = useState<string | null>(null);
+   const [photoTargetUrl, setPhotoTargetUrl] = useState<string | null>(null);
 
    // ADD EXTRA DOC State
    const [extraDocSearch, setExtraDocSearch] = useState('');
@@ -731,6 +732,38 @@ export const DispatchLiquidationComp: React.FC = () => {
                               <span className="font-bold">ANULADO - Motivo:</span> {status.reason}
                            </div>
                         )}
+
+                        {/* MOBILE DELIVERY EVIDENCE */}
+                        {(sale.delivery_reason || sale.delivery_photo || sale.delivery_location) && (
+                           <div className="text-xs bg-blue-50/50 p-2 rounded border border-blue-100 mt-1">
+                              <div className="font-bold text-blue-900 mb-1 flex items-center">
+                                 <FileText className="w-3 h-3 mr-1" /> Evidencia de Reparto Móvil ({sale.dispatch_status.toUpperCase()})
+                              </div>
+                              {sale.delivery_reason && (
+                                 <p className="text-slate-700 italic border-l-2 border-blue-300 pl-2 mb-2">"{sale.delivery_reason}"</p>
+                              )}
+                              <div className="flex gap-2">
+                                 {sale.delivery_photo && (
+                                    <button
+                                       onClick={() => { setPhotoTargetUrl(sale.delivery_photo || null); setActiveModal('PHOTO'); }}
+                                       className="bg-white border border-slate-300 px-2 py-1 rounded shadow-sm text-slate-700 flex items-center hover:bg-slate-50 transition-colors"
+                                    >
+                                       <ImageIcon className="w-3 h-3 mr-1 text-blue-500" /> Ver Foto Adjunta
+                                    </button>
+                                 )}
+                                 {sale.delivery_location && (
+                                    <a
+                                       href={`https://www.google.com/maps/search/?api=1&query=${sale.delivery_location.lat},${sale.delivery_location.lng}`}
+                                       target="_blank"
+                                       rel="noreferrer"
+                                       className="bg-white border border-slate-300 px-2 py-1 rounded shadow-sm text-slate-700 flex items-center hover:bg-slate-50 transition-colors"
+                                    >
+                                       <MapPin className="w-3 h-3 mr-1 text-red-500" /> Ver Mapa GPS
+                                    </a>
+                                 )}
+                              </div>
+                           </div>
+                        )}
                      </div>
                   );
                })}
@@ -1017,6 +1050,29 @@ export const DispatchLiquidationComp: React.FC = () => {
                            </>
                         );
                      })()}
+                  </div>
+               </div>
+            )}
+
+            {/* --- MODAL: PHOTO VIEWER --- */}
+            {activeModal === 'PHOTO' && photoTargetUrl && (
+               <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={() => setActiveModal('NONE')}>
+                  <div className="relative w-full max-w-3xl flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
+                     <button
+                        onClick={() => setActiveModal('NONE')}
+                        className="absolute -top-12 right-0 text-white hover:text-red-400 bg-black/50 p-2 rounded-full transition-colors font-bold flex items-center"
+                     >
+                        <X className="w-6 h-6 mr-1" /> Cerrar
+                     </button>
+                     <img
+                        src={photoTargetUrl}
+                        alt="Evidencia"
+                        className="max-h-[85vh] max-w-full rounded-lg shadow-2xl border-4 border-white/20 object-contain bg-black"
+                     />
+                     <div className="mt-4 bg-black/60 text-white px-4 py-2 rounded-lg text-sm flex items-center backdrop-blur text-center">
+                        <Camera className="w-4 h-4 mr-2 text-blue-400" />
+                        Imagen capturada por el repartidor desde la App Móvil
+                     </div>
                   </div>
                </div>
             )}

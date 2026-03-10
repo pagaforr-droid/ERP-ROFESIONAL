@@ -429,8 +429,13 @@ export interface Sale {
   observation?: string;
 
   status: 'pending' | 'completed' | 'canceled';
-  dispatch_status: 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'liquidated';
+  dispatch_status: 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'liquidated' | 'failed' | 'partial';
   created_at: string;
+
+  // Delivery Metadata (Mobile Delivery)
+  delivery_reason?: string;
+  delivery_photo?: string; // base64
+  delivery_location?: { lat: number; lng: number };
 
   // === SUNAT Integration ===
   sunat_status?: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED';
@@ -646,4 +651,5 @@ export type ViewState =
   | 'price-manager'
   | 'virtual-store'
   | 'sunat-manager'
-  | 'credit-notes';
+  | 'credit-notes'
+  | 'mobile-delivery';

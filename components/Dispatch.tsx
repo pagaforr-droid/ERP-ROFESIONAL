@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
-import { Truck, CheckCircle, Package, Calendar, User, FileText, Printer, X } from 'lucide-react';
+import { Truck, CheckCircle, Package, Calendar, User, FileText, Printer, X, Activity, MapPin, AlertTriangle, PlayCircle } from 'lucide-react';
 import { Sale, Product } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -12,9 +12,10 @@ interface ExtendedSale extends Sale {
 }
 
 export const Dispatch: React.FC = () => {
-   const { sales, vehicles, createDispatch, updateSaleStatus, drivers, clients, zones, sellers, products, suppliers, company, currentUser } = useStore();
+   const { sales, vehicles, createDispatch, updateSaleStatus, drivers, clients, zones, sellers, products, suppliers, company, currentUser, dispatchSheets } = useStore();
 
    // State
+   const [activeTab, setActiveTab] = useState<'PROGRAMAR' | 'EN_RUTA'>('PROGRAMAR');
    const [selectedVehicleId, setSelectedVehicleId] = useState('');
    const [selectedSaleIds, setSelectedSaleIds] = useState<string[]>([]);
 
@@ -109,7 +110,7 @@ export const Dispatch: React.FC = () => {
          id: crypto.randomUUID(),
          code: 'TBD', // Let the store auto-generate it using the active GUIA series
          vehicle_id: selectedVehicleId,
-         status: 'pending',
+         status: 'in_transit',
          date: new Date().toISOString(),
          sale_ids: selectedSaleIds
       });
@@ -421,6 +422,11 @@ export const Dispatch: React.FC = () => {
 
       window.open(doc.output('bloburl'), '_blank');
    };
+
+   // --- NEW: MONITOR TAB LOGIC ---
+   const activeDispatches = useMemo(() => {
+      return dispatchSheets.filter(ds => ds.status === 'in_transit');
+   }, [dispatchSheets]);
 
    // --- RENDER ---
 
@@ -758,157 +764,213 @@ export const Dispatch: React.FC = () => {
 
    return (
       <div className="flex flex-col h-full space-y-4 font-sans">
-         <div className="flex justify-between items-center">
-            <h2 className="text-xl font-bold text-slate-800 flex items-center">
-               <Truck className="mr-2 h-6 w-6 text-slate-700" /> Programación de Despacho y Rutas
+         <div className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-slate-200">
+            <h2 className="text-xl font-bold text-slate-800 flex items-center mb-0">
+               <Truck className="mr-2 h-6 w-6 text-slate-700" /> Control de Despacho y Rutas
             </h2>
-         </div>
-
-         <div className="flex gap-6 h-full overflow-hidden">
-
-            {/* LEFT PANEL: CONFIG & SUMMARY */}
-            <div className="w-80 flex flex-col gap-4">
-               {/* 1. Vehicle Selector */}
-               <div className="bg-white p-4 rounded-lg shadow border border-slate-200">
-                  <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">1. Asignar Unidad de Transporte</label>
-                  <select
-                     className="w-full border border-slate-300 rounded p-2 text-sm bg-slate-50 font-medium"
-                     value={selectedVehicleId}
-                     onChange={e => setSelectedVehicleId(e.target.value)}
-                  >
-                     <option value="">-- Seleccionar Vehículo --</option>
-                     {vehicles.map(v => {
-                        const d = drivers.find(x => x.id === v.driver_id);
-                        return <option key={v.id} value={v.id}>{v.plate} - {d?.name.split(' ')[0]} ({v.capacity_kg}Kg)</option>
-                     })}
-                  </select>
-
-                  {/* Weight Meter */}
-                  {selectedVehicle && (
-                     <div className="mt-4 p-3 bg-slate-50 rounded border border-slate-200">
-                        <div className="flex justify-between text-xs mb-1">
-                           <span className="font-bold text-slate-600">Ocupación de Carga</span>
-                           <span className={`font-bold ${isOverweight ? 'text-red-600' : 'text-slate-900'}`}>
-                              {selectedTotals.totalWeight.toFixed(1)} / {selectedVehicle.capacity_kg} Kg
-                           </span>
-                        </div>
-                        <div className="w-full bg-slate-200 rounded-full h-2.5">
-                           <div
-                              className={`h-2.5 rounded-full ${isOverweight ? 'bg-red-500' : 'bg-green-500'}`}
-                              style={{ width: `${Math.min((selectedTotals.totalWeight / selectedVehicle.capacity_kg) * 100, 100)}%` }}
-                           ></div>
-                        </div>
-                        {isOverweight && <div className="text-[10px] text-red-500 font-bold mt-1 text-center">¡EXCESO DE PESO!</div>}
-                     </div>
+            <div className="flex bg-slate-100 rounded-lg p-1">
+               <button
+                  onClick={() => setActiveTab('PROGRAMAR')}
+                  className={`px-6 py-2 rounded-md font-bold text-sm transition-all ${activeTab === 'PROGRAMAR' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'
+                     }`}
+               >
+                  Programar Salidas
+               </button>
+               <button
+                  onClick={() => setActiveTab('EN_RUTA')}
+                  className={`px-6 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'EN_RUTA' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'
+                     }`}
+               >
+                  <Activity className="w-4 h-4" /> Monitoreo En Ruta
+                  {activeDispatches.length > 0 && (
+                     <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">{activeDispatches.length}</span>
                   )}
-               </div>
-
-               {/* 2. Selection Summary */}
-               <div className="bg-white p-4 rounded-lg shadow border border-slate-200 flex-1 flex flex-col">
-                  <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">2. Resumen de Selección</label>
-                  <div className="space-y-4 flex-1">
-                     <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                        <span className="text-sm text-slate-500">Documentos</span>
-                        <span className="text-lg font-bold text-slate-800">{selectedTotals.count}</span>
-                     </div>
-                     <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                        <span className="text-sm text-slate-500">Peso Total</span>
-                        <span className="text-lg font-bold text-slate-800">{selectedTotals.totalWeight.toFixed(2)} Kg</span>
-                     </div>
-                     <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                        <span className="text-sm text-slate-500">Valor (S/)</span>
-                        <span className="text-lg font-bold text-green-700">{selectedTotals.totalMoney.toFixed(2)}</span>
-                     </div>
-                  </div>
-
-                  <button
-                     onClick={handleGenerateRoute}
-                     disabled={selectedTotals.count === 0}
-                     className="w-full mt-4 bg-slate-900 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-slate-800 disabled:opacity-50 disabled:shadow-none flex items-center justify-center transition-all"
-                  >
-                     <Package className="w-5 h-5 mr-2" /> GENERAR PICKING
-                  </button>
-               </div>
-            </div>
-
-            {/* RIGHT PANEL: LIST */}
-            <div className="flex-1 bg-white rounded-lg shadow border border-slate-200 flex flex-col overflow-hidden">
-               <div className="p-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                  <div className="flex items-center gap-3">
-                     <h3 className="font-bold text-slate-700">Documentos Pendientes</h3>
-                     <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-0.5 rounded-full font-bold">{sortedSales.length} Disp.</span>
-                  </div>
-                  <button onClick={handleSelectAll} className="text-blue-600 text-xs font-bold hover:underline">
-                     {selectedSaleIds.length === sortedSales.length ? 'Deseleccionar Todo' : 'Seleccionar Todo'}
-                  </button>
-               </div>
-
-               <div className="flex-1 overflow-auto">
-                  <table className="w-full text-left text-sm">
-                     <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10 text-xs uppercase">
-                        <tr>
-                           <th className="p-3 w-10 text-center">
-                              <input type="checkbox" checked={selectedSaleIds.length > 0 && selectedSaleIds.length === sortedSales.length} onChange={handleSelectAll} />
-                           </th>
-                           <th className="p-3">Emisión (Hora)</th>
-                           <th className="p-3">Vendedor</th>
-                           <th className="p-3">Zona / Cliente</th>
-                           <th className="p-3 text-center">Documento</th>
-                           <th className="p-3 text-right">Peso (Kg)</th>
-                           <th className="p-3 text-right">Total</th>
-                           <th className="p-3 w-40">Observación</th>
-                        </tr>
-                     </thead>
-                     <tbody className="divide-y divide-slate-100">
-                        {sortedSales.map((sale) => (
-                           <tr
-                              key={sale.id}
-                              className={`hover:bg-blue-50 cursor-pointer transition-colors ${selectedSaleIds.includes(sale.id) ? 'bg-blue-50' : ''}`}
-                              onClick={() => handleToggleSale(sale.id)}
-                           >
-                              <td className="p-3 text-center">
-                                 <input type="checkbox" checked={selectedSaleIds.includes(sale.id)} onChange={() => handleToggleSale(sale.id)} onClick={e => e.stopPropagation()} />
-                              </td>
-                              <td className="p-3">
-                                 <div className="text-slate-800 font-medium">{new Date(sale.created_at).toLocaleDateString()}</div>
-                                 <div className="text-xs text-slate-500 flex items-center"><Calendar className="w-3 h-3 mr-1" /> {new Date(sale.created_at).toLocaleTimeString()}</div>
-                              </td>
-                              <td className="p-3">
-                                 <div className="flex items-center text-slate-700 font-bold text-xs bg-slate-200 px-2 py-1 rounded w-fit">
-                                    <User className="w-3 h-3 mr-1" /> {sale.sellerName}
-                                 </div>
-                              </td>
-                              <td className="p-3">
-                                 <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-0.5">{sale.zoneName}</div>
-                                 <div className="font-bold text-slate-800">{sale.client_name}</div>
-                              </td>
-                              <td className="p-3 text-center font-mono text-slate-700">
-                                 <div className="font-bold">
-                                    {sale.document_type === 'FACTURA' ? 'FA' : 'BO'}/{sale.series}-{sale.number}
-                                 </div>
-                                 <div className={`text-[10px] inline-block px-1 rounded mt-1 font-bold ${sale.document_type === 'FACTURA' ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
-                                    {sale.document_type}
-                                 </div>
-                              </td>
-                              <td className="p-3 text-right">
-                                 <span className="font-bold text-slate-700">{sale.totalWeight.toFixed(2)}</span>
-                              </td>
-                              <td className="p-3 text-right font-bold text-green-700">
-                                 S/ {sale.total.toFixed(2)}
-                              </td>
-                              <td className="p-3 text-xs text-slate-500 italic truncate max-w-[150px]">
-                                 {sale.observation || '-'}
-                              </td>
-                           </tr>
-                        ))}
-                        {sortedSales.length === 0 && (
-                           <tr><td colSpan={8} className="p-10 text-center text-slate-400">No hay documentos pendientes de despacho.</td></tr>
-                        )}
-                     </tbody>
-                  </table>
-               </div>
+               </button>
             </div>
          </div>
+
+         {activeTab === 'PROGRAMAR' ? (
+            <div className="flex gap-6 h-full overflow-hidden">
+
+               {/* LEFT PANEL: CONFIG & SUMMARY */}
+               <div className="w-80 flex flex-col gap-4">
+                  {/* 1. Vehicle Selector */}
+                  <div className="bg-white p-4 rounded-lg shadow border border-slate-200">
+                     <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">1. Asignar Unidad de Transporte</label>
+                     <select
+                        className="w-full border border-slate-300 rounded p-2 text-sm bg-slate-50 font-medium"
+                        value={selectedVehicleId}
+                        onChange={e => setSelectedVehicleId(e.target.value)}
+                     >
+                        <option value="">-- Seleccionar Vehículo --</option>
+                        {vehicles.map(v => {
+                           const d = drivers.find(x => x.id === v.driver_id);
+                           return <option key={v.id} value={v.id}>{v.plate} - {d?.name.split(' ')[0]} ({v.capacity_kg}Kg)</option>
+                        })}
+                     </select>
+
+                     {/* Weight Meter */}
+                     {selectedVehicle && (
+                        <div className="mt-4 p-3 bg-slate-50 rounded border border-slate-200">
+                           <div className="flex justify-between text-xs mb-1">
+                              <span className="font-bold text-slate-600">Ocupación de Carga</span>
+                              <span className={`font-bold ${isOverweight ? 'text-red-600' : 'text-slate-900'}`}>
+                                 {selectedTotals.totalWeight.toFixed(1)} / {selectedVehicle.capacity_kg} Kg
+                              </span>
+                           </div>
+                           <div className="w-full bg-slate-200 rounded-full h-2.5">
+                              <div
+                                 className={`h-2.5 rounded-full ${isOverweight ? 'bg-red-500' : 'bg-green-500'}`}
+                                 style={{ width: `${Math.min((selectedTotals.totalWeight / selectedVehicle.capacity_kg) * 100, 100)}%` }}
+                              ></div>
+                           </div>
+                           {isOverweight && <div className="text-[10px] text-red-500 font-bold mt-1 text-center">¡EXCESO DE PESO!</div>}
+                        </div>
+                     )}
+                  </div>
+
+                  {/* 2. Selection Summary */}
+                  <div className="bg-white p-4 rounded-lg shadow border border-slate-200 flex-1 flex flex-col">
+                     <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">2. Resumen de Selección</label>
+                     <div className="space-y-4 flex-1">
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                           <span className="text-sm text-slate-500">Documentos</span>
+                           <span className="text-lg font-bold text-slate-800">{selectedTotals.count}</span>
+                        </div>
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                           <span className="text-sm text-slate-500">Peso Total</span>
+                           <span className="text-lg font-bold text-slate-800">{selectedTotals.totalWeight.toFixed(2)} Kg</span>
+                        </div>
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                           <span className="text-sm text-slate-500">Valor (S/)</span>
+                           <span className="text-lg font-bold text-green-700">{selectedTotals.totalMoney.toFixed(2)}</span>
+                        </div>
+                     </div>
+
+                     <button
+                        onClick={handleGenerateRoute}
+                        disabled={selectedTotals.count === 0}
+                        className="w-full mt-4 bg-slate-900 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-slate-800 disabled:opacity-50 disabled:shadow-none flex items-center justify-center transition-all"
+                     >
+                        <Package className="w-5 h-5 mr-2" /> GENERAR PICKING
+                     </button>
+                  </div>
+               </div>
+
+               {/* RIGHT PANEL: DOCUMENT SELECTION */}
+               <div className="flex-1 bg-white p-4 rounded-lg shadow border border-slate-200 flex flex-col min-w-0">
+                  <div className="flex justify-between items-center mb-4">
+                     <h3 className="font-bold text-slate-700">2. Seleccionar Documentos a Despachar</h3>
+                     <div className="text-sm font-medium text-slate-500">
+                        {selectedTotals.count} seleccionados / S/ {selectedTotals.totalMoney.toFixed(2)}
+                     </div>
+                  </div>
+
+                  <div className="flex-1 overflow-auto border border-slate-200 rounded">
+                     <table className="w-full text-left text-sm whitespace-nowrap">
+                        <thead className="bg-slate-50 text-slate-600 sticky top-0 shadow-sm">
+                           <tr>
+                              <th className="p-2 border-b"><input type="checkbox" onChange={handleSelectAll} checked={selectedSaleIds.length === sortedSales.length && sortedSales.length > 0} className="w-4 h-4" /></th>
+                              <th className="p-2 border-b">Documento</th>
+                              <th className="p-2 border-b">Cliente</th>
+                              <th className="p-2 border-b">Zona</th>
+                              <th className="p-2 border-b">Vendedor</th>
+                              <th className="p-2 border-b text-right">Peso</th>
+                              <th className="p-2 border-b text-right">Importe</th>
+                           </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                           {sortedSales.length === 0 ? (
+                              <tr><td colSpan={7} className="p-8 text-center text-slate-400">No hay documentos pendientes para despachar.</td></tr>
+                           ) : (
+                              sortedSales.map(sale => {
+                                 const isSelected = selectedSaleIds.includes(sale.id);
+                                 return (
+                                    <tr key={sale.id} className={`hover:bg-slate-50 transition-colors cursor-pointer ${isSelected ? 'bg-indigo-50 hover:bg-indigo-100' : ''}`} onClick={() => handleToggleSale(sale.id)}>
+                                       <td className="p-2"><input type="checkbox" checked={isSelected} readOnly className="w-4 h-4 cursor-pointer" /></td>
+                                       <td className="p-2 font-bold text-slate-700">{sale.document_type.substring(0, 3)} {sale.series}-{sale.number}</td>
+                                       <td className="p-2 text-slate-700 truncate max-w-[200px]" title={sale.client_name}>{sale.client_name}</td>
+                                       <td className="p-2 text-slate-500 text-xs font-semibold">{sale.zoneName}</td>
+                                       <td className="p-2 text-slate-500 text-xs">{sale.sellerName.split(' ')[0]}</td>
+                                       <td className="p-2 text-right font-medium text-slate-600">{sale.totalWeight > 0 ? `${sale.totalWeight.toFixed(1)} Kg` : '-'}</td>
+                                       <td className="p-2 text-right font-bold text-emerald-600">S/ {sale.total.toFixed(2)}</td>
+                                    </tr>
+                                 );
+                              })
+                           )}
+                        </tbody>
+                     </table>
+                  </div>
+               </div>
+            </div>
+         ) : (
+            // --- EN_RUTA MONITOR TAB ---
+            <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+               {activeDispatches.length === 0 ? (
+                  <div className="bg-white flex-1 rounded-lg border border-slate-200 flex flex-col items-center justify-center text-slate-500">
+                     <CheckCircle className="w-16 h-16 text-green-200 mb-4" />
+                     <h3 className="text-xl font-bold mb-2">Sin Rutas Activas</h3>
+                     <p>Actualmente no hay unidades de transporte con estado "En Ruta".</p>
+                  </div>
+               ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-auto pb-4">
+                     {activeDispatches.map(ds => {
+                        const v = vehicles.find(x => x.id === ds.vehicle_id);
+                        const d = drivers.find(x => x.id === v?.driver_id);
+                        const routeSales = sales.filter(s => ds.sale_ids.includes(s.id));
+
+                        const completed = routeSales.filter(s => ['delivered', 'failed', 'partial'].includes(s.dispatch_status)).length;
+                        const total = routeSales.length;
+                        const progress = total > 0 ? (completed / total) * 100 : 0;
+                        const hasIncidences = routeSales.some(s => s.dispatch_status === 'failed' || s.dispatch_status === 'partial');
+
+                        return (
+                           <div key={ds.id} className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all flex flex-col h-full">
+                              <div className="flex justify-between items-start mb-3 border-b border-slate-100 pb-3">
+                                 <div>
+                                    <h3 className="font-bold text-slate-800 text-lg">{ds.code} <span className="text-xs font-normal text-slate-500 ml-1">({new Date(ds.date).toLocaleDateString()})</span></h3>
+                                    <div className="text-xs text-slate-500 font-bold flex items-center mt-1">
+                                       <Truck className="w-3 h-3 mr-1" /> {v?.plate} | <User className="w-3 h-3 ml-2 mr-1" /> {d?.name.split(' ')[0]}
+                                    </div>
+                                 </div>
+                                 <div className="bg-blue-100 text-blue-700 px-2 py-1 rounded text-[10px] font-bold uppercase flex items-center shadow-sm">
+                                    <PlayCircle className="w-3 h-3 mr-1 animate-pulse" /> EN RUTA
+                                 </div>
+                              </div>
+
+                              <div className="mb-4 flex-1">
+                                 <div className="flex justify-between text-sm mb-1 font-bold">
+                                    <span className="text-slate-600">Avance de Reparto</span>
+                                    <span className="text-slate-800">{completed} / {total} doc</span>
+                                 </div>
+                                 <div className="w-full bg-slate-100 rounded-full h-3 mb-1 shadow-inner overflow-hidden border border-slate-200">
+                                    <div className="bg-gradient-to-r from-blue-500 to-indigo-500 h-3 rounded-full transition-all duration-1000 ease-in-out relative" style={{ width: `${progress}%` }}>
+                                       <div className="absolute inset-0 bg-white/20 w-full h-full animate-[shimmer_2s_infinite]"></div>
+                                    </div>
+                                 </div>
+                                 <div className="text-[10px] text-slate-500 text-right">{progress.toFixed(0)}% Completado</div>
+                              </div>
+
+                              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 mt-auto">
+                                 {hasIncidences ? (
+                                    <div className="flex items-start text-amber-700">
+                                       <AlertTriangle className="w-4 h-4 mr-2" />
+                                       <div className="text-xs font-medium">Se han reportado incidencias (Entregas parciales o locales cerrados) durante esta ruta.</div>
+                                    </div>
+                                 ) : (
+                                    <div className="flex items-start text-emerald-600">
+                                       <CheckCircle className="w-4 h-4 mr-2" />
+                                       <div className="text-xs font-medium">Sin incidencias reportadas por el momento. El reparto transcurre con normalidad.</div>
+                                    </div>
+                                 )}
+                              </div>
+                           </div>
+                        );
+                     })}
+                  </div>
+               )}
+            </div>
+         )}
       </div>
    );
 };
