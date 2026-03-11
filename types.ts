@@ -367,6 +367,7 @@ export interface Order {
 
   total: number;
   status: 'pending' | 'processed' | 'rejected';
+  delivery_mode?: 'REGULAR' | 'EXPRESS_MISMO_DIA'; // Added for order type
 
   observation?: string;
   delivery_address?: string;
@@ -430,6 +431,7 @@ export interface Sale {
 
   status: 'pending' | 'completed' | 'canceled';
   dispatch_status: 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'liquidated' | 'failed' | 'partial';
+  delivery_mode?: 'REGULAR' | 'EXPRESS_MISMO_DIA'; // Added for order type
   created_at: string;
 
   // Delivery Metadata (Mobile Delivery)

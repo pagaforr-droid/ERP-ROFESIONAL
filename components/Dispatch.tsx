@@ -14,8 +14,8 @@ interface ExtendedSale extends Sale {
 export const Dispatch: React.FC = () => {
    const { sales, vehicles, createDispatch, updateSaleStatus, drivers, clients, zones, sellers, products, suppliers, company, currentUser, dispatchSheets } = useStore();
 
-   // State
    const [activeTab, setActiveTab] = useState<'PROGRAMAR' | 'EN_RUTA'>('PROGRAMAR');
+   const [filterDeliveryMode, setFilterDeliveryMode] = useState<'ALL' | 'REGULAR' | 'EXPRESS_MISMO_DIA'>('ALL');
    const [selectedVehicleId, setSelectedVehicleId] = useState('');
    const [selectedSaleIds, setSelectedSaleIds] = useState<string[]>([]);
 
@@ -27,7 +27,7 @@ export const Dispatch: React.FC = () => {
    // 1. Enrich Sales with Territory Info and Weight
    const enrichedSales: ExtendedSale[] = useMemo(() => {
       return sales
-         .filter(s => s.dispatch_status === 'pending')
+         .filter(s => s.dispatch_status === 'pending' && (filterDeliveryMode === 'ALL' || s.delivery_mode === filterDeliveryMode))
          .map(sale => {
             const client = clients.find(c => c.doc_number === sale.client_ruc);
             const zone = zones.find(z => z.id === client?.zone_id);
@@ -47,7 +47,7 @@ export const Dispatch: React.FC = () => {
                totalWeight: weight
             };
          });
-   }, [sales, clients, zones, sellers, products]);
+   }, [sales, clients, zones, sellers, products, filterDeliveryMode]);
 
    // 2. Sort Logic: Zone -> Seller -> Date (Desc) -> Document
    const sortedSales = useMemo(() => {
@@ -829,6 +829,20 @@ export const Dispatch: React.FC = () => {
                      )}
                   </div>
 
+                  {/* Modality Filter */}
+                  <div className="bg-white p-4 rounded-lg shadow border border-slate-200">
+                     <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">Modalidad de Pedido</label>
+                     <select
+                        className="w-full border border-slate-300 rounded p-2 text-sm bg-slate-50 font-medium"
+                        value={filterDeliveryMode}
+                        onChange={e => setFilterDeliveryMode(e.target.value as any)}
+                     >
+                        <option value="ALL">Todas las Modalidades</option>
+                        <option value="REGULAR">Regulares (Siguiente día)</option>
+                        <option value="EXPRESS_MISMO_DIA">Fuera de Ruta (Mismo día)</option>
+                     </select>
+                  </div>
+
                   {/* 2. Selection Summary */}
                   <div className="bg-white p-4 rounded-lg shadow border border-slate-200 flex-1 flex flex-col">
                      <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">2. Resumen de Selección</label>
@@ -888,7 +902,12 @@ export const Dispatch: React.FC = () => {
                                  return (
                                     <tr key={sale.id} className={`hover:bg-slate-50 transition-colors cursor-pointer ${isSelected ? 'bg-indigo-50 hover:bg-indigo-100' : ''}`} onClick={() => handleToggleSale(sale.id)}>
                                        <td className="p-2"><input type="checkbox" checked={isSelected} readOnly className="w-4 h-4 cursor-pointer" /></td>
-                                       <td className="p-2 font-bold text-slate-700">{sale.document_type.substring(0, 3)} {sale.series}-{sale.number}</td>
+                                       <td className="p-2 font-bold text-slate-700">
+                                          {sale.document_type.substring(0, 3)} {sale.series}-{sale.number}
+                                          {sale.delivery_mode === 'EXPRESS_MISMO_DIA' && (
+                                             <span className="block text-[9px] bg-red-100 text-red-700 font-bold px-1 py-0.5 rounded uppercase mt-0.5 w-max">Fuera de Ruta</span>
+                                          )}
+                                       </td>
                                        <td className="p-2 text-slate-700 truncate max-w-[200px]" title={sale.client_name}>{sale.client_name}</td>
                                        <td className="p-2 text-slate-500 text-xs font-semibold">{sale.zoneName}</td>
                                        <td className="p-2 text-slate-500 text-xs">{sale.sellerName.split(' ')[0]}</td>

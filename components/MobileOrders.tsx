@@ -9,11 +9,25 @@ type ViewMode = 'SELLER_SELECT' | 'CLIENT_LIST' | 'CLIENT_DETAIL' | 'PRODUCT_SEL
 type ClientTab = 'ORDER' | 'COLLECTION';
 
 export const MobileOrders: React.FC = () => {
-   const { clients, products, sellers, createOrder, updateOrder, zones, orders, sales, reportCollection, collectionRecords, getBatchesForProduct, autoPromotions } = useStore();
+   const { clients, products, sellers, createOrder, updateOrder, zones, orders, sales, reportCollection, collectionRecords, getBatchesForProduct, autoPromotions, deliveryMode, currentUser, users, logout } = useStore();
 
    // --- NAVIGATION STATE ---
    const [viewMode, setViewMode] = useState<ViewMode>('SELLER_SELECT');
    const [clientTab, setClientTab] = useState<ClientTab>('ORDER');
+
+   // Initialize Auto-Select for SELLER Role
+   React.useEffect(() => {
+      if (viewMode === 'SELLER_SELECT' && currentUser) {
+         if (currentUser.role === 'SELLER') {
+            const matchingSeller = sellers.find(s => s.name.trim().toUpperCase() === currentUser.name.trim().toUpperCase());
+            if (matchingSeller) {
+               setCurrentSellerId(matchingSeller.id);
+               setViewMode('CLIENT_LIST');
+               setListTab('CLIENTS');
+            }
+         }
+      }
+   }, [currentUser, sellers, viewMode]);
 
    // --- CONTEXT STATE ---
    const [currentSellerId, setCurrentSellerId] = useState('');
@@ -117,6 +131,12 @@ export const MobileOrders: React.FC = () => {
    // --- HANDLERS ---
 
    const confirmExitApp = () => {
+      if (currentUser?.role === 'SELLER') {
+         // Vendedores shouldn't see the seller list. Exiting route means logging out.
+         logout();
+         return;
+      }
+
       // Force reset all state
       setCurrentSellerId('');
       setCurrentClient(null);
@@ -323,8 +343,12 @@ export const MobileOrders: React.FC = () => {
                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6 animate-fade-in">
                   <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 text-center">
                      <LogOut className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                     <h3 className="text-xl font-bold text-slate-800 mb-2">¿Cerrar Sesión de Ruta?</h3>
-                     <p className="text-slate-500 text-sm mb-6">Volverá a la pantalla de selección de vendedor.</p>
+                     <h3 className="text-xl font-bold text-slate-800 mb-2">
+                        {currentUser?.role === 'SELLER' ? '¿Cerrar Sesión del Sistema?' : '¿Cerrar Sesión de Ruta?'}
+                     </h3>
+                     <p className="text-slate-500 text-sm mb-6">
+                        {currentUser?.role === 'SELLER' ? 'Finalizará su jornada y volverá al Login.' : 'Volverá a la pantalla de selección de vendedor.'}
+                     </p>
                      <div className="flex gap-3">
                         <button onClick={() => setIsExitModalOpen(false)} className="flex-1 py-3 border border-slate-300 rounded-lg font-bold text-slate-600">Cancelar</button>
                         <button onClick={confirmExitApp} className="flex-1 py-3 bg-red-600 text-white rounded-lg font-bold shadow-lg">Cerrar Sesión</button>
@@ -337,7 +361,7 @@ export const MobileOrders: React.FC = () => {
                <div className="flex justify-between items-center mb-4">
                   <div>
                      <h2 className="text-lg font-bold">Ruta del Día</h2>
-                     <p className="text-xs text-slate-400">{currentSeller?.name}</p>
+                     <p className="text-xs text-slate-400">{currentSeller?.name} {deliveryMode === 'EXPRESS_MISMO_DIA' ? <span className="text-green-400 font-bold ml-1 tracking-wider uppercase">• FUERA DE RUTA</span> : <span className="text-blue-400 font-bold ml-1 tracking-wider uppercase">• REGULAR</span>}</p>
                   </div>
                   <div className="flex flex-col items-end">
                      <span className="text-[10px] text-slate-400 uppercase">Mi Cobranza (Hoy)</span>

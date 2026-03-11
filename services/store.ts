@@ -278,6 +278,7 @@ interface AppState {
 
    // Auth State
    currentUser: User | null;
+   deliveryMode: 'REGULAR' | 'EXPRESS_MISMO_DIA'; // Added for order type context
 
    // Cash Flow State
    cashMovements: CashMovement[];
@@ -316,7 +317,7 @@ interface AppState {
    reportCollection: (saleId: string, sellerId: string, amount: number) => void;
    consolidateCollections: (recordIds: string[], userId?: string, metadata?: { editPlanillaId?: string, editPlanillaCode?: string }) => void;
    manualLiquidation: (payments: { saleId: string, amount: number }[], userId?: string, metadata?: { date: string, glosa: string, editPlanillaId?: string, editPlanillaCode?: string }) => void;
-   annulCollectionPlanilla: (planillaId: string, userId?: string) => void;
+   annulCollectionPlanilla: (planillaId: string, userId: string) => void;
    revertPlanillaForEdit: (planillaId: string) => void;
    removeRecordFromPlanilla: (planillaId: string, recordId: string) => void;
 
@@ -391,6 +392,7 @@ interface AppState {
    // Auth Actions
    setCurrentUser: (userId: string) => void;
    logout: () => void;
+   setDeliveryMode: (mode: 'REGULAR' | 'EXPRESS_MISMO_DIA') => void; // Added for order type
 
    // Selectors/Helpers
    getBatchesForProduct: (productId: string) => Batch[];
@@ -440,6 +442,7 @@ export const useStore = create<AppState>((set, get) => ({
    combos: MOCK_COMBOS,
    autoPromotions: MOCK_AUTO_PROMOTIONS,
    currentUser: null,
+   deliveryMode: 'REGULAR', // Default to REGULAR
    collectionRecords: [],
    collectionPlanillas: [],
    cashSessions: [],
@@ -499,7 +502,7 @@ export const useStore = create<AppState>((set, get) => ({
    addSubcategory: (subcategory: string) => set((state) => ({ subcategories: Array.from(new Set([...state.subcategories, subcategory])).sort() })),
    addBrand: (brand: string) => set((state) => ({ brands: Array.from(new Set([...state.brands, brand])).sort() })),
    addUnitType: (unitType: string) => set((state) => ({ unitTypes: Array.from(new Set([...state.unitTypes, unitType])).sort() })),
-   addPackageType: (packageType: string) => set((state) => ({ packageTypes: Array.from(new Set([...state.packageTypes, packageType])).sort() })),
+   addPackageType: (packageType: string) => set((state) => ({ packageTypes: Array.from(new Set([...state.packageTypes, packageType])).filter(Boolean).sort() })),
 
 
    addProduct: (product) => set((state) => ({
@@ -645,13 +648,18 @@ export const useStore = create<AppState>((set, get) => ({
       return { batches: newBatches, sales: allSales };
    }),
 
-   // Updated createOrder with FIFO Allocation
-   createOrder: (order) => set(s => {
-      const newBatches = [...s.batches];
+   // Updated createOrder with FIFO Allocation and Delivery Mode
+   createOrder: (order) => set((state) => {
+      const orderWithMode = {
+         ...order,
+         delivery_mode: order.delivery_mode || state.deliveryMode // Inherit session mode if not provided
+      };
+
+      const newBatches = [...state.batches];
 
       // Auto-recalculate promos to ensure data integrity
-      const validatedItems = calculatePromotions(order.items, s.autoPromotions, s.products);
-      order.total = validatedItems.reduce((acc, item) => acc + item.total_price, 0);
+      const validatedItems = calculatePromotions(orderWithMode.items, state.autoPromotions, state.products);
+      orderWithMode.total = validatedItems.reduce((acc, item) => acc + item.total_price, 0);
 
       // 1. Process allocations for each item in the order
       const processedItems: OrderItem[] = validatedItems.map(item => {
@@ -659,7 +667,7 @@ export const useStore = create<AppState>((set, get) => ({
          let comboSnapshot: any[] | undefined = undefined;
 
          if (item.unit_type === 'COMBO') {
-            const combo = s.combos.find(c => c.id === item.product_id);
+            const combo = state.combos.find(c => c.id === item.product_id);
             if (!combo) return item;
 
             // Snapshot the current combo definition
@@ -667,7 +675,7 @@ export const useStore = create<AppState>((set, get) => ({
 
             // Iterate over combo components to allocate stock
             combo.items.forEach(comboItem => {
-               const product = s.products.find(p => p.id === comboItem.product_id);
+               const product = state.products.find(p => p.id === comboItem.product_id);
                if (!product) return;
 
                // Calculate total base units needed for this component
@@ -700,7 +708,7 @@ export const useStore = create<AppState>((set, get) => ({
 
          } else {
             // Normal Product Logic
-            const product = s.products.find(p => p.id === item.product_id);
+            const product = state.products.find(p => p.id === item.product_id);
             if (!product) return item;
 
             const conversionFactor = item.unit_type === 'PKG' ? (product.package_content || 1) : 1;
@@ -734,7 +742,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       // 2. Return new state with updated batches and the order containing allocations
       return {
-         orders: [{ ...order, items: processedItems }, ...s.orders],
+         orders: [...state.orders, { ...orderWithMode, items: processedItems }],
          batches: newBatches
       };
    }),
@@ -839,6 +847,7 @@ export const useStore = create<AppState>((set, get) => ({
             balance: order.total,
             status: 'completed',
             dispatch_status: 'pending',
+            delivery_mode: order.delivery_mode, // Inherit order type from original order
             created_at: new Date().toISOString(),
             sunat_status: 'PENDING',
             items: saleItems,
@@ -1412,7 +1421,7 @@ export const useStore = create<AppState>((set, get) => ({
                   igv: igvT,
                   total: doc.amount_credit_note!,
                   balance: 0,
-                  observation: `Devolución de la planilla ${liqCode}. Doc. Org: ${originalSale.series}-${originalSale.number}`,
+                  observation: `Devolución de la planilla ${liqCode} - Doc. Org: ${originalSale.series}-${originalSale.number}`,
                   status: 'completed',
                   dispatch_status: 'liquidated',
                   created_at: new Date().toISOString(),
@@ -2009,5 +2018,6 @@ export const useStore = create<AppState>((set, get) => ({
       currentUser: s.users.find(u => u.id === userId) || null
    })),
 
-   logout: () => set(() => ({ currentUser: null }))
+   logout: () => set(() => ({ currentUser: null, deliveryMode: 'REGULAR' })),
+   setDeliveryMode: (mode) => set({ deliveryMode: mode }),
 }));

@@ -11,6 +11,7 @@ export const OrderProcessing: React.FC = () => {
    const [filterZone, setFilterZone] = useState('ALL');
    const [filterStatus, setFilterStatus] = useState<'pending' | 'processed' | 'rejected'>('pending');
    const [filterDocType, setFilterDocType] = useState<'ALL' | 'FACTURA' | 'BOLETA'>('ALL');
+   const [filterDeliveryMode, setFilterDeliveryMode] = useState<'ALL' | 'REGULAR' | 'EXPRESS_MISMO_DIA'>('ALL');
 
    // Selection
    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -34,8 +35,9 @@ export const OrderProcessing: React.FC = () => {
       const matchZone = filterZone === 'ALL' || clientZoneId === filterZone;
       const matchStatus = o.status === filterStatus;
       const matchDocType = filterDocType === 'ALL' || docType === filterDocType;
+      const matchDeliveryMode = filterDeliveryMode === 'ALL' || o.delivery_mode === filterDeliveryMode;
 
-      return matchSeller && matchZone && matchStatus && matchDocType;
+      return matchSeller && matchZone && matchStatus && matchDocType && matchDeliveryMode;
    });
 
    // --- SELECTION HANDLERS ---
@@ -285,6 +287,14 @@ export const OrderProcessing: React.FC = () => {
                   <option value="BOLETA">Solo Boletas</option>
                </select>
             </div>
+            <div className="flex-1 min-w-[200px]">
+               <label className="block text-xs font-bold text-slate-600 mb-1">Modalidad</label>
+               <select className="w-full border border-slate-300 rounded p-2 text-sm" value={filterDeliveryMode} onChange={e => setFilterDeliveryMode(e.target.value as any)}>
+                  <option value="ALL">Todas</option>
+                  <option value="REGULAR">Regulares (Siguiente día)</option>
+                  <option value="EXPRESS_MISMO_DIA">Fuera de Ruta (Mismo día)</option>
+               </select>
+            </div>
             <div className="w-40">
                <label className="block text-xs font-bold text-slate-600 mb-1">Estado</label>
                <select className="w-full border border-slate-300 rounded p-2 text-sm bg-slate-50" value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)}>
@@ -357,7 +367,12 @@ export const OrderProcessing: React.FC = () => {
                                     />
                                  </td>
                               )}
-                              <td className="p-3 font-mono text-slate-600">{order.code}</td>
+                              <td className="p-3">
+                                 <span className="font-mono text-slate-600 inline-block mr-2">{order.code}</span>
+                                 {order.delivery_mode === 'EXPRESS_MISMO_DIA' && (
+                                    <span className="text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded uppercase align-middle">Fuera de ruta</span>
+                                 )}
+                              </td>
                               <td className="p-3 text-slate-500">{new Date(order.created_at).toLocaleDateString()} <span className="text-[10px]">{new Date(order.created_at).toLocaleTimeString().slice(0, 5)}</span></td>
                               <td className="p-3">
                                  <div className="text-xs font-bold text-slate-700">{seller?.name}</div>
