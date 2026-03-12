@@ -639,6 +639,7 @@ export type ViewState =
   | 'dispatch-liquidation'
   | 'document-manager'
   | 'reports'
+  | 'accounting-reports'
   | 'kardex'
   | 'users'
   | 'attendance'

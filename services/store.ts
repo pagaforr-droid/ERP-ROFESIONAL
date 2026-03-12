@@ -116,7 +116,7 @@ const MOCK_SALES: Sale[] = [
 const MOCK_USERS: User[] = [
    {
       id: 'u1', username: 'admin', password: '123456', name: 'Admin General', role: 'ADMIN', requires_attendance: false, is_active: true,
-      permissions: ['dashboard', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'mobile-delivery', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager']
+      permissions: ['dashboard', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'mobile-delivery', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager', 'accounting-reports']
    },
    {
       id: 'u2', username: 'vendedor1', password: '123', name: 'Tomas Linares', role: 'SELLER', requires_attendance: true, is_active: true,
