@@ -433,6 +433,11 @@ export interface Sale {
   dispatch_status: 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'liquidated' | 'failed' | 'partial';
   delivery_mode?: 'REGULAR' | 'EXPRESS_MISMO_DIA'; // Added for order type
   created_at: string;
+  
+  // Transport Metadata (For Guides)
+  guide_transporter_id?: string;
+  guide_driver_id?: string;
+  guide_vehicle_id?: string;
 
   // Delivery Metadata (Mobile Delivery)
   delivery_reason?: string;

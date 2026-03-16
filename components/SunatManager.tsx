@@ -4,7 +4,7 @@ import { CheckCircle2, Clock, AlertTriangle, XCircle, Send, RefreshCw, Filter, S
 import { Sale, DispatchSheet } from '../types';
 
 export const SunatManager: React.FC = () => {
-    const { sales, dispatchSheets, updateSunatStatus } = useStore();
+    const { sales, dispatchSheets, transporters, drivers, vehicles, updateSunatStatus, generateGuiasFromSales } = useStore();
 
     const [activeTab, setActiveTab] = useState<'facturas' | 'boletas' | 'notas_credito' | 'guias'>('facturas');
     const [searchTerm, setSearchTerm] = useState('');
@@ -12,6 +12,12 @@ export const SunatManager: React.FC = () => {
 
     const [sendingIds, setSendingIds] = useState<Set<string>>(new Set());
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+    // Generate Guias Modal State
+    const [isGenerateGuiaModalOpen, setIsGenerateGuiaModalOpen] = useState(false);
+    const [guiaTransporterId, setGuiaTransporterId] = useState('');
+    const [guiaDriverId, setGuiaDriverId] = useState('');
+    const [guiaVehicleId, setGuiaVehicleId] = useState('');
 
     // Calculate Days since emission
     const getDaysSince = (dateStr: string) => {
@@ -222,6 +228,28 @@ export const SunatManager: React.FC = () => {
         });
 
         alert(`Se actualizaron ${pendingDocs.length} tickets pendientes.`);
+    };
+
+    const handleOpenGenerateGuias = () => {
+        if (selectedIds.size === 0) {
+            alert("No hay documentos seleccionados.");
+            return;
+        }
+        setIsGenerateGuiaModalOpen(true);
+    };
+
+    const handleConfirmGenerateGuias = () => {
+        if (!guiaTransporterId || !guiaDriverId || !guiaVehicleId) {
+            alert("Debe seleccionar empresa de transporte, conductor y vehículo.");
+            return;
+        }
+        
+        const idsArray = Array.from(selectedIds) as string[];
+        generateGuiasFromSales(idsArray, guiaTransporterId, guiaDriverId, guiaVehicleId);
+        
+        setIsGenerateGuiaModalOpen(false);
+        setSelectedIds(new Set());
+        alert(`Se generaron ${idsArray.length} Guías de Remisión existosamente. Puede verlas en la pestaña 'Guías'.`);
     };
 
     const StatusBadge = ({ status }: { status?: string }) => {
@@ -472,6 +500,19 @@ export const SunatManager: React.FC = () => {
                         >
                             <RefreshCw className="w-4 h-4" /> Consultar Tickets
                         </button>
+                        {(activeTab === 'facturas' || activeTab === 'boletas') && (
+                            <button
+                                onClick={handleOpenGenerateGuias}
+                                disabled={selectedIds.size === 0}
+                                className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-2
+                                    ${selectedIds.size === 0
+                                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                                        : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300'
+                                    }`}
+                            >
+                                <FileText className="w-4 h-4" /> Generar Guías Lote
+                            </button>
+                        )}
                         <button
                             onClick={handleSendSelected}
                             disabled={selectedIds.size === 0 || sendingIds.size > 0}
@@ -488,6 +529,87 @@ export const SunatManager: React.FC = () => {
                 </div>
 
             </div>
+
+            {/* Modal Generar Guías */}
+            {isGenerateGuiaModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-xl w-[500px] border border-slate-200 overflow-hidden">
+                        <div className="bg-slate-50 border-b border-slate-200 p-5 flex items-center justify-between">
+                            <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                                <FileText className="w-6 h-6 text-emerald-600" />
+                                Generar Guías de Remisión
+                            </h2>
+                            <button onClick={() => setIsGenerateGuiaModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                                <XCircle className="w-6 h-6" />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <div className="mb-4 p-4 bg-emerald-50 rounded-xl border border-emerald-100 flex gap-3 text-emerald-800">
+                                <div>
+                                    <p className="font-bold text-sm">Creación Múltiple</p>
+                                    <p className="text-xs mt-1">Se generarán <span className="font-extrabold">{selectedIds.size}</span> guías de remisión (Tipo Remitente) para los comprobantes seleccionados. Se asignará la siguiente información de transporte a todas.</p>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Empresa de Transporte</label>
+                                    <select
+                                        className="w-full border-2 border-slate-200 rounded-lg px-4 py-2 bg-slate-50 focus:bg-white focus:border-emerald-500 focus:ring-0 text-sm font-bold"
+                                        value={guiaTransporterId}
+                                        onChange={(e) => setGuiaTransporterId(e.target.value)}
+                                    >
+                                        <option value="">-- Seleccionar --</option>
+                                        {transporters.map(t => (
+                                            <option key={t.id} value={t.id}>{t.name} (RUC: {t.ruc})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Vehículo / Placa</label>
+                                    <select
+                                        className="w-full border-2 border-slate-200 rounded-lg px-4 py-2 bg-slate-50 focus:bg-white focus:border-emerald-500 focus:ring-0 text-sm font-bold"
+                                        value={guiaVehicleId}
+                                        onChange={(e) => setGuiaVehicleId(e.target.value)}
+                                    >
+                                        <option value="">-- Seleccionar --</option>
+                                        {vehicles.filter(v => !guiaTransporterId || v.transporter_id === guiaTransporterId).map(v => (
+                                            <option key={v.id} value={v.id}>{v.plate} ({v.brand} {v.model})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-slate-700 mb-1">Conductor</label>
+                                    <select
+                                        className="w-full border-2 border-slate-200 rounded-lg px-4 py-2 bg-slate-50 focus:bg-white focus:border-emerald-500 focus:ring-0 text-sm font-bold"
+                                        value={guiaDriverId}
+                                        onChange={(e) => setGuiaDriverId(e.target.value)}
+                                    >
+                                        <option value="">-- Seleccionar --</option>
+                                        {drivers.map(d => (
+                                            <option key={d.id} value={d.id}>{d.name} (DNI: {d.dni})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="border-t border-slate-200 p-5 bg-slate-50 flex justify-end gap-3">
+                            <button
+                                onClick={() => setIsGenerateGuiaModalOpen(false)}
+                                className="px-5 py-2.5 rounded-xl font-bold text-slate-500 hover:bg-slate-200 transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handleConfirmGenerateGuias}
+                                className="px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-200 transition-all flex items-center gap-2"
+                            >
+                                <CheckSquare className="w-5 h-5" /> Confirmar Creación
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

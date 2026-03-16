@@ -330,6 +330,7 @@ interface AppState {
    updateSunatStatus: (type: 'sale' | 'dispatch', id: string, status: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED', message?: string) => void;
    processDispatchLiquidation: (liquidation: DispatchLiquidation) => void;
    markDocumentsAsPrinted: (saleIds: string[]) => void;
+   generateGuiasFromSales: (saleIds: string[], transporterId: string, driverId: string, vehicleId: string) => void;
 
    // Auditory and Modifications
    addSaleHistoryEvent: (saleId: string, event: import('../types').SaleHistoryEvent) => void;
@@ -1546,6 +1547,60 @@ export const useStore = create<AppState>((set, get) => ({
       const history = sale.history || [];
       return {
          sales: s.sales.map(item => item.id === saleId ? { ...item, history: [...history, event] } : item)
+      };
+   }),
+
+   generateGuiasFromSales: (saleIds, transporterId, driverId, vehicleId) => set(s => {
+      if (saleIds.length === 0) return s;
+
+      const currentSeriesState = [...s.company.series];
+      const seriesObj = currentSeriesState.find(ser => ser.type === 'GUIA' && ser.is_active);
+      if (!seriesObj) {
+         alert("No hay serie activa configurada para Guías de Remisión.");
+         return s;
+      }
+      
+      let nextNum = seriesObj.current_number;
+      
+      const newDispatchSheets: DispatchSheet[] = [];
+      const updatedSales = [...s.sales];
+
+      saleIds.forEach(saleId => {
+         const saleIndex = updatedSales.findIndex(sale => sale.id === saleId);
+         if (saleIndex === -1) return;
+
+         nextNum++;
+         const code = `${seriesObj.series}-${String(nextNum).padStart(8, '0')}`;
+
+         const newDispatch: DispatchSheet = {
+            id: generateUUID(),
+            code,
+            vehicle_id: vehicleId,
+            status: 'pending',
+            date: new Date().toISOString(),
+            sale_ids: [saleId],
+            sunat_status: 'PENDING'
+         };
+
+         newDispatchSheets.push(newDispatch);
+         
+         updatedSales[saleIndex] = {
+            ...updatedSales[saleIndex],
+            dispatch_status: 'assigned',
+            guide_transporter_id: transporterId,
+            guide_driver_id: driverId,
+            guide_vehicle_id: vehicleId,
+         };
+      });
+
+      const finalSeriesState = currentSeriesState.map(ser =>
+         ser.id === seriesObj.id ? { ...ser, current_number: nextNum } : ser
+      );
+
+      return {
+         dispatchSheets: [...newDispatchSheets, ...s.dispatchSheets],
+         sales: updatedSales,
+         company: { ...s.company, series: finalSeriesState }
       };
    }),
 

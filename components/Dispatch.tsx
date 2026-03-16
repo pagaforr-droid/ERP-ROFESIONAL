@@ -4,6 +4,7 @@ import { Truck, CheckCircle, Package, Calendar, User, FileText, Printer, X, Acti
 import { Sale, Product } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { PdfEngine } from './PdfEngine';
 
 interface ExtendedSale extends Sale {
    sellerName: string;
@@ -20,7 +21,8 @@ export const Dispatch: React.FC = () => {
    const [selectedSaleIds, setSelectedSaleIds] = useState<string[]>([]);
 
    const [showPickingList, setShowPickingList] = useState(false);
-   const [activePrintTab, setActivePrintTab] = useState<'picking' | 'sellers'>('picking');
+   const [activePrintTab, setActivePrintTab] = useState<'picking' | 'sellers' | 'guia'>('picking');
+   const [isPrinting, setIsPrinting] = useState(false);
 
    // --- DATA PREPARATION ---
 
@@ -428,6 +430,58 @@ export const Dispatch: React.FC = () => {
       return dispatchSheets.filter(ds => ds.status === 'in_transit');
    }, [dispatchSheets]);
 
+   const generateConsolidatedGuidePDF = async () => {
+       // Mocking a DispatchSheet that represents the Consolidated Guide
+       const consolidatedId = `CONSOL-${new Date().getTime()}`;
+       
+       let guiaItems: any[] = [];
+       const selectedDocs = sortedSales.filter(s => selectedSaleIds.includes(s.id));
+       
+       selectedDocs.forEach(sale => {
+          sale.items.forEach(item => {
+             const prod = products.find(p => p.id === item.product_id);
+             const existingItem = guiaItems.find(gi => gi.product_id === item.product_id);
+             if (existingItem) {
+                existingItem.quantity += item.quantity_base;
+             } else {
+                guiaItems.push({
+                   product_id: item.product_id,
+                   product: prod,
+                   quantity: item.quantity_base,
+                   unit_price: 0,
+                });
+             }
+          });
+       });
+
+       const firstTrackedSale = selectedDocs.find(s => s.guide_transporter_id || s.guide_driver_id) || selectedDocs[0];
+
+       const consolidatedPayload = {
+           id: consolidatedId,
+           code: `0001-${new Date().getTime().toString().slice(-6)}`,
+           date: new Date().toISOString(),
+           vehicle_id: selectedVehicleId,
+           status: 'pending',
+           sale_ids: selectedSaleIds,
+           items: guiaItems,
+           client_name: 'Documentos Itinerantes',
+           motivo: 'Traslado por Emisor (Consolidado)',
+           guide_transporter_id: firstTrackedSale?.guide_transporter_id || '',
+           guide_driver_id: firstTrackedSale?.guide_driver_id || '',
+           guide_vehicle_id: firstTrackedSale?.guide_vehicle_id || selectedVehicleId || ''
+       };
+
+       try {
+           setIsPrinting(true);
+           await PdfEngine.openDocument(consolidatedPayload, 'GUIA_CONSOLIDADA', company);
+       } catch (error) {
+           console.error("Failed to generate PDF:", error);
+           alert("Hubo un error al generar el documento PDF.");
+       } finally {
+           setIsPrinting(false);
+       }
+   };
+
    // --- RENDER ---
 
    if (showPickingList) {
@@ -460,17 +514,27 @@ export const Dispatch: React.FC = () => {
                      >
                         2. Estracto por Vendedor
                      </button>
+                     <button
+                        onClick={() => setActivePrintTab('guia')}
+                        className={`px-4 py-1.5 rounded text-sm font-bold ${activePrintTab === 'guia' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-emerald-400'}`}
+                     >
+                        3. Guía de Remisión Consolidada
+                     </button>
                   </div>
 
                   <div className="flex gap-2">
                      <button onClick={() => {
                         if (activePrintTab === 'picking') generatePickingPDF();
-                        else generateSellerExtractPDF();
+                        else if (activePrintTab === 'sellers') generateSellerExtractPDF();
+                        else generateConsolidatedGuidePDF();
                      }} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold flex items-center shadow">
                         <Printer className="w-4 h-4 mr-2" /> GENERAR PDF EXACTO
                      </button>
                      <button onClick={() => setShowPickingList(false)} className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded font-bold flex items-center">
                         <X className="w-4 h-4 mr-2" /> Cerrar
+                     </button>
+                     <button onClick={confirmDispatch} className="bg-green-600 hover:bg-green-700 text-white px-8 py-2 rounded font-bold shadow-lg flex items-center">
+                        <CheckCircle className="w-4 h-4 mr-2" /> CONFIRMAR Y CREAR RUTA
                      </button>
                   </div>
                </div>
@@ -737,15 +801,28 @@ export const Dispatch: React.FC = () => {
                         </div>
                      </React.Fragment>
                   )}
+
+                  {/* --- PAGE 3: GUIA CONSOLIDADA (PREVIEW) --- */}
+                  {activePrintTab === 'guia' && (
+                     <div className="p-12 flex flex-col items-center justify-center h-full min-h-[500px] text-slate-500">
+                        <FileText className="w-24 h-24 mb-6 text-slate-300" />
+                        <h2 className="text-2xl font-black text-slate-700 mb-2">Guía de Remisión Consolidada</h2>
+                        <p className="text-center max-w-lg mb-8">Esta opción generará un documento oficial que consolida toda la mercadería de la lista seleccionada en una sola <b>Guía de Remisión</b> (Tipo Remitente) para el traslado en la misma unidad de transporte.</p>
+                        
+                        <div className="bg-amber-50 border border-amber-200 p-6 rounded-xl max-w-lg w-full text-amber-800 text-sm">
+                           <h3 className="font-bold flex items-center mb-2"><AlertTriangle className="w-4 h-4 mr-2" /> Excepción Legal (SUNAT)</h3>
+                           <p className="mb-2">Al generar una Guía de Remisión Consolidada, deberás adjuntar copias físicas o virtuales de todas las Facturas o Boletas individuales que componen el reparto.</p>
+                           <p>Presiona <b>GENERAR PDF EXACTO</b> en la barra superior para emitir el comprobante final.</p>
+                        </div>
+                     </div>
+                  )}
+
                </div>
                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 print:hidden">
                   <div className="flex-1 text-slate-500 text-sm flex items-center">
                      <CheckCircle className="w-4 h-4 mr-2 text-green-500" />
                      Revise que el picking coincida con el stock físico antes de confirmar.
                   </div>
-                  <button onClick={confirmDispatch} className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-bold shadow-lg flex items-center">
-                     CONFIRMAR Y GENERAR HOJA DE RUTA
-                  </button>
                </div>
             </div>
             <style>{`
