@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Printer, Search, Calendar, CheckSquare, Square, FileText, X } from 'lucide-react';
 import { PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
@@ -18,6 +18,11 @@ export const PrintBatch: React.FC = () => {
     // Selection
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [selectedDocsInfo, setSelectedDocsInfo] = useState<any[]>([]);
+
+    useEffect(() => {
+        setSelectedIds([]);
+        setSelectedDocsInfo([]);
+    }, [dateFrom, dateTo, docType, printStatusFilter, searchTerm]);
 
     // Print Preview Mode
     const [isPreviewOpen, setIsPreviewOpen] = useState(false);
