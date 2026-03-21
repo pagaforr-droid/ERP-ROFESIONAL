@@ -121,7 +121,7 @@ export interface AutoPromotion {
 // === COMPANY SETTINGS ===
 export interface DocumentSeries {
   id: string;
-  type: 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA_CREDITO';
+  type: 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA_CREDITO' | 'PEDIDO';
   series: string; // e.g. F001
   current_number: number; // e.g. 12515
   is_active: boolean;
@@ -660,4 +660,5 @@ export type ViewState =
   | 'virtual-store'
   | 'sunat-manager'
   | 'credit-notes'
+  | 'advanced-orders'
   | 'mobile-delivery';

@@ -226,6 +226,7 @@ export const CompanySettings: React.FC = () => {
                         <option value="BOLETA">BOLETA</option>
                         <option value="GUIA">GUIA</option>
                         <option value="NOTA_CREDITO">NOTA_CREDITO</option>
+                        <option value="PEDIDO">PEDIDO</option>
                       </select>
                     </td>
                     <td className="p-4">

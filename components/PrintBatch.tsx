@@ -179,12 +179,11 @@ export const PrintBatch: React.FC = () => {
                     </div>
                     
                     <div className="flex-1 w-full bg-slate-600 p-4">
-                        {/* Currently showing only the first document in the UI viewer due to @react-pdf/renderer limitations dynamically rendering hundreds of pages in dev mode, but in production we can map over <Page> components. */}
                         {selectedDocsInfo.length > 0 && (
                             <PDFViewer width="100%" height="100%" className="border-0 rounded shadow-2xl">
                                 <PdfDocument 
-                                   data={selectedDocsInfo[0]} 
-                                   type={selectedDocsInfo[0]._isGuia ? 'GUIA' : selectedDocsInfo[0].document_type} 
+                                   data={selectedDocsInfo} 
+                                   type="BATCH" 
                                    companyInfo={companyInfo as any} 
                                 />
                             </PDFViewer>

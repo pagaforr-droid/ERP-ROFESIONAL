@@ -116,11 +116,11 @@ const MOCK_SALES: Sale[] = [
 const MOCK_USERS: User[] = [
    {
       id: 'u1', username: 'admin', password: '123456', name: 'Admin General', role: 'ADMIN', requires_attendance: false, is_active: true,
-      permissions: ['dashboard', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'mobile-delivery', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager', 'accounting-reports']
+      permissions: ['dashboard', 'advanced-orders', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'mobile-delivery', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager', 'accounting-reports']
    },
    {
       id: 'u2', username: 'vendedor1', password: '123', name: 'Tomas Linares', role: 'SELLER', requires_attendance: true, is_active: true,
-      permissions: ['sales', 'mobile-orders', 'clients', 'products', 'inventory']
+      permissions: ['sales', 'advanced-orders', 'mobile-orders', 'clients', 'products', 'inventory']
    },
    {
       id: 'u3', username: 'almacen', password: '123', name: 'Jefe Almacén', role: 'WAREHOUSE', requires_attendance: true, is_active: true,
@@ -240,6 +240,8 @@ const MOCK_COMPANY: CompanyConfig = {
       { id: 's2', type: 'BOLETA', series: 'B001', current_number: 3450, is_active: true },
       { id: 's3', type: 'GUIA', series: 'T001', current_number: 120, is_active: true },
       { id: 's4', type: 'NOTA_CREDITO', series: 'NC01', current_number: 45, is_active: true },
+      { id: 's5', type: 'PEDIDO', series: 'PE01', current_number: 1, is_active: true },
+      { id: 's6', type: 'PEDIDO', series: 'PE04', current_number: 1, is_active: true },
    ]
 };
 

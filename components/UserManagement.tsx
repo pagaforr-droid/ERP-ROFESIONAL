@@ -10,6 +10,7 @@ const PERMISSION_GROUPS = [
       name: 'Ventas & Pedidos',
       permissions: [
          { key: 'sales', label: 'Venta Directa' },
+         { key: 'advanced-orders', label: 'Pedido Avanzado' },
          { key: 'mobile-orders', label: 'App Vendedores' },
          { key: 'order-processing', label: 'Procesar Pedidos' },
          { key: 'print-batch', label: 'Impresión Lotes' },
@@ -52,7 +53,7 @@ const PERMISSION_GROUPS = [
 // Presets based on roles
 const ROLE_PRESETS: Record<string, string[]> = {
    'ADMIN': PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key)), // All
-   'SELLER': ['sales', 'mobile-orders', 'clients', 'products', 'inventory'],
+   'SELLER': ['sales', 'advanced-orders', 'mobile-orders', 'clients', 'products', 'inventory'],
    'WAREHOUSE': ['inventory', 'kardex', 'products', 'dispatch', 'warehouses'],
    'LOGISTICS': ['dispatch', 'dispatch-liquidation', 'logistics', 'territory']
 };

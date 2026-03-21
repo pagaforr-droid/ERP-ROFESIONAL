@@ -9,7 +9,7 @@ type ViewMode = 'SELLER_SELECT' | 'CLIENT_LIST' | 'CLIENT_DETAIL' | 'PRODUCT_SEL
 type ClientTab = 'ORDER' | 'COLLECTION';
 
 export const MobileOrders: React.FC = () => {
-   const { clients, products, sellers, createOrder, updateOrder, zones, orders, sales, reportCollection, collectionRecords, getBatchesForProduct, autoPromotions, deliveryMode, currentUser, users, logout } = useStore();
+   const { clients, products, sellers, createOrder, updateOrder, zones, orders, sales, reportCollection, collectionRecords, getBatchesForProduct, autoPromotions, deliveryMode, currentUser, users, logout, getNextDocumentNumber } = useStore();
 
    // --- NAVIGATION STATE ---
    const [viewMode, setViewMode] = useState<ViewMode>('SELLER_SELECT');
@@ -271,7 +271,11 @@ export const MobileOrders: React.FC = () => {
          updateOrder({ ...orders.find(o => o.id === editingOrderId)!, ...commonData });
          alert("Pedido ACTUALIZADO con éxito.");
       } else {
-         createOrder({ id: crypto.randomUUID(), code: `PED-${Math.floor(Math.random() * 100000)}`, created_at: new Date().toISOString(), ...commonData });
+         let nextNum = getNextDocumentNumber('PEDIDO', 'PE04');
+         if (!nextNum) nextNum = getNextDocumentNumber('PEDIDO');
+         
+         const orderCode = nextNum ? `${nextNum.series}-${nextNum.number}` : `PED-${Math.floor(Math.random() * 100000)}`;
+         createOrder({ id: crypto.randomUUID(), code: orderCode, created_at: new Date().toISOString(), ...commonData });
          alert("Pedido guardado con éxito. Stock comprometido temporalmente.");
       }
 

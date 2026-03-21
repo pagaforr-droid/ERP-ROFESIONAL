@@ -95,8 +95,8 @@ const styles = StyleSheet.create({
 });
 
 interface PdfDocumentProps {
-  data: any;
-  type: 'FACTURA' | 'BOLETA' | 'GUIA' | 'GUIA_CONSOLIDADA';
+  data: any | any[];
+  type?: 'FACTURA' | 'BOLETA' | 'GUIA' | 'GUIA_CONSOLIDADA' | 'BATCH' | string;
   companyInfo?: {
     name: string;
     ruc: string;
@@ -165,17 +165,18 @@ const ItemsTable = ({ data, isFactura }: { data: any, isFactura: boolean }) => (
         const sku = item.product?.sku || item.product_id?.substring(0, 8) || item.sku || '001';
         // The data source often has just `name` from the joined cart object or `product.name`
         const name = item.product?.name || item.name || item.product_name || 'Producto';
-        const qty = item.quantity || item.quantity_base || 0;
-        const pu = item.unit_price || item.price || 0;
-        const total = (qty * pu).toFixed(2);
+        const qty = item.quantity_presentation ?? item.quantity ?? item.quantity_base ?? 0;
+        const pu = item.unit_price ?? item.price ?? 0;
+        const total = item.total_price !== undefined ? Number(item.total_price).toFixed(2) : (qty * pu).toFixed(2);
+        const um = item.selected_unit === 'PKG' ? 'CJA' : 'NIU';
 
         return (
           <View key={i} style={styles.tableRowItem}>
             <Text style={[styles.td, styles.colCod]}>{sku}</Text>
             <Text style={[styles.td, styles.colCant]}>{qty}</Text>
-            <Text style={[styles.td, styles.colUm]}>NIU</Text>
+            <Text style={[styles.td, styles.colUm]}>{um}</Text>
             <Text style={[styles.td, styles.colDesc]}>{name}</Text>
-            <Text style={[styles.td, styles.colPu]}>{pu.toFixed(2)}</Text>
+            <Text style={[styles.td, styles.colPu]}>{Number(pu).toFixed(2)}</Text>
             {!isFactura && <Text style={[styles.td, styles.colDscto]}>0.00</Text>}
             <Text style={[isFactura ? styles.tdLast : styles.td, styles.colImporte]}>{total}</Text>
           </View>
@@ -339,6 +340,108 @@ const BoletaTemplate = ({ data, companyInfo }: { data: any, companyInfo: any }) 
 // Main Component
 // ---------------------------------------------------------------------------------
 
+const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any, type: string }) => {
+  const code = data.code || `${data.series || 'T001'}-${data.number || '000001'}`;
+  return (
+    <>
+      {/* Header */}
+      <View style={styles.headerRow}>
+        <View style={styles.companyCenter}>
+          <Text style={styles.companyName}>{companyInfo.name}</Text>
+          <Text style={styles.companyAddress}>{companyInfo.address}</Text>
+        </View>
+        <View style={styles.rucBox}>
+          <Text style={styles.rucTop}>RUC: {companyInfo.ruc}</Text>
+          <Text style={styles.rucMid}>{type === 'GUIA_CONSOLIDADA' ? 'GUIA REMISION CONSOLIDADA' : 'GUIA REMISION REMITENTE'}</Text>
+          <Text style={styles.rucBot}>{code}</Text>
+        </View>
+      </View>
+
+      {/* Guia Metadata */}
+      <View style={styles.guiaInfoSection}>
+        <View style={styles.guiaInfoRow}>
+          <Text style={styles.guiaInfoLabel}>Fecha Inicio de Traslado:</Text>
+          <Text style={styles.guiaInfoValue}>{new Date(data.created_at || data.date || Date.now()).toLocaleDateString()}</Text>
+        </View>
+        <View style={styles.guiaInfoRow}>
+          <Text style={styles.guiaInfoLabel}>Punto de Partida:</Text>
+          <Text style={styles.guiaInfoValue}>(080101) {companyInfo.address}</Text>
+        </View>
+        <View style={styles.guiaInfoRow}>
+          <Text style={styles.guiaInfoLabel}>Punto de Llegada:</Text>
+          <Text style={styles.guiaInfoValue}>(000000) {type.includes('CONSOLIDADA') ? 'Ruta Local' : (data.delivery_address || 'Dirección del cliente')}</Text>
+        </View>
+      </View>
+
+      <View style={styles.guiaEntitiesSection}>
+        <View style={styles.guiaEntityBox}>
+          <Text style={styles.guiaEntityTitle}>DATOS DEL DESTINATARIO</Text>
+          <View style={styles.guiaEntityRow}>
+            <Text style={styles.guiaEntityLabel}>Señores:</Text>
+            <Text style={styles.guiaEntityValue}>{data.client_name || 'Varios / Petición del Emisor'}</Text>
+          </View>
+          <View style={styles.guiaEntityRow}>
+            <Text style={styles.guiaEntityLabel}>R.U.C.:</Text>
+            <Text style={styles.guiaEntityValue}>{data.client_id || '00000000'}</Text>
+          </View>
+        </View>
+        <View style={styles.guiaEntityBox}>
+          <Text style={styles.guiaEntityTitle}>DATOS DEL TRANSPORTISTA</Text>
+          <View style={styles.guiaEntityRow}>
+            <Text style={styles.guiaEntityLabel}>Razón Social:</Text>
+            <Text style={styles.guiaEntityValue}>PROPIO</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* ITEMS TABLE FOR GUIA */}
+      <View style={styles.tableBox}>
+        <View style={[styles.tableHeader, { backgroundColor: '#cce0ff' }]}>
+          <Text style={[styles.th, styles.tableColCodeGuia]}>CÓDIGO</Text>
+          <Text style={[styles.th, styles.tableColQtyGuia]}>CANT.</Text>
+          <Text style={[styles.th, styles.tableColUndGuia]}>UNI.</Text>
+          <Text style={[styles.th, styles.tableColDescGuia]}>DESCRIPCIÓN</Text>
+          <Text style={[styles.th, styles.tableColWeight]}>PESO</Text>
+        </View>
+        {(data.items || []).map((item: any, i: number) => {
+           const sku = item.product?.sku || item.product_id?.substring(0,8) || item.sku || '001';
+           const name = item.product?.name || item.name || item.product_name || 'Producto';
+           const qty = item.quantity_presentation ?? item.quantity ?? item.quantity_base ?? 0;
+           const um = item.selected_unit === 'PKG' ? 'CJA' : 'NIU';
+           return (
+              <View key={i} style={styles.tableRowItem}>
+                <Text style={[styles.td, styles.tableColCodeGuia]}>{sku}</Text>
+                <Text style={[styles.td, styles.tableColQtyGuia]}>{qty}</Text>
+                <Text style={[styles.td, styles.tableColUndGuia]}>{um}</Text>
+                <Text style={[styles.td, styles.tableColDescGuia]}>{name}</Text>
+                <Text style={[styles.td, styles.tableColWeight]}>{(qty * 0.5).toFixed(2)}</Text>
+              </View>
+           );
+        })}
+        <View style={styles.weightTotalRow}>
+           <Text style={styles.weightTotalLabel}>PESO TOTAL KG</Text>
+           <Text style={styles.weightTotalValue}>0.00</Text>
+        </View>
+      </View>
+
+      <View style={styles.guiaFooterSection}>
+         <View style={styles.obsRefBox}></View>
+         <View style={styles.signaturesBox}>
+            <View style={styles.signatureLine}>
+               <View style={styles.line}></View>
+               <Text style={styles.signatureText}>DESPACHADO POR</Text>
+            </View>
+            <View style={styles.signatureLine}>
+               <View style={styles.line}></View>
+               <Text style={styles.signatureText}>RECIBÍ CONFORME</Text>
+            </View>
+         </View>
+         <View style={styles.obsRefBox}></View>
+      </View>
+    </>
+  );
+};
+
 export const PdfDocument: React.FC<PdfDocumentProps> = ({ data, type, companyInfo }) => {
   const cInfo = companyInfo || {
     name: 'CUSCO BRANDS S.A.C.',
@@ -346,132 +449,38 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({ data, type, companyInf
     address: 'MZA. C LOTE. 1 URB. PARQUE INDUSTRIAL CUSCO - CUSCO - CUSCO'
   };
 
-  const isGuia = type.includes('GUIA');
+  const items = Array.isArray(data) ? data : [data];
 
-  if (type === 'FACTURA') {
-    return (
-      <Document>
-        <Page size="A4" orientation="landscape" style={styles.pageLandscape}>
-          <FacturaTemplate data={data} companyInfo={cInfo} />
-          <FacturaTemplate data={data} companyInfo={cInfo} />
-        </Page>
-      </Document>
-    );
-  }
-
-  if (type === 'BOLETA') {
-    return (
-      <Document>
-        <Page size="A4" orientation="portrait" style={{...styles.pagePortrait, padding: 15}}>
-          <BoletaTemplate data={data} companyInfo={cInfo} />
-          {/* Divisor line between the two copies */}
-          <View style={{ borderBottomWidth: 1, borderBottomStyle: 'dashed', borderBottomColor: '#ccc', marginVertical: 10 }} />
-          <BoletaTemplate data={data} companyInfo={cInfo} />
-        </Page>
-      </Document>
-    );
-  }
-
-  // GUIA LOGIC
-  const code = data.code || `${data.series || 'T001'}-${data.number || '000001'}`;
   return (
     <Document>
-      <Page size="A4" style={styles.pagePortrait}>
-        {/* Header */}
-        <View style={styles.headerRow}>
-          <View style={styles.companyCenter}>
-            <Text style={styles.companyName}>{cInfo.name}</Text>
-            <Text style={styles.companyAddress}>{cInfo.address}</Text>
-          </View>
-          <View style={styles.rucBox}>
-            <Text style={styles.rucTop}>RUC: {cInfo.ruc}</Text>
-            <Text style={styles.rucMid}>{type === 'GUIA_CONSOLIDADA' ? 'GUIA REMISION CONSOLIDADA' : 'GUIA REMISION REMITENTE'}</Text>
-            <Text style={styles.rucBot}>{code}</Text>
-          </View>
-        </View>
+      {items.map((doc: any, index: number) => {
+        const docType = doc._isGuia ? (doc.type === 'GUIA_CONSOLIDADA' ? 'GUIA_CONSOLIDADA' : 'GUIA') : (doc.document_type || type || 'FACTURA');
 
-        {/* Guia Metadata */}
-        <View style={styles.guiaInfoSection}>
-          <View style={styles.guiaInfoRow}>
-            <Text style={styles.guiaInfoLabel}>Fecha Inicio de Traslado:</Text>
-            <Text style={styles.guiaInfoValue}>{new Date(data.created_at || data.date || Date.now()).toLocaleDateString()}</Text>
-          </View>
-          <View style={styles.guiaInfoRow}>
-            <Text style={styles.guiaInfoLabel}>Punto de Partida:</Text>
-            <Text style={styles.guiaInfoValue}>(080101) {cInfo.address}</Text>
-          </View>
-          <View style={styles.guiaInfoRow}>
-            <Text style={styles.guiaInfoLabel}>Punto de Llegada:</Text>
-            <Text style={styles.guiaInfoValue}>(000000) {type.includes('CONSOLIDADA') ? 'Ruta Local' : (data.delivery_address || 'Dirección del cliente')}</Text>
-          </View>
-        </View>
+        if (docType === 'FACTURA') {
+          return (
+            <Page key={index} size="A4" orientation="landscape" style={styles.pageLandscape}>
+              <FacturaTemplate data={doc} companyInfo={cInfo} />
+              <FacturaTemplate data={doc} companyInfo={cInfo} />
+            </Page>
+          );
+        }
 
-        <View style={styles.guiaEntitiesSection}>
-          <View style={styles.guiaEntityBox}>
-            <Text style={styles.guiaEntityTitle}>DATOS DEL DESTINATARIO</Text>
-            <View style={styles.guiaEntityRow}>
-              <Text style={styles.guiaEntityLabel}>Señores:</Text>
-              <Text style={styles.guiaEntityValue}>{data.client_name || 'Varios / Petición del Emisor'}</Text>
-            </View>
-            <View style={styles.guiaEntityRow}>
-              <Text style={styles.guiaEntityLabel}>R.U.C.:</Text>
-              <Text style={styles.guiaEntityValue}>{data.client_id || '00000000'}</Text>
-            </View>
-          </View>
-          <View style={styles.guiaEntityBox}>
-            <Text style={styles.guiaEntityTitle}>DATOS DEL TRANSPORTISTA</Text>
-            <View style={styles.guiaEntityRow}>
-              <Text style={styles.guiaEntityLabel}>Razón Social:</Text>
-              <Text style={styles.guiaEntityValue}>PROPIO</Text>
-            </View>
-          </View>
-        </View>
+        if (docType === 'BOLETA') {
+          return (
+            <Page key={index} size="A4" orientation="portrait" style={{...styles.pagePortrait, padding: 15}}>
+              <BoletaTemplate data={doc} companyInfo={cInfo} />
+              <View style={{ borderBottomWidth: 1, borderBottomStyle: 'dashed', borderBottomColor: '#ccc', marginVertical: 10 }} />
+              <BoletaTemplate data={doc} companyInfo={cInfo} />
+            </Page>
+          );
+        }
 
-        {/* ITEMS TABLE FOR GUIA */}
-        <View style={styles.tableBox}>
-          <View style={[styles.tableHeader, { backgroundColor: '#cce0ff' }]}>
-            <Text style={[styles.th, styles.tableColCodeGuia]}>CÓDIGO</Text>
-            <Text style={[styles.th, styles.tableColQtyGuia]}>CANT.</Text>
-            <Text style={[styles.th, styles.tableColUndGuia]}>UNI.</Text>
-            <Text style={[styles.th, styles.tableColDescGuia]}>DESCRIPCIÓN</Text>
-            <Text style={[styles.th, styles.tableColWeight]}>PESO</Text>
-          </View>
-          {(data.items || []).map((item: any, i: number) => {
-             const sku = item.product?.sku || item.product_id?.substring(0,8) || item.sku || '001';
-             const name = item.product?.name || item.name;
-             const qty = item.quantity || item.quantity_base || 0;
-             return (
-                <View key={i} style={styles.tableRowItem}>
-                  <Text style={[styles.td, styles.tableColCodeGuia]}>{sku}</Text>
-                  <Text style={[styles.td, styles.tableColQtyGuia]}>{qty}</Text>
-                  <Text style={[styles.td, styles.tableColUndGuia]}>NIU</Text>
-                  <Text style={[styles.td, styles.tableColDescGuia]}>{name}</Text>
-                  <Text style={[styles.td, styles.tableColWeight]}>{(qty * 0.5).toFixed(2)}</Text>
-                </View>
-             );
-          })}
-          <View style={styles.weightTotalRow}>
-             <Text style={styles.weightTotalLabel}>PESO TOTAL KG</Text>
-             <Text style={styles.weightTotalValue}>0.00</Text>
-          </View>
-        </View>
-
-        <View style={styles.guiaFooterSection}>
-           <View style={styles.obsRefBox}></View>
-           <View style={styles.signaturesBox}>
-              <View style={styles.signatureLine}>
-                 <View style={styles.line}></View>
-                 <Text style={styles.signatureText}>DESPACHADO POR</Text>
-              </View>
-              <View style={styles.signatureLine}>
-                 <View style={styles.line}></View>
-                 <Text style={styles.signatureText}>RECIBÍ CONFORME</Text>
-              </View>
-           </View>
-           <View style={styles.obsRefBox}></View>
-        </View>
-
-      </Page>
+        return (
+          <Page key={index} size="A4" style={styles.pagePortrait}>
+            <GuiaTemplate data={doc} companyInfo={cInfo} type={docType} />
+          </Page>
+        );
+      })}
     </Document>
   );
 };

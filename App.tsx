@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { NewSale } from './components/NewSale';
+import { AdvancedOrderEntry } from './components/AdvancedOrderEntry';
 import { Purchases } from './components/Purchases';
 import { Dispatch } from './components/Dispatch';
 import { ProductManagement } from './components/ProductManagement';
@@ -34,7 +35,7 @@ import { ViewState } from './types';
 import { useStore } from './services/store';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes'>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'advanced-orders'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { company, currentUser, logout } = useStore();
 
@@ -64,6 +65,7 @@ export default function App() {
     switch (currentView) {
       case 'dashboard': return <Dashboard />;
       case 'sales': return <NewSale />;
+      case 'advanced-orders': return <AdvancedOrderEntry />;
       case 'purchases': return <Purchases />;
       case 'dispatch': return <Dispatch />;
       case 'dispatch-liquidation': return <DispatchLiquidationComp />;
@@ -159,6 +161,7 @@ export default function App() {
 
           <Section title="Comercial">
             <NavItem view="sales" icon={ShoppingCart} label="Venta Directa" />
+            <NavItem view="advanced-orders" icon={ClipboardList} label="Pedido Avanzado" />
             <NavItem view="credit-notes" icon={ArrowLeftRight} label="Devoluciones y NC" />
             <NavItem view="order-processing" icon={FileCheck} label="Procesar Pedidos" />
             <NavItem view="price-manager" icon={DollarSign} label="Gestión de Precios" />
