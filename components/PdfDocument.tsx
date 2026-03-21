@@ -197,7 +197,7 @@ const ItemsTable = ({ data, isFactura }: { data: any, isFactura: boolean }) => (
   </View>
 );
 
-const FacturaTemplate = ({ data, companyInfo }: { data: any, companyInfo: any }) => {
+const FacturaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: any, companyInfo: any, isNotaCredito?: boolean }) => {
   const code = data.code || `${data.series || 'F001'}-${data.number || '000001'}`;
   const total = data.total || 0;
   const igv = total - (total / 1.18);
@@ -216,7 +216,7 @@ const FacturaTemplate = ({ data, companyInfo }: { data: any, companyInfo: any })
         </View>
         <View style={styles.rucBox}>
           <Text style={styles.rucTop}>{companyInfo.ruc}</Text>
-          <Text style={styles.rucMid}>FACTURA ELECTRÓNICA</Text>
+          <Text style={styles.rucMid}>{isNotaCredito ? 'NOTA DE CRÉDITO ELECTRÓNICA' : 'FACTURA ELECTRÓNICA'}</Text>
           <Text style={styles.rucBot}>{code}</Text>
         </View>
       </View>
@@ -297,7 +297,7 @@ const FacturaTemplate = ({ data, companyInfo }: { data: any, companyInfo: any })
   );
 };
 
-const BoletaTemplate = ({ data, companyInfo }: { data: any, companyInfo: any }) => {
+const BoletaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: any, companyInfo: any, isNotaCredito?: boolean }) => {
   const code = data.code || `${data.series || 'B001'}-${data.number || '000001'}`;
   
   return (
@@ -313,7 +313,7 @@ const BoletaTemplate = ({ data, companyInfo }: { data: any, companyInfo: any }) 
         </View>
         <View style={[styles.rucBox, { width: 170, padding: 5 }]}>
           <Text style={[styles.rucTop, { fontSize: 11 }]}>{companyInfo.ruc}</Text>
-          <Text style={[styles.rucMid, { fontSize: 9, marginVertical: 3 }]}>BOLETA DE VENTA ELECTRÓNICA</Text>
+          <Text style={[styles.rucMid, { fontSize: 9, marginVertical: 3 }]}>{isNotaCredito ? 'NOTA DE CRÉDITO ELECTRÓNICA' : 'BOLETA DE VENTA ELECTRÓNICA'}</Text>
           <Text style={[styles.rucBot, { fontSize: 11 }]}>{code}</Text>
         </View>
       </View>
@@ -456,21 +456,25 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({ data, type, companyInf
       {items.map((doc: any, index: number) => {
         const docType = doc._isGuia ? (doc.type === 'GUIA_CONSOLIDADA' ? 'GUIA_CONSOLIDADA' : 'GUIA') : (doc.document_type || type || 'FACTURA');
 
-        if (docType === 'FACTURA') {
+        const isNotaCredito = docType === 'NOTA DE CREDITO' || docType === 'NOTA_CREDITO';
+        const isFacturaFormat = docType === 'FACTURA' || (isNotaCredito && doc.series && doc.series.startsWith('F'));
+        const isBoletaFormat = docType === 'BOLETA' || (isNotaCredito && doc.series && doc.series.startsWith('B'));
+
+        if (isFacturaFormat || (isNotaCredito && !isBoletaFormat)) {
           return (
             <Page key={index} size="A4" orientation="landscape" style={styles.pageLandscape}>
-              <FacturaTemplate data={doc} companyInfo={cInfo} />
-              <FacturaTemplate data={doc} companyInfo={cInfo} />
+              <FacturaTemplate data={doc} companyInfo={cInfo} isNotaCredito={isNotaCredito} />
+              <FacturaTemplate data={doc} companyInfo={cInfo} isNotaCredito={isNotaCredito} />
             </Page>
           );
         }
 
-        if (docType === 'BOLETA') {
+        if (isBoletaFormat) {
           return (
             <Page key={index} size="A4" orientation="portrait" style={{...styles.pagePortrait, padding: 15}}>
-              <BoletaTemplate data={doc} companyInfo={cInfo} />
+              <BoletaTemplate data={doc} companyInfo={cInfo} isNotaCredito={isNotaCredito} />
               <View style={{ borderBottomWidth: 1, borderBottomStyle: 'dashed', borderBottomColor: '#ccc', marginVertical: 10 }} />
-              <BoletaTemplate data={doc} companyInfo={cInfo} />
+              <BoletaTemplate data={doc} companyInfo={cInfo} isNotaCredito={isNotaCredito} />
             </Page>
           );
         }
