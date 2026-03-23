@@ -24,12 +24,16 @@ export const Dispatch: React.FC = () => {
    const [activePrintTab, setActivePrintTab] = useState<'picking' | 'sellers' | 'guia'>('picking');
    const [isPrinting, setIsPrinting] = useState(false);
 
+   // --- EDIT MODE STATE ---
+   const [editMode, setEditMode] = useState(false);
+   const [editingDispatchId, setEditingDispatchId] = useState<string | null>(null);
+
    // --- DATA PREPARATION ---
 
    // 1. Enrich Sales with Territory Info and Weight
    const enrichedSales: ExtendedSale[] = useMemo(() => {
       return sales
-         .filter(s => s.dispatch_status === 'pending' && (filterDeliveryMode === 'ALL' || s.delivery_mode === filterDeliveryMode))
+         .filter(s => (s.dispatch_status === 'pending' || (editMode && selectedSaleIds.includes(s.id))) && (filterDeliveryMode === 'ALL' || s.delivery_mode === filterDeliveryMode))
          .map(sale => {
             const client = clients.find(c => c.doc_number === sale.client_ruc);
             const zone = zones.find(z => z.id === client?.zone_id);
@@ -49,7 +53,7 @@ export const Dispatch: React.FC = () => {
                totalWeight: weight
             };
          });
-   }, [sales, clients, zones, sellers, products, filterDeliveryMode]);
+   }, [sales, clients, zones, sellers, products, filterDeliveryMode, editMode, selectedSaleIds]);
 
    // 2. Sort Logic: Zone -> Seller -> Date (Desc) -> Document
    const sortedSales = useMemo(() => {
@@ -108,20 +112,45 @@ export const Dispatch: React.FC = () => {
    const confirmDispatch = () => {
       if (!selectedVehicleId) { alert("Seleccione un vehículo primero."); return; }
 
-      createDispatch({
-         id: crypto.randomUUID(),
-         code: 'TBD', // Let the store auto-generate it using the active GUIA series
-         vehicle_id: selectedVehicleId,
-         status: 'in_transit',
-         date: new Date().toISOString(),
-         sale_ids: selectedSaleIds
-      });
+      if (editMode && editingDispatchId) {
+         useStore.getState().updateDispatch(editingDispatchId, {
+            vehicle_id: selectedVehicleId,
+            sale_ids: selectedSaleIds
+         });
+         alert("¡Hoja de Ruta actualizada exitosamente!");
+      } else {
+         createDispatch({
+            id: crypto.randomUUID(),
+            code: 'TBD', // Let the store auto-generate it using the active GUIA series
+            vehicle_id: selectedVehicleId,
+            status: 'in_transit',
+            date: new Date().toISOString(),
+            sale_ids: selectedSaleIds
+         });
+         updateSaleStatus(selectedSaleIds, 'assigned');
+         alert("¡Hoja de Ruta creada! El inventario ha sido comprometido para despacho.");
+      }
 
-      updateSaleStatus(selectedSaleIds, 'assigned');
       setSelectedSaleIds([]);
       setSelectedVehicleId('');
       setShowPickingList(false);
-      alert("¡Hoja de Ruta creada! El inventario ha sido comprometido para despacho.");
+      setEditMode(false);
+      setEditingDispatchId(null);
+   };
+
+   const enterEditMode = (dispatch: import('../types').DispatchSheet) => {
+      setEditMode(true);
+      setEditingDispatchId(dispatch.id);
+      setSelectedVehicleId(dispatch.vehicle_id);
+      setSelectedSaleIds([...dispatch.sale_ids]);
+      setActiveTab('PROGRAMAR'); // Switch to the planning view to edit
+   };
+
+   const cancelEditMode = () => {
+      setEditMode(false);
+      setEditingDispatchId(null);
+      setSelectedVehicleId('');
+      setSelectedSaleIds([]);
    };
 
    // --- PICKING LIST ALGORITHM ---
@@ -485,7 +514,7 @@ export const Dispatch: React.FC = () => {
    // --- RENDER ---
 
    if (showPickingList) {
-      // PREVIEW MODE
+      // PREVIEW MODE / EDIT MODE SUMMARY
       return (
          <div className="fixed inset-0 bg-slate-100 z-50 flex flex-col p-4 overflow-hidden">
             <div className="bg-white shadow-lg rounded-lg flex flex-col h-full max-w-5xl mx-auto w-full border border-slate-300">
@@ -493,7 +522,7 @@ export const Dispatch: React.FC = () => {
                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-800 text-white rounded-t-lg print:hidden">
                   <div>
                      <h2 className="text-xl font-bold flex items-center">
-                        <FileText className="mr-2" /> Hoja de Ruta y Picking
+                        <FileText className="mr-2" /> {editMode ? 'Editar Hoja de Ruta y Picking' : 'Hoja de Ruta y Picking'}
                      </h2>
                      <p className="text-xs text-slate-300">
                         {selectedTotals.count} Documentos | Peso Total: {selectedTotals.totalWeight.toFixed(2)} Kg
@@ -528,13 +557,13 @@ export const Dispatch: React.FC = () => {
                         else if (activePrintTab === 'sellers') generateSellerExtractPDF();
                         else generateConsolidatedGuidePDF();
                      }} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold flex items-center shadow">
-                        <Printer className="w-4 h-4 mr-2" /> GENERAR PDF EXACTO
+                        <Printer className="w-4 h-4 mr-2" /> IMPRIMIR PDF EXACTO
                      </button>
                      <button onClick={() => setShowPickingList(false)} className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded font-bold flex items-center">
                         <X className="w-4 h-4 mr-2" /> Cerrar
                      </button>
-                     <button onClick={confirmDispatch} className="bg-green-600 hover:bg-green-700 text-white px-8 py-2 rounded font-bold shadow-lg flex items-center">
-                        <CheckCircle className="w-4 h-4 mr-2" /> CONFIRMAR Y CREAR RUTA
+                     <button onClick={confirmDispatch} className={`${editMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'} text-white px-8 py-2 rounded font-bold shadow-lg flex items-center`}>
+                        <CheckCircle className="w-4 h-4 mr-2" /> {editMode ? 'GUARDAR CAMBIOS' : 'CONFIRMAR Y CREAR RUTA'}
                      </button>
                   </div>
                </div>
@@ -844,17 +873,18 @@ export const Dispatch: React.FC = () => {
          <div className="flex justify-between items-center bg-white p-3 rounded-lg shadow-sm border border-slate-200">
             <h2 className="text-xl font-bold text-slate-800 flex items-center mb-0">
                <Truck className="mr-2 h-6 w-6 text-slate-700" /> Control de Despacho y Rutas
+               {editMode && <span className="ml-3 px-2 py-0.5 bg-amber-100 text-amber-800 text-xs rounded uppercase font-bold border border-amber-300">Modo Edición</span>}
             </h2>
             <div className="flex bg-slate-100 rounded-lg p-1">
                <button
-                  onClick={() => setActiveTab('PROGRAMAR')}
+                  onClick={() => { setActiveTab('PROGRAMAR'); if (editMode) cancelEditMode(); }}
                   className={`px-6 py-2 rounded-md font-bold text-sm transition-all ${activeTab === 'PROGRAMAR' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'
                      }`}
                >
                   Programar Salidas
                </button>
                <button
-                  onClick={() => setActiveTab('EN_RUTA')}
+                  onClick={() => { setActiveTab('EN_RUTA'); if (editMode) cancelEditMode(); }}
                   className={`px-6 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'EN_RUTA' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'
                      }`}
                >
@@ -938,13 +968,23 @@ export const Dispatch: React.FC = () => {
                         </div>
                      </div>
 
-                     <button
-                        onClick={handleGenerateRoute}
-                        disabled={selectedTotals.count === 0}
-                        className="w-full mt-4 bg-slate-900 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-slate-800 disabled:opacity-50 disabled:shadow-none flex items-center justify-center transition-all"
-                     >
-                        <Package className="w-5 h-5 mr-2" /> GENERAR PICKING
-                     </button>
+                     <div className="flex gap-2 w-full mt-4">
+                        {editMode && (
+                           <button
+                              onClick={cancelEditMode}
+                              className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-lg font-bold hover:bg-slate-300 transition-all"
+                           >
+                              CANCELAR
+                           </button>
+                        )}
+                        <button
+                           onClick={handleGenerateRoute}
+                           disabled={selectedTotals.count === 0}
+                           className="flex-[2] bg-slate-900 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-slate-800 disabled:opacity-50 disabled:shadow-none flex items-center justify-center transition-all"
+                        >
+                           <Package className="w-5 h-5 mr-2" /> {editMode ? 'REVISAR CAMBIOS Y GUARDAR' : 'GENERAR PICKING'}
+                        </button>
+                     </div>
                   </div>
                </div>
 
@@ -1047,22 +1087,44 @@ export const Dispatch: React.FC = () => {
                                  <div className="text-[10px] text-slate-500 text-right">{progress.toFixed(0)}% Completado</div>
                               </div>
 
-                              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 mt-auto">
+                              <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 mt-auto mb-3">
                                  {hasIncidences ? (
                                     <div className="flex items-start text-amber-700">
                                        <AlertTriangle className="w-4 h-4 mr-2" />
                                        <div className="text-xs font-medium">Se han reportado incidencias (Entregas parciales o locales cerrados) durante esta ruta.</div>
                                     </div>
-                                 ) : (
-                                    <div className="flex items-start text-emerald-600">
-                                       <CheckCircle className="w-4 h-4 mr-2" />
-                                       <div className="text-xs font-medium">Sin incidencias reportadas por el momento. El reparto transcurre con normalidad.</div>
-                                    </div>
-                                 )}
-                              </div>
-                           </div>
-                        );
-                     })}
+                                  ) : (
+                                     <div className="flex items-start text-emerald-600">
+                                        <CheckCircle className="w-4 h-4 mr-2" />
+                                        <div className="text-xs font-medium">Sin incidencias reportadas por el momento. El reparto transcurre con normalidad.</div>
+                                     </div>
+                                  )}
+                               </div>
+
+                               <div className="flex border-t border-slate-100 pt-3 gap-2 align-bottom">
+                                  <button
+                                    onClick={() => enterEditMode(ds)}
+                                    className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 rounded transition-colors"
+                                  >
+                                    Modificar Ruta
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      // Quickly enter edit mode, show picking list to print, then leave edit mode.
+                                      setEditMode(true);
+                                      setEditingDispatchId(ds.id);
+                                      setSelectedVehicleId(ds.vehicle_id);
+                                      setSelectedSaleIds([...ds.sale_ids]);
+                                      setShowPickingList(true);
+                                    }}
+                                    className="flex-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold py-2 rounded transition-colors flex items-center justify-center"
+                                  >
+                                    <Printer className="w-3 h-3 mr-1" /> Imprimir Docs
+                                  </button>
+                               </div>
+                            </div>
+                         );
+                      })}
                   </div>
                )}
             </div>

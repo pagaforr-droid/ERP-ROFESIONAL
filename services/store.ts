@@ -326,6 +326,7 @@ interface AppState {
    createPurchase: (purchase: Purchase) => void;
    updatePurchase: (purchase: Purchase) => boolean;
    createDispatch: (dispatch: DispatchSheet) => void;
+   updateDispatch: (dispatchId: string, updates: Partial<DispatchSheet>) => void;
    updateDispatchStatus: (dispatchId: string, status: DispatchSheet['status']) => void;
    updateSaleStatus: (saleIds: string[], status: Sale['dispatch_status']) => void;
    updateSaleDeliveryStatus: (saleId: string, status: Sale['dispatch_status'], details?: { reason?: string; photo?: string; location?: { lat: number; lng: number } }) => void;
@@ -1335,6 +1336,35 @@ export const useStore = create<AppState>((set, get) => ({
    updateDispatchStatus: (dispatchId, status) => set((s) => ({
       dispatchSheets: s.dispatchSheets.map(ds => ds.id === dispatchId ? { ...ds, status } : ds)
    })),
+
+   updateDispatch: (dispatchId, updates) => set(s => {
+      const dispatch = s.dispatchSheets.find(d => d.id === dispatchId);
+      if (!dispatch) return s; // Dispatch not found
+
+      const newSalesList = updates.sale_ids !== undefined ? updates.sale_ids : dispatch.sale_ids;
+      
+      // Calculate which sales are removed or added based on the previous list
+      const removedSaleIds = dispatch.sale_ids.filter(id => !newSalesList.includes(id));
+      const addedSaleIds = newSalesList.filter(id => !dispatch.sale_ids.includes(id));
+
+      return {
+         // Update the physical dispatch sheet
+         dispatchSheets: s.dispatchSheets.map(d => 
+            d.id === dispatchId ? { ...d, ...updates } : d
+         ),
+         // Update the sales dispatch status
+         sales: s.sales.map(sale => {
+            if (removedSaleIds.includes(sale.id)) {
+               // Revert safely back to pending
+               return { ...sale, dispatch_status: 'pending' };
+            }
+            if (addedSaleIds.includes(sale.id)) {
+               return { ...sale, dispatch_status: 'assigned' };
+            }
+            return sale;
+         })
+      };
+   }),
 
    updateSaleStatus: (saleIds, status) => set((s) => ({
       sales: s.sales.map(sale => saleIds.includes(sale.id) ? { ...sale, dispatch_status: status } : sale)
