@@ -545,6 +545,16 @@ export interface DispatchLiquidation {
   documents: LiquidationDocument[];
 }
 
+export interface PurchasePayment {
+  id: string;
+  date: string;
+  amount: number;
+  reference: string;
+  method: 'CASH' | 'TRANSFER' | 'CHECK';
+  user_id?: string;
+  cash_movement_id?: string;
+}
+
 export interface Purchase {
   id: string;
   supplier_id: string;
@@ -573,6 +583,10 @@ export interface Purchase {
   total: number;    // Total Final
 
   payment_status: 'PAID' | 'PENDING';
+  collection_status?: 'NONE' | 'PARTIAL' | 'COLLECTED'; 
+  paid_amount?: number; 
+  balance?: number;     
+  payments?: PurchasePayment[];
 
   items: PurchaseItem[];
 }
@@ -581,23 +595,24 @@ export interface PurchaseItem {
   product_id: string;
 
   // Units
-  unit_type: 'UND' | 'PKG';
-  quantity_presentation: number; // What user typed
-  factor: number; // Conversion factor used
-  quantity_base: number; // Converted to units
+  quantity_presentation: number; // Cantidad (What user typed)
+  unit_type: 'UND' | 'PKG';      // Psnt (Presentación)
+  factor: number;                // Fct (Conversion factor used)
+  quantity_base: number;         // Converted to base units
 
-  // Costs
-  unit_value: number; // Valor Unitario (Sin IGV)
-  unit_price: number; // Precio Unitario (Con IGV)
+  // Costs (SUNAT compliant details)
+  unit_price: number; // Imp Uni (Precio Unitario Con IGV)
+  unit_value: number; // Uni Val (Valor Unitario Sin IGV)
 
-  total_value: number; // Valor Venta Total (Subtotal Linea)
-  total_cost: number; // Importe Total (Total Linea)
+  // Totals
+  total_value: number; // ValVta Tot (Valor Venta Total Sin IGV)
+  total_cost: number;  // Imp Tot (Importe Total Con IGV)
 
   // Traceability
   batch_code: string;
   expiration_date: string;
 
-  is_bonus: boolean; // Gratuito
+  is_bonus: boolean; // Gratis (Gratuito)
 }
 
 // === USER MANAGEMENT ===

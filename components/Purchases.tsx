@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { ShoppingBag, Plus, Trash2, Calendar, DollarSign, Package, CheckSquare, Save, CreditCard, AlertTriangle, Search, FileText, Loader2, XCircle, CheckCircle, Clock, Edit, List } from 'lucide-react';
-import { PurchaseItem, Purchase } from '../types';
+import { PurchaseItem, Purchase, Product } from '../types';
 
 // Simple Toast Component
 interface ToastProps {
@@ -26,12 +26,24 @@ const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => (
 );
 
 export const Purchases: React.FC = () => {
-  const { products, suppliers, warehouses, purchases, createPurchase, updatePurchase } = useStore();
+  const { products, suppliers, warehouses, purchases, createPurchase, updatePurchase, addPurchasePayment, currentUser } = useStore();
   
   const [activeTab, setActiveTab] = useState<'FORM' | 'LIST'>('LIST');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: 'error' | 'success' }>>([]);
+
+  // === PAYMENT MODAL STATE ===
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentPurchase, setPaymentPurchase] = useState<Purchase | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentDate, setPaymentDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [paymentMethod, setPaymentMethod] = useState<'CASH'|'TRANSFER'|'CHECK'>('CASH');
+  const [paymentReference, setPaymentReference] = useState<string>('');
+
+  // === SEARCH STATE ===
+  const [searchStartDate, setSearchStartDate] = useState(new Date(new Date().setDate(1)).toISOString().split('T')[0]); // First of month
+  const [searchEndDate, setSearchEndDate] = useState(new Date().toISOString().split('T')[0]); // Today
 
   // === HEADER STATE ===
   const [supplierId, setSupplierId] = useState('');
@@ -67,6 +79,69 @@ export const Purchases: React.FC = () => {
   const [isBonus, setIsBonus] = useState(false);
 
   const [cart, setCart] = useState<PurchaseItem[]>([]);
+
+  // === REFS FOR KEYBOARD NAVIGATION ===
+  const productSearchRef = useRef<HTMLInputElement>(null);
+  const qtyRef = useRef<HTMLInputElement>(null);
+  const unitRef = useRef<HTMLSelectElement>(null);
+  const costRef = useRef<HTMLInputElement>(null);
+  const batchRef = useRef<HTMLInputElement>(null);
+  const expiryRef = useRef<HTMLInputElement>(null);
+  const addBtnRef = useRef<HTMLButtonElement>(null);
+
+  const handleKeyDownNext = (e: React.KeyboardEvent, nextRef: React.RefObject<HTMLElement> | null, action?: () => void) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (action) action();
+      if (nextRef && nextRef.current) {
+         nextRef.current.focus();
+      }
+    }
+  };
+
+  // === CUSTOM PRODUCT SEARCH STATE ===
+  const [productSearchStr, setProductSearchStr] = useState('');
+  const [showProductOptions, setShowProductOptions] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [filteredProducts, setFilteredProducts] = useState(products);
+
+  useEffect(() => {
+    if (!productSearchStr || selectedProduct) {
+       // If empty or already selected via click
+       setFilteredProducts(products);
+    } else {
+       const lower = productSearchStr.toLowerCase();
+       setFilteredProducts(products.filter(p => p.sku.toLowerCase().includes(lower) || p.name.toLowerCase().includes(lower)));
+    }
+    setHighlightedIndex(0);
+  }, [productSearchStr, products, selectedProduct]);
+
+  const handleProductKeyDown = (e: React.KeyboardEvent) => {
+     if (e.key === 'ArrowDown') {
+         e.preventDefault();
+         if (!showProductOptions) setShowProductOptions(true);
+         else setHighlightedIndex(prev => Math.min(prev + 1, filteredProducts.length - 1));
+     } else if (e.key === 'ArrowUp') {
+         e.preventDefault();
+         setHighlightedIndex(prev => Math.max(prev - 1, 0));
+     } else if (e.key === 'Enter') {
+         e.preventDefault();
+         if (showProductOptions && filteredProducts.length > 0) {
+             selectProduct(filteredProducts[highlightedIndex]);
+         } else if (selectedProduct) {
+             qtyRef.current?.focus();
+         }
+     } else if (e.key === 'Escape') {
+         setShowProductOptions(false);
+     }
+  };
+
+  const selectProduct = (p: Product) => {
+      setSelectedProduct(p.id);
+      setProductSearchStr(`${p.sku} | ${p.name}`);
+      setShowProductOptions(false);
+      setTimeout(() => qtyRef.current?.focus(), 10);
+  };
 
   // Helper: Show Toast
   const showToast = (message: string, type: 'error' | 'success') => {
@@ -184,24 +259,28 @@ export const Purchases: React.FC = () => {
 
     const newItem: PurchaseItem = {
       product_id: selectedProduct,
-      unit_type: unitType,
       quantity_presentation: Number(quantity),
-      quantity_base: Number(baseQty),
+      unit_type: unitType,
       factor: factor,
-      unit_value: unitValue,
+      quantity_base: Number(baseQty),
       unit_price: unitPrice,
+      unit_value: unitValue,
       total_value: totalLineValue,
       total_cost: totalLineCost,
       batch_code: finalBatchCode,
       expiration_date: finalExpiry,
       is_bonus: isBonus
     };
-
+    
     setCart(prevCart => [...prevCart, newItem]);
     
-    // Reset Line
-    setQuantity(1); setIsBonus(false); setBatchCode(''); setExpiry(''); setSelectedProduct(''); 
+    // Reset Line & Loop Focus
+    setQuantity(1); setIsBonus(false); setBatchCode(''); setExpiry(''); setSelectedProduct(''); setProductSearchStr('');
     setInputCost(0); setInputSubtotal(0); setInputTotal(0);
+    
+    setTimeout(() => {
+      productSearchRef.current?.focus();
+    }, 10);
   };
 
   const handleSave = async (status: 'PENDING' | 'PAID') => {
@@ -267,20 +346,56 @@ export const Purchases: React.FC = () => {
   };
 
   const handleEdit = (p: Purchase) => {
-    if (p.payment_status === 'PAID') return; // Only pending for this demo logic, or allow if you want
     setEditingId(p.id);
     setSupplierId(p.supplier_id);
     setWarehouseId(p.warehouse_id);
     setDocType(p.document_type);
     setDocNumber(p.document_number);
     setIssueDate(p.issue_date);
-    setEntryDate(p.entry_date);
+    setEntryDate(p.entry_date || p.issue_date);
     setAccountingDate(p.accounting_date || p.issue_date);
+    setPaymentCondition(p.due_date > p.issue_date ? 'CREDITO 30 DIAS' : 'CONTADO');
+    setDueDate(p.due_date);
     setObservation(p.observation || '');
     setCurrency(p.currency);
     setCart(p.items);
     setActiveTab('FORM');
     showToast("Modo Edición: Se revertirá el stock anterior al guardar.", "success");
+  };
+
+  const handleOpenPaymentModal = (p: Purchase) => {
+    setPaymentPurchase(p);
+    setPaymentAmount(p.balance !== undefined ? p.balance : p.total);
+    setPaymentDate(new Date().toISOString().split('T')[0]);
+    setPaymentMethod('CASH');
+    setPaymentReference('');
+    setShowPaymentModal(true);
+  };
+
+  const handleProcessPayment = () => {
+    if (!paymentPurchase) return;
+    if (paymentAmount <= 0) {
+      showToast('El monto debe ser mayor a 0', 'error');
+      return;
+    }
+    const currentBalance = paymentPurchase.balance !== undefined ? paymentPurchase.balance : paymentPurchase.total;
+    if (paymentAmount > currentBalance + 0.05) { // Add tolerance for floating point
+      showToast('El monto no puede ser mayor al saldo', 'error');
+      return;
+    }
+
+    addPurchasePayment(
+      paymentPurchase.id, 
+      {
+        amount: Number(paymentAmount),
+        date: paymentDate,
+        method: paymentMethod,
+        reference: paymentReference
+      }, 
+      currentUser ? currentUser.id : 'ADMIN'
+    );
+    showToast(`Pago de S/ ${paymentAmount} registrado en Caja`, 'success');
+    setShowPaymentModal(false);
   };
 
   const sumTotalValue = cart.reduce((acc, item) => acc + item.total_value, 0); 
@@ -321,8 +436,34 @@ export const Purchases: React.FC = () => {
       </div>
 
       {activeTab === 'LIST' ? (
-        <div className="bg-white p-4 rounded-b-lg shadow border border-slate-300 flex-1 overflow-auto">
-           <table className="w-full text-left border-collapse">
+        <div className="flex flex-col h-full space-y-2">
+            {/* --- SEARCH BAR --- */}
+            <div className="bg-white p-3 rounded shadow-sm border border-slate-300 flex items-end gap-4">
+                <div className="flex flex-col">
+                    <label className="text-xs font-bold text-slate-600 mb-1">Desde</label>
+                    <input 
+                        type="date" 
+                        className="border border-slate-300 rounded p-1.5 text-xs" 
+                        value={searchStartDate} 
+                        onChange={e => setSearchStartDate(e.target.value)} 
+                    />
+                </div>
+                <div className="flex flex-col">
+                    <label className="text-xs font-bold text-slate-600 mb-1">Hasta</label>
+                    <input 
+                        type="date" 
+                        className="border border-slate-300 rounded p-1.5 text-xs" 
+                        value={searchEndDate} 
+                        onChange={e => setSearchEndDate(e.target.value)} 
+                    />
+                </div>
+                <button className="bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded flex items-center shadow-sm">
+                    <Search className="w-4 h-4 mr-1" /> Buscar
+                </button>
+            </div>
+
+            <div className="bg-white p-4 rounded shadow border border-slate-300 flex-1 overflow-auto">
+               <table className="w-full text-left border-collapse">
              <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 border-b border-slate-200">
                <tr>
                  <th className="p-3">F. Emisión</th>
@@ -335,32 +476,49 @@ export const Purchases: React.FC = () => {
              </thead>
              <tbody className="divide-y divide-slate-100">
                {purchases.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">No hay compras registradas.</td></tr>}
-               {purchases.map(p => (
+               {purchases
+                  .filter(p => {
+                      if (!searchStartDate || !searchEndDate) return true;
+                      return p.issue_date >= searchStartDate && p.issue_date <= searchEndDate;
+                  })
+                  .map(p => (
                  <tr key={p.id} className="hover:bg-slate-50">
                    <td className="p-3 text-slate-600">{p.issue_date}</td>
                    <td className="p-3 font-medium text-slate-800">{p.document_type} {p.document_number}</td>
                    <td className="p-3 text-slate-600">{p.supplier_name}</td>
-                   <td className="p-3 text-right font-bold text-slate-900">
-                     {p.currency === 'USD' ? '$' : 'S/'} {p.total.toFixed(2)}
+                   <td className="p-3 text-right">
+                     <div className="font-bold text-slate-900">
+                       {p.currency === 'USD' ? '$' : 'S/'} {p.total.toFixed(2)}
+                     </div>
+                     {p.payment_status === 'PENDING' && (
+                       <div className="text-[10px] text-red-500 font-normal">
+                         Saldo: {p.currency === 'USD' ? '$' : 'S/'} {(p.balance !== undefined ? p.balance : p.total).toFixed(2)}
+                       </div>
+                     )}
                    </td>
                    <td className="p-3 text-center">
-                     <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${p.payment_status === 'PAID' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                       {p.payment_status === 'PAID' ? 'PAGADO' : 'PENDIENTE'}
+                     <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${p.payment_status === 'PAID' ? 'bg-green-100 text-green-800' : (p.collection_status === 'PARTIAL' ? 'bg-orange-100 text-orange-800' : 'bg-yellow-100 text-yellow-800')}`}>
+                       {p.payment_status === 'PAID' ? 'PAGADO' : (p.collection_status === 'PARTIAL' ? 'PARCIAL' : 'PENDIENTE')}
                      </span>
+                     {p.payment_status === 'PAID' && p.total === 0 && <span className="block text-[8px] text-slate-400 mt-0.5">Bonificado</span>}
                    </td>
                    <td className="p-3 text-right">
-                      {p.payment_status === 'PENDING' ? (
-                        <button onClick={() => handleEdit(p)} className="text-blue-600 hover:text-blue-800 font-bold flex items-center justify-end">
+                      <div className="flex items-center justify-end space-x-3">
+                        {p.payment_status !== 'PAID' && (
+                          <button onClick={() => handleOpenPaymentModal(p)} className="text-emerald-600 hover:text-emerald-800 font-bold flex items-center" title="Registrar Pago">
+                            <CreditCard className="w-4 h-4 mr-1" /> Pagar
+                          </button>
+                        )}
+                        <button onClick={() => handleEdit(p)} className="text-blue-600 hover:text-blue-800 font-bold flex items-center" title="Editar Compra">
                           <Edit className="w-4 h-4 mr-1" /> Editar
                         </button>
-                      ) : (
-                        <span className="text-slate-400 italic text-[10px]">Cerrado</span>
-                      )}
+                      </div>
                    </td>
                  </tr>
                ))}
              </tbody>
            </table>
+        </div>
         </div>
       ) : (
         <>
@@ -451,28 +609,68 @@ export const Purchases: React.FC = () => {
 
           {/* === GRID ENTRY BAR === */}
           <div className="bg-slate-200 p-2 rounded border border-slate-300 grid grid-cols-12 gap-2 items-end shadow-inner">
-            {/* Product */}
-            <div className="col-span-3">
-                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Producto</label>
-                <select 
-                  className="w-full border border-slate-300 rounded p-1.5 text-xs bg-white focus:ring-1 focus:ring-blue-500"
-                  value={selectedProduct}
-                  onChange={e => setSelectedProduct(e.target.value)}
-                >
-                  <option value="">-- Seleccionar --</option>
-                  {products.map(p => <option key={p.id} value={p.id}>{p.sku} | {p.name}</option>)}
-                </select>
+            {/* Product Search (Combobox) */}
+            <div className="col-span-3 relative">
+                <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Producto (Búsqueda Inteligente)</label>
+                <div className="relative">
+                  <input
+                    ref={productSearchRef}
+                    type="text"
+                    className="w-full border border-slate-300 rounded p-1.5 text-xs bg-white focus:ring-1 focus:ring-blue-500 uppercase placeholder:text-slate-400"
+                    placeholder="Escriba SKU o Nombre..."
+                    value={productSearchStr}
+                    onChange={e => {
+                        setProductSearchStr(e.target.value.toUpperCase());
+                        setSelectedProduct(''); // Clear selected if typing
+                        if (!showProductOptions) setShowProductOptions(true);
+                    }}
+                    onFocus={() => setShowProductOptions(true)}
+                    onBlur={() => setTimeout(() => setShowProductOptions(false), 200)}
+                    onKeyDown={handleProductKeyDown}
+                  />
+                  {showProductOptions && productSearchStr && (
+                    <div className="absolute z-50 left-0 right-0 top-full mt-1 bg-white border border-slate-300 rounded shadow-lg max-h-48 overflow-y-auto">
+                        {filteredProducts.length === 0 ? (
+                            <div className="p-2 text-xs text-slate-500">No hay resultados.</div>
+                        ) : (
+                            filteredProducts.map((p, idx) => (
+                                <div 
+                                   key={p.id}
+                                   className={`p-2 text-xs cursor-pointer border-b border-slate-50 last:border-b-0 ${idx === highlightedIndex ? 'bg-blue-100' : 'hover:bg-slate-50'}`}
+                                   onClick={() => selectProduct(p)}
+                                >
+                                   <span className="font-mono text-slate-500 mr-2">{p.sku}</span>
+                                   <span className="font-bold text-slate-800 truncate block">{p.name}</span>
+                                </div>
+                            ))
+                        )}
+                    </div>
+                  )}
+                </div>
             </div>
 
             {/* Qty */}
             <div className="col-span-1">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5 text-center">Cant.</label>
-                <input type="number" className="w-full border border-slate-300 rounded p-1.5 text-center font-bold" value={quantity} onChange={e => setQuantity(Number(e.target.value))} />
+                <input 
+                  ref={qtyRef}
+                  type="number" 
+                  className="w-full border border-slate-300 rounded p-1.5 text-center font-bold focus:ring-1 focus:ring-blue-500" 
+                  value={quantity} 
+                  onChange={e => setQuantity(Number(e.target.value))} 
+                  onKeyDown={e => handleKeyDownNext(e, unitRef)}
+                />
             </div>
             {/* Unit */}
             <div className="col-span-1">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Unidad</label>
-                <select className="w-full border border-slate-300 rounded p-1.5 text-[10px]" value={unitType} onChange={e => setUnitType(e.target.value as any)}>
+                <select 
+                  ref={unitRef}
+                  className="w-full border border-slate-300 rounded p-1.5 text-[10px] focus:ring-1 focus:ring-blue-500" 
+                  value={unitType} 
+                  onChange={e => setUnitType(e.target.value as any)}
+                  onKeyDown={e => handleKeyDownNext(e, costRef)}
+                >
                     <option value="PKG">CAJA</option>
                     <option value="UND">UND</option>
                 </select>
@@ -484,10 +682,12 @@ export const Purchases: React.FC = () => {
                     {pricesIncludeIgv ? 'P.Unit' : 'V.Unit'}
                 </label>
                 <input 
+                    ref={costRef}
                     type="number" 
-                    className={`w-full border border-slate-300 rounded p-1.5 text-right font-bold text-[10px] ${isBonus ? 'bg-slate-300 text-slate-500' : 'bg-white'}`} 
+                    className={`w-full border border-slate-300 rounded p-1.5 text-right font-bold text-[10px] focus:ring-1 focus:ring-blue-500 ${isBonus ? 'bg-slate-300 text-slate-500' : 'bg-white'}`} 
                     value={isBonus ? 0 : inputCost} 
                     onChange={e => handleUnitCostChange(Number(e.target.value))} 
+                    onKeyDown={e => handleKeyDownNext(e, batchRef)}
                     disabled={isBonus}
                 />
             </div>
@@ -521,13 +721,27 @@ export const Purchases: React.FC = () => {
             {/* Batch */}
             <div className="col-span-1">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Lote</label>
-                <input className="w-full border border-slate-300 rounded p-1.5 uppercase placeholder:text-slate-400 text-[10px]" placeholder="-" value={batchCode} onChange={e => setBatchCode(e.target.value)} />
+                <input 
+                  ref={batchRef}
+                  className="w-full border border-slate-300 rounded p-1.5 uppercase placeholder:text-slate-400 text-[10px] focus:ring-1 focus:ring-blue-500" 
+                  placeholder="-" 
+                  value={batchCode} 
+                  onChange={e => setBatchCode(e.target.value)} 
+                  onKeyDown={e => handleKeyDownNext(e, expiryRef)}
+                />
             </div>
             {/* Expiry */}
             <div className="col-span-2">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Vencimiento</label>
                 <div className="flex gap-1">
-                    <input type="date" className="w-full border border-slate-300 rounded p-1.5 text-[10px]" value={expiry} onChange={e => setExpiry(e.target.value)} />
+                    <input 
+                      ref={expiryRef}
+                      type="date" 
+                      className="w-full border border-slate-300 rounded p-1.5 text-[10px] focus:ring-1 focus:ring-blue-500" 
+                      value={expiry} 
+                      onChange={e => setExpiry(e.target.value)} 
+                      onKeyDown={e => handleKeyDownNext(e, addBtnRef)}
+                    />
                     <div className="flex items-center bg-white px-1 border border-slate-300 rounded">
                       <input type="checkbox" checked={isBonus} onChange={e => setIsBonus(e.target.checked)} title="Bonificación" />
                     </div>
@@ -536,7 +750,13 @@ export const Purchases: React.FC = () => {
 
             {/* Add Button */}
             <div className="col-span-1">
-                <button type="button" onClick={handleAddLine} className="w-full bg-slate-800 text-white p-1.5 rounded hover:bg-slate-700 flex justify-center shadow">
+                <button 
+                  ref={addBtnRef}
+                  type="button" 
+                  onClick={handleAddLine} 
+                  onKeyDown={e => { if (e.key === 'Enter') handleAddLine(e as any); }}
+                  className="w-full bg-slate-800 text-white p-1.5 rounded hover:bg-slate-700 flex justify-center shadow focus:ring-2 focus:ring-offset-1 focus:ring-slate-800"
+                >
                   <Plus className="w-4 h-4" />
                 </button>
             </div>
@@ -549,15 +769,16 @@ export const Purchases: React.FC = () => {
               <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 text-[11px] uppercase border-b border-slate-200">
                   <tr>
                     <th className="p-2 w-8 text-center bg-slate-100">...</th>
-                    <th className="p-2 w-10 text-center bg-slate-100">#</th>
+                    <th className="p-2 w-10 text-center bg-slate-100">Nro</th>
                     <th className="p-2 w-20 bg-slate-100">Código</th>
                     <th className="p-2 bg-slate-100">Producto</th>
-                    <th className="p-2 w-16 text-right bg-slate-100">Cant.</th>
+                    <th className="p-2 w-16 text-right bg-slate-100">Cantidad</th>
                     <th className="p-2 w-16 text-center bg-slate-100">Psnt</th>
                     <th className="p-2 w-12 text-center bg-slate-100">Fct</th>
-                    <th className="p-2 w-20 text-right bg-slate-100 text-blue-800">Imp Unit</th>
-                    <th className="p-2 w-20 text-right bg-slate-100 text-green-800">Uni Val</th>
-                    <th className="p-2 w-24 text-right bg-slate-100 text-green-800">ValVta Tot</th>
+                    <th className="p-2 w-20 text-right bg-slate-100 text-blue-800">Imp Uni</th>
+                    <th className="p-2 w-20 text-right bg-slate-100 text-green-800">Uni val</th>
+                    <th className="p-2 w-24 text-right bg-slate-100 text-green-800">ValVta tot</th>
+                    <th className="p-2 w-16 text-center bg-slate-100 text-yellow-800">Gratis</th>
                     <th className="p-2 w-24 text-right bg-slate-100 text-blue-800">Imp Tot</th>
                     <th className="p-2 w-8 bg-slate-100"></th>
                   </tr>
@@ -568,7 +789,7 @@ export const Purchases: React.FC = () => {
                   return (
                     <tr key={idx} className={`hover:bg-blue-50 text-[11px] ${item.is_bonus ? 'bg-yellow-50' : ''}`}>
                         <td className="p-2 text-center text-slate-400"><FileText className="w-3 h-3" /></td>
-                        <td className="p-2 text-center text-slate-500">{idx + 1}</td>
+                        <td className="p-2 text-center text-slate-500">{String(idx + 1).padStart(3, '0')}</td>
                         <td className="p-2 font-mono text-slate-600">{p?.sku}</td>
                         <td className="p-2 font-medium text-slate-900 truncate max-w-[200px]">{p?.name}</td>
                         <td className="p-2 text-right font-bold">{item.quantity_presentation.toFixed(2)}</td>
@@ -576,7 +797,8 @@ export const Purchases: React.FC = () => {
                         <td className="p-2 text-center text-slate-500">{item.factor}</td>
                         <td className="p-2 text-right text-blue-700 font-mono">{item.unit_price.toFixed(4)}</td>
                         <td className="p-2 text-right text-green-700 font-mono">{item.unit_value.toFixed(4)}</td>
-                        <td className="p-2 text-right font-bold text-green-900">{item.total_value.toFixed(2)}</td>
+                        <td className="p-2 text-right font-bold text-green-900">{item.total_value.toFixed(4)}</td>
+                        <td className="p-2 text-center">{item.is_bonus ? '✔️' : ''}</td>
                         <td className="p-2 text-right font-bold text-blue-900">{item.total_cost.toFixed(2)}</td>
                         <td className="p-2 text-center">
                           <button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-700"><Trash2 className="w-3 h-3" /></button>
@@ -624,16 +846,75 @@ export const Purchases: React.FC = () => {
           </div>
 
           {/* Save Buttons */}
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 mt-4">
             <button onClick={() => handleSave('PENDING')} className="bg-slate-600 text-white px-6 py-2 rounded hover:bg-slate-700 font-bold shadow-sm">
-                Guardar Pendiente
-            </button>
-            <button onClick={() => handleSave('PAID')} className={`bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 font-bold shadow-sm ${editingId ? 'opacity-50 cursor-not-allowed' : ''}`} disabled={!!editingId}>
-                Procesar y Pagar
+                {editingId ? 'Guardar Cambios' : 'Guardar Compra (Pendiente de Pago)'}
             </button>
           </div>
         </>
       )}
+
+      {/* === PAYMENT MODAL === */}
+      {showPaymentModal && paymentPurchase && (
+        <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm overflow-hidden animate-fade-in-down border border-slate-200">
+            <div className="bg-emerald-600 p-4 text-white flex justify-between items-center shadow-inner">
+              <div>
+                <h3 className="font-bold text-lg flex items-center"><CreditCard className="w-5 h-5 mr-2" /> Registrar Pago</h3>
+                <p className="text-xs opacity-90">{paymentPurchase.supplier_name}</p>
+              </div>
+              <button onClick={() => setShowPaymentModal(false)}><XCircle className="w-6 h-6 hover:opacity-80 transition-opacity" /></button>
+            </div>
+            <div className="p-5 space-y-4 font-sans text-sm">
+              <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 text-center shadow-inner">
+                <span className="block text-xs font-bold text-slate-500 mb-1 uppercase tracking-wider">Saldo Pendiente</span>
+                <span className="text-3xl font-extrabold text-slate-800">
+                  {paymentPurchase.currency === 'USD' ? '$' : 'S/'} {(paymentPurchase.balance !== undefined ? paymentPurchase.balance : paymentPurchase.total).toFixed(2)}
+                </span>
+                <span className="block text-[10px] text-slate-400 mt-1">Doc: {paymentPurchase.document_type} {paymentPurchase.document_number}</span>
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Fecha de Pago</label>
+                <input type="date" className="w-full border border-slate-300 rounded-md p-2.5 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all shadow-sm" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
+              </div>
+              
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Monto a Pagar</label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-bold">
+                    {paymentPurchase.currency === 'USD' ? '$' : 'S/'}
+                  </span>
+                  <input type="number" step="0.01" className="w-full border border-slate-300 rounded-md p-2.5 pl-8 font-bold text-lg text-emerald-700 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all shadow-sm bg-emerald-50/30" value={paymentAmount} onChange={e => setPaymentAmount(parseFloat(e.target.value))} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Método</label>
+                  <select className="w-full border border-slate-300 rounded-md p-2.5 bg-white focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value as any)}>
+                    <option value="CASH">Efectivo 💵</option>
+                    <option value="TRANSFER">Transf. 🏦</option>
+                    <option value="CHECK">Cheque 📝</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Referencia</label>
+                  <input type="text" className="w-full border border-slate-300 rounded-md p-2.5 placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 outline-none shadow-sm" placeholder="Nro Operación..." value={paymentReference} onChange={e => setPaymentReference(e.target.value)} />
+                </div>
+              </div>
+
+              <button 
+                onClick={handleProcessPayment}
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-md shadow flex justify-center items-center transition-all mt-6"
+              >
+                <CheckCircle className="w-5 h-5 mr-2" /> Confirmar Pago
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

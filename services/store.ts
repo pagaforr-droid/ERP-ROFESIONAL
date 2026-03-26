@@ -324,7 +324,8 @@ interface AppState {
    removeRecordFromPlanilla: (planillaId: string, recordId: string) => void;
 
    createPurchase: (purchase: Purchase) => void;
-   updatePurchase: (purchase: Purchase) => boolean;
+   updatePurchase: (purchase: Purchase, userId?: string) => { success: boolean; msg: string };
+   addPurchasePayment: (purchaseId: string, payment: Omit<import('../types').PurchasePayment, 'id'>, userId: string) => void;
    createDispatch: (dispatch: DispatchSheet) => void;
    updateDispatch: (dispatchId: string, updates: Partial<DispatchSheet>) => void;
    updateDispatchStatus: (dispatchId: string, status: DispatchSheet['status']) => void;
@@ -1288,11 +1289,20 @@ export const useStore = create<AppState>((set, get) => ({
       const newBatches = [...state.batches];
       const newProducts = [...state.products];
 
-      purchase.items.forEach(item => {
+      const finalizedPurchase = {
+         ...purchase,
+         payment_status: purchase.payment_status,
+         collection_status: purchase.payment_status === 'PAID' ? 'COLLECTED' : 'NONE',
+         paid_amount: purchase.payment_status === 'PAID' ? purchase.total : 0,
+         balance: purchase.payment_status === 'PAID' ? 0 : purchase.total,
+         payments: []
+      } as Purchase;
+
+      finalizedPurchase.items.forEach(item => {
          newBatches.push({
             id: crypto.randomUUID(),
             product_id: item.product_id,
-            purchase_id: purchase.id,
+            purchase_id: finalizedPurchase.id,
             code: item.batch_code,
             quantity_initial: item.quantity_base,
             quantity_current: item.quantity_base,
@@ -1313,10 +1323,127 @@ export const useStore = create<AppState>((set, get) => ({
          }
       });
 
-      return { purchases: [purchase, ...state.purchases], batches: newBatches, products: newProducts };
+      return { purchases: [finalizedPurchase, ...state.purchases], batches: newBatches, products: newProducts };
    }),
 
-   updatePurchase: (purchase) => true,
+   updatePurchase: (updatedPurchase, userId) => {
+      const state = get();
+      const oldPurchase = state.purchases.find(p => p.id === updatedPurchase.id);
+      if (!oldPurchase) return { success: false, msg: 'Compra no encontrada.' };
+
+      // 1. Check if batches can be reverted
+      const oldBatches = state.batches.filter(b => b.purchase_id === oldPurchase.id);
+      const isConsumed = oldBatches.some(b => b.quantity_current < b.quantity_initial);
+      
+      if (isConsumed) {
+         return { success: false, msg: 'No se puede editar: Los lotes de esta compra ya han sido vendidos o ajustados.' };
+      }
+
+      // 2. Safe to revert. Filter out old batches
+      let newBatches = state.batches.filter(b => b.purchase_id !== oldPurchase.id);
+      let newProducts = [...state.products];
+
+      // Preserve financial state (do not overwrite payments if just editing items)
+      // Recalculate balance based on new total and existing paid_amount
+      const currentPaid = oldPurchase.paid_amount || 0;
+      const newTotal = updatedPurchase.total;
+      const newBalance = Math.max(0, newTotal - currentPaid);
+      const isPaid = newBalance <= 0;
+
+      const finalizedPurchase = {
+         ...updatedPurchase,
+         paid_amount: currentPaid,
+         balance: newBalance,
+         payment_status: isPaid ? 'PAID' : 'PENDING',
+         collection_status: isPaid ? 'COLLECTED' : (currentPaid > 0 ? 'PARTIAL' : 'NONE'),
+         payments: oldPurchase.payments || []
+      } as Purchase;
+
+      // 3. Create New Batches
+      finalizedPurchase.items.forEach(item => {
+         newBatches.push({
+            id: crypto.randomUUID(),
+            product_id: item.product_id,
+            purchase_id: finalizedPurchase.id,
+            code: item.batch_code,
+            quantity_initial: item.quantity_base,
+            quantity_current: item.quantity_base,
+            cost: item.unit_price,
+            expiration_date: item.expiration_date,
+            created_at: new Date().toISOString()
+         });
+
+         if (!item.is_bonus) {
+            const prodIndex = newProducts.findIndex(p => p.id === item.product_id);
+            if (prodIndex >= 0) {
+               const grossUnitCost = item.unit_price / item.factor;
+               newProducts[prodIndex] = {
+                  ...newProducts[prodIndex],
+                  last_cost: Number(grossUnitCost.toFixed(4))
+               };
+            }
+         }
+      });
+
+      const newPurchases = state.purchases.map(p => p.id === finalizedPurchase.id ? finalizedPurchase : p);
+
+      set({ purchases: newPurchases, batches: newBatches, products: newProducts });
+      return { success: true, msg: 'Compra actualizada y Kardex rectificado correctamente.' };
+   },
+
+   addPurchasePayment: (purchaseId, paymentInput, userId) => set(s => {
+      const purchaseIndex = s.purchases.findIndex(p => p.id === purchaseId);
+      if (purchaseIndex === -1) return s;
+
+      const purchase = s.purchases[purchaseIndex];
+      const amount = paymentInput.amount;
+      
+      const currentPaid = purchase.paid_amount || 0;
+      const newPaid = currentPaid + amount;
+      const currentBalance = purchase.balance !== undefined ? purchase.balance : purchase.total;
+      const newBalance = Math.max(0, currentBalance - amount);
+      const isPaid = newBalance <= 0;
+
+      const cashMovementId = crypto.randomUUID();
+      const newPayment = {
+         ...paymentInput,
+         id: crypto.randomUUID(),
+         date: paymentInput.date || new Date().toISOString(),
+         cash_movement_id: cashMovementId,
+         user_id: userId
+      };
+
+      const existingPayments = purchase.payments || [];
+
+      const updatedPurchase = {
+         ...purchase,
+         paid_amount: newPaid,
+         balance: newBalance,
+         payment_status: isPaid ? 'PAID' : 'PENDING',
+         collection_status: isPaid ? 'COLLECTED' : 'PARTIAL',
+         payments: [...existingPayments, newPayment]
+      } as Purchase;
+
+      const updatedPurchases = [...s.purchases];
+      updatedPurchases[purchaseIndex] = updatedPurchase;
+
+      // Register Expense in CashFlow
+      const newMovement: import('../types').CashMovement = {
+         id: cashMovementId,
+         type: 'EXPENSE',
+         category_name: 'COMPRA PROVEEDOR',
+         description: `Pago a Proveedor: ${purchase.supplier_name} (Doc: ${purchase.document_type} ${purchase.document_number}) ${newPayment.reference}`,
+         amount: amount,
+         date: newPayment.date,
+         user_id: userId,
+         reference_id: purchase.id
+      };
+
+      return {
+         purchases: updatedPurchases,
+         cashMovements: [newMovement, ...s.cashMovements]
+      };
+   }),
 
    createDispatch: (dispatch) => set((state) => {
       let finalCode = dispatch.code;
