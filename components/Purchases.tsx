@@ -6,24 +6,31 @@ import { PurchaseItem, Purchase, Product } from '../types';
 // Simple Toast Component
 interface ToastProps {
   message: string;
-  type: 'error' | 'success';
+  type: 'error' | 'success' | 'warning';
   onClose: () => void;
 }
 
-const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => (
-  <div className={`fixed top-4 right-4 z-50 flex items-center p-4 rounded shadow-lg border-l-4 min-w-[300px] animate-fade-in-down bg-white ${type === 'error' ? 'border-red-500' : 'border-green-500'}`}>
-    {type === 'error' ? <XCircle className="w-6 h-6 text-red-500 mr-3" /> : <CheckCircle className="w-6 h-6 text-green-500 mr-3" />}
-    <div className="flex-1">
-      <h4 className={`font-bold text-sm ${type === 'error' ? 'text-red-800' : 'text-green-800'}`}>
-        {type === 'error' ? 'Error' : 'Éxito'}
-      </h4>
-      <p className="text-xs text-slate-600">{message}</p>
+const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
+  const getStyle = () => {
+    if (type === 'error') return { border: 'border-red-500', icon: <XCircle className="w-6 h-6 text-red-500 mr-3" />, text: 'text-red-800', title: 'Error' };
+    if (type === 'warning') return { border: 'border-yellow-500', icon: <AlertTriangle className="w-6 h-6 text-yellow-500 mr-3" />, text: 'text-yellow-800', title: 'Aviso' };
+    return { border: 'border-green-500', icon: <CheckCircle className="w-6 h-6 text-green-500 mr-3" />, text: 'text-green-800', title: 'Éxito' };
+  };
+  const s = getStyle();
+
+  return (
+    <div className={`fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 flex items-center p-4 rounded-xl shadow-2xl border-l-4 min-w-[350px] animate-fade-in-down bg-white ${s.border}`}>
+      {s.icon}
+      <div className="flex-1">
+        <h4 className={`font-bold text-sm ${s.text}`}>{s.title}</h4>
+        <p className="text-xs text-slate-600">{message}</p>
+      </div>
+      <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600">
+        <XCircle className="w-4 h-4" />
+      </button>
     </div>
-    <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600">
-      <XCircle className="w-4 h-4" />
-    </button>
-  </div>
-);
+  );
+};
 
 export const Purchases: React.FC = () => {
   const { products, suppliers, warehouses, purchases, createPurchase, updatePurchase, addPurchasePayment, currentUser } = useStore();
@@ -31,7 +38,7 @@ export const Purchases: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'FORM' | 'LIST'>('LIST');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: 'error' | 'success' }>>([]);
+  const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: 'error' | 'success' | 'warning' }>>([]);
 
   // === PAYMENT MODAL STATE ===
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -140,11 +147,17 @@ export const Purchases: React.FC = () => {
       setSelectedProduct(p.id);
       setProductSearchStr(`${p.sku} | ${p.name}`);
       setShowProductOptions(false);
+      
+      const isAlreadyInCart = cart.some(item => item.product_id === p.id);
+      if (isAlreadyInCart) {
+        showToast("Aviso: El producto ya está ingresado en el detalle.", "warning");
+      }
+
       setTimeout(() => qtyRef.current?.focus(), 10);
   };
 
   // Helper: Show Toast
-  const showToast = (message: string, type: 'error' | 'success') => {
+  const showToast = (message: string, type: 'error' | 'success' | 'warning') => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
@@ -225,6 +238,31 @@ export const Purchases: React.FC = () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct, unitType, products, pricesIncludeIgv]);
 
+  const handleInlineUpdate = (idx: number, field: 'quantity' | 'price', val: string) => {
+    const numVal = parseFloat(val) || 0;
+    setCart(prev => {
+      const newCart = [...prev];
+      const item = { ...newCart[idx] };
+      if (field === 'quantity') {
+        item.quantity_presentation = numVal;
+      } else if (field === 'price') {
+        if (pricesIncludeIgv) {
+          item.unit_price = numVal;
+          item.unit_value = numVal / 1.18;
+        } else {
+          item.unit_value = numVal;
+          item.unit_price = numVal * 1.18;
+        }
+      }
+      item.quantity_base = item.quantity_presentation * item.factor;
+      if (!item.is_bonus) {
+          item.total_cost = item.unit_price * item.quantity_presentation;
+          item.total_value = item.unit_value * item.quantity_presentation;
+      }
+      newCart[idx] = item;
+      return newCart;
+    });
+  };
 
   const handleAddLine = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -287,6 +325,14 @@ export const Purchases: React.FC = () => {
     if (!supplierId) { showToast("Falta seleccionar el Proveedor.", "error"); return; }
     if (!docNumber) { showToast("Falta ingresar el Número de Documento.", "error"); return; }
     if (cart.length === 0) { showToast("El carrito de compras está vacío.", "error"); return; }
+
+    if (!editingId) {
+      const isDuplicate = purchases.some(p => p.supplier_id === supplierId && p.document_type === docType && p.document_number === docNumber);
+      if (isDuplicate) {
+        showToast("Ya existe una compra registrada con este Proveedor, Tipo y Número de Documento.", "error");
+        return;
+      }
+    }
 
     setIsProcessing(true);
 
@@ -401,6 +447,10 @@ export const Purchases: React.FC = () => {
   const sumTotalValue = cart.reduce((acc, item) => acc + item.total_value, 0); 
   const sumTotalImport = cart.reduce((acc, item) => acc + item.total_cost, 0); 
   const sumIgv = sumTotalImport - sumTotalValue;
+
+  const isDuplicateDoc = !editingId && supplierId && docNumber && docType 
+    ? purchases.some(p => p.supplier_id === supplierId && p.document_type === docType && p.document_number === docNumber) 
+    : false;
 
   return (
     <div className="flex flex-col h-full space-y-3 font-sans text-xs relative">
@@ -534,9 +584,12 @@ export const Purchases: React.FC = () => {
                     <option value="GUIA">GUIA</option>
                   </select>
               </div>
-              <div className="flex items-center gap-2">
-                  <label className="font-bold text-slate-700">Nro:</label>
-                  <input className="border border-slate-300 p-1 rounded w-32 font-bold" value={docNumber} onChange={e => setDocNumber(e.target.value)} placeholder="F001-00001" />
+              <div className="flex flex-col relative justify-center">
+                  <div className="flex items-center gap-2">
+                      <label className="font-bold text-slate-700">Nro:</label>
+                      <input className={`border ${isDuplicateDoc ? 'border-red-500 ring-2 ring-red-200 bg-red-50 text-red-900' : 'border-slate-300'} p-1 rounded w-32 font-bold`} value={docNumber} onChange={e => setDocNumber(e.target.value)} placeholder="F001-00001" />
+                  </div>
+                  {isDuplicateDoc && <span className="absolute top-[80%] mt-1 left-8 text-[10px] text-red-600 font-bold whitespace-nowrap bg-red-50 border border-red-200 px-1 rounded shadow-sm z-10 animate-fade-in-down">⚠️ Documento ya existe</span>}
               </div>
               <div className="flex items-center gap-2">
                   <label className="font-bold text-slate-700">Moneda:</label>
@@ -608,9 +661,9 @@ export const Purchases: React.FC = () => {
           </div>
 
           {/* === GRID ENTRY BAR === */}
-          <div className="bg-slate-200 p-2 rounded border border-slate-300 grid grid-cols-12 gap-2 items-end shadow-inner">
+          <div className="bg-slate-200 p-2 rounded border border-slate-300 grid grid-cols-[repeat(32,minmax(0,1fr))] gap-2 items-end shadow-inner">
             {/* Product Search (Combobox) */}
-            <div className="col-span-3 relative">
+            <div className="col-span-12 relative">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Producto (Búsqueda Inteligente)</label>
                 <div className="relative">
                   <input
@@ -650,7 +703,7 @@ export const Purchases: React.FC = () => {
             </div>
 
             {/* Qty */}
-            <div className="col-span-1">
+            <div className="col-span-2">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5 text-center">Cant.</label>
                 <input 
                   ref={qtyRef}
@@ -662,7 +715,7 @@ export const Purchases: React.FC = () => {
                 />
             </div>
             {/* Unit */}
-            <div className="col-span-1">
+            <div className="col-span-2">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Unidad</label>
                 <select 
                   ref={unitRef}
@@ -677,7 +730,7 @@ export const Purchases: React.FC = () => {
             </div>
 
             {/* Cost (Shortened) */}
-            <div className="col-span-1">
+            <div className="col-span-3">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5 text-right whitespace-nowrap overflow-hidden">
                     {pricesIncludeIgv ? 'P.Unit' : 'V.Unit'}
                 </label>
@@ -693,7 +746,7 @@ export const Purchases: React.FC = () => {
             </div>
 
             {/* Subtotal (Valor Venta) */}
-            <div className="col-span-1">
+            <div className="col-span-3">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5 text-right text-green-700">SubTotal</label>
                 <input 
                     type="number" 
@@ -706,7 +759,7 @@ export const Purchases: React.FC = () => {
             </div>
 
             {/* Total (Importe Total) */}
-            <div className="col-span-1">
+            <div className="col-span-3">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5 text-right text-blue-700">Total</label>
                 <input 
                     type="number" 
@@ -719,7 +772,7 @@ export const Purchases: React.FC = () => {
             </div>
 
             {/* Batch */}
-            <div className="col-span-1">
+            <div className="col-span-2">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Lote</label>
                 <input 
                   ref={batchRef}
@@ -731,20 +784,22 @@ export const Purchases: React.FC = () => {
                 />
             </div>
             {/* Expiry */}
-            <div className="col-span-2">
+            <div className="col-span-3">
                 <label className="block text-[10px] font-bold text-slate-600 mb-0.5">Vencimiento</label>
-                <div className="flex gap-1">
-                    <input 
-                      ref={expiryRef}
-                      type="date" 
-                      className="w-full border border-slate-300 rounded p-1.5 text-[10px] focus:ring-1 focus:ring-blue-500" 
-                      value={expiry} 
-                      onChange={e => setExpiry(e.target.value)} 
-                      onKeyDown={e => handleKeyDownNext(e, addBtnRef)}
-                    />
-                    <div className="flex items-center bg-white px-1 border border-slate-300 rounded">
-                      <input type="checkbox" checked={isBonus} onChange={e => setIsBonus(e.target.checked)} title="Bonificación" />
-                    </div>
+                <input 
+                  ref={expiryRef}
+                  type="date" 
+                  className="w-full border border-slate-300 rounded p-1.5 text-[10px] focus:ring-1 focus:ring-blue-500" 
+                  value={expiry} 
+                  onChange={e => setExpiry(e.target.value)} 
+                  onKeyDown={e => handleKeyDownNext(e, addBtnRef)}
+                />
+            </div>
+            {/* Gratis */}
+            <div className="col-span-1">
+                <label className="block text-[10px] font-bold text-slate-600 mb-0.5 text-center">Gratis</label>
+                <div className="flex justify-center items-center h-[34px] bg-white border border-slate-300 rounded">
+                  <input type="checkbox" className="w-4 h-4 text-orange-500 rounded cursor-pointer" checked={isBonus} onChange={e => setIsBonus(e.target.checked)} title="Bonificación" />
                 </div>
             </div>
 
@@ -787,18 +842,32 @@ export const Purchases: React.FC = () => {
                 {cart.map((item, idx) => {
                   const p = products.find(x => x.id === item.product_id);
                   return (
-                    <tr key={idx} className={`hover:bg-blue-50 text-[11px] ${item.is_bonus ? 'bg-yellow-50' : ''}`}>
+                    <tr key={idx} className={`hover:bg-blue-50 text-[11px] ${item.is_bonus ? 'bg-orange-50 text-orange-900 border-b border-orange-200' : ''}`}>
                         <td className="p-2 text-center text-slate-400"><FileText className="w-3 h-3" /></td>
                         <td className="p-2 text-center text-slate-500">{String(idx + 1).padStart(3, '0')}</td>
                         <td className="p-2 font-mono text-slate-600">{p?.sku}</td>
                         <td className="p-2 font-medium text-slate-900 truncate max-w-[200px]">{p?.name}</td>
-                        <td className="p-2 text-right font-bold">{item.quantity_presentation.toFixed(2)}</td>
+                        <td className="p-2 text-right font-bold w-20">
+                          {editingId ? (
+                             <input type="number" min="0" step="any" className="w-16 border border-slate-300 rounded p-1 text-right bg-blue-50 focus:ring-1 focus:ring-blue-500 font-bold" value={item.quantity_presentation || ''} onChange={e => handleInlineUpdate(idx, 'quantity', e.target.value)} title="Modificar Cantidad" />
+                          ) : item.quantity_presentation.toFixed(2)}
+                        </td>
                         <td className="p-2 text-center">{item.unit_type}</td>
                         <td className="p-2 text-center text-slate-500">{item.factor}</td>
-                        <td className="p-2 text-right text-blue-700 font-mono">{item.unit_price.toFixed(4)}</td>
-                        <td className="p-2 text-right text-green-700 font-mono">{item.unit_value.toFixed(4)}</td>
+                        <td className="p-2 text-right text-blue-700 font-mono w-24">
+                          {editingId && pricesIncludeIgv && !item.is_bonus ? (
+                             <input type="number" min="0" step="any" className="w-20 border border-slate-300 rounded p-1 text-right bg-blue-50 focus:ring-1 focus:ring-blue-500 font-mono text-blue-800" value={item.unit_price || ''} onChange={e => handleInlineUpdate(idx, 'price', e.target.value)} title="Modificar Imp Uni" />
+                          ) : item.unit_price.toFixed(4)}
+                        </td>
+                        <td className="p-2 text-right text-green-700 font-mono w-24">
+                          {editingId && !pricesIncludeIgv && !item.is_bonus ? (
+                             <input type="number" min="0" step="any" className="w-20 border border-slate-300 rounded p-1 text-right bg-green-50 focus:ring-1 focus:ring-green-500 font-mono text-green-800" value={item.unit_value || ''} onChange={e => handleInlineUpdate(idx, 'price', e.target.value)} title="Modificar Uni Val" />
+                          ) : item.unit_value.toFixed(4)}
+                        </td>
                         <td className="p-2 text-right font-bold text-green-900">{item.total_value.toFixed(4)}</td>
-                        <td className="p-2 text-center">{item.is_bonus ? '✔️' : ''}</td>
+                        <td className="p-2 text-center text-yellow-800">
+                          {item.is_bonus ? <span className="bg-orange-500 text-white px-2 py-0.5 rounded-full text-[9px] font-bold shadow-sm">GRATIS</span> : '-'}
+                        </td>
                         <td className="p-2 text-right font-bold text-blue-900">{item.total_cost.toFixed(2)}</td>
                         <td className="p-2 text-center">
                           <button onClick={() => setCart(cart.filter((_, i) => i !== idx))} className="text-red-500 hover:text-red-700"><Trash2 className="w-3 h-3" /></button>
