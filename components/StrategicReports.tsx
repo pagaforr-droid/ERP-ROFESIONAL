@@ -1,11 +1,14 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
-import { BarChart3, PieChart, Calendar, Download, Printer, Filter, TrendingUp, DollarSign, Users, Target, Layers, ShoppingBag, MapPin, X } from 'lucide-react';
+import { BarChart3, PieChart, Calendar, Download, Printer, Filter, TrendingUp, DollarSign, Users, Target, Layers, ShoppingBag, MapPin, X, FileDown, Edit3 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // --- TYPES ---
 type Dimension = 'SELLER' | 'CLIENT' | 'SUPPLIER' | 'CATEGORY' | 'BRAND' | 'ZONE' | 'MONTH';
-type Tab = 'HISTORICAL' | 'PROJECTION';
+type Tab = 'HISTORICAL' | 'PROJECTION' | 'SELLER_ADVANCE';
 
 interface AggregatedRow {
   id: string;
@@ -38,6 +41,16 @@ export const StrategicReports: React.FC = () => {
   // --- CONFIG ---
   const [groupBy, setGroupBy] = useState<Dimension>('SELLER');
   const [projectionGoal, setProjectionGoal] = useState<number>(50000); // Default Goal
+
+  // --- QUOTAS STATE (SELLER ADVANCE) ---
+  const [quotas, setQuotas] = useState<Record<string, number>>({});
+  const [editingQuotaKey, setEditingQuotaKey] = useState<string | null>(null);
+  const [tempQuota, setTempQuota] = useState<string>('');
+
+  const saveQuota = (key: string) => {
+     setQuotas(prev => ({ ...prev, [key]: parseFloat(tempQuota) || 0 }));
+     setEditingQuotaKey(null);
+  };
 
   // --- ENGINE: CORE AGGREGATION LOGIC ---
   const processedData = useMemo(() => {
@@ -207,6 +220,198 @@ export const StrategicReports: React.FC = () => {
 
   }, [processedData, dateFrom, dateTo, projectionGoal, activeTab]);
 
+  // --- SELLER ADVANCE ENGINE ---
+  const sellerAdvanceData = useMemo(() => {
+     if (activeTab !== 'SELLER_ADVANCE') return [];
+
+     const start = new Date(dateFrom);
+     const end = new Date(dateTo);
+     const totalDaysInRange = Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1;
+     
+     const now = new Date();
+     let daysPassed = 0;
+     if (end < now) { daysPassed = totalDaysInRange; }
+     else if (start > now) { daysPassed = 0; }
+     else { daysPassed = Math.ceil((now.getTime() - start.getTime()) / (1000 * 3600 * 24)); }
+     
+     if (daysPassed === 0) daysPassed = 1; // Prevent div by 0
+
+     const validSales = store.sales.filter(s => {
+        const date = s.created_at.split('T')[0];
+        return date >= dateFrom && date <= dateTo && s.status !== 'canceled';
+     });
+
+     const groups: Record<string, {
+        sellerId: string; sellerName: string;
+        supplierId: string; supplierName: string;
+        coverageClients: Set<string>;
+        advance: number;
+     }> = {};
+
+     store.sellers.forEach(seller => {
+        if (filterSeller && seller.id !== filterSeller) return;
+        store.suppliers.forEach(supp => {
+           if (filterSupplier && supp.id !== filterSupplier) return;
+           const key = `${seller.id}_${supp.id}`;
+           groups[key] = {
+              sellerId: seller.id, sellerName: seller.name,
+              supplierId: supp.id, supplierName: supp.name,
+              coverageClients: new Set(),
+              advance: 0
+           };
+        });
+     });
+
+     validSales.forEach(sale => {
+        const client = store.clients.find(c => c.id === sale.client_id) || store.clients.find(c => c.doc_number === sale.client_ruc);
+        const zone = store.zones.find(z => z.id === client?.zone_id);
+        const seller = store.sellers.find(s => s.id === zone?.assigned_seller_id);
+        
+        if (!seller) return;
+        if (filterSeller && seller.id !== filterSeller) return;
+
+        sale.items.forEach(item => {
+           const product = store.products.find(p => p.id === item.product_id);
+           const supplierId = product?.supplier_id || 'OTROS';
+           const supplierName = store.suppliers.find(s => s.id === supplierId)?.name || 'OTROS';
+           
+           if (filterSupplier && supplierId !== filterSupplier && supplierId !== 'OTROS') return;
+
+           const key = `${seller.id}_${supplierId}`;
+           if (!groups[key]) {
+              groups[key] = {
+                 sellerId: seller.id, sellerName: seller.name,
+                 supplierId, supplierName,
+                 coverageClients: new Set(),
+                 advance: 0
+              };
+           }
+
+           groups[key].advance += item.total_price;
+           groups[key].coverageClients.add(sale.client_ruc);
+        });
+     });
+
+     return Object.values(groups).map(g => {
+        const cuota = quotas[`${g.sellerId}_${g.supplierId}`] || 0;
+        const cobertura = g.coverageClients.size;
+        
+        const pctAvance = cuota > 0 ? (g.advance / cuota) * 100 : 0;
+        const proyectado = (g.advance / daysPassed) * totalDaysInRange;
+        const pctProyectado = cuota > 0 ? (proyectado / cuota) * 100 : 0;
+        
+        const diferencia = g.advance - cuota;
+        const eficiencia = cobertura > 0 ? g.advance / cobertura : 0;
+        const avancexCobertura = g.advance * cobertura;
+
+        let cumplimiento = 'BAJO';
+        if (pctAvance >= 100) cumplimiento = 'SOBRECUMPLIMIENTO';
+        else if (pctAvance >= 50) cumplimiento = 'REGULAR'; // Based on image
+
+        return {
+           ...g,
+           cobertura,
+           cuota,
+           pctAvance,
+           proyectado,
+           pctProyectado,
+           diferencia,
+           eficiencia,
+           avancexCobertura,
+           cumplimiento,
+           sortKey: `${g.sellerName}_${g.supplierName}`
+        };
+     }).sort((a,b) => a.sortKey.localeCompare(b.sortKey));
+
+  }, [store.sales, store.sellers, store.suppliers, store.products, store.clients, store.zones, dateFrom, dateTo, filterSeller, filterSupplier, quotas, activeTab]);
+
+  const exportSellerAdvanceExcel = () => {
+    const dataToExport = sellerAdvanceData.map(r => ({
+      "VENDEDOR": r.sellerName,
+      "PROVEEDOR": r.supplierName,
+      "COBERTURA": r.cobertura,
+      "AVANCE": parseFloat(r.advance.toFixed(2)),
+      "CUOTA": parseFloat(r.cuota.toFixed(2)),
+      "% AVANCE": parseFloat(r.pctAvance.toFixed(2)) / 100, // Excel can format as %
+      "PROYECTADO": parseFloat(r.proyectado.toFixed(2)),
+      "% PROYECTADO": parseFloat(r.pctProyectado.toFixed(2)) / 100,
+      "DIFERENCIA": parseFloat(r.diferencia.toFixed(2)),
+      "EFICIENCIA": parseFloat(r.eficiencia.toFixed(2)),
+      "AVANCE x COBERTURA": parseFloat(r.avancexCobertura.toFixed(2)),
+      "CUMPLIMIENTO": r.cumplimiento
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Avance_Vendedores");
+    XLSX.writeFile(workbook, `Reporte_Avance_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const exportSellerAdvancePDF = () => {
+    const doc = new jsPDF('landscape');
+    const company = store.company;
+    
+    if (company.logo_url) {
+       try { doc.addImage(company.logo_url, 'PNG', 14, 10, 30, 15); } catch(e) {}
+    }
+    
+    doc.setFontSize(16);
+    doc.setTextColor(40, 40, 40);
+    doc.text(`${company.name}`, 50, 16);
+    
+    doc.setFontSize(12);
+    doc.text("Reporte: AVANCE POR VENDEDOR Y PROVEEDOR", 50, 22);
+    
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Fecha de Emisión: ${new Date().toLocaleString()}`, 14, 32);
+    doc.text(`Rango Evaluado: ${dateFrom} al ${dateTo}`, 14, 36);
+
+    const tableColumn = ["VENDEDOR", "PROVEEDOR", "COB.", "AVANCE", "CUOTA", "% AV.", "PROYECT.", "% PROY", "DIFER.", "EFICIEN.", "CUMPL."];
+    const tableRows = sellerAdvanceData.map(r => [
+      r.sellerName.substring(0,25),
+      r.supplierName.substring(0,25),
+      r.cobertura,
+      `S/ ${r.advance.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+      `S/ ${r.cuota.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+      `${r.pctAvance.toFixed(2)}%`,
+      `S/ ${r.proyectado.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+      `${r.pctProyectado.toFixed(2)}%`,
+      `S/ ${r.diferencia.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+      `S/ ${r.eficiencia.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`,
+      r.cumplimiento
+    ]);
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 40,
+      theme: 'grid',
+      styles: { fontSize: 7, cellPadding: 2 },
+      headStyles: { fillColor: [30, 41, 59] },
+      columnStyles: {
+        2: { halign: 'center' },
+        3: { halign: 'right' },
+        4: { halign: 'right' },
+        5: { halign: 'right', fontStyle: 'bold' },
+        6: { halign: 'right' },
+        7: { halign: 'right' },
+        8: { halign: 'right' },
+        9: { halign: 'right' },
+        10: { halign: 'center', fontStyle: 'bold' }
+      },
+      didParseCell: function(data) {
+         if (data.section === 'body' && data.column.index === 10) {
+            const val = data.cell.raw;
+            if (val === 'SOBRECUMPLIMIENTO') data.cell.styles.fillColor = [220, 252, 231];
+            else if (val === 'REGULAR') data.cell.styles.fillColor = [254, 249, 195];
+            else data.cell.styles.fillColor = [254, 226, 226];
+         }
+      }
+    });
+
+    doc.save(`Reporte_Avance_Vendedores_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   // --- HELPERS ---
   const clearFilters = () => {
      setFilterSeller('');
@@ -243,6 +448,12 @@ export const StrategicReports: React.FC = () => {
                 className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center ${activeTab === 'PROJECTION' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-700'}`}
              >
                 <TrendingUp className="w-4 h-4 mr-2" /> Proyección (Forecast)
+             </button>
+             <button 
+                onClick={() => setActiveTab('SELLER_ADVANCE')}
+                className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center ${activeTab === 'SELLER_ADVANCE' ? 'bg-white shadow text-emerald-700' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                <Users className="w-4 h-4 mr-2" /> Vendedores (Avance)
              </button>
           </div>
        </div>
@@ -523,6 +734,105 @@ export const StrategicReports: React.FC = () => {
                          <br/>* Ajuste los filtros de fecha para cambiar el periodo de análisis.
                       </p>
                    </div>
+                </div>
+             </div>
+          )}
+
+          {activeTab === 'SELLER_ADVANCE' && (
+             <div className="flex-1 bg-white rounded-lg shadow border border-slate-200 flex flex-col overflow-hidden animate-fade-in-up">
+                {/* TOOLBAR */}
+                <div className="p-3 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                   <div className="text-sm font-bold text-slate-700 flex items-center">
+                     <Target className="w-4 h-4 mr-2 text-emerald-600" /> Rendimiento de Ventas por Proveedor
+                   </div>
+                   <div className="flex gap-2">
+                      <button onClick={exportSellerAdvanceExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded font-bold shadow-sm flex items-center transition-colors text-xs">
+                         <FileDown className="w-4 h-4 mr-1.5" /> Excel
+                      </button>
+                      <button onClick={exportSellerAdvancePDF} className="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded font-bold shadow-sm flex items-center transition-colors text-xs">
+                         <Printer className="w-4 h-4 mr-1.5" /> PDF
+                      </button>
+                   </div>
+                </div>
+
+                <div className="flex-1 overflow-auto">
+                   <table className="w-full text-[10px] text-left whitespace-nowrap">
+                      <thead className="bg-slate-200 text-slate-700 font-bold sticky top-0 z-10 border-b-2 border-slate-300 uppercase tracking-tight">
+                         <tr>
+                            <th className="p-2 border-r border-slate-300">Vendedor</th>
+                            <th className="p-2 border-r border-slate-300">Proveedor</th>
+                            <th className="p-2 border-r border-slate-300 text-center">Cob.<br/>(K)</th>
+                            <th className="p-2 border-r border-slate-300 text-right">Avance (S/)</th>
+                            <th className="p-2 border-r border-slate-300 text-right bg-blue-50">Cuota (S/) <Edit3 className="w-3 h-3 inline text-slate-400"/></th>
+                            <th className="p-2 border-r border-slate-300 text-center">% Avance</th>
+                            <th className="p-2 border-r border-slate-300 text-right">Proyectado (S/)</th>
+                            <th className="p-2 border-r border-slate-300 text-center">% Proyec.</th>
+                            <th className="p-2 border-r border-slate-300 text-right">Diferencia</th>
+                            <th className="p-2 border-r border-slate-300 text-right">Eficiencia</th>
+                            <th className="p-2 border-r border-slate-300 text-right">AvxCob</th>
+                            <th className="p-2 text-center">Cumplimiento</th>
+                         </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200 font-mono">
+                         {sellerAdvanceData.length === 0 && <tr><td colSpan={12} className="p-8 text-center text-slate-400">Sin datos de avance. Verifica los filtros.</td></tr>}
+                         {sellerAdvanceData.map(r => {
+                            const isEditing = editingQuotaKey === `${r.sellerId}_${r.supplierId}`;
+                            const isLow = r.pctAvance < 50;
+                            const isRegular = r.pctAvance >= 50 && r.pctAvance < 100;
+                            const isOver = r.pctAvance >= 100;
+                            
+                            const bgSemaforo = isOver ? 'bg-green-100 text-green-800' : (isRegular ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800');
+
+                            return (
+                               <tr key={`${r.sellerId}_${r.supplierId}`} className="hover:bg-blue-50 transition-colors">
+                                  <td className="p-2 border-r border-slate-200 font-bold text-slate-700 truncate max-w-[120px]" title={r.sellerName}>{r.sellerName}</td>
+                                  <td className="p-2 border-r border-slate-200 text-slate-600 truncate max-w-[120px]" title={r.supplierName}>{r.supplierName}</td>
+                                  <td className="p-2 border-r border-slate-200 text-center">{r.cobertura.toLocaleString()}</td>
+                                  <td className="p-2 border-r border-slate-200 text-right font-bold text-slate-800">{r.advance.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                  
+                                  <td className="p-1 border-r border-slate-200 text-right bg-blue-50 group min-w-[80px]">
+                                     {isEditing ? (
+                                        <div className="flex items-center justify-end">
+                                           <input 
+                                              type="number" 
+                                              autoFocus 
+                                              className="w-16 p-1 text-[10px] border border-blue-400 rounded outline-none" 
+                                              value={tempQuota} 
+                                              onChange={e => setTempQuota(e.target.value)}
+                                              onBlur={() => saveQuota(`${r.sellerId}_${r.supplierId}`)}
+                                              onKeyDown={e => e.key === 'Enter' && saveQuota(`${r.sellerId}_${r.supplierId}`)}
+                                           />
+                                        </div>
+                                     ) : (
+                                        <div 
+                                           className="flex items-center justify-end cursor-pointer h-full" 
+                                           onClick={() => { setEditingQuotaKey(`${r.sellerId}_${r.supplierId}`); setTempQuota(r.cuota.toString()) }}
+                                        >
+                                           <span className={`font-bold ${r.cuota === 0 ? 'text-slate-400' : 'text-blue-700'}`}>{r.cuota.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                                        </div>
+                                     )}
+                                  </td>
+
+                                  <td className={`p-2 border-r border-slate-200 text-right ${bgSemaforo} bg-opacity-40 relative overflow-hidden w-16`}>
+                                     <div className={`absolute left-0 top-0 bottom-0 opacity-20 ${isOver ? 'bg-green-600' : isRegular ? 'bg-yellow-600' : 'bg-red-600'}`} style={{width: `${Math.min(r.pctAvance, 100)}%`}}></div>
+                                     <span className="relative z-10 text-[9px] font-bold">{r.pctAvance.toFixed(2)}%</span>
+                                  </td>
+                                  <td className="p-2 border-r border-slate-200 text-right text-slate-700">{r.proyectado.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                  <td className="p-2 border-r border-slate-200 text-center relative overflow-hidden text-blue-800 font-bold bg-blue-50 w-16">
+                                     <div className="absolute left-0 top-0 bottom-0 bg-blue-500 opacity-20" style={{width: `${Math.min(r.pctProyectado, 100)}%`}}></div>
+                                     <span className="relative z-10 text-[9px]">{r.pctProyectado.toFixed(2)}%</span>
+                                  </td>
+                                  <td className={`p-2 border-r border-slate-200 text-right font-bold ${r.diferencia >= 0 ? 'text-green-600' : 'text-red-500'}`}>{r.diferencia.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                  <td className="p-2 border-r border-slate-200 text-right text-slate-600">{r.eficiencia.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                  <td className="p-2 border-r border-slate-200 text-right text-slate-600">{r.avancexCobertura.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                  <td className={`p-2 text-center text-[9px] font-bold ${bgSemaforo}`}>
+                                     {r.cumplimiento}
+                                  </td>
+                               </tr>
+                            );
+                         })}
+                      </tbody>
+                   </table>
                 </div>
              </div>
           )}

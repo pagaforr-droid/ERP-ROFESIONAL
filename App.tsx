@@ -182,8 +182,8 @@ export default function App() {
             <NavItem view="dispatch" icon={Truck} label="Despacho y Rutas" />
             <NavItem view="dispatch-liquidation" icon={FileInput} label="Liquidación Rutas" />
             <NavItem view="mobile-delivery" icon={Smartphone} label="App Reparto" />
-            <NavItem view="kardex" icon={PackageSearch} label="Kardex & Inventario" />
-            <NavItem view="inventory" icon={ClipboardList} label="Ingreso Mercadería" />
+            <NavItem view="kardex" icon={PackageSearch} label="Kardex Detalles" />
+            <NavItem view="inventory" icon={Home} label="Almacenes & Stock" />
           </Section>
 
           <Section title="Gestión">
@@ -199,7 +199,7 @@ export default function App() {
             <NavItem view="clients" icon={Users} label="Clientes" />
             <NavItem view="territory" icon={Map} label="Territorio" />
             <NavItem view="suppliers" icon={Briefcase} label="Proveedores" />
-            <NavItem view="warehouses" icon={Home} label="Almacenes" />
+            <NavItem view="warehouses" icon={Box} label="Rst. Locales/Depósitos" />
             <NavItem view="logistics" icon={Container} label="Flota" />
           </Section>
         </nav>

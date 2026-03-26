@@ -51,6 +51,7 @@ export const Purchases: React.FC = () => {
   // === SEARCH STATE ===
   const [searchStartDate, setSearchStartDate] = useState(new Date(new Date().setDate(1)).toISOString().split('T')[0]); // First of month
   const [searchEndDate, setSearchEndDate] = useState(new Date().toISOString().split('T')[0]); // Today
+  const [searchDocNumber, setSearchDocNumber] = useState('');
 
   // === HEADER STATE ===
   const [supplierId, setSupplierId] = useState('');
@@ -507,6 +508,16 @@ export const Purchases: React.FC = () => {
                         onChange={e => setSearchEndDate(e.target.value)} 
                     />
                 </div>
+                <div className="flex flex-col">
+                    <label className="text-xs font-bold text-slate-600 mb-1">Nro Documento</label>
+                    <input 
+                        type="text" 
+                        placeholder="Ej. F001..."
+                        className="border border-slate-300 rounded p-1.5 text-xs w-28 uppercase" 
+                        value={searchDocNumber} 
+                        onChange={e => setSearchDocNumber(e.target.value.toUpperCase())} 
+                    />
+                </div>
                 <button className="bg-blue-600 hover:bg-blue-700 text-white p-1.5 rounded flex items-center shadow-sm">
                     <Search className="w-4 h-4 mr-1" /> Buscar
                 </button>
@@ -528,8 +539,13 @@ export const Purchases: React.FC = () => {
                {purchases.length === 0 && <tr><td colSpan={6} className="p-8 text-center text-slate-400">No hay compras registradas.</td></tr>}
                {purchases
                   .filter(p => {
-                      if (!searchStartDate || !searchEndDate) return true;
-                      return p.issue_date >= searchStartDate && p.issue_date <= searchEndDate;
+                      if (searchStartDate && searchEndDate) {
+                         if (p.issue_date < searchStartDate || p.issue_date > searchEndDate) return false;
+                      }
+                      if (searchDocNumber) {
+                         if (!p.document_number.includes(searchDocNumber)) return false;
+                      }
+                      return true;
                   })
                   .map(p => (
                  <tr key={p.id} className="hover:bg-slate-50">
@@ -724,8 +740,8 @@ export const Purchases: React.FC = () => {
                   onChange={e => setUnitType(e.target.value as any)}
                   onKeyDown={e => handleKeyDownNext(e, costRef)}
                 >
-                    <option value="PKG">CAJA</option>
-                    <option value="UND">UND</option>
+                    <option value="PKG">{selectedProduct ? (products.find(x => x.id === selectedProduct)?.package_type || 'CAJA') : 'CAJA'}</option>
+                    <option value="UND">{selectedProduct ? (products.find(x => x.id === selectedProduct)?.unit_type || 'UND') : 'UND'}</option>
                 </select>
             </div>
 
@@ -852,7 +868,7 @@ export const Purchases: React.FC = () => {
                              <input type="number" min="0" step="any" className="w-16 border border-slate-300 rounded p-1 text-right bg-blue-50 focus:ring-1 focus:ring-blue-500 font-bold" value={item.quantity_presentation || ''} onChange={e => handleInlineUpdate(idx, 'quantity', e.target.value)} title="Modificar Cantidad" />
                           ) : item.quantity_presentation.toFixed(2)}
                         </td>
-                        <td className="p-2 text-center">{item.unit_type}</td>
+                        <td className="p-2 text-center font-bold text-slate-700">{item.unit_type === 'PKG' ? (p?.package_type || 'PKG') : (p?.unit_type || 'UND')}</td>
                         <td className="p-2 text-center text-slate-500">{item.factor}</td>
                         <td className="p-2 text-right text-blue-700 font-mono w-24">
                           {editingId && pricesIncludeIgv && !item.is_bonus ? (

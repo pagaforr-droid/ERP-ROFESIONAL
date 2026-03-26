@@ -2,8 +2,11 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Batch } from '../types';
-import { Package, ArrowUpRight, ArrowDownLeft, Search, Filter, Calendar, BarChart3, FileText, Layers, RefreshCw, Printer, AlertTriangle } from 'lucide-react';
+import { Package, ArrowUpRight, ArrowDownLeft, Search, Filter, Calendar, BarChart3, FileText, Layers, RefreshCw, Printer, AlertTriangle, ArrowUpDown, FileDown } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 type ViewTab = 'INVENTORY' | 'MOVEMENTS' | 'BATCHES' | 'ANALYTICS';
 
@@ -32,6 +35,10 @@ export const Kardex: React.FC = () => {
   const [dateFrom, setDateFrom] = useState(new Date(new Date().setDate(1)).toISOString().split('T')[0]);
   const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
 
+  // --- SORTING ---
+  const [sortField, setSortField] = useState<'sku'|'name'|'category'|'supplier'|'stock'|'value'>('value');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+
   // --- DATA COMPUTATION ---
 
   // 1. INVENTORY SUMMARY (Snapshot)
@@ -55,8 +62,21 @@ export const Kardex: React.FC = () => {
        const matchCat = filterCategory === 'ALL' || p.category === filterCategory;
        const matchSup = filterSupplier === 'ALL' || p.supplier_id === filterSupplier;
        return matchSearch && matchCat && matchSup;
-    }).sort((a,b) => b.totalValue - a.totalValue);
-  }, [store.products, store.batches, searchTerm, filterCategory, filterSupplier]);
+    }).sort((a,b) => {
+       let valA: string | number = '';
+       let valB: string | number = '';
+       if (sortField === 'sku') { valA = a.sku; valB = b.sku; }
+       if (sortField === 'name') { valA = a.name; valB = b.name; }
+       if (sortField === 'category') { valA = a.category; valB = b.category; }
+       if (sortField === 'supplier') { valA = a.supplierName; valB = b.supplierName; }
+       if (sortField === 'stock') { valA = a.totalStock; valB = b.totalStock; }
+       if (sortField === 'value') { valA = a.totalValue; valB = b.totalValue; }
+       
+       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+       return 0;
+    });
+  }, [store.products, store.batches, searchTerm, filterCategory, filterSupplier, sortField, sortOrder]);
 
   // 2. MOVEMENTS (Timeline)
   const movements = useMemo(() => {
@@ -181,6 +201,78 @@ export const Kardex: React.FC = () => {
   // --- HELPERS ---
   const uniqueCategories = Array.from(new Set(store.products.map(p => p.category))).sort() as string[];
 
+  const handleSort = (field: 'sku'|'name'|'category'|'supplier'|'stock'|'value') => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder(field === 'name' || field === 'sku' || field === 'category' || field === 'supplier' ? 'asc' : 'desc');
+    }
+  };
+
+  const currentTotalValuation = useMemo(() => inventorySnapshot.reduce((a,b)=>a+b.totalValue, 0), [inventorySnapshot]);
+
+  const exportExcel = () => {
+    const dataToExport = inventorySnapshot.map(p => ({
+      "Código SKU": p.sku,
+      "Producto": p.name,
+      "Categoría": p.category || '',
+      "Marca": p.brand || '',
+      "Proveedor": p.supplierName,
+      "Stock Total": p.totalStock,
+      "Costo Prom. Unit": parseFloat(p.avgCost.toFixed(4)),
+      "Valorización Total": parseFloat(p.totalValue.toFixed(2)),
+      "Estado": p.totalStock <= p.min_stock ? 'BAJO STOCK' : 'OPTIMO'
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Kardex_Inventario");
+    XLSX.writeFile(workbook, `Reporte_Kardex_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const exportPDF = () => {
+    const doc = new jsPDF('landscape');
+    
+    doc.setFontSize(18);
+    doc.setTextColor(40, 40, 40);
+    doc.text("Reporte de Kardex e Inventario Valorizado", 14, 22);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Fecha de Emisión: ${new Date().toLocaleString()}`, 14, 30);
+    doc.text(`Filtros: Categoría (${filterCategory}), Proveedor (${filterSupplier})`, 14, 36);
+    doc.text(`Total Capital Valorizado: S/ ${currentTotalValuation.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 14, 42);
+
+    const tableColumn = ["SKU", "Producto", "Categoría / Marca", "Proveedor", "Stock Total", "Costo Prom", "Valor Total"];
+    const tableRows = inventorySnapshot.map(p => [
+      p.sku,
+      p.name,
+      `${p.category || '-'} / ${p.brand || '-'}`,
+      p.supplierName,
+      `${p.totalStock} ${p.unit_type || 'U'}`,
+      `S/ ${p.avgCost.toFixed(2)}`,
+      `S/ ${p.totalValue.toFixed(2)}`
+    ]);
+
+    autoTable(doc, {
+      head: [tableColumn],
+      body: tableRows,
+      startY: 48,
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [15, 23, 42] },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: {
+        4: { halign: 'right', fontStyle: 'bold' },
+        5: { halign: 'right' },
+        6: { halign: 'right', fontStyle: 'bold', textColor: [29, 78, 216] }
+      }
+    });
+
+    doc.save(`Reporte_Kardex_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   return (
     <div className="flex flex-col h-full space-y-4 font-sans text-slate-800">
        
@@ -249,15 +341,20 @@ export const Kardex: React.FC = () => {
              {activeTab === 'MOVEMENTS' && (
                 <div className="flex items-center gap-2 bg-slate-50 p-1 rounded border border-slate-200">
                    <Calendar className="w-4 h-4 text-slate-400 ml-2" />
-                   <input type="date" className="bg-transparent border-none text-xs font-bold text-slate-600" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+                   <input type="date" className="bg-transparent border-none text-xs font-bold text-slate-600 outline-none focus:ring-0" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
                    <span className="text-slate-300">-</span>
-                   <input type="date" className="bg-transparent border-none text-xs font-bold text-slate-600" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+                   <input type="date" className="bg-transparent border-none text-xs font-bold text-slate-600 outline-none focus:ring-0" value={dateTo} onChange={e => setDateTo(e.target.value)} />
                 </div>
              )}
 
-             <button onClick={() => window.print()} className="bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded font-bold shadow-sm hover:bg-slate-50 flex items-center">
-                <Printer className="w-4 h-4 mr-2" /> Exportar
-             </button>
+             <div className="flex gap-2">
+                <button onClick={exportExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-bold shadow-sm flex items-center transition-colors text-xs whitespace-nowrap">
+                   <FileDown className="w-4 h-4 mr-2" /> Excel
+                </button>
+                <button onClick={exportPDF} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded font-bold shadow-sm flex items-center transition-colors text-xs whitespace-nowrap">
+                   <Printer className="w-4 h-4 mr-2" /> PDF
+                </button>
+             </div>
           </div>
        </div>
 
@@ -269,15 +366,25 @@ export const Kardex: React.FC = () => {
              <div className="flex-1 overflow-auto">
                 <table className="w-full text-sm text-left">
                    <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 border-b border-slate-200">
-                      <tr>
-                         <th className="p-3">Código</th>
-                         <th className="p-3">Producto</th>
-                         <th className="p-3">Categoría / Marca</th>
-                         <th className="p-3 text-right">Stock Total</th>
-                         <th className="p-3 text-right">Costo Prom.</th>
-                         <th className="p-3 text-right text-blue-700">Valor Total</th>
-                         <th className="p-3 text-center">Estado</th>
-                      </tr>
+                       <tr>
+                          <th className="p-3 w-28 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('sku')}>
+                             <div className="flex items-center">Código {sortField === 'sku' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                          </th>
+                          <th className="p-3 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('name')}>
+                             <div className="flex items-center">Producto {sortField === 'name' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                          </th>
+                          <th className="p-3 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('category')}>
+                             <div className="flex items-center">Categoría / Marca {sortField === 'category' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                          </th>
+                          <th className="p-3 text-right cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('stock')}>
+                             <div className="flex items-center justify-end">Stock Total {sortField === 'stock' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                          </th>
+                          <th className="p-3 text-right">Costo Prom.</th>
+                          <th className="p-3 text-right text-blue-700 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('value')}>
+                             <div className="flex items-center justify-end">Valor Total {sortField === 'value' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                          </th>
+                          <th className="p-3 text-center">Estado</th>
+                       </tr>
                    </thead>
                    <tbody className="divide-y divide-slate-100">
                       {inventorySnapshot.map(p => (
