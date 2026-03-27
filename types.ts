@@ -118,6 +118,16 @@ export interface AutoPromotion {
   target_price_list_ids?: string[];
 }
 
+// === QUOTAS ===
+export interface Quota {
+  id: string;
+  period: string; // e.g. '2026-03'
+  seller_id: string;
+  target_type: 'GLOBAL' | 'SUPPLIER' | 'CATEGORY' | 'LINE';
+  target_id?: string; // ID of supplier or name of category/line. Null if GLOBAL
+  amount: number;
+}
+
 // === COMPANY SETTINGS ===
 export interface DocumentSeries {
   id: string;
@@ -672,6 +682,7 @@ export type ViewState =
   | 'print-batch'
   | 'promo-manager'
   | 'price-manager'
+  | 'quota-manager' // NEW: Quota Management
   | 'virtual-store'
   | 'sunat-manager'
   | 'credit-notes'

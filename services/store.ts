@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Product, Batch, Sale, Vehicle, DispatchSheet, Client, Supplier, Warehouse, Driver, Transporter, Purchase, Zone, PriceList, Seller, Order, SaleItem, BatchAllocation, CompanyConfig, DocumentSeries, CashMovement, ExpenseCategory, ScheduledTransaction, DispatchLiquidation, User, AttendanceRecord, Promotion, Combo, CollectionRecord, CollectionPlanilla, OrderItem, AutoPromotion } from '../types';
+import { Product, Batch, Sale, Vehicle, DispatchSheet, Client, Supplier, Warehouse, Driver, Transporter, Purchase, Zone, PriceList, Seller, Order, SaleItem, BatchAllocation, CompanyConfig, DocumentSeries, CashMovement, ExpenseCategory, ScheduledTransaction, DispatchLiquidation, User, AttendanceRecord, Promotion, Combo, CollectionRecord, CollectionPlanilla, OrderItem, AutoPromotion, Quota } from '../types';
 import { calculatePromotions } from '../utils/promotions';
 
 // Helper for UUID generation
@@ -116,7 +116,7 @@ const MOCK_SALES: Sale[] = [
 const MOCK_USERS: User[] = [
    {
       id: 'u1', username: 'admin', password: '123456', name: 'Admin General', role: 'ADMIN', requires_attendance: false, is_active: true,
-      permissions: ['dashboard', 'advanced-orders', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'mobile-delivery', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager', 'accounting-reports']
+      permissions: ['dashboard', 'advanced-orders', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'mobile-delivery', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager', 'accounting-reports', 'quota-manager']
    },
    {
       id: 'u2', username: 'vendedor1', password: '123', name: 'Tomas Linares', role: 'SELLER', requires_attendance: true, is_active: true,
@@ -266,10 +266,11 @@ interface AppState {
    users: User[];
    attendanceRecords: AttendanceRecord[];
 
-   // Promos
+   // Promos & Quotas
    promotions: Promotion[];
    combos: Combo[];
    autoPromotions: AutoPromotion[];
+   quotas: Quota[];
 
    // Classifications
    categories: string[];
@@ -394,6 +395,14 @@ interface AppState {
    addAutoPromotion: (AutoPromotion) => void;
    updateAutoPromotion: (AutoPromotion) => void;
 
+   // Quota Actions
+   addQuota: (Quota) => void;
+   updateQuota: (Quota) => void;
+   deleteQuota: (id: string) => void;
+   batchUpdateQuotas: (quotas: Quota[]) => void;
+
+
+
    // Auth Actions
    setCurrentUser: (userId: string) => void;
    logout: () => void;
@@ -437,6 +446,7 @@ export const useStore = create<AppState>((set, get) => ({
    users: MOCK_USERS,
    attendanceRecords: [],
    promotions: MOCK_PROMOTIONS,
+   quotas: [],
 
    // Classifications initial state
    categories: extractUniqueValues(MOCK_PRODUCTS, 'category'),
@@ -2227,6 +2237,23 @@ export const useStore = create<AppState>((set, get) => ({
    updateAutoPromotion: (ap) => set((state) => ({
       autoPromotions: state.autoPromotions.map(a => a.id === ap.id ? ap : a)
    })),
+
+   // Quota Actions
+   addQuota: (quota) => set((state) => ({ quotas: [...state.quotas, quota] })),
+   updateQuota: (quota) => set((state) => ({ quotas: state.quotas.map(q => q.id === quota.id ? quota : q) })),
+   deleteQuota: (id) => set((state) => ({ quotas: state.quotas.filter(q => q.id !== id) })),
+   batchUpdateQuotas: (newQuotas) => set((state) => {
+      let updatedQuotas = [...state.quotas];
+      newQuotas.forEach(nq => {
+         const existingIndex = updatedQuotas.findIndex(q => q.id === nq.id);
+         if (existingIndex >= 0) {
+            updatedQuotas[existingIndex] = nq;
+         } else {
+            updatedQuotas.push(nq);
+         }
+      });
+      return { quotas: updatedQuotas };
+   }),
 
    setCurrentUser: (userId) => set(s => ({
       currentUser: s.users.find(u => u.id === userId) || null

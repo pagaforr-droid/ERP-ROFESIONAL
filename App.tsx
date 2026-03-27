@@ -28,6 +28,7 @@ import { VirtualStore } from './components/VirtualStore';
 import { CollectionConsolidation } from './components/CollectionConsolidation'; // NEW
 import { SunatManager } from './components/SunatManager';
 import { CreditNotes } from './components/CreditNotes';
+import { QuotaManager } from './components/QuotaManager'; // NEW
 import { AccountingReports } from './components/AccountingReports';
 import { Login } from './components/Login';
 import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight, FileSpreadsheet } from 'lucide-react';
@@ -35,7 +36,7 @@ import { ViewState } from './types';
 import { useStore } from './services/store';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'advanced-orders'>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'advanced-orders' | 'quota-manager'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { company, currentUser, logout } = useStore();
 
@@ -87,6 +88,7 @@ export default function App() {
       case 'document-manager': return <DocumentManager />;
       case 'reports': return <StrategicReports />;
       case 'accounting-reports': return <AccountingReports />;
+      case 'quota-manager': return <QuotaManager />;
       case 'kardex': return <Kardex />;
       case 'users': return <UserManagement />;
       case 'attendance': return <Attendance />;
@@ -189,6 +191,7 @@ export default function App() {
           <Section title="Gestión">
             <NavItem view="reports" icon={PieChart} label="Reportes & BI" />
             <NavItem view="accounting-reports" icon={FileSpreadsheet} label="Reportes Contables" />
+            <NavItem view="quota-manager" icon={ClipboardList} label="Gestión de Cuotas" />
             <NavItem view="users" icon={Shield} label="Usuarios & Roles" />
             <NavItem view="attendance" icon={Clock} label="Control Asistencia" />
           </Section>

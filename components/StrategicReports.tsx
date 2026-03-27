@@ -40,17 +40,21 @@ export const StrategicReports: React.FC = () => {
 
   // --- CONFIG ---
   const [groupBy, setGroupBy] = useState<Dimension>('SELLER');
-  const [projectionGoal, setProjectionGoal] = useState<number>(50000); // Default Goal
+  const [projectionGoal, setProjectionGoal] = useState<number>(50000); // Default Fallback Goal
 
-  // --- QUOTAS STATE (SELLER ADVANCE) ---
-  const [quotas, setQuotas] = useState<Record<string, number>>({});
-  const [editingQuotaKey, setEditingQuotaKey] = useState<string | null>(null);
-  const [tempQuota, setTempQuota] = useState<string>('');
-
-  const saveQuota = (key: string) => {
-     setQuotas(prev => ({ ...prev, [key]: parseFloat(tempQuota) || 0 }));
-     setEditingQuotaKey(null);
-  };
+  // --- DYNAMIC PROJECTION GOAL ---
+  const dynamicProjectionGoal = useMemo(() => {
+     const periodStr = dateFrom.substring(0, 7);
+     let matchedQuotas = store.quotas.filter(q => q.period === periodStr);
+     
+     if (filterSeller) matchedQuotas = matchedQuotas.filter(q => q.seller_id === filterSeller);
+     if (filterSupplier) matchedQuotas = matchedQuotas.filter(q => q.target_type === 'SUPPLIER' && q.target_id === filterSupplier);
+     if (filterCategory) matchedQuotas = matchedQuotas.filter(q => q.target_type === 'CATEGORY' && q.target_id === filterCategory);
+     
+     // To avoid double-counting if they mix GLOBAL and target-specific quotas, let's just sum what matched filters.
+     const total = matchedQuotas.reduce((acc, q) => acc + q.amount, 0);
+     return total > 0 ? total : projectionGoal;
+  }, [store.quotas, dateFrom, filterSeller, filterSupplier, filterCategory, projectionGoal]);
 
   // --- ENGINE: CORE AGGREGATION LOGIC ---
   const processedData = useMemo(() => {
@@ -206,7 +210,7 @@ export const StrategicReports: React.FC = () => {
      
      const dailyRunRate = daysPassed > 0 ? currentMonthSales / daysPassed : 0;
      const projectedSales = dailyRunRate * totalDaysInRange;
-     const percentageOfGoal = (projectedSales / projectionGoal) * 100;
+     const percentageOfGoal = (projectedSales / dynamicProjectionGoal) * 100;
 
      return {
         currentSales: currentMonthSales,
@@ -214,11 +218,12 @@ export const StrategicReports: React.FC = () => {
         totalDays: totalDaysInRange,
         dailyAverage: dailyRunRate,
         projectedTotal: projectedSales,
-        gap: projectionGoal - projectedSales,
-        percentage: percentageOfGoal
+        gap: dynamicProjectionGoal - projectedSales,
+        percentage: percentageOfGoal,
+        goalUsed: dynamicProjectionGoal
      };
 
-  }, [processedData, dateFrom, dateTo, projectionGoal, activeTab]);
+  }, [processedData, dateFrom, dateTo, dynamicProjectionGoal, activeTab]);
 
   // --- SELLER ADVANCE ENGINE ---
   const sellerAdvanceData = useMemo(() => {
@@ -292,8 +297,12 @@ export const StrategicReports: React.FC = () => {
         });
      });
 
+     const periodStr = dateFrom.substring(0, 7);
+
      return Object.values(groups).map(g => {
-        const cuota = quotas[`${g.sellerId}_${g.supplierId}`] || 0;
+        const quotaObj = store.quotas.find(q => q.period === periodStr && q.seller_id === g.sellerId && q.target_type === 'SUPPLIER' && q.target_id === g.supplierId);
+        const cuota = quotaObj ? quotaObj.amount : 0;
+        
         const cobertura = g.coverageClients.size;
         
         const pctAvance = cuota > 0 ? (g.advance / cuota) * 100 : 0;
@@ -323,7 +332,7 @@ export const StrategicReports: React.FC = () => {
         };
      }).sort((a,b) => a.sortKey.localeCompare(b.sortKey));
 
-  }, [store.sales, store.sellers, store.suppliers, store.products, store.clients, store.zones, dateFrom, dateTo, filterSeller, filterSupplier, quotas, activeTab]);
+  }, [store.sales, store.sellers, store.suppliers, store.products, store.clients, store.zones, dateFrom, dateTo, filterSeller, filterSupplier, store.quotas, activeTab]);
 
   const exportSellerAdvanceExcel = () => {
     const dataToExport = sellerAdvanceData.map(r => ({
@@ -763,7 +772,7 @@ export const StrategicReports: React.FC = () => {
                             <th className="p-2 border-r border-slate-300">Proveedor</th>
                             <th className="p-2 border-r border-slate-300 text-center">Cob.<br/>(K)</th>
                             <th className="p-2 border-r border-slate-300 text-right">Avance (S/)</th>
-                            <th className="p-2 border-r border-slate-300 text-right bg-blue-50">Cuota (S/) <Edit3 className="w-3 h-3 inline text-slate-400"/></th>
+                            <th className="p-2 border-r border-slate-300 text-right bg-blue-50">Cuota (S/)</th>
                             <th className="p-2 border-r border-slate-300 text-center">% Avance</th>
                             <th className="p-2 border-r border-slate-300 text-right">Proyectado (S/)</th>
                             <th className="p-2 border-r border-slate-300 text-center">% Proyec.</th>
@@ -776,7 +785,6 @@ export const StrategicReports: React.FC = () => {
                       <tbody className="divide-y divide-slate-200 font-mono">
                          {sellerAdvanceData.length === 0 && <tr><td colSpan={12} className="p-8 text-center text-slate-400">Sin datos de avance. Verifica los filtros.</td></tr>}
                          {sellerAdvanceData.map(r => {
-                            const isEditing = editingQuotaKey === `${r.sellerId}_${r.supplierId}`;
                             const isLow = r.pctAvance < 50;
                             const isRegular = r.pctAvance >= 50 && r.pctAvance < 100;
                             const isOver = r.pctAvance >= 100;
@@ -790,27 +798,8 @@ export const StrategicReports: React.FC = () => {
                                   <td className="p-2 border-r border-slate-200 text-center">{r.cobertura.toLocaleString()}</td>
                                   <td className="p-2 border-r border-slate-200 text-right font-bold text-slate-800">{r.advance.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                                   
-                                  <td className="p-1 border-r border-slate-200 text-right bg-blue-50 group min-w-[80px]">
-                                     {isEditing ? (
-                                        <div className="flex items-center justify-end">
-                                           <input 
-                                              type="number" 
-                                              autoFocus 
-                                              className="w-16 p-1 text-[10px] border border-blue-400 rounded outline-none" 
-                                              value={tempQuota} 
-                                              onChange={e => setTempQuota(e.target.value)}
-                                              onBlur={() => saveQuota(`${r.sellerId}_${r.supplierId}`)}
-                                              onKeyDown={e => e.key === 'Enter' && saveQuota(`${r.sellerId}_${r.supplierId}`)}
-                                           />
-                                        </div>
-                                     ) : (
-                                        <div 
-                                           className="flex items-center justify-end cursor-pointer h-full" 
-                                           onClick={() => { setEditingQuotaKey(`${r.sellerId}_${r.supplierId}`); setTempQuota(r.cuota.toString()) }}
-                                        >
-                                           <span className={`font-bold ${r.cuota === 0 ? 'text-slate-400' : 'text-blue-700'}`}>{r.cuota.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
-                                        </div>
-                                     )}
+                                  <td className="p-2 border-r border-slate-200 text-right font-bold text-blue-700 bg-blue-50">
+                                     {r.cuota > 0 ? r.cuota.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '-'}
                                   </td>
 
                                   <td className={`p-2 border-r border-slate-200 text-right ${bgSemaforo} bg-opacity-40 relative overflow-hidden w-16`}>
