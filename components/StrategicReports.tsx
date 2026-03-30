@@ -1,10 +1,41 @@
-
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { BarChart3, PieChart, Calendar, Download, Printer, Filter, TrendingUp, DollarSign, Users, Target, Layers, ShoppingBag, MapPin, X, FileDown, Edit3 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+
+// --- HELPER FUNCTIONS ---
+const getWorkingDaysInRange = (startDateStr: string, endDateStr: string): number => {
+    const start = new Date(`${startDateStr}T00:00:00`);
+    const end = new Date(`${endDateStr}T23:59:59`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 1;
+    let count = 0;
+    const curDate = new Date(start);
+    while (curDate <= end) {
+        if (curDate.getDay() !== 0) count++;
+        curDate.setDate(curDate.getDate() + 1);
+    }
+    return count === 0 ? 1 : count; // Prevent 0
+};
+
+const getWorkingDaysPassed = (startDateStr: string, endDateStr: string): number => {
+    const start = new Date(`${startDateStr}T00:00:00`);
+    const end = new Date(`${endDateStr}T23:59:59`);
+    const now = new Date();
+    if (isNaN(start.getTime())) return 1;
+    
+    if (start > now) return 0;
+    
+    const limit = now > end ? end : now;
+    let count = 0;
+    const curDate = new Date(start);
+    while (curDate <= limit) {
+        if (curDate.getDay() !== 0) count++;
+        curDate.setDate(curDate.getDate() + 1);
+    }
+    return count === 0 ? 1 : count; // Prevent 0
+};
 
 // --- TYPES ---
 type Dimension = 'SELLER' | 'CLIENT' | 'SUPPLIER' | 'CATEGORY' | 'BRAND' | 'ZONE' | 'MONTH';
@@ -191,22 +222,8 @@ export const StrategicReports: React.FC = () => {
      // For safety, let's assume the user selects "This Month" in filters for projection to make sense, 
      // OR we calculate Days Passed based on the selected `dateTo` - `dateFrom`.
      
-     const start = new Date(dateFrom);
-     const end = new Date(dateTo);
-     const totalDaysInRange = Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1;
-     
-     // Calculate days passed (limited to today if range extends to future)
-     const now = new Date();
-     let daysPassed = 0;
-     
-     if (end < now) {
-        daysPassed = totalDaysInRange; // Past period
-     } else if (start > now) {
-        daysPassed = 0; // Future period
-     } else {
-        // Current running period
-        daysPassed = Math.ceil((now.getTime() - start.getTime()) / (1000 * 3600 * 24));
-     }
+     const totalDaysInRange = getWorkingDaysInRange(dateFrom, dateTo);
+     const daysPassed = getWorkingDaysPassed(dateFrom, dateTo);
      
      const dailyRunRate = daysPassed > 0 ? currentMonthSales / daysPassed : 0;
      const projectedSales = dailyRunRate * totalDaysInRange;
@@ -229,15 +246,8 @@ export const StrategicReports: React.FC = () => {
   const sellerAdvanceData = useMemo(() => {
      if (activeTab !== 'SELLER_ADVANCE') return [];
 
-     const start = new Date(dateFrom);
-     const end = new Date(dateTo);
-     const totalDaysInRange = Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24)) + 1;
-     
-     const now = new Date();
-     let daysPassed = 0;
-     if (end < now) { daysPassed = totalDaysInRange; }
-     else if (start > now) { daysPassed = 0; }
-     else { daysPassed = Math.ceil((now.getTime() - start.getTime()) / (1000 * 3600 * 24)); }
+     const totalDaysInRange = getWorkingDaysInRange(dateFrom, dateTo);
+     let daysPassed = getWorkingDaysPassed(dateFrom, dateTo);
      
      if (daysPassed === 0) daysPassed = 1; // Prevent div by 0
 
