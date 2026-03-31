@@ -31,13 +31,60 @@ import { CreditNotes } from './components/CreditNotes';
 import { QuotaManager } from './components/QuotaManager'; // NEW
 import { AccountingReports } from './components/AccountingReports';
 import { Login } from './components/Login';
-import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight, FileSpreadsheet } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight, FileSpreadsheet, ChevronLeft, ChevronRight } from 'lucide-react';
 import { ViewState } from './types';
 import { useStore } from './services/store';
+
+const COLOR_THEMES = {
+  blue: {
+    sectionText: 'text-blue-400',
+    navItemActive: 'bg-blue-600 text-white shadow-md shadow-blue-900/50',
+    navItemIdle: 'text-slate-300 hover:bg-slate-800/80 hover:text-blue-300',
+    iconActive: 'text-white',
+    iconIdle: 'text-slate-400 group-hover:text-blue-400'
+  },
+  emerald: {
+    sectionText: 'text-emerald-400',
+    navItemActive: 'bg-emerald-600 text-white shadow-md shadow-emerald-900/50',
+    navItemIdle: 'text-slate-300 hover:bg-slate-800/80 hover:text-emerald-300',
+    iconActive: 'text-white',
+    iconIdle: 'text-slate-400 group-hover:text-emerald-400'
+  },
+  amber: {
+    sectionText: 'text-amber-400',
+    navItemActive: 'bg-amber-600 text-white shadow-md shadow-amber-900/50',
+    navItemIdle: 'text-slate-300 hover:bg-slate-800/80 hover:text-amber-300',
+    iconActive: 'text-white',
+    iconIdle: 'text-slate-400 group-hover:text-amber-400'
+  },
+  purple: {
+    sectionText: 'text-purple-400',
+    navItemActive: 'bg-purple-600 text-white shadow-md shadow-purple-900/50',
+    navItemIdle: 'text-slate-300 hover:bg-slate-800/80 hover:text-purple-300',
+    iconActive: 'text-white',
+    iconIdle: 'text-slate-400 group-hover:text-purple-400'
+  },
+  rose: {
+    sectionText: 'text-rose-400',
+    navItemActive: 'bg-rose-600 text-white shadow-md shadow-rose-900/50',
+    navItemIdle: 'text-slate-300 hover:bg-slate-800/80 hover:text-rose-300',
+    iconActive: 'text-white',
+    iconIdle: 'text-slate-400 group-hover:text-rose-400'
+  },
+  slate: {
+    sectionText: 'text-slate-400',
+    navItemActive: 'bg-slate-700 text-white shadow-md shadow-slate-900/50',
+    navItemIdle: 'text-slate-300 hover:bg-slate-800/80 hover:text-white',
+    iconActive: 'text-white',
+    iconIdle: 'text-slate-400 group-hover:text-white'
+  }
+};
+type ThemeKey = keyof typeof COLOR_THEMES;
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'advanced-orders' | 'quota-manager'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
   const { company, currentUser, logout } = useStore();
 
   // --- AUTH CHECK ---
@@ -99,37 +146,57 @@ export default function App() {
     }
   };
 
-  const NavItem = ({ view, icon: Icon, label }: { view: string, icon: any, label: string }) => {
+  const NavItem = ({ view, icon: Icon, label, theme = 'slate' }: { view: string, icon: any, label: string, theme?: ThemeKey }) => {
     if (!canAccess(view)) return null;
+    const isActive = currentView === view;
+    const themeClasses = COLOR_THEMES[theme];
+
     return (
       <button
         onClick={() => {
           setCurrentView(view as any);
           setIsSidebarOpen(false);
         }}
-        className={`flex items-center space-x-3 w-full p-2.5 rounded-lg transition-colors text-sm ${currentView === view
-          ? 'bg-accent text-white shadow-md'
-          : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+        title={isDesktopSidebarCollapsed ? label : undefined}
+        className={`group flex items-center ${isDesktopSidebarCollapsed ? 'justify-center w-11 h-11 mx-auto space-x-0' : 'space-x-3 w-full p-2.5'} rounded-lg transition-all duration-200 text-sm ${isActive
+          ? themeClasses.navItemActive
+          : themeClasses.navItemIdle
           }`}
       >
-        <Icon className="h-5 w-5" />
-        <span className="font-medium">{label}</span>
+        <Icon className={`flex-shrink-0 transition-colors duration-200 ${isDesktopSidebarCollapsed ? 'h-5 w-5' : 'h-5 w-5'} ${isActive ? themeClasses.iconActive : themeClasses.iconIdle}`} />
+        {!isDesktopSidebarCollapsed && (
+          <span className="font-medium whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
+        )}
       </button>
     );
   };
 
   // Helper to render section
-  const Section = ({ title, children }: { title: string, children?: React.ReactNode }) => {
+  const Section = ({ title, theme = 'slate', children }: { title: string, theme?: ThemeKey, children?: React.ReactNode }) => {
     const validChildren = React.Children.toArray(children).filter(child => child);
     if (validChildren.length === 0) return null;
+    const themeClasses = COLOR_THEMES[theme];
 
     return (
-      <>
-        <div className="px-4 mt-6 mb-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
-          {title}
+      <div className="mb-2">
+        {isDesktopSidebarCollapsed ? (
+             <div className="h-px w-8 mx-auto my-4 bg-slate-700 opacity-50 relative group cursor-help">
+               <div className="absolute hidden group-hover:block left-full ml-4 top-1/2 -translate-y-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50 shadow-xl border border-slate-700">{title}</div>
+             </div>
+        ) : (
+             <div className={`px-4 mt-6 mb-2 text-xs font-bold uppercase tracking-wider ${themeClasses.sectionText}`}>
+               {title}
+             </div>
+        )}
+        <div className="space-y-1">
+            {React.Children.map(validChildren, child => {
+                if (React.isValidElement(child)) {
+                    return React.cloneElement(child as React.ReactElement<any>, { theme });
+                }
+                return child;
+            })}
         </div>
-        {children}
-      </>
+      </div>
     );
   };
 
@@ -143,25 +210,44 @@ export default function App() {
       )}
 
       <aside className={`
-        fixed inset-y-0 left-0 z-30 w-64 bg-slate-900 text-white transform transition-transform duration-300 ease-in-out lg:relative lg:translate-x-0
-        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} shadow-xl flex flex-col
+        fixed inset-y-0 left-0 z-30 bg-slate-900 text-white transform transition-all duration-300 ease-in-out lg:relative
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0
+        ${isDesktopSidebarCollapsed ? 'w-20' : 'w-72'} shadow-[4px_0_24px_rgba(0,0,0,0.1)] flex flex-col group/sidebar
       `}>
-        <div className="p-6 flex items-center justify-between border-b border-slate-800">
-          <div className="flex items-center space-x-2">
-            <div className="bg-accent p-1.5 rounded-lg">
-              <Box className="h-6 w-6 text-white" />
+        <div className="h-16 flex items-center justify-between border-b border-slate-800 px-4 shrink-0 relative">
+          {!isDesktopSidebarCollapsed ? (
+            <div className="flex items-center space-x-3 overflow-hidden">
+              <div className="bg-accent p-2 rounded-lg shrink-0 shadow-lg shadow-accent/20">
+                <Box className="h-6 w-6 text-white" />
+              </div>
+              <span className="text-xl font-bold tracking-tight text-white truncate">TraceFlow</span>
             </div>
-            <span className="text-xl font-bold tracking-tight text-white">TraceFlow</span>
-          </div>
-          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white">
+          ) : (
+            <div className="w-full flex justify-center mt-2">
+              <div className="bg-accent/80 p-2 rounded-lg shrink-0">
+                <Box className="h-6 w-6 text-white" />
+              </div>
+            </div>
+          )}
+          <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white shrink-0 absolute right-4">
             <X className="h-6 w-6" />
+          </button>
+          
+          <button 
+            onClick={() => setIsDesktopSidebarCollapsed(!isDesktopSidebarCollapsed)} 
+            className={`hidden lg:flex absolute -right-3.5 top-1/2 -translate-y-1/2 bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full p-1.5 shadow-lg shadow-black/20 transition-all hover:scale-110 z-50`}
+            title={isDesktopSidebarCollapsed ? "Expandir menú" : "Colapsar menú"}
+          >
+             {isDesktopSidebarCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
           </button>
         </div>
 
-        <nav className="px-4 py-4 space-y-1 overflow-y-auto flex-1">
-          <NavItem view="dashboard" icon={LayoutDashboard} label="Panel Principal" />
+        <nav className={`flex-1 overflow-y-auto py-4 overflow-x-hidden ${isDesktopSidebarCollapsed ? 'px-2' : 'px-4'}`}>
+          <div className="space-y-1">
+            <NavItem view="dashboard" icon={LayoutDashboard} label="Panel Principal" theme="blue" />
+          </div>
 
-          <Section title="Comercial">
+          <Section title="Comercial" theme="blue">
             <NavItem view="sales" icon={ShoppingCart} label="Venta Directa" />
             <NavItem view="advanced-orders" icon={ClipboardList} label="Pedido Avanzado" />
             <NavItem view="credit-notes" icon={ArrowLeftRight} label="Devoluciones y NC" />
@@ -175,12 +261,12 @@ export default function App() {
             <NavItem view="print-batch" icon={Printer} label="Impresión por Lotes" />
           </Section>
 
-          <Section title="Finanzas">
+          <Section title="Finanzas" theme="emerald">
             <NavItem view="cash-flow" icon={DollarSign} label="Flujo de Caja" />
             <NavItem view="collection-consolidation" icon={Wallet} label="Consolidar Cobranzas" />
           </Section>
 
-          <Section title="Logística">
+          <Section title="Logística" theme="amber">
             <NavItem view="dispatch" icon={Truck} label="Despacho y Rutas" />
             <NavItem view="dispatch-liquidation" icon={FileInput} label="Liquidación Rutas" />
             <NavItem view="mobile-delivery" icon={Smartphone} label="App Reparto" />
@@ -188,7 +274,7 @@ export default function App() {
             <NavItem view="inventory" icon={Home} label="Almacenes & Stock" />
           </Section>
 
-          <Section title="Gestión">
+          <Section title="Gestión" theme="purple">
             <NavItem view="reports" icon={PieChart} label="Reportes & BI" />
             <NavItem view="accounting-reports" icon={FileSpreadsheet} label="Reportes Contables" />
             <NavItem view="quota-manager" icon={ClipboardList} label="Gestión de Cuotas" />
@@ -196,7 +282,7 @@ export default function App() {
             <NavItem view="attendance" icon={Clock} label="Control Asistencia" />
           </Section>
 
-          <Section title="Maestros">
+          <Section title="Maestros" theme="rose">
             <NavItem view="purchases" icon={ShoppingBag} label="Compras" />
             <NavItem view="products" icon={ClipboardList} label="Productos" />
             <NavItem view="clients" icon={Users} label="Clientes" />
@@ -207,26 +293,44 @@ export default function App() {
           </Section>
         </nav>
 
-        <div className="p-4 border-t border-slate-800 bg-slate-900">
-          <NavItem view="company-settings" icon={Settings} label="Configuración" />
+        <div className={`border-t border-slate-800 bg-slate-900 shrink-0 ${isDesktopSidebarCollapsed ? 'p-3 space-y-3' : 'p-4'}`}>
+          <NavItem view="company-settings" icon={Settings} label="Configuración" theme="slate" />
 
-          <div className="mt-4 pt-4 border-t border-slate-800">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold">
-                {currentUser.username.substring(0, 2).toUpperCase()}
+          {!isDesktopSidebarCollapsed ? (
+            <div className="mt-4 pt-4 border-t border-slate-800">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold shadow-inner">
+                  {currentUser.username.substring(0, 2).toUpperCase()}
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <div className="text-sm font-bold text-white truncate">{currentUser.name}</div>
+                  <div className="text-[10px] text-slate-400 font-medium tracking-wide truncate">{currentUser.role}</div>
+                </div>
               </div>
-              <div className="flex-1 overflow-hidden">
-                <div className="text-sm font-bold text-white truncate">{currentUser.name}</div>
-                <div className="text-xs text-slate-400 truncate">{currentUser.role}</div>
-              </div>
+              <button
+                onClick={logout}
+                className="w-full flex items-center justify-center gap-2 bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-600 hover:text-white px-4 py-2.5 rounded-lg transition-all duration-200 text-xs font-bold shadow-sm"
+              >
+                <LogOut className="w-4 h-4 shrink-0" /> <span className="truncate">CERRAR SESIÓN</span>
+              </button>
             </div>
-            <button
-              onClick={logout}
-              className="w-full flex items-center justify-center gap-2 bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-4 py-2 rounded transition-colors text-xs font-bold"
-            >
-              <LogOut className="w-3 h-3" /> CERRAR SESIÓN
-            </button>
-          </div>
+          ) : (
+            <div className="pt-3 border-t border-slate-800 flex flex-col items-center gap-3">
+               <div 
+                 className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold shrink-0 cursor-help shadow-inner"
+                 title={`${currentUser.name} (${currentUser.role})`}
+               >
+                  {currentUser.username.substring(0, 2).toUpperCase()}
+               </div>
+               <button
+                  onClick={logout}
+                  title="Cerrar Sesión"
+                  className="w-11 h-11 flex items-center justify-center bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-600 hover:text-white rounded-lg transition-all duration-200 shadow-sm"
+               >
+                  <LogOut className="w-5 h-5" />
+               </button>
+            </div>
+          )}
         </div>
       </aside>
 
