@@ -299,8 +299,8 @@ export const generateMassiveInvoicePDF = (company: CompanyConfig, sales: Sale[])
         doc.setFont('helvetica', 'normal');
         doc.text('QR', margin + 6.5, footerY + 16.5);
 
-        doc.setFont('helvetica', 'bold');
-        doc.text('ERP TraceFlow®', margin + 20, footerY + 12);
+        doc.setFont('helvetica', 'italic');
+        doc.text('Tandao ERP®', margin + 20, footerY + 12);
         doc.setFont('helvetica', 'normal');
         doc.text(`Resumen Hash: ${crypto.randomUUID().slice(0, 15)}`, margin + 20, footerY + 15);
         doc.text('Representación Impresa del Comprobante Electrónico', margin + 20, footerY + 18);

@@ -334,8 +334,8 @@ export const MobileOrders: React.FC = () => {
                   </select>
                </div>
             </div>
-            <p className="mt-8 text-xs text-slate-400">TraceFlow Mobile v1.2</p>
-         </div>
+            <p className="mt-8 text-xs text-slate-400">Tandao Mobile v1.2</p>
+          </div>
       );
    }
 

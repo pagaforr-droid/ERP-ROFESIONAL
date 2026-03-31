@@ -50,8 +50,8 @@ export const Login: React.FC = () => {
           <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg">
             <Box className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-2">TraceFlow ERP</h1>
-          <p className="text-slate-400 text-sm">Sistema de Gestión de Distribución</p>
+          <h1 className="text-3xl font-bold text-white mb-2">Tandao ERP</h1>
+          <p className="text-slate-400 text-sm">Sistema de Gestión Integrada</p>
         </div>
 
         {/* Form */}

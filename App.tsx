@@ -220,7 +220,7 @@ export default function App() {
               <div className="bg-accent p-2 rounded-lg shrink-0 shadow-lg shadow-accent/20">
                 <Box className="h-6 w-6 text-white" />
               </div>
-              <span className="text-xl font-bold tracking-tight text-white truncate">TraceFlow</span>
+              <span className="text-xl font-bold tracking-tight text-white truncate">Tandao ERP</span>
             </div>
           ) : (
             <div className="w-full flex justify-center mt-2">
