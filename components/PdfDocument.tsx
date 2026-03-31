@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
 
 interface PdfDocumentProps {
   data: any | any[];
-  type?: 'FACTURA' | 'BOLETA' | 'GUIA' | 'GUIA_CONSOLIDADA' | 'BATCH' | string;
+  type?: 'FACTURA' | 'BOLETA' | 'GUIA' | 'GUIA_CONSOLIDADA' | 'BATCH' | 'BOLETA_PAGO' | string;
   companyInfo?: {
     name: string;
     ruc: string;
@@ -337,6 +337,102 @@ const BoletaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: an
 };
 
 // ---------------------------------------------------------------------------------
+// Payroll Slip / Boleta de Pago Component
+// ---------------------------------------------------------------------------------
+
+const BoletaPagoTemplate = ({ data, companyInfo }: { data: any, companyInfo: any }) => {
+  const emp = data.employee || {};
+  return (
+    <View style={{ flex: 1, flexDirection: 'column', height: '48%', justifyContent: 'space-between', padding: 5 }}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderBottomWidth: 1, borderBottomColor: '#000', paddingBottom: 5, marginBottom: 5 }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 12, fontWeight: 'bold' }}>{companyInfo.name}</Text>
+          <Text style={{ fontSize: 8 }}>RUC: {companyInfo.ruc}</Text>
+          <Text style={{ fontSize: 8 }}>{companyInfo.address}</Text>
+        </View>
+        <View style={{ width: 140, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#000', padding: 5 }}>
+          <Text style={{ fontSize: 10, fontWeight: 'bold', textAlign: 'center' }}>BOLETA DE PAGO</Text>
+          <Text style={{ fontSize: 8, textAlign: 'center', marginTop: 2 }}>Periodo: {data.period}</Text>
+        </View>
+      </View>
+
+      {/* Employee Data */}
+      <View style={{ borderWidth: 1, borderColor: '#000', padding: 5, marginBottom: 10, flexDirection: 'row', flexWrap: 'wrap' }}>
+        <View style={{ width: '50%', marginBottom: 3, flexDirection: 'row' }}><Text style={{ fontSize: 8, fontWeight: 'bold', width: '30%' }}>Trabajador:</Text><Text style={{ fontSize: 8 }}>{emp.name}</Text></View>
+        <View style={{ width: '50%', marginBottom: 3, flexDirection: 'row' }}><Text style={{ fontSize: 8, fontWeight: 'bold', width: '30%' }}>DNI / Doc:</Text><Text style={{ fontSize: 8 }}>{emp.dni}</Text></View>
+        <View style={{ width: '50%', marginBottom: 3, flexDirection: 'row' }}><Text style={{ fontSize: 8, fontWeight: 'bold', width: '30%' }}>Cargo:</Text><Text style={{ fontSize: 8 }}>{emp.role}</Text></View>
+        <View style={{ width: '50%', marginBottom: 3, flexDirection: 'row' }}><Text style={{ fontSize: 8, fontWeight: 'bold', width: '30%' }}>Fecha Ingreso:</Text><Text style={{ fontSize: 8 }}>{emp.start_date}</Text></View>
+      </View>
+
+      {/* Income & Deductions */}
+      <View style={{ flexDirection: 'row', flex: 1, borderWidth: 1, borderColor: '#000' }}>
+         {/* Ingresos */}
+         <View style={{ flex: 1, borderRightWidth: 1, borderRightColor: '#000' }}>
+            <View style={{ backgroundColor: '#e0e0e0', padding: 3, borderBottomWidth: 1, borderBottomColor: '#000' }}>
+               <Text style={{ fontSize: 8, fontWeight: 'bold', textAlign: 'center' }}>INGRESOS</Text>
+            </View>
+            <View style={{ padding: 5 }}>
+               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <Text style={{ fontSize: 8 }}>Sueldo / Salario Básico</Text>
+                  <Text style={{ fontSize: 8 }}>{data.base_amount.toFixed(2)}</Text>
+               </View>
+            </View>
+         </View>
+         
+         {/* Descuentos */}
+         <View style={{ flex: 1 }}>
+            <View style={{ backgroundColor: '#e0e0e0', padding: 3, borderBottomWidth: 1, borderBottomColor: '#000' }}>
+               <Text style={{ fontSize: 8, fontWeight: 'bold', textAlign: 'center' }}>DESCUENTOS Y RETENCIONES</Text>
+            </View>
+            <View style={{ padding: 5 }}>
+               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <Text style={{ fontSize: 8 }}>Retención de Ley (AFP/ONP)</Text>
+                  <Text style={{ fontSize: 8 }}>{data.legal_deductions.toFixed(2)}</Text>
+               </View>
+               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <Text style={{ fontSize: 8 }}>Anticipos / A Cuentas (Vales)</Text>
+                  <Text style={{ fontSize: 8 }}>{data.advances_amount.toFixed(2)}</Text>
+               </View>
+            </View>
+         </View>
+      </View>
+
+      {/* Totals */}
+      <View style={{ flexDirection: 'row', borderWidth: 1, borderColor: '#000', borderTopWidth: 0 }}>
+         <View style={{ flex: 1, padding: 3, borderRightWidth: 1, borderRightColor: '#000', flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 8, fontWeight: 'bold' }}>Total Ingresos:</Text>
+            <Text style={{ fontSize: 8 }}>{data.base_amount.toFixed(2)}</Text>
+         </View>
+         <View style={{ flex: 1, padding: 3, flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 8, fontWeight: 'bold' }}>Total Descuentos:</Text>
+            <Text style={{ fontSize: 8 }}>{(data.legal_deductions + data.advances_amount).toFixed(2)}</Text>
+         </View>
+      </View>
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 5 }}>
+         <View style={{ width: '40%', borderWidth: 1, borderColor: '#000', padding: 5, flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#e0e0e0' }}>
+            <Text style={{ fontSize: 10, fontWeight: 'bold' }}>NETO A PAGAR:</Text>
+            <Text style={{ fontSize: 10, fontWeight: 'bold' }}>S/ {data.net_paid.toFixed(2)}</Text>
+         </View>
+      </View>
+
+      {/* Signatures */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 35, marginBottom: 10 }}>
+         <View style={{ width: '35%', alignItems: 'center' }}>
+            <View style={{ borderTopWidth: 1, borderTopColor: '#000', width: '100%' }}></View>
+            <Text style={{ fontSize: 8, marginTop: 3 }}>FIRMA EMPLEADOR</Text>
+         </View>
+         <View style={{ width: '35%', alignItems: 'center' }}>
+            <View style={{ borderTopWidth: 1, borderTopColor: '#000', width: '100%' }}></View>
+            <Text style={{ fontSize: 8, marginTop: 3 }}>RECIBÍ CONFORME (TRABAJADOR)</Text>
+            <Text style={{ fontSize: 7, marginTop: 1 }}>DNI: {emp.dni}</Text>
+         </View>
+      </View>
+    </View>
+  );
+};
+
+// ---------------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------------
 
@@ -477,6 +573,16 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({ data, type, companyInf
               <BoletaTemplate data={doc} companyInfo={cInfo} isNotaCredito={isNotaCredito} />
             </Page>
           );
+        }
+
+        if (docType === 'BOLETA_PAGO' || doc._isBoletaPago) {
+           return (
+             <Page key={index} size="A4" orientation="portrait" style={{...styles.pagePortrait, padding: 15}}>
+               <BoletaPagoTemplate data={doc} companyInfo={cInfo} />
+               <View style={{ borderBottomWidth: 1, borderBottomStyle: 'dashed', borderBottomColor: '#ccc', marginVertical: 10 }} />
+               <BoletaPagoTemplate data={doc} companyInfo={cInfo} />
+             </Page>
+           );
         }
 
         return (

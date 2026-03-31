@@ -640,6 +640,41 @@ export interface User {
   permissions: string[]; // List of ViewStates allowed
 }
 
+// === PERSONNEL & PAYROLL ===
+export interface Employee {
+  id: string;
+  dni: string;
+  name: string;
+  role: string;
+  start_date: string;
+  is_active: boolean;
+  base_salary: number;
+  payment_frequency: 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
+  next_due_date: string;
+  legal_deduction_percent: number;
+  user_id?: string; // Optional link to system user
+}
+
+export interface SalaryAdvance {
+  id: string;
+  employee_id: string;
+  amount: number;
+  date: string;
+  reason?: string;
+  status: 'PENDING' | 'PAID';
+}
+
+export interface PayrollRecord {
+  id: string;
+  employee_id: string;
+  period: string;
+  base_amount: number;
+  legal_deductions: number;
+  advances_amount: number;
+  net_paid: number;
+  issue_date: string;
+}
+
 // === ATTENDANCE ===
 export interface AttendanceRecord {
   id: string;
@@ -687,4 +722,5 @@ export type ViewState =
   | 'sunat-manager'
   | 'credit-notes'
   | 'advanced-orders'
-  | 'mobile-delivery';
+  | 'mobile-delivery'
+  | 'personnel-management';

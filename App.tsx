@@ -21,6 +21,7 @@ import { DocumentManager } from './components/DocumentManager';
 import { StrategicReports } from './components/StrategicReports';
 import { Kardex } from './components/Kardex';
 import { UserManagement } from './components/UserManagement';
+import { PersonnelManagement } from './components/PersonnelManagement';
 import { Attendance } from './components/Attendance';
 import { PromoManager } from './components/PromoManager';
 import { PriceManager } from './components/PriceManager';
@@ -138,6 +139,7 @@ export default function App() {
       case 'quota-manager': return <QuotaManager />;
       case 'kardex': return <Kardex />;
       case 'users': return <UserManagement />;
+      case 'personnel-management': return <PersonnelManagement />;
       case 'attendance': return <Attendance />;
       case 'promo-manager': return <PromoManager />;
       case 'price-manager': return <PriceManager />;
@@ -278,7 +280,8 @@ export default function App() {
             <NavItem view="reports" icon={PieChart} label="Reportes & BI" />
             <NavItem view="accounting-reports" icon={FileSpreadsheet} label="Reportes Contables" />
             <NavItem view="quota-manager" icon={ClipboardList} label="Gestión de Cuotas" />
-            <NavItem view="users" icon={Shield} label="Usuarios & Roles" />
+            <NavItem view="users" icon={Shield} label="Usuarios & Permisos" />
+            <NavItem view="personnel-management" icon={Users} label="RRHH y Planilla" />
             <NavItem view="attendance" icon={Clock} label="Control Asistencia" />
           </Section>
 

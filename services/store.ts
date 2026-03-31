@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Product, Batch, Sale, Vehicle, DispatchSheet, Client, Supplier, Warehouse, Driver, Transporter, Purchase, Zone, PriceList, Seller, Order, SaleItem, BatchAllocation, CompanyConfig, DocumentSeries, CashMovement, ExpenseCategory, ScheduledTransaction, DispatchLiquidation, User, AttendanceRecord, Promotion, Combo, CollectionRecord, CollectionPlanilla, OrderItem, AutoPromotion, Quota } from '../types';
+import { Product, Batch, Sale, Vehicle, DispatchSheet, Client, Supplier, Warehouse, Driver, Transporter, Purchase, Zone, PriceList, Seller, Order, SaleItem, BatchAllocation, CompanyConfig, DocumentSeries, CashMovement, ExpenseCategory, ScheduledTransaction, DispatchLiquidation, User, AttendanceRecord, Promotion, Combo, CollectionRecord, CollectionPlanilla, OrderItem, AutoPromotion, Quota, Employee, SalaryAdvance, PayrollRecord } from '../types';
 import { calculatePromotions } from '../utils/promotions';
 
 // Helper for UUID generation
@@ -116,7 +116,7 @@ const MOCK_SALES: Sale[] = [
 const MOCK_USERS: User[] = [
    {
       id: 'u1', username: 'admin', password: '123456', name: 'Admin General', role: 'ADMIN', requires_attendance: false, is_active: true,
-      permissions: ['dashboard', 'advanced-orders', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'mobile-delivery', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager', 'accounting-reports', 'quota-manager']
+      permissions: ['dashboard', 'advanced-orders', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'mobile-delivery', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager', 'accounting-reports', 'quota-manager', 'personnel-management']
    },
    {
       id: 'u2', username: 'vendedor1', password: '123', name: 'Tomas Linares', role: 'SELLER', requires_attendance: true, is_active: true,
@@ -266,6 +266,11 @@ interface AppState {
    users: User[];
    attendanceRecords: AttendanceRecord[];
 
+   // Personnel & Payroll
+   employees: Employee[];
+   salaryAdvances: SalaryAdvance[];
+   payrollRecords: PayrollRecord[];
+
    // Promos & Quotas
    promotions: Promotion[];
    combos: Combo[];
@@ -387,6 +392,15 @@ interface AppState {
    clockOut: (userId: string, photo?: string, location?: { lat: number, lng: number }) => void;
    updateAttendanceRecord: (AttendanceRecord) => void;
 
+   // Personnel Actions
+   addEmployee: (Employee) => void;
+   updateEmployee: (Employee) => void;
+   addSalaryAdvance: (SalaryAdvance) => void;
+   updateSalaryAdvance: (SalaryAdvance) => void;
+   deleteSalaryAdvance: (id: string) => void;
+   addPayrollRecord: (PayrollRecord) => void;
+   processPayroll: (employeeId: string, userId: string) => void;
+
    // Promo Actions
    addPromotion: (Promotion) => void;
    updatePromotion: (Promotion) => void;
@@ -445,6 +459,9 @@ export const useStore = create<AppState>((set, get) => ({
    scheduledTransactions: [],
    users: MOCK_USERS,
    attendanceRecords: [],
+   employees: [],
+   salaryAdvances: [],
+   payrollRecords: [],
    promotions: MOCK_PROMOTIONS,
    quotas: [],
 
@@ -2220,12 +2237,64 @@ export const useStore = create<AppState>((set, get) => ({
       };
    }),
 
-   updateAttendanceRecord: (record) => set(s => ({
-      attendanceRecords: s.attendanceRecords.map(r => r.id === record.id ? record : r)
-   })),
+   updateAttendanceRecord: (record) => set((s) => ({ attendanceRecords: s.attendanceRecords.map(r => r.id === record.id ? record : r) })),
 
-   // Promo Actions
-   addPromotion: (promo) => set((state) => ({ promotions: [...state.promotions, promo] })),
+   // Personnel Handling Actions
+   addEmployee: (employee) => set((s) => ({ employees: [...s.employees, employee] })),
+   updateEmployee: (employee) => set((s) => ({ employees: s.employees.map(e => e.id === employee.id ? employee : e) })),
+   
+   addSalaryAdvance: (advance) => set((s) => ({ salaryAdvances: [...s.salaryAdvances, advance] })),
+   updateSalaryAdvance: (advance) => set((s) => ({ salaryAdvances: s.salaryAdvances.map(a => a.id === advance.id ? advance : a) })),
+   deleteSalaryAdvance: (id) => set((s) => ({ salaryAdvances: s.salaryAdvances.filter(a => a.id !== id) })),
+   
+   addPayrollRecord: (record) => set((s) => ({ payrollRecords: [...s.payrollRecords, record] })),
+   
+   processPayroll: (employeeId, userId) => set((s) => {
+      const employee = s.employees.find(e => e.id === employeeId);
+      if (!employee) return s;
+
+      const pendingAdvances = s.salaryAdvances.filter(a => a.employee_id === employeeId && a.status === 'PENDING');
+      const advancesAmount = pendingAdvances.reduce((acc, curr) => acc + curr.amount, 0);
+
+      const baseAmount = employee.base_salary;
+      const legalDeductions = baseAmount * (employee.legal_deduction_percent / 100);
+      const netPaid = baseAmount - legalDeductions - advancesAmount;
+
+      const newRecord: import('../types').PayrollRecord = {
+         id: 'PR-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+         employee_id: employeeId,
+         period: new Date().toISOString().substring(0, 7), // YYYY-MM
+         base_amount: baseAmount,
+         legal_deductions: legalDeductions,
+         advances_amount: advancesAmount,
+         net_paid: netPaid,
+         issue_date: new Date().toISOString()
+      };
+
+      // Create cash movement
+      const cashMovement: import('../types').CashMovement = {
+         id: 'CM-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
+         type: 'EXPENSE',
+         category_name: 'PAGO_PLANILLA',
+         description: `Pago Nómina ${employee.name} (${newRecord.period})`,
+         amount: netPaid,
+         date: new Date().toISOString(),
+         reference_id: newRecord.id,
+         user_id: userId
+      };
+
+      return {
+         payrollRecords: [...s.payrollRecords, newRecord],
+         salaryAdvances: s.salaryAdvances.map(a => 
+            (a.employee_id === employeeId && a.status === 'PENDING') ? { ...a, status: 'PAID' } : a
+         ),
+         cashMovements: [...s.cashMovements, cashMovement],
+         // Optional: update currentCashSession if desired, omitted for brevity and handled directly in CashFlow component if strict binding is needed.
+      };
+   }),
+
+   // Promos & Quotas
+   addPromotion: (promo) => set((s) => ({ promotions: [...s.promotions, promo] })),
    updatePromotion: (promo) => set((state) => ({
       promotions: state.promotions.map(p => p.id === promo.id ? promo : p)
    })),

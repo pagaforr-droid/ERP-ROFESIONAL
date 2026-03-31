@@ -42,6 +42,7 @@ const PERMISSION_GROUPS = [
       name: 'Gestión RRHH & Terceros',
       permissions: [
          { key: 'users', label: 'Usuarios & Accesos' },
+         { key: 'personnel-management', label: 'Planilla y Personal' },
          { key: 'attendance', label: 'Asistencia' },
          { key: 'clients', label: 'Clientes' },
          { key: 'suppliers', label: 'Proveedores' },
