@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
-import { Users, Plus, Pencil, Trash2, DollarSign, Calendar, FileText, CheckCircle, AlertTriangle, Printer, Banknote } from 'lucide-react';
+import { Users, Plus, Pencil, Trash2, DollarSign, Calendar, FileText, CheckCircle, AlertTriangle, Printer, Banknote, History, Save, X } from 'lucide-react';
 import { useStore } from '../services/store';
 import { Employee, SalaryAdvance, PayrollRecord, CashMovement } from '../types';
 import { PdfEngine } from './PdfEngine';
 
 export function PersonnelManagement() {
-  const { employees, salaryAdvances, payrollRecords, currentCashSession, addEmployee, updateEmployee, processPayroll, addSalaryAdvance, addCashMovement, currentUser, company } = useStore();
+  const { employees, salaryAdvances, payrollRecords, currentCashSession, addEmployee, updateEmployee, processPayroll, addSalaryAdvance, updateSalaryAdvance, deleteSalaryAdvance, cashMovements, updateCashMovement, deleteCashMovement, addCashMovement, currentUser, company } = useStore();
   
   const [activeTab, setActiveTab] = useState<'employees' | 'payroll'>('employees');
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [isAdvanceModalOpen, setIsAdvanceModalOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [editingAdvanceId, setEditingAdvanceId] = useState<string | null>(null);
+  const [editAdvDate, setEditAdvDate] = useState('');
+  const [editAdvAmount, setEditAdvAmount] = useState(0);
+  const [editAdvReason, setEditAdvReason] = useState('');
+
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
   // Form states Employee
@@ -140,6 +146,62 @@ export function PersonnelManagement() {
 
     setIsAdvanceModalOpen(false);
     alert(`Se entregó S/ ${advAmount.toFixed(2)} a ${selectedEmployee.name} correctamente con retiro de Caja.`);
+  };
+
+  const handleOpenHistoryModal = (emp: Employee) => {
+    setSelectedEmployee(emp);
+    setIsHistoryModalOpen(true);
+    setEditingAdvanceId(null);
+  };
+
+  const handleStartEditAdvance = (adv: SalaryAdvance) => {
+    setEditingAdvanceId(adv.id);
+    setEditAdvDate(adv.date.split('T')[0]);
+    setEditAdvAmount(adv.amount);
+    setEditAdvReason(adv.reason || '');
+  };
+
+  const handleSaveEditAdvance = (adv: SalaryAdvance) => {
+    if (editAdvAmount <= 0) {
+      alert("El monto debe ser mayor a 0.");
+      return;
+    }
+
+    if (!window.confirm(`¿Confirmar edición de este adelanto a S/ ${editAdvAmount.toFixed(2)}?\n\nLa Caja Chica se actualizará automáticamente.`)) return;
+
+    // 1. Update Advance
+    updateSalaryAdvance({
+      ...adv,
+      date: new Date(editAdvDate).toISOString(),
+      amount: editAdvAmount,
+      reason: editAdvReason
+    });
+
+    // 2. Sync associated CashMovement
+    const cashMov = cashMovements.find(cm => cm.reference_id === adv.id);
+    if (cashMov) {
+       updateCashMovement({
+          ...cashMov,
+          amount: editAdvAmount,
+          date: new Date(editAdvDate).toISOString(),
+          description: `Vale/Adelanto (Editado): ${selectedEmployee?.name} - ${editAdvReason}`
+       });
+    }
+
+    setEditingAdvanceId(null);
+  };
+
+  const handleDeleteAdvance = (adv: SalaryAdvance) => {
+    if(!window.confirm(`ATENCIÓN: ¿Está seguro de eliminar el adelanto por S/ ${adv.amount.toFixed(2)}?\n\nEste vale se anulará y el dinero DEBERÁ ser devuelto físicamente a la Caja Chica.`)) return;
+
+    // 1. Delete Advance
+    deleteSalaryAdvance(adv.id);
+
+    // 2. Delete Cash Movement
+    const cashMov = cashMovements.find(cm => cm.reference_id === adv.id);
+    if (cashMov) {
+       deleteCashMovement(cashMov.id);
+    }
   };
 
   const handleProcessPayroll = (emp: Employee) => {
@@ -281,6 +343,13 @@ export function PersonnelManagement() {
                             title="Entregar Adelanto de Efectivo"
                           >
                             <DollarSign className="h-4 w-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleOpenHistoryModal(emp)}
+                            className="bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 p-1.5 rounded-md transition-colors tooltip"
+                            title="Ver Historial de Adelantos"
+                          >
+                            <History className="h-4 w-4" />
                           </button>
                         </div>
                       </td>
@@ -540,6 +609,104 @@ export function PersonnelManagement() {
                  Emitir Vale de Caja por S/ {advAmount.toFixed(2)}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+      {/* History Modal */}
+      {isHistoryModalOpen && selectedEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+              <div>
+                <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                  <History className="h-5 w-5 text-indigo-600" />
+                  Historial de Adelantos
+                </h3>
+                <p className="text-sm text-slate-500 mt-1">{selectedEmployee.name}</p>
+              </div>
+              <button onClick={() => setIsHistoryModalOpen(false)} className="text-slate-400 hover:text-rose-500 text-lg p-2 transition-colors">✕</button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6">
+               <div className="overflow-x-auto">
+                 <table className="w-full text-left border-collapse">
+                   <thead>
+                     <tr className="bg-slate-50 border-b border-slate-200">
+                       <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Fecha</th>
+                       <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase">Motivo</th>
+                       <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase text-right">Monto</th>
+                       <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase text-center">Estado</th>
+                       {currentUser?.role === 'ADMIN' && <th className="px-4 py-3 text-xs font-bold text-slate-500 uppercase text-right">Acciones</th>}
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-slate-100">
+                     {salaryAdvances
+                        .filter(a => a.employee_id === selectedEmployee.id)
+                        .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                        .map(adv => (
+                        <tr key={adv.id} className="hover:bg-slate-50">
+                           {editingAdvanceId === adv.id ? (
+                              <>
+                                 <td className="px-4 py-2">
+                                    <input type="date" value={editAdvDate} onChange={e=>setEditAdvDate(e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/>
+                                 </td>
+                                 <td className="px-4 py-2">
+                                    <input type="text" value={editAdvReason} onChange={e=>setEditAdvReason(e.target.value)} className="w-full px-2 py-1 border rounded text-sm"/>
+                                 </td>
+                                 <td className="px-4 py-2 text-right">
+                                    <input type="number" step="0.01" value={editAdvAmount} onChange={e=>setEditAdvAmount(Number(e.target.value))} className="w-24 px-2 py-1 border rounded text-sm text-right font-mono"/>
+                                 </td>
+                                 <td className="px-4 py-2 text-center text-xs">
+                                    {adv.status === 'PAID' ? <span className="text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded">CANCELADO</span> : <span className="text-rose-600 font-bold bg-rose-50 px-2 py-1 rounded">PENDIENTE</span>}
+                                 </td>
+                                 {currentUser?.role === 'ADMIN' && (
+                                    <td className="px-4 py-2 text-right flex justify-end gap-1">
+                                       <button onClick={() => handleSaveEditAdvance(adv)} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded" title="Guardar">
+                                          <Save className="h-4 w-4" />
+                                       </button>
+                                       <button onClick={() => setEditingAdvanceId(null)} className="p-1.5 text-slate-400 hover:bg-slate-100 rounded" title="Cancelar">
+                                          <X className="h-4 w-4" />
+                                       </button>
+                                    </td>
+                                 )}
+                              </>
+                           ) : (
+                              <>
+                                 <td className="px-4 py-3 text-sm">{new Date(adv.date).toLocaleDateString()}</td>
+                                 <td className="px-4 py-3 text-sm">{adv.reason || '-'}</td>
+                                 <td className="px-4 py-3 text-sm font-mono text-right font-bold">S/ {adv.amount.toFixed(2)}</td>
+                                 <td className="px-4 py-3 text-center text-xs">
+                                    {adv.status === 'PAID' ? <span className="text-emerald-600 font-bold bg-emerald-50 px-2 py-1 rounded">CANCELADO</span> : <span className="text-rose-600 font-bold bg-rose-50 px-2 py-1 rounded">PENDIENTE</span>}
+                                 </td>
+                                 {currentUser?.role === 'ADMIN' && (
+                                    <td className="px-4 py-3 text-right">
+                                       <div className="flex justify-end gap-1">
+                                          <button disabled={adv.status === 'PAID'} onClick={() => handleStartEditAdvance(adv)} className={`p-1.5 rounded ${adv.status === 'PAID' ? 'text-slate-300' : 'text-indigo-600 hover:bg-indigo-50'}`} title={adv.status === 'PAID' ? "No editable porque ya fue descontado en planilla" : "Editar Adelanto"}>
+                                             <Pencil className="h-4 w-4" />
+                                          </button>
+                                          <button disabled={adv.status === 'PAID'} onClick={() => handleDeleteAdvance(adv)} className={`p-1.5 rounded ${adv.status === 'PAID' ? 'text-slate-300' : 'text-rose-600 hover:bg-rose-50'}`} title="Eliminar Adelanto">
+                                             <Trash2 className="h-4 w-4" />
+                                          </button>
+                                       </div>
+                                    </td>
+                                 )}
+                              </>
+                           )}
+                        </tr>
+                     ))}
+                     {salaryAdvances.filter(a => a.employee_id === selectedEmployee.id).length === 0 && (
+                        <tr><td colSpan={currentUser?.role === 'ADMIN' ? 5 : 4} className="px-4 py-8 text-center text-slate-500">Este empleado no tiene registro de adelantos.</td></tr>
+                     )}
+                   </tbody>
+                 </table>
+               </div>
+               
+               {currentUser?.role !== 'ADMIN' && salaryAdvances.filter(a => a.employee_id === selectedEmployee.id).length > 0 && (
+                  <div className="mt-4 p-3 bg-indigo-50/50 rounded-lg text-xs text-indigo-800 text-center">
+                     Contacte a un Administrador si necesita modificar o revertir un vale de caja entregado.
+                  </div>
+               )}
+            </div>
           </div>
         </div>
       )}

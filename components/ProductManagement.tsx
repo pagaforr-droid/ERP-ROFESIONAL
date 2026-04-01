@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/store';
 import { Product } from '../types';
-import { Search, Save, Plus, ArrowLeft, Barcode, DollarSign, Upload } from 'lucide-react';
+import { Search, Save, Plus, ArrowLeft, Barcode, DollarSign, Upload, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export const ProductManagement: React.FC = () => {
@@ -98,6 +98,14 @@ export const ProductManagement: React.FC = () => {
             return; // Skip if it already exists to be safe
           }
 
+          // Encontrar proveedor por ID o Nombre
+          let foundSupplierId = '';
+          const supplierStr = String(row.supplier || row.proveedor || row.Proveedor || '').trim();
+          if (supplierStr) {
+            const supp = suppliers.find(s => s.name.toLowerCase() === supplierStr.toLowerCase() || s.id === supplierStr);
+            if (supp) foundSupplierId = supp.id;
+          }
+
           const newProduct: Product = {
             id: crypto.randomUUID(),
             sku: skuStr,
@@ -110,6 +118,7 @@ export const ProductManagement: React.FC = () => {
             category: String(row.category || row.categoria || ''),
             subcategory: String(row.subcategory || row.subcategoria || ''),
             brand: String(row.brand || row.marca || ''),
+            supplier_id: foundSupplierId,
             weight: Number(row.weight || row.peso || 0),
             volume: Number(row.volume || row.volumen || 0),
             tax_igv: Number(row.tax_igv || row.igv || 18),
@@ -149,6 +158,50 @@ export const ProductManagement: React.FC = () => {
       }
     };
     reader.readAsBinaryString(file);
+  };
+
+  const handleExport = () => {
+    // Definimos las columnas exactas que la importacion soporta y las mapeamos
+    let exportData = products.map(p => {
+      const supp = suppliers.find(s => s.id === p.supplier_id);
+      return {
+        codigo: p.sku,
+        codigo_barras: p.barcode,
+        nombre: p.name,
+        unidad: p.unit_type,
+        empaque: p.package_type,
+        factor: p.package_content,
+        linea: p.line,
+        categoria: p.category,
+        subcategoria: p.subcategory,
+        marca: p.brand,
+        proveedor: supp ? supp.name : '',
+        peso: p.weight,
+        volumen: p.volume,
+        igv: p.tax_igv,
+        isc: p.tax_isc,
+        stock_minimo: p.min_stock,
+        costo: p.last_cost,
+        margen: p.profit_margin,
+        precio_unidad: p.price_unit,
+        precio_caja: p.price_package
+      };
+    });
+
+    if (exportData.length === 0) {
+      exportData = [{
+        codigo: 'EX-001', codigo_barras: 'EX-001', nombre: 'PRODUCTO EJEMPLO', unidad: 'BOTELLA', empaque: 'CAJA', factor: 12,
+        linea: 'LICORES', categoria: 'WHISKY', subcategoria: 'ESCOCES', marca: 'EJEMPLO', proveedor: 'PROVEEDOR SAC', peso: 1, volumen: 0.75,
+        igv: 18, isc: 0, stock_minimo: 5, costo: 100, margen: 30, precio_unidad: 130, precio_caja: 1482
+      } as any];
+    }
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Productos");
+    
+    // Generar archivo
+    XLSX.writeFile(wb, "Modelo_Productos_Maestro.xlsx");
   };
 
   // Pricing Calculation Helper
@@ -479,10 +532,13 @@ export const ProductManagement: React.FC = () => {
             accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
             className="hidden"
           />
-          <button onClick={() => fileInputRef.current?.click()} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center shadow-sm">
+          <button onClick={handleExport} className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-4 py-2 rounded flex items-center shadow-sm border border-slate-300 transition-colors" title="Descargar modelo en Excel con los productos actuales">
+            <Download className="w-4 h-4 mr-2" /> Exportar Modelo XLSX
+          </button>
+          <button onClick={() => fileInputRef.current?.click()} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center shadow-sm transition-colors">
             <Upload className="w-4 h-4 mr-2" /> Importar Excel
           </button>
-          <button onClick={handleNew} className="bg-slate-900 text-white px-4 py-2 rounded flex items-center shadow-sm">
+          <button onClick={handleNew} className="bg-slate-900 hover:bg-black text-white px-4 py-2 rounded flex items-center shadow-sm transition-colors">
             <Plus className="w-4 h-4 mr-2" /> Nuevo
           </button>
         </div>
