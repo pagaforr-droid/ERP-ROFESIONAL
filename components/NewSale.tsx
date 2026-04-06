@@ -3,9 +3,10 @@ import { useStore } from '../services/store';
 import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin } from 'lucide-react';
 import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
+import { isPromoActive } from '../utils/promotions';
 
 export const NewSale: React.FC = () => {
-   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions } = useStore();
+   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions, promotions } = useStore();
 
    // --- REFS FOR FOCUS MANAGEMENT ---
    const productInputRef = useRef<HTMLInputElement>(null);
@@ -412,9 +413,23 @@ export const NewSale: React.FC = () => {
       if (clientData.price_list_id === 'pl1') price = price * 0.92;
       if (clientData.price_list_id === 'pl3') price = price * 1.05;
 
+      // Evaluate Classic Promotions
+      let defaultDiscount = 0;
+      const activePromo = promotions.find(promo => 
+         promo.product_ids.includes(p.id) && isPromoActive(promo.start_date, promo.end_date, promo.is_active)
+      );
+
+      if (activePromo) {
+         if (activePromo.type === 'PERCENTAGE_DISCOUNT') {
+            defaultDiscount = activePromo.value;
+         } else if (activePromo.type === 'FIXED_PRICE') {
+            price = activePromo.value;
+         }
+      }
+
       setUnitPrice(price);
       setQuantity(1);
-      setDiscountPercent(0);
+      setDiscountPercent(defaultDiscount);
       setIsBonus(false);
 
       // Lock prices by default for the new line

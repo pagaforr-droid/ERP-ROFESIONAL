@@ -619,9 +619,13 @@ export const useStore = create<AppState>((set, get) => ({
          item.batch_allocations?.forEach(alloc => {
             const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
             if (batchIndex >= 0) {
+               const newQty = newBatches[batchIndex].quantity_current - alloc.quantity;
+               if (newQty < 0) {
+                   throw new Error(`KARDEX ERROR: Venta bloqueada. El lote ${alloc.batch_code} no tiene stock suficiente para cubrir la venta. (Faltan ${Math.abs(newQty)})`);
+               }
                newBatches[batchIndex] = {
                   ...newBatches[batchIndex],
-                  quantity_current: newBatches[batchIndex].quantity_current - alloc.quantity
+                  quantity_current: newQty
                };
             }
          });
@@ -736,6 +740,10 @@ export const useStore = create<AppState>((set, get) => ({
                   allocations.push({ batch_id: b.id, batch_code: b.code, quantity: take });
                   remaining -= take;
                }
+
+               if (remaining > 0) {
+                  throw new Error(`KARDEX ERROR: Stock insuficiente real para surtir el componente "${product.name}" del combo. Restan ${remaining} unid.`);
+               }
             });
 
          } else {
@@ -766,6 +774,10 @@ export const useStore = create<AppState>((set, get) => ({
 
                allocations.push({ batch_id: b.id, batch_code: b.code, quantity: take });
                remaining -= take;
+            }
+
+            if (remaining > 0) {
+               throw new Error(`KARDEX ERROR: Stock insuficiente real para el producto "${product.name}". Restan ${remaining} unid.`);
             }
          }
 

@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Combo } from '../types';
 import { Search, ShoppingCart, Package, X, Plus, Minus, Tag, Filter, User, ShieldCheck, Heart, Info, LogOut } from 'lucide-react';
-import { calculatePromotions } from '../utils/promotions';
+import { calculatePromotions, isPromoActive } from '../utils/promotions';
 
 interface CartItem {
    id: string;
@@ -45,11 +45,27 @@ export const VirtualStore: React.FC = () => {
          .reduce((sum, b) => sum + b.quantity_current, 0);
    };
 
+   const getComboStock = (comboId: string) => {
+      const combo = combos.find(c => c.id === comboId);
+      if (!combo) return 0;
+      let minPossible = Infinity;
+      combo.items.forEach(cItem => {
+         const prod = products.find(p => p.id === cItem.product_id);
+         if (!prod) { minPossible = 0; return; }
+         const factor = cItem.unit_type === 'PKG' ? (prod.package_content || 1) : 1;
+         const requiredPerCombo = cItem.quantity * factor;
+         if (requiredPerCombo <= 0) return;
+         const currentProdStock = getProductStock(prod.id);
+         const possible = Math.floor(currentProdStock / requiredPerCombo);
+         if (possible < minPossible) minPossible = possible;
+      });
+      return minPossible === Infinity ? 0 : minPossible;
+   };
+
    const getProductPrice = (product: Product, unit: 'UND' | 'PKG') => {
       let price = unit === 'PKG' ? product.price_package : product.price_unit;
       const activePromo = promotions.find(p =>
-         p.is_active && p.product_ids.includes(product.id) &&
-         new Date() >= new Date(p.start_date) && new Date() <= new Date(p.end_date)
+         p.product_ids.includes(product.id) && isPromoActive(p.start_date, p.end_date, p.is_active)
       );
 
       if (activePromo) {
@@ -64,8 +80,7 @@ export const VirtualStore: React.FC = () => {
 
    const getActivePromo = (productId: string) => {
       return promotions.find(p =>
-         p.is_active && p.product_ids.includes(productId) &&
-         new Date() >= new Date(p.start_date) && new Date() <= new Date(p.end_date)
+         p.product_ids.includes(productId) && isPromoActive(p.start_date, p.end_date, p.is_active)
       );
    };
 
@@ -83,7 +98,7 @@ export const VirtualStore: React.FC = () => {
 
       // 2. Filter Combos
       const cmbs = combos.filter(c =>
-         c.is_active &&
+         isPromoActive(c.start_date, c.end_date, c.is_active) &&
          (selectedCategory === 'ALL') &&
          c.name.toLowerCase().includes(term)
       );
@@ -113,16 +128,25 @@ export const VirtualStore: React.FC = () => {
       const price = type === 'PRODUCT' ? getProductPrice(item as Product, unit) : (item as Combo).price;
       const name = item.name;
       const image = (item as any).image_url;
-      // Stock logic would be clearer if real, for now just basic check or unlimited for Combos
-      const stock = type === 'PRODUCT' ? getProductStock(item.id) : 999;
+      const stock = type === 'PRODUCT' ? getProductStock(item.id) : getComboStock(item.id);
+      
+      const factor = type === 'PRODUCT' ? (unit === 'PKG' ? ((item as Product).package_content || 1) : 1) : 1;
+      const requiredStock = qty * factor;
 
       let newCart = [...cart];
       if (existing) {
          const newQty = existing.quantity + qty;
-         // if (newQty > stock) return alert("Stock insuficiente"); // Optional: Strict check
+         const newRequired = newQty * factor;
+         if (newRequired > stock) {
+             alert(`Stock insuficiente. Disponible: ${stock}`);
+             return;
+         }
          newCart = newCart.map(x => x.product_id === item.id && x.unit_type === unit ? { ...x, quantity: newQty, total_price: price * newQty } : x);
       } else {
-         // if (qty > stock) return alert("Stock insuficiente");
+         if (requiredStock > stock) {
+             alert(`Stock insuficiente. Disponible: ${stock}`);
+             return;
+         }
          newCart.push({
             product_id: item.id, type, product_name: name, quantity: qty, unit_type: type === 'COMBO' ? 'COMBO' : unit, unit_price: price, total_price: price * qty, image, maxStock: stock, is_promo: type === 'COMBO' && false // COMBO is not an auto promo
          });

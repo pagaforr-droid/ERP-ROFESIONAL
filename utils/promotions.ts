@@ -1,5 +1,15 @@
 import { OrderItem, Product, AutoPromotion } from '../types';
 
+export function isPromoActive(start_date: string, end_date: string, is_active: boolean): boolean {
+    if (!is_active) return false;
+    const now = new Date();
+    // Parse start_date ensuring it starts at 00:00:00 of local time
+    const start = new Date(`${start_date}T00:00:00`);
+    // Parse end_date ensuring it ends at 23:59:59 of local time
+    const end = new Date(`${end_date}T23:59:59.999`);
+    return now >= start && now <= end;
+}
+
 export function calculatePromotions(
     cartItems: OrderItem[],
     autoPromotions: AutoPromotion[],
@@ -12,7 +22,7 @@ export function calculatePromotions(
     const newBonusItems: OrderItem[] = [];
 
     // 2. Evaluate active auto promotions
-    autoPromotions.filter(p => p.is_active).forEach(promo => {
+    autoPromotions.filter(p => isPromoActive(p.start_date, p.end_date, p.is_active)).forEach(promo => {
         // Rule 1: BUY_X_PRODUCT
         if (promo.condition_type === 'BUY_X_PRODUCT' && promo.condition_product_id) {
             const triggerProduct = products.find(p => p.id === promo.condition_product_id);

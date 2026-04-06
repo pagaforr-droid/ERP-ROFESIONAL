@@ -3,13 +3,13 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Order, OrderItem, Client, Product, Sale } from '../types';
 import { Search, ShoppingCart, User, ArrowRight, Save, Plus, Minus, X, ChevronLeft, MapPin, Clock, Edit, FileText, Wallet, CheckCircle, TrendingUp, Loader2, Hourglass, DollarSign, LogOut, ChevronDown } from 'lucide-react';
-import { calculatePromotions } from '../utils/promotions';
+import { calculatePromotions, isPromoActive } from '../utils/promotions';
 
 type ViewMode = 'SELLER_SELECT' | 'CLIENT_LIST' | 'CLIENT_DETAIL' | 'PRODUCT_SELECT';
 type ClientTab = 'ORDER' | 'COLLECTION';
 
 export const MobileOrders: React.FC = () => {
-   const { clients, products, sellers, createOrder, updateOrder, zones, orders, sales, reportCollection, collectionRecords, getBatchesForProduct, autoPromotions, deliveryMode, currentUser, users, logout, getNextDocumentNumber } = useStore();
+   const { clients, products, sellers, createOrder, updateOrder, zones, orders, sales, reportCollection, collectionRecords, getBatchesForProduct, autoPromotions, promotions, deliveryMode, currentUser, users, logout, getNextDocumentNumber } = useStore();
 
    // --- NAVIGATION STATE ---
    const [viewMode, setViewMode] = useState<ViewMode>('SELLER_SELECT');
@@ -209,7 +209,19 @@ export const MobileOrders: React.FC = () => {
          return;
       }
 
-      const price = unit === 'PKG' ? selectedProd.price_package : selectedProd.price_unit;
+      let price = unit === 'PKG' ? selectedProd.price_package : selectedProd.price_unit;
+      
+      const activePromo = promotions.find(promo => 
+         promo.product_ids.includes(selectedProd.id) && isPromoActive(promo.start_date, promo.end_date, promo.is_active)
+      );
+
+      if (activePromo) {
+         if (activePromo.type === 'PERCENTAGE_DISCOUNT') {
+            price = price * (1 - activePromo.value / 100);
+         } else if (activePromo.type === 'FIXED_PRICE' && unit === 'UND') {
+            price = activePromo.value;
+         }
+      }
 
       const newItem: OrderItem = {
          product_id: selectedProd.id,
