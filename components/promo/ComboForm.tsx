@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../services/store';
 import { Combo, Product } from '../../types';
-import { Save, X, Search, Trash2, Image as ImageIcon, Plus } from 'lucide-react';
+import { Save, X, Search, Trash2, Image as ImageIcon, Plus, MapPin } from 'lucide-react';
+import { PERU_CITIES } from '../../utils/promoUtils';
 
 interface ComboFormProps {
     initialData?: Partial<Combo> | null;
@@ -18,7 +19,8 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
         end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
         is_active: true, image_url: '',
         channels: ['IN_STORE', 'SELLER_APP'],
-        allowed_seller_ids: []
+        allowed_seller_ids: [],
+        target_cities: []
     });
 
     const [prodSearch, setProdSearch] = useState('');
@@ -56,7 +58,9 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!formData.name || !formData.price || (formData.items?.length || 0) === 0) return;
+        if (!formData.name) { alert('Ingrese el nombre del combo'); return; }
+        if (formData.price === undefined || formData.price < 0) { alert('Ingrese un precio válido para el combo'); return; }
+        if ((formData.items?.length || 0) === 0) { alert('Agregue al menos un producto al combo'); return; }
         onSave({ ...formData, id: formData.id || crypto.randomUUID() } as Combo);
     };
 
@@ -71,12 +75,20 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
         }
     };
 
-    const toggleChannel = (channel: 'IN_STORE' | 'SELLER_APP') => {
+    const toggleChannel = (channel: 'IN_STORE' | 'SELLER_APP' | 'DIRECT_SALE') => {
         const current = formData.channels || [];
         const newChannels = current.includes(channel)
             ? current.filter(c => c !== channel)
             : [...current, channel];
         setFormData({ ...formData, channels: newChannels });
+    };
+
+    const toggleCity = (city: string) => {
+        const current = formData.target_cities || [];
+        const newCities = current.includes(city)
+            ? current.filter(c => c !== city)
+            : [...current, city];
+        setFormData({ ...formData, target_cities: newCities });
     };
 
     const toggleSeller = (sellerId: string) => {
@@ -165,18 +177,39 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
                 </div>
 
                 {/* Configuration */}
-                <div className="grid grid-cols-2 gap-4 border-t pt-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t pt-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-600 mb-2">Canales Disponibles</label>
-                        <div className="flex gap-4">
-                            <label className="flex items-center cursor-pointer bg-slate-50 p-2 rounded border border-slate-200">
+                        <div className="space-y-2">
+                            <label className="flex items-center cursor-pointer">
                                 <input type="checkbox" className="mr-2" checked={formData.channels?.includes('IN_STORE')} onChange={() => toggleChannel('IN_STORE')} />
-                                <span className="text-xs font-bold">Tienda</span>
+                                <span className="text-sm">Venta en Tienda (Punto de Venta)</span>
                             </label>
-                            <label className="flex items-center cursor-pointer bg-slate-50 p-2 rounded border border-slate-200">
+                            <label className="flex items-center cursor-pointer">
                                 <input type="checkbox" className="mr-2" checked={formData.channels?.includes('SELLER_APP')} onChange={() => toggleChannel('SELLER_APP')} />
-                                <span className="text-xs font-bold">App Vendedores</span>
+                                <span className="text-sm">App Vendedores (Móvil)</span>
                             </label>
+                            <label className="flex items-center cursor-pointer">
+                                <input type="checkbox" className="mr-2" checked={formData.channels?.includes('DIRECT_SALE')} onChange={() => toggleChannel('DIRECT_SALE')} />
+                                <span className="text-sm">Venta Directa</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs font-bold text-slate-600 flex items-center">
+                                <MapPin className="w-3 h-3 mr-1" /> Ciudades Destino
+                            </label>
+                            <span className="text-[10px] text-slate-400">{formData.target_cities?.length === 0 ? 'Todas' : `${formData.target_cities?.length} sel.`}</span>
+                        </div>
+                        <div className="h-24 overflow-auto border rounded p-2 text-xs grid grid-cols-2 gap-1 bg-slate-50">
+                            {PERU_CITIES.map(c => (
+                                <label key={c} className="flex items-center p-1 rounded hover:bg-slate-200 cursor-pointer">
+                                    <input type="checkbox" className="mr-2 rounded border-gray-300" checked={formData.target_cities?.includes(c) || false} onChange={() => toggleCity(c)} />
+                                    <span className="truncate">{c}</span>
+                                </label>
+                            ))}
                         </div>
                     </div>
 

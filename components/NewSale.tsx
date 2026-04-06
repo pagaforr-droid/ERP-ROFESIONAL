@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion } from '../types';
+import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin } from 'lucide-react';
 import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
-import { isPromoActive } from '../utils/promotions';
+import { isPromoValidForContext } from '../utils/promoUtils';
 
 export const NewSale: React.FC = () => {
    const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions, promotions } = useStore();
@@ -268,12 +268,9 @@ export const NewSale: React.FC = () => {
 
       // 2. Filter active auto promos for current conditions (channels, price list)
       const validPromos = autoPromotions.filter(ap => {
-         if (!ap.is_active) return false;
-         // Check dates
-         const today = new Date().toISOString().split('T')[0];
-         if (today < ap.start_date || today > ap.end_date) return false;
-         // Check channel
-         if (!ap.channels?.includes('IN_STORE')) return false;
+         // Defaulting POS channel to IN_STORE, checking against client address
+         if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city || clientData.address)) return false;
+         
          // Check price list
          if (ap.target_price_list_ids?.length > 0 &&
             clientData.price_list_id &&
@@ -289,7 +286,7 @@ export const NewSale: React.FC = () => {
 
          if (ap.condition_type === 'BUY_X_PRODUCT') {
             const qtyBought = newCart
-               .filter(item => item.product_id === ap.condition_product_id && !item.is_bonus)
+               .filter(item => (ap.condition_product_ids?.includes(item.product_id) || item.product_id === ap.condition_product_id) && !item.is_bonus)
                .reduce((sum, item) => sum + item.quantity_base, 0);
 
             if (qtyBought >= ap.condition_amount) {
@@ -297,7 +294,11 @@ export const NewSale: React.FC = () => {
                multiplyFactor = Math.floor(qtyBought / ap.condition_amount);
             }
          } else if (ap.condition_type === 'SPEND_Y_TOTAL') {
-            const totalSpent = newCart.reduce((sum, item) => sum + item.total_price, 0);
+            const conditionItemKeys = ap.condition_product_ids || [];
+            const totalSpent = newCart.reduce((sum, item) => {
+               if (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) return sum;
+               return sum + item.total_price;
+            }, 0);
             if (totalSpent >= ap.condition_amount) {
                applies = true;
                multiplyFactor = Math.floor(totalSpent / ap.condition_amount);
@@ -416,7 +417,7 @@ export const NewSale: React.FC = () => {
       // Evaluate Classic Promotions
       let defaultDiscount = 0;
       const activePromo = promotions.find(promo => 
-         promo.product_ids.includes(p.id) && isPromoActive(promo.start_date, promo.end_date, promo.is_active)
+         promo.product_ids.includes(p.id) && isPromoValidForContext(promo, 'IN_STORE', clientData.city || clientData.address)
       );
 
       if (activePromo) {

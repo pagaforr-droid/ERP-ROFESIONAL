@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/store';
 import { Client } from '../types';
+import { PERU_CITIES } from '../utils/promoUtils';
 import { Search, Save, Plus, ArrowLeft, User, MapPin, Briefcase, FileText, Trash2 } from 'lucide-react';
 
 export const ClientManagement: React.FC = () => {
@@ -157,6 +158,14 @@ export const ClientManagement: React.FC = () => {
                            <div className="col-span-12 flex items-center">
                               <label className="w-24 font-bold text-slate-700">Dirección</label>
                               <input className="flex-1 border border-slate-300 p-2 rounded uppercase text-slate-900" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} />
+                           </div>
+
+                           <div className="col-span-12 flex items-center">
+                              <label className="w-24 font-bold text-slate-700">Ciudad</label>
+                              <select className="flex-1 border border-slate-300 p-2 rounded bg-white text-slate-900" value={formData.city || ''} onChange={e => setFormData({ ...formData, city: e.target.value })}>
+                                 <option value="">-- Autodetectar por Ubigeo / Dirección --</option>
+                                 {PERU_CITIES.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
                            </div>
 
                            <div className="col-span-12 flex items-center">

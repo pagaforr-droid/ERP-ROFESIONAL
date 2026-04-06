@@ -6,6 +6,7 @@ import { Tag, Package, Plus, Search, Gift, Edit, Trash2, Zap, BarChart3 } from '
 import { PromoForm } from './promo/PromoForm';
 import { ComboForm } from './promo/ComboForm';
 import { AutoPromoForm } from './promo/AutoPromoForm';
+import { isPromoCurrentlyActive } from '../utils/promoUtils';
 
 export const PromoManager: React.FC = () => {
    const { promotions, combos, autoPromotions, addPromotion, updatePromotion, addCombo, updateCombo, addAutoPromotion, updateAutoPromotion } = useStore();
@@ -145,21 +146,21 @@ export const PromoManager: React.FC = () => {
                            <h3 className="font-bold text-lg">Promociones Activas</h3>
                            <Tag className="w-8 h-8 opacity-50" />
                         </div>
-                        <div className="text-4xl font-bold">{promotions.filter(p => p.is_active).length}</div>
+                         <div className="text-4xl font-bold">{promotions.filter(p => isPromoCurrentlyActive(p)).length}</div>
                      </div>
                      <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-6 rounded-xl text-white shadow-lg">
                         <div className="flex justify-between items-center mb-4">
                            <h3 className="font-bold text-lg">Combos Activos</h3>
                            <Package className="w-8 h-8 opacity-50" />
                         </div>
-                        <div className="text-4xl font-bold">{combos.filter(c => c.is_active).length}</div>
+                        <div className="text-4xl font-bold">{combos.filter(c => isPromoCurrentlyActive(c)).length}</div>
                      </div>
                      <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-6 rounded-xl text-white shadow-lg">
                         <div className="flex justify-between items-center mb-4">
                            <h3 className="font-bold text-lg">Bonif. Automáticas Activas</h3>
                            <Zap className="w-8 h-8 opacity-50" />
                         </div>
-                        <div className="text-4xl font-bold">{autoPromotions.filter(ap => ap.is_active).length}</div>
+                        <div className="text-4xl font-bold">{autoPromotions.filter(ap => isPromoCurrentlyActive(ap)).length}</div>
                      </div>
                   </div>
                ) : isCreating ? (
@@ -184,25 +185,68 @@ export const PromoManager: React.FC = () => {
                                  </div>
                               )}
                               <div className="p-4">
-                                 <div className="flex justify-between items-start mb-2">
-                                    <h3 className="font-bold text-slate-800">{p.name}</h3>
-                                    <span className={`text-[10px] font-bold px-2 py-1 rounded ${p.is_active ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                                       {p.is_active ? 'ACTIVO' : 'INACTIVO'}
-                                    </span>
-                                 </div>
+                                  <div className="flex justify-between items-start mb-2">
+                                     <h3 className="font-bold text-slate-800">{p.name}</h3>
+                                     <span className={`text-[10px] font-bold px-2 py-1 rounded ${isPromoCurrentlyActive(p) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {isPromoCurrentlyActive(p) ? 'ACTIVO' : 'INACTIVO'}
+                                     </span>
+                                  </div>
                                  <div className="text-2xl font-bold text-pink-600 mb-2">
                                     {p.type === 'PERCENTAGE_DISCOUNT' ? `-${p.value}%` : `S/ ${p.value}`}
                                  </div>
-                                 <div className="text-xs text-slate-500 mb-4">
-                                    <div>Válido: {p.start_date} - {p.end_date}</div>
-                                    <div>Productos: {p.product_ids.length}</div>
-                                    {p.channels && <div className="mt-1 flex gap-1">
-                                       {p.channels.map(c => <span key={c} className="bg-slate-100 px-1 rounded border text-[10px]">{c === 'IN_STORE' ? 'Tienda' : 'App'}</span>)}
-                                    </div>}
-                                 </div>
+                                  <div className="text-xs text-slate-500 mb-4">
+                                     <div>Válido: {p.start_date} - {p.end_date}</div>
+                                     <div>Productos: {p.product_ids.length}</div>
+                                     {p.channels && <div className="mt-1 flex gap-1 flex-wrap">
+                                        {p.channels.map(c => <span key={c} className="bg-slate-100 px-1 rounded border text-[10px]">{c === 'IN_STORE' ? 'Tienda' : c === 'SELLER_APP' ? 'App' : 'Venta Directa'}</span>)}
+                                     </div>}
+                                     {p.target_cities && p.target_cities.length > 0 && <div className="mt-1 flex gap-1 flex-wrap">
+                                        {p.target_cities.map(c => <span key={c} className="bg-blue-50 text-blue-700 px-1 rounded border text-[10px]">{c}</span>)}
+                                     </div>}
+                                  </div>
                                  <div className="flex justify-end gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button onClick={() => startEditPromo(p)} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Edit className="w-4 h-4" /></button>
                                     <button onClick={() => deletePromo(p.id)} className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                                 </div>
+                              </div>
+                           </div>
+                        ))}
+                     </div>
+                  ) : activeTab === 'COMBOS' ? (
+                     // COMBO LIST
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {filteredCombos.map(c => (
+                           <div key={c.id} className="border border-purple-200 bg-white rounded-lg overflow-hidden hover:shadow-md transition-shadow group relative">
+                              {c.image_url ? (
+                                 <img src={c.image_url} alt={c.name} className="w-full h-32 object-cover" />
+                              ) : (
+                                 <div className="w-full h-32 bg-slate-100 flex items-center justify-center text-slate-400">
+                                    <Package className="w-8 h-8 opacity-20" />
+                                 </div>
+                              )}
+                              <div className="p-4">
+                                  <div className="flex justify-between items-start mb-2">
+                                     <h3 className="font-bold text-slate-800">{c.name}</h3>
+                                     <span className={`text-[10px] font-bold px-2 py-1 rounded ${isPromoCurrentlyActive(c) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                        {isPromoCurrentlyActive(c) ? 'ACTIVO' : 'INACTIVO'}
+                                     </span>
+                                  </div>
+                                 <div className="text-2xl font-bold text-purple-600 mb-2">
+                                    S/ {c.price.toFixed(2)}
+                                 </div>
+                                  <div className="text-xs text-slate-500 mb-4">
+                                     <div>Válido: {c.start_date} - {c.end_date}</div>
+                                     <div>Items: {c.items.length}</div>
+                                     {c.channels && <div className="mt-1 flex gap-1 flex-wrap">
+                                        {c.channels.map(ch => <span key={ch} className="bg-slate-100 px-1 rounded border text-[10px]">{ch === 'IN_STORE' ? 'Tienda' : ch === 'SELLER_APP' ? 'App' : 'Venta Directa'}</span>)}
+                                     </div>}
+                                     {c.target_cities && c.target_cities.length > 0 && <div className="mt-1 flex gap-1 flex-wrap">
+                                        {c.target_cities.map(tc => <span key={tc} className="bg-blue-50 text-blue-700 px-1 rounded border text-[10px]">{tc}</span>)}
+                                     </div>}
+                                  </div>
+                                 <div className="flex justify-end gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={() => startEditCombo(c)} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Edit className="w-4 h-4" /></button>
+                                    <button onClick={() => deleteCombo(c.id)} className="p-2 text-red-600 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
                                  </div>
                               </div>
                            </div>
@@ -214,20 +258,24 @@ export const PromoManager: React.FC = () => {
                         {filteredAutoPromos.map(ap => (
                            <div key={ap.id} className="border border-green-200 bg-green-50 rounded-lg overflow-hidden hover:shadow-md transition-shadow group">
                               <div className="p-4 border-b border-green-200">
-                                 <div className="flex justify-between items-start mb-1">
-                                    <h3 className="font-bold text-green-900 flex items-center">
-                                       <Zap className="w-4 h-4 mr-1 text-green-600" /> {ap.name}
-                                    </h3>
-                                    <span className={`text-[10px] font-bold px-2 py-1 rounded ${ap.is_active ? 'bg-green-600 text-white' : 'bg-red-100 text-red-700'}`}>
-                                       {ap.is_active ? 'ACTIVO' : 'INACTIVO'}
-                                    </span>
-                                 </div>
+                                  <div className="flex justify-between items-start mb-1">
+                                     <h3 className="font-bold text-green-900 flex items-center">
+                                        <Zap className="w-4 h-4 mr-1 text-green-600" /> {ap.name}
+                                     </h3>
+                                     <span className={`text-[10px] font-bold px-2 py-1 rounded ${isPromoCurrentlyActive(ap) ? 'bg-green-600 text-white' : 'bg-red-100 text-red-700'}`}>
+                                        {isPromoCurrentlyActive(ap) ? 'ACTIVO' : 'INACTIVO'}
+                                     </span>
+                                  </div>
                                  <p className="text-xs text-green-700 font-medium">{ap.description}</p>
                               </div>
                               <div className="p-4 bg-white text-xs text-slate-600">
-                                 <div className="mb-2"><strong>Condición:</strong> {ap.condition_type === 'BUY_X_PRODUCT' ? `Comprar ${ap.condition_amount} und` : ap.condition_type === 'SPEND_Y_TOTAL' ? `Gastar S/${ap.condition_amount}` : `Gastar S/${ap.condition_amount} en Categ`}</div>
-                                 <div className="mb-2"><strong>Premio:</strong> {ap.reward_quantity} {ap.reward_unit_type}</div>
-                                 <div><strong>Válido:</strong> {ap.start_date} - {ap.end_date}</div>
+                                  <div className="mb-2"><strong>Condición:</strong> {ap.condition_type === 'BUY_X_PRODUCT' ? `Comprar ${ap.condition_amount} und` : ap.condition_type === 'SPEND_Y_TOTAL' ? `Gastar S/${ap.condition_amount}` : `Gastar S/${ap.condition_amount} en Categ`}</div>
+                                  <div className="mb-2"><strong>Premio:</strong> {ap.reward_quantity} {ap.reward_unit_type}</div>
+                                  <div><strong>Válido:</strong> {ap.start_date} - {ap.end_date}</div>
+                                  
+                                  {ap.target_cities && ap.target_cities.length > 0 && <div className="mt-2 flex gap-1 flex-wrap">
+                                     {ap.target_cities.map(c => <span key={c} className="bg-blue-50 text-blue-700 px-1 rounded border text-[10px]">{c}</span>)}
+                                  </div>}
 
                                  <div className="flex justify-end gap-2 mt-4">
                                     <button onClick={() => startEditAutoPromo(ap)} className="p-2 text-blue-600 hover:bg-blue-50 rounded"><Edit className="w-4 h-4" /></button>

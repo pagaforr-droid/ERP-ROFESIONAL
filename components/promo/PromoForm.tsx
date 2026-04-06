@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../services/store';
 import { Promotion, Product } from '../../types';
-import { Save, X, Search, CheckSquare, Square, Image as ImageIcon, Filter } from 'lucide-react';
+import { Save, X, Search, CheckSquare, Square, Image as ImageIcon, Filter, MapPin } from 'lucide-react';
+import { PERU_CITIES } from '../../utils/promoUtils';
 
 interface PromoFormProps {
     initialData?: Partial<Promotion> | null;
@@ -20,7 +21,8 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
         channels: ['IN_STORE'],
         allowed_seller_ids: [], // Empty means all
         image_url: '',
-        min_quantity: 1
+        min_quantity: 1,
+        target_cities: []
     });
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -70,12 +72,20 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
         setFormData({ ...formData, product_ids: newIds });
     };
 
-    const toggleChannel = (channel: 'IN_STORE' | 'SELLER_APP') => {
+    const toggleChannel = (channel: 'IN_STORE' | 'SELLER_APP' | 'DIRECT_SALE') => {
         const current = formData.channels || [];
         const newChannels = current.includes(channel)
             ? current.filter(c => c !== channel)
             : [...current, channel];
         setFormData({ ...formData, channels: newChannels });
+    };
+
+    const toggleCity = (city: string) => {
+        const current = formData.target_cities || [];
+        const newCities = current.includes(city)
+            ? current.filter(c => c !== city)
+            : [...current, city];
+        setFormData({ ...formData, target_cities: newCities });
     };
 
     const toggleSeller = (sellerId: string) => {
@@ -176,7 +186,7 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
                 </div>
 
                 {/* Configuration */}
-                <div className="grid grid-cols-2 gap-4 border-t pt-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 border-t pt-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-600 mb-2">Canales Disponibles</label>
                         <div className="space-y-2">
@@ -188,6 +198,27 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
                                 <input type="checkbox" className="mr-2" checked={formData.channels?.includes('SELLER_APP')} onChange={() => toggleChannel('SELLER_APP')} />
                                 <span className="text-sm">App Vendedores (Móvil)</span>
                             </label>
+                            <label className="flex items-center cursor-pointer">
+                                <input type="checkbox" className="mr-2" checked={formData.channels?.includes('DIRECT_SALE')} onChange={() => toggleChannel('DIRECT_SALE')} />
+                                <span className="text-sm">Venta Directa</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="text-xs font-bold text-slate-600 flex items-center">
+                                <MapPin className="w-3 h-3 mr-1" /> Ciudades Destino
+                            </label>
+                            <span className="text-[10px] text-slate-400">{formData.target_cities?.length === 0 ? 'Todas' : `${formData.target_cities?.length} sel.`}</span>
+                        </div>
+                        <div className="h-24 overflow-auto border rounded p-2 text-xs grid grid-cols-2 gap-1 bg-slate-50">
+                            {PERU_CITIES.map(c => (
+                                <label key={c} className="flex items-center p-1 rounded hover:bg-slate-200 cursor-pointer">
+                                    <input type="checkbox" className="mr-2 rounded border-gray-300" checked={formData.target_cities?.includes(c) || false} onChange={() => toggleCity(c)} />
+                                    <span className="truncate">{c}</span>
+                                </label>
+                            ))}
                         </div>
                     </div>
 

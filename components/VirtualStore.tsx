@@ -1,9 +1,9 @@
-
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Combo } from '../types';
-import { Search, ShoppingCart, Package, X, Plus, Minus, Tag, Filter, User, ShieldCheck, Heart, Info, LogOut } from 'lucide-react';
-import { calculatePromotions, isPromoActive } from '../utils/promotions';
+import { Search, ShoppingCart, Package, X, Plus, Minus, Tag, Filter, User, ShieldCheck, Heart, Info, LogOut, Trash2 } from 'lucide-react';
+import { calculatePromotions } from '../utils/promotions';
+import { isPromoValidForContext } from '../utils/promoUtils';
 
 interface CartItem {
    id: string;
@@ -65,7 +65,7 @@ export const VirtualStore: React.FC = () => {
    const getProductPrice = (product: Product, unit: 'UND' | 'PKG') => {
       let price = unit === 'PKG' ? product.price_package : product.price_unit;
       const activePromo = promotions.find(p =>
-         p.product_ids.includes(product.id) && isPromoActive(p.start_date, p.end_date, p.is_active)
+         p.product_ids.includes(product.id) && isPromoValidForContext(p, 'IN_STORE')
       );
 
       if (activePromo) {
@@ -80,7 +80,7 @@ export const VirtualStore: React.FC = () => {
 
    const getActivePromo = (productId: string) => {
       return promotions.find(p =>
-         p.product_ids.includes(productId) && isPromoActive(p.start_date, p.end_date, p.is_active)
+         p.product_ids.includes(productId) && isPromoValidForContext(p, 'IN_STORE')
       );
    };
 
@@ -98,7 +98,7 @@ export const VirtualStore: React.FC = () => {
 
       // 2. Filter Combos
       const cmbs = combos.filter(c =>
-         isPromoActive(c.start_date, c.end_date, c.is_active) &&
+         isPromoValidForContext(c, 'IN_STORE') &&
          (selectedCategory === 'ALL') &&
          c.name.toLowerCase().includes(term)
       );
@@ -152,7 +152,7 @@ export const VirtualStore: React.FC = () => {
          });
       }
 
-      setCart(calculatePromotions(newCart, autoPromotions, products));
+      setCart(calculatePromotions(newCart, autoPromotions, products, 'IN_STORE'));
       setIsCartOpen(true);
    };
 
@@ -163,7 +163,7 @@ export const VirtualStore: React.FC = () => {
       if (newCart[index].quantity <= 0) {
          newCart.splice(index, 1);
       }
-      setCart(calculatePromotions(newCart, autoPromotions, products));
+      setCart(calculatePromotions(newCart, autoPromotions, products, 'IN_STORE'));
    };
 
    const handleCheckoutLaunch = () => {
@@ -509,8 +509,8 @@ export const VirtualStore: React.FC = () => {
                                  <div className="flex justify-between items-start mb-1">
                                     <h4 className="font-bold text-sm text-slate-800 line-clamp-1">{item.product_name}</h4>
                                     <button onClick={() => {
-                                       const newCart = [...cart]; newCart.splice(idx, 1); setCart(calculatePromotions(newCart, autoPromotions, products));
-                                    }}><X className="w-4 h-4 text-slate-300 hover:text-red-500" /></button>
+                                       const newCart = [...cart]; newCart.splice(idx, 1); setCart(calculatePromotions(newCart, autoPromotions, products, 'IN_STORE'));
+                                    }} className="text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 className="w-5 h-5" /></button>
                                  </div>
                                  <div className="flex items-center gap-2 mb-2">
                                     <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded uppercase">{item.unit_type === 'PKG' ? 'Caja' : item.unit_type}</span>

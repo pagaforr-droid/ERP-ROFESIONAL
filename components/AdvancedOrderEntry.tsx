@@ -3,6 +3,8 @@ import { useStore } from '../services/store';
 import { Product, BatchAllocation, SaleItem, Client, Order, AutoPromotion } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin } from 'lucide-react';
 import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
+import { isPromoValidForContext } from '../utils/promoUtils';
+import { isPromoActive } from '../utils/promotions';
 
 export const AdvancedOrderEntry: React.FC = () => {
    const { products, getBatchesForProduct, createOrder, clients, company, priceLists, orders, getNextDocumentNumber, users, updateOrder, currentUser, autoPromotions } = useStore();
@@ -273,12 +275,9 @@ export const AdvancedOrderEntry: React.FC = () => {
 
       // 2. Filter active auto promos for current conditions (channels, price list)
       const validPromos = autoPromotions.filter(ap => {
-         if (!ap.is_active) return false;
-         // Check dates
-         const today = new Date().toISOString().split('T')[0];
-         if (today < ap.start_date || today > ap.end_date) return false;
-         // Check channel
-         if (!ap.channels?.includes('IN_STORE')) return false;
+         // Defaulting to DIRECT_SALE or IN_STORE? We'll assume IN_STORE unless specified
+         if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city || clientData.address)) return false;
+         
          // Check price list
          if (ap.target_price_list_ids?.length > 0 &&
             clientData.price_list_id &&
@@ -294,7 +293,7 @@ export const AdvancedOrderEntry: React.FC = () => {
 
          if (ap.condition_type === 'BUY_X_PRODUCT') {
             const qtyBought = newCart
-               .filter(item => item.product_id === ap.condition_product_id && !item.is_bonus)
+               .filter(item => (ap.condition_product_ids?.includes(item.product_id) || item.product_id === ap.condition_product_id) && !item.is_bonus)
                .reduce((sum, item) => sum + item.quantity_base, 0);
 
             if (qtyBought >= ap.condition_amount) {
@@ -302,7 +301,11 @@ export const AdvancedOrderEntry: React.FC = () => {
                multiplyFactor = Math.floor(qtyBought / ap.condition_amount);
             }
          } else if (ap.condition_type === 'SPEND_Y_TOTAL') {
-            const totalSpent = newCart.reduce((sum, item) => sum + item.total_price, 0);
+            const conditionItemKeys = ap.condition_product_ids || [];
+            const totalSpent = newCart.reduce((sum, item) => {
+               if (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) return sum;
+               return sum + item.total_price;
+            }, 0);
             if (totalSpent >= ap.condition_amount) {
                applies = true;
                multiplyFactor = Math.floor(totalSpent / ap.condition_amount);

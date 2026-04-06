@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { AutoPromotion, Product, Supplier } from '../../types';
 import { useStore } from '../../services/store';
-import { Save, X, Search, Plus, Trash2 } from 'lucide-react';
+import { Save, X, Search, Plus, Trash2, MapPin } from 'lucide-react';
+import { PERU_CITIES } from '../../utils/promoUtils';
 
 interface Props {
     initialData?: Partial<AutoPromotion> | null;
@@ -18,7 +19,7 @@ export const AutoPromoForm: React.FC<Props> = ({ initialData, onClose, onSave })
         description: initialData?.description || '',
         is_active: initialData?.is_active ?? true,
         start_date: initialData?.start_date || new Date().toISOString().split('T')[0],
-        end_date: initialData?.end_date || new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+        end_date: initialData?.end_date || new Date().toISOString().split('T')[0],
         condition_type: initialData?.condition_type || 'BUY_X_PRODUCT',
         condition_product_id: initialData?.condition_product_id || '',
         condition_category: initialData?.condition_category || '',
@@ -29,24 +30,55 @@ export const AutoPromoForm: React.FC<Props> = ({ initialData, onClose, onSave })
         reward_unit_type: initialData?.reward_unit_type || 'UND',
         channels: initialData?.channels || ['IN_STORE'],
         target_client_categories: initialData?.target_client_categories || [],
-        target_price_list_ids: initialData?.target_price_list_ids || []
+        target_price_list_ids: initialData?.target_price_list_ids || [],
+        condition_product_ids: initialData?.condition_product_ids || [],
+        target_cities: initialData?.target_cities || []
+    });
+
+    const [showProductSelector, setShowProductSelector] = useState(false);
+    const [prodSearch, setProdSearch] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState('');
+
+    const toggleConditionProduct = (productId: string) => {
+        const current = formData.condition_product_ids || [];
+        if (current.includes(productId)) {
+            setFormData({ ...formData, condition_product_ids: current.filter(id => id !== productId) });
+        } else {
+            setFormData({ ...formData, condition_product_ids: [...current, productId] });
+        }
+    };
+
+    const categories = Array.from(new Set(products.map(p => p.category).filter(Boolean)));
+    const filteredProducts = products.filter(p => {
+        const matchesSearch = p.name.toLowerCase().includes(prodSearch.toLowerCase()) || p.sku.toLowerCase().includes(prodSearch.toLowerCase());
+        const matchesCat = categoryFilter ? p.category === categoryFilter : true;
+        return matchesSearch && matchesCat;
     });
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name) return alert('Ingrese el nombre');
-        if (formData.condition_type === 'BUY_X_PRODUCT' && !formData.condition_product_id) return alert('Seleccione producto condición');
+        if (formData.condition_type === 'BUY_X_PRODUCT' && (!formData.condition_product_ids || formData.condition_product_ids.length === 0)) return alert('Seleccione producto(s) condición');
         if (!formData.reward_product_id) return alert('Seleccione producto de premio');
 
         onSave(formData as AutoPromotion);
     };
 
-    const toggleChannel = (ch: 'IN_STORE' | 'SELLER_APP') => {
+    const toggleChannel = (ch: 'IN_STORE' | 'SELLER_APP' | 'DIRECT_SALE') => {
         const current = formData.channels || [];
         if (current.includes(ch)) {
             setFormData({ ...formData, channels: current.filter(c => c !== ch) });
         } else {
             setFormData({ ...formData, channels: [...current, ch] });
+        }
+    };
+
+    const toggleCity = (city: string) => {
+        const current = formData.target_cities || [];
+        if (current.includes(city)) {
+            setFormData({ ...formData, target_cities: current.filter(c => c !== city) });
+        } else {
+            setFormData({ ...formData, target_cities: [...current, city] });
         }
     };
 
@@ -100,20 +132,37 @@ export const AutoPromoForm: React.FC<Props> = ({ initialData, onClose, onSave })
                                 </select>
                             </div>
 
-                            {formData.condition_type === 'BUY_X_PRODUCT' && (
+                            {(formData.condition_type === 'BUY_X_PRODUCT' || formData.condition_type === 'SPEND_Y_TOTAL') && (
                                 <div className="col-span-2">
-                                    <label className="block text-sm font-bold text-blue-900 mb-1">Producto Condición</label>
-                                    <select className="w-full border border-blue-300 p-2 rounded text-sm bg-white" value={formData.condition_product_id} onChange={e => setFormData({ ...formData, condition_product_id: e.target.value })}>
-                                        <option value="">Seleccione Producto...</option>
-                                        {products.map(p => <option key={p.id} value={p.id}>{p.sku} - {p.name}</option>)}
-                                    </select>
+                                    <label className="block text-sm font-bold text-blue-900 mb-1">
+                                        Productos Participantes (Multiselección) 
+                                        {formData.condition_type === 'SPEND_Y_TOTAL' && <span className="font-normal text-xs ml-2 text-blue-700">- Si lo deja vacío aplica a monto total de la tienda</span>}
+                                    </label>
+                                    <div className="flex gap-2 mb-2 flex-wrap min-h-[3rem] p-2 border border-blue-300 rounded bg-white">
+                                        {(formData.condition_product_ids || []).map(pid => {
+                                            const p = products.find(prod => prod.id === pid);
+                                            return p ? (
+                                                <span key={p.id} className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold border border-blue-200">
+                                                    {p.sku} - {p.name}
+                                                    <button type="button" onClick={() => toggleConditionProduct(p.id)} className="hover:text-red-500 ml-1"><X className="w-3 h-3" /></button>
+                                                </span>
+                                            ) : null;
+                                        })}
+                                        {(formData.condition_product_ids || []).length === 0 && <span className="text-slate-400 text-xs italic self-center">Ningún producto seleccionado...</span>}
+                                    </div>
+                                    <button type="button" onClick={() => setShowProductSelector(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-xs font-bold flex items-center shadow-sm">
+                                        <Search className="w-3 h-3 mr-1" /> Buscar y Seleccionar Productos
+                                    </button>
                                 </div>
                             )}
 
                             {formData.condition_type === 'SPEND_Y_CATEGORY' && (
                                 <div className="col-span-2">
                                     <label className="block text-sm font-bold text-blue-900 mb-1">Categoría</label>
-                                    <input className="w-full border border-blue-300 p-2 rounded text-sm bg-white" placeholder="Ej: CERVEZA" value={formData.condition_category} onChange={e => setFormData({ ...formData, condition_category: e.target.value.toUpperCase() })} />
+                                    <select className="w-full border border-blue-300 p-2 rounded text-sm bg-white" value={formData.condition_category} onChange={e => setFormData({ ...formData, condition_category: e.target.value })}>
+                                        <option value="">Seleccione una Categoría...</option>
+                                        {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                                    </select>
                                 </div>
                             )}
 
@@ -159,8 +208,30 @@ export const AutoPromoForm: React.FC<Props> = ({ initialData, onClose, onSave })
                                         <input type="checkbox" checked={formData.channels?.includes('SELLER_APP')} onChange={() => toggleChannel('SELLER_APP')} className="w-4 h-4 text-purple-600 rounded" />
                                         <span className="text-sm font-medium text-purple-800">App Vendedores</span>
                                     </label>
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" checked={formData.channels?.includes('DIRECT_SALE')} onChange={() => toggleChannel('DIRECT_SALE')} className="w-4 h-4 text-purple-600 rounded" />
+                                        <span className="text-sm font-medium text-purple-800">Venta Directa</span>
+                                    </label>
                                 </div>
                             </div>
+
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-sm font-bold text-purple-900 flex items-center">
+                                        <MapPin className="w-4 h-4 mr-1" /> Ciudades Destino
+                                    </label>
+                                    <span className="text-xs text-purple-600 font-medium">{formData.target_cities?.length === 0 ? 'Todas' : `${formData.target_cities?.length} sel.`}</span>
+                                </div>
+                                <div className="h-32 overflow-auto border border-purple-200 rounded p-2 text-xs grid grid-cols-2 md:grid-cols-3 gap-1 bg-white">
+                                    {PERU_CITIES.map(c => (
+                                        <label key={c} className="flex items-center p-1 rounded hover:bg-purple-100 cursor-pointer text-purple-900">
+                                            <input type="checkbox" className="mr-2 rounded border-purple-300 text-purple-600 focus:ring-purple-500" checked={formData.target_cities?.includes(c) || false} onChange={() => toggleCity(c)} />
+                                            <span className="truncate">{c}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+
                             <div>
                                 <label className="block text-sm font-bold text-purple-900 mb-1">Listas de Precios Permitidas</label>
                                 <select
@@ -198,6 +269,64 @@ export const AutoPromoForm: React.FC<Props> = ({ initialData, onClose, onSave })
                     Guardar Bonificación
                 </button>
             </div>
+
+            {/* PRODUCT MULTI-SELECTOR MODAL */}
+            {showProductSelector && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col overflow-hidden border border-slate-200">
+                        <div className="flex justify-between items-center p-4 border-b bg-slate-50">
+                            <h3 className="font-bold text-lg text-slate-800">Seleccionar Productos Participantes</h3>
+                            <button type="button" onClick={() => setShowProductSelector(false)} className="text-slate-400 hover:text-slate-600"><X className="w-6 h-6" /></button>
+                        </div>
+                        <div className="p-4 border-b flex gap-2 bg-white">
+                            <input
+                                className="flex-1 border border-slate-300 p-2 rounded text-sm font-medium focus:ring-2 focus:ring-blue-500"
+                                placeholder="Buscar por código SKU o nombre..."
+                                value={prodSearch}
+                                onChange={e => setProdSearch(e.target.value)}
+                            />
+                            <select
+                                className="w-48 border border-slate-300 p-2 rounded text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-500"
+                                value={categoryFilter}
+                                onChange={e => setCategoryFilter(e.target.value)}
+                            >
+                                <option value="">- Todas Categorías -</option>
+                                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4 bg-slate-50">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                {filteredProducts.map(p => {
+                                    const isSelected = formData.condition_product_ids?.includes(p.id);
+                                    return (
+                                        <label key={p.id} className={`flex items-center p-2 rounded border cursor-pointer transition-colors ${isSelected ? 'bg-blue-100 hover:bg-blue-200 border-blue-400' : 'bg-white hover:bg-blue-50 border-slate-200'}`}>
+                                            <input
+                                                type="checkbox"
+                                                className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500 mr-3"
+                                                checked={isSelected}
+                                                onChange={() => toggleConditionProduct(p.id)}
+                                            />
+                                            <div className="flex flex-col text-sm truncate">
+                                                <span className="font-bold text-slate-800 truncate">{p.name}</span>
+                                                <span className="text-[10px] text-slate-500 font-mono">{p.sku} | {p.category}</span>
+                                            </div>
+                                        </label>
+                                    );
+                                })}
+                                {filteredProducts.length === 0 && <div className="col-span-2 text-center py-8 text-slate-500 italic">No hay productos que coincidan.</div>}
+                            </div>
+                        </div>
+                        <div className="p-4 border-t flex justify-between bg-white items-center">
+                            <span className="text-sm font-bold text-blue-800 bg-blue-100 px-3 py-1 rounded-full border border-blue-200 shadow-inner">
+                                {(formData.condition_product_ids || []).length} seleccionados
+                            </span>
+                            <button type="button" onClick={() => setShowProductSelector(false)} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-2 rounded shadow transition-colors">
+                                Listo
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

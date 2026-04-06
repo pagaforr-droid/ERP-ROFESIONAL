@@ -63,11 +63,12 @@ export interface Promotion {
   min_quantity?: number; // Minimum units to trigger promo
 
   // NEW FIELDS
-  channels: ('IN_STORE' | 'SELLER_APP')[]; // Where is this visible?
+  channels: ('IN_STORE' | 'SELLER_APP' | 'DIRECT_SALE')[]; // Where is this visible?
   allowed_seller_ids: string[]; // Empty = All
   image_url?: string; // Optional promo banner
   target_client_categories?: string[]; // e.g. ['MINORISTA', 'MAYORISTA']
   target_price_list_ids?: string[]; // e.g. ['pl1']
+  target_cities?: string[]; // e.g. ['LIMA', 'CUSCO']
 }
 
 export interface Combo {
@@ -86,10 +87,11 @@ export interface Combo {
   image_url?: string;
 
   // NEW FIELDS
-  channels: ('IN_STORE' | 'SELLER_APP')[];
+  channels: ('IN_STORE' | 'SELLER_APP' | 'DIRECT_SALE')[];
   allowed_seller_ids: string[];
   target_client_categories?: string[];
   target_price_list_ids?: string[];
+  target_cities?: string[];
 }
 
 export interface AutoPromotion {
@@ -103,6 +105,7 @@ export interface AutoPromotion {
   // Condición
   condition_type: 'BUY_X_PRODUCT' | 'SPEND_Y_CATEGORY' | 'SPEND_Y_TOTAL';
   condition_product_id?: string;
+  condition_product_ids?: string[];
   condition_category?: string;
   condition_supplier_id?: string;
   condition_amount: number; // e.g., Buy 12 units, or Spend 100 soles
@@ -113,9 +116,10 @@ export interface AutoPromotion {
   reward_unit_type: 'UND' | 'PKG'; // Usually UND
 
   // Segmentación
-  channels: ('IN_STORE' | 'SELLER_APP')[];
+  channels: ('IN_STORE' | 'SELLER_APP' | 'DIRECT_SALE')[];
   target_client_categories?: string[];
   target_price_list_ids?: string[];
+  target_cities?: string[];
 }
 
 // === QUOTAS ===
@@ -260,6 +264,7 @@ export interface Client {
   // Location / Contact
   ubigeo: string;
   address: string;
+  city?: string;
   reference?: string;
   branches?: string[]; // Multiple delivery addresses
   phone?: string;

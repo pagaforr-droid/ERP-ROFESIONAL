@@ -4,12 +4,13 @@ import { useStore } from '../services/store';
 import { Order, OrderItem, Client, Product, Sale } from '../types';
 import { Search, ShoppingCart, User, ArrowRight, Save, Plus, Minus, X, ChevronLeft, MapPin, Clock, Edit, FileText, Wallet, CheckCircle, TrendingUp, Loader2, Hourglass, DollarSign, LogOut, ChevronDown } from 'lucide-react';
 import { calculatePromotions, isPromoActive } from '../utils/promotions';
+import { isPromoValidForContext } from '../utils/promoUtils';
 
 type ViewMode = 'SELLER_SELECT' | 'CLIENT_LIST' | 'CLIENT_DETAIL' | 'PRODUCT_SELECT';
 type ClientTab = 'ORDER' | 'COLLECTION';
 
 export const MobileOrders: React.FC = () => {
-   const { clients, products, sellers, createOrder, updateOrder, zones, orders, sales, reportCollection, collectionRecords, getBatchesForProduct, autoPromotions, promotions, deliveryMode, currentUser, users, logout, getNextDocumentNumber } = useStore();
+   const { clients, products, combos, sellers, createOrder, updateOrder, zones, orders, sales, reportCollection, collectionRecords, getBatchesForProduct, autoPromotions, promotions, deliveryMode, currentUser, users, logout, getNextDocumentNumber } = useStore();
 
    // --- NAVIGATION STATE ---
    const [viewMode, setViewMode] = useState<ViewMode>('SELLER_SELECT');
@@ -109,12 +110,18 @@ export const MobileOrders: React.FC = () => {
 
    const filteredProducts = useMemo(() => {
       const term = prodSearch.toLowerCase();
-      return products.filter(p => {
+      const cmbs = combos.filter(c =>
+         isPromoValidForContext(c, 'SELLER_APP', currentClient?.city || selectedAddress) &&
+         (selectedCategory === 'TODOS' || selectedCategory === 'COMBOS') &&
+         c.name.toLowerCase().includes(term)
+      );
+      const prods = products.filter(p => {
          const matchesSearch = p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term) || (p.barcode && p.barcode.toLowerCase().includes(term));
          const matchesCategory = selectedCategory === 'TODOS' || p.category === selectedCategory;
          return matchesSearch && matchesCategory;
       });
-   }, [products, prodSearch, selectedCategory]);
+      return [...cmbs, ...prods];
+   }, [products, combos, prodSearch, selectedCategory, selectedAddress]);
 
    const pendingBills = useMemo(() => {
       if (!currentClient) return [];
@@ -212,7 +219,7 @@ export const MobileOrders: React.FC = () => {
       let price = unit === 'PKG' ? selectedProd.price_package : selectedProd.price_unit;
       
       const activePromo = promotions.find(promo => 
-         promo.product_ids.includes(selectedProd.id) && isPromoActive(promo.start_date, promo.end_date, promo.is_active)
+         promo.product_ids.includes(selectedProd.id) && isPromoValidForContext(promo, 'SELLER_APP', currentClient?.city || selectedAddress)
       );
 
       if (activePromo) {
@@ -233,7 +240,7 @@ export const MobileOrders: React.FC = () => {
       };
 
       // Evaluate promo rules when adding item
-      const newCart = calculatePromotions([...cart, newItem], autoPromotions, products);
+      const newCart = calculatePromotions([...cart, newItem], autoPromotions, products, 'SELLER_APP', selectedAddress);
       setCart(newCart);
 
       setSelectedProd(null);
@@ -258,7 +265,7 @@ export const MobileOrders: React.FC = () => {
          newCart[index].total_price = newCart[index].unit_price * newQty;
       }
 
-      setCart(calculatePromotions(newCart, autoPromotions, products));
+      setCart(calculatePromotions(newCart, autoPromotions, products, 'SELLER_APP', selectedAddress));
    };
 
    const handleSaveOrder = () => {
@@ -686,7 +693,7 @@ export const MobileOrders: React.FC = () => {
                                     <button onClick={() => {
                                        // Remove item, then recalculate promos
                                        const filtered = cart.filter((_, i) => i !== idx);
-                                       setCart(calculatePromotions(filtered, autoPromotions, products));
+                                       setCart(calculatePromotions(filtered, autoPromotions, products, 'SELLER_APP', selectedAddress));
                                     }} className="text-slate-400 hover:text-red-500 bg-white shadow-sm rounded-full p-1"><X className="w-4 h-4" /></button>
                                  </div>
                                  <div className="p-3 flex items-center justify-between">
