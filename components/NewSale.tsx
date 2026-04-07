@@ -269,7 +269,7 @@ export const NewSale: React.FC = () => {
       // 2. Filter active auto promos for current conditions (channels, price list)
       const validPromos = autoPromotions.filter(ap => {
          // Defaulting POS channel to IN_STORE, checking against client address
-         if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city || clientData.address)) return false;
+         if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city, currentUser?.id, currentUser?.role)) return false;
          
          // Check price list
          if (ap.target_price_list_ids?.length > 0 &&
@@ -286,7 +286,7 @@ export const NewSale: React.FC = () => {
 
          if (ap.condition_type === 'BUY_X_PRODUCT') {
             const qtyBought = newCart
-               .filter(item => (ap.condition_product_ids?.includes(item.product_id) || item.product_id === ap.condition_product_id) && !item.is_bonus)
+               .filter(item => (!ap.condition_product_ids?.length || ap.condition_product_ids.includes(item.product_id) || item.product_id === ap.condition_product_id) && !item.is_bonus)
                .reduce((sum, item) => sum + item.quantity_base, 0);
 
             if (qtyBought >= ap.condition_amount) {
@@ -365,7 +365,8 @@ export const NewSale: React.FC = () => {
          name: c.name,
          doc_number: c.doc_number,
          address: c.address,
-         price_list_id: priceList
+         price_list_id: priceList,
+         city: c.city
       });
       setClientSearch(c.name);
       setShowClientSuggestions(false);
@@ -417,7 +418,7 @@ export const NewSale: React.FC = () => {
       // Evaluate Classic Promotions
       let defaultDiscount = 0;
       const activePromo = promotions.find(promo => 
-         promo.product_ids.includes(p.id) && isPromoValidForContext(promo, 'IN_STORE', clientData.city || clientData.address)
+         promo.product_ids.includes(p.id) && isPromoValidForContext(promo, 'IN_STORE', clientData.city, currentUser?.id, currentUser?.role)
       );
 
       if (activePromo) {

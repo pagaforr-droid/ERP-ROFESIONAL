@@ -276,7 +276,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       // 2. Filter active auto promos for current conditions (channels, price list)
       const validPromos = autoPromotions.filter(ap => {
          // Defaulting to DIRECT_SALE or IN_STORE? We'll assume IN_STORE unless specified
-         if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city || clientData.address)) return false;
+         if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city, currentUser?.id, currentUser?.role)) return false;
          
          // Check price list
          if (ap.target_price_list_ids?.length > 0 &&
@@ -369,7 +369,8 @@ export const AdvancedOrderEntry: React.FC = () => {
          name: c.name,
          doc_number: c.doc_number,
          address: c.address,
-         price_list_id: priceList
+         price_list_id: priceList,
+         city: c.city
       });
       setClientSearch(c.name);
       setShowClientSuggestions(false);

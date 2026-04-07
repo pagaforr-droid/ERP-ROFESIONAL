@@ -65,7 +65,7 @@ export const VirtualStore: React.FC = () => {
    const getProductPrice = (product: Product, unit: 'UND' | 'PKG') => {
       let price = unit === 'PKG' ? product.price_package : product.price_unit;
       const activePromo = promotions.find(p =>
-         p.product_ids.includes(product.id) && isPromoValidForContext(p, 'IN_STORE')
+         p.product_ids.includes(product.id) && isPromoValidForContext(p, 'IN_STORE', undefined, currentUser?.id, currentUser?.role)
       );
 
       if (activePromo) {
@@ -80,7 +80,7 @@ export const VirtualStore: React.FC = () => {
 
    const getActivePromo = (productId: string) => {
       return promotions.find(p =>
-         p.product_ids.includes(productId) && isPromoValidForContext(p, 'IN_STORE')
+         p.product_ids.includes(productId) && isPromoValidForContext(p, 'IN_STORE', undefined, currentUser?.id, currentUser?.role)
       );
    };
 
@@ -98,7 +98,7 @@ export const VirtualStore: React.FC = () => {
 
       // 2. Filter Combos
       const cmbs = combos.filter(c =>
-         isPromoValidForContext(c, 'IN_STORE') &&
+         isPromoValidForContext(c, 'IN_STORE', undefined, currentUser?.id, currentUser?.role) &&
          (selectedCategory === 'ALL') &&
          c.name.toLowerCase().includes(term)
       );

@@ -111,7 +111,7 @@ export const MobileOrders: React.FC = () => {
    const filteredProducts = useMemo(() => {
       const term = prodSearch.toLowerCase();
       const cmbs = combos.filter(c =>
-         isPromoValidForContext(c, 'SELLER_APP', currentClient?.city || selectedAddress) &&
+         isPromoValidForContext(c, 'SELLER_APP', currentClient?.city, currentSellerId, currentUser?.role) &&
          (selectedCategory === 'TODOS' || selectedCategory === 'COMBOS') &&
          c.name.toLowerCase().includes(term)
       );
@@ -219,7 +219,7 @@ export const MobileOrders: React.FC = () => {
       let price = unit === 'PKG' ? selectedProd.price_package : selectedProd.price_unit;
       
       const activePromo = promotions.find(promo => 
-         promo.product_ids.includes(selectedProd.id) && isPromoValidForContext(promo, 'SELLER_APP', currentClient?.city || selectedAddress)
+         promo.product_ids.includes(selectedProd.id) && isPromoValidForContext(promo, 'SELLER_APP', currentClient?.city, currentSellerId, currentUser?.role)
       );
 
       if (activePromo) {
@@ -240,7 +240,7 @@ export const MobileOrders: React.FC = () => {
       };
 
       // Evaluate promo rules when adding item
-      const newCart = calculatePromotions([...cart, newItem], autoPromotions, products, 'SELLER_APP', selectedAddress);
+      const newCart = calculatePromotions([...cart, newItem], autoPromotions, products, 'SELLER_APP', currentClient?.city, currentSellerId, currentUser?.role);
       setCart(newCart);
 
       setSelectedProd(null);
@@ -265,7 +265,7 @@ export const MobileOrders: React.FC = () => {
          newCart[index].total_price = newCart[index].unit_price * newQty;
       }
 
-      setCart(calculatePromotions(newCart, autoPromotions, products, 'SELLER_APP', selectedAddress));
+      setCart(calculatePromotions(newCart, autoPromotions, products, 'SELLER_APP', currentClient?.city, currentSellerId, currentUser?.role));
    };
 
    const handleSaveOrder = () => {

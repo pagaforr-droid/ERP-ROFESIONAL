@@ -16,7 +16,9 @@ export function calculatePromotions(
     autoPromotions: AutoPromotion[],
     products: Product[],
     channel: 'IN_STORE' | 'SELLER_APP' | 'DIRECT_SALE' = 'IN_STORE',
-    clientCity?: string
+    clientCity?: string,
+    sellerId?: string,
+    userRole?: string
 ): OrderItem[] {
     // 1. Remove all existing bonus items logically added by auto-promos
     // This ensures we always calculate from a clean state.
@@ -25,13 +27,13 @@ export function calculatePromotions(
     const newBonusItems: OrderItem[] = [];
 
     // 2. Evaluate active auto promotions
-    autoPromotions.filter(p => isPromoValidForContext(p, channel, clientCity)).forEach(promo => {
+    autoPromotions.filter(p => isPromoValidForContext(p, channel, clientCity, sellerId, userRole)).forEach(promo => {
         // Rule 1: BUY_X_PRODUCT
         if (promo.condition_type === 'BUY_X_PRODUCT') {
             const conditionItemKeys = promo.condition_product_ids || (promo.condition_product_id ? [promo.condition_product_id] : []);
             
             const totalBaseUnitsInCart = baseCart
-                .filter(item => conditionItemKeys.includes(item.product_id))
+                .filter(item => conditionItemKeys.length === 0 || conditionItemKeys.includes(item.product_id))
                 .reduce((sum, item) => {
                     const product = products.find(p => p.id === item.product_id);
                     const factor = item.unit_type === 'PKG' ? (product?.package_content || 1) : 1;

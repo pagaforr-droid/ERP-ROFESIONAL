@@ -28,7 +28,9 @@ export const PERU_CITIES = [
 export const isPromoValidForContext = (
   promo: Promotion | Combo | AutoPromotion, 
   channel: 'IN_STORE' | 'SELLER_APP' | 'DIRECT_SALE', 
-  clientCityInput?: string
+  clientCityInput?: string,
+  sellerId?: string,
+  userRole?: string
 ): boolean => {
   if (!isPromoCurrentlyActive(promo)) return false;
 
@@ -36,13 +38,23 @@ export const isPromoValidForContext = (
     if (!promo.channels.includes(channel)) return false;
   }
 
+  // App Vendedores Role Check
+  if (channel === 'SELLER_APP' && userRole) {
+    if (userRole !== 'SELLER' && userRole !== 'ADMIN') return false;
+  }
+
+  // Seller Restriction Check
+  if (promo.allowed_seller_ids && promo.allowed_seller_ids.length > 0) {
+    if (!sellerId || !promo.allowed_seller_ids.includes(sellerId)) return false;
+  }
+
   if (promo.target_cities && promo.target_cities.length > 0) {
     if (!clientCityInput) return false;
-    const clientCityLower = clientCityInput.toLowerCase();
+    const clientCity = clientCityInput.trim().toLowerCase();
     
+    // Strict match to client's "city" field
     const matchesCity = promo.target_cities.some(targetCity => {
-      // Remove accents for safter comparison if needed, but a simple includes is robust for basic matches
-      return clientCityLower.includes(targetCity.toLowerCase());
+      return clientCity === targetCity.trim().toLowerCase();
     });
 
     if (!matchesCity) return false;
@@ -50,3 +62,4 @@ export const isPromoValidForContext = (
 
   return true;
 };
+

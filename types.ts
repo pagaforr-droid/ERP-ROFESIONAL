@@ -117,6 +117,7 @@ export interface AutoPromotion {
 
   // Segmentación
   channels: ('IN_STORE' | 'SELLER_APP' | 'DIRECT_SALE')[];
+  allowed_seller_ids?: string[];
   target_client_categories?: string[];
   target_price_list_ids?: string[];
   target_cities?: string[];
