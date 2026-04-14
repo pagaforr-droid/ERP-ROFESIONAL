@@ -433,6 +433,7 @@ export interface Sale {
   history?: SaleHistoryEvent[]; // NEW: Audit history
 
   client_id?: string;
+  seller_id?: string; // NEW: Assigned seller for this sale
   client_name: string;
   client_ruc: string;
   client_address: string;

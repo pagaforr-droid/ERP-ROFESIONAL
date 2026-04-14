@@ -6,7 +6,7 @@ import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
 import { isPromoValidForContext } from '../utils/promoUtils';
 
 export const NewSale: React.FC = () => {
-   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions, promotions } = useStore();
+   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions, promotions, sellers, zones } = useStore();
 
    // --- REFS FOR FOCUS MANAGEMENT ---
    const productInputRef = useRef<HTMLInputElement>(null);
@@ -46,6 +46,7 @@ export const NewSale: React.FC = () => {
    const [clientSearch, setClientSearch] = useState('');
    const [showClientSuggestions, setShowClientSuggestions] = useState(false);
    const [showBranchSelector, setShowBranchSelector] = useState(false);
+   const [selectedSellerId, setSelectedSellerId] = useState('');
 
    // --- LINE ENTRY STATE ---
    const [productSearch, setProductSearch] = useState('');
@@ -117,6 +118,7 @@ export const NewSale: React.FC = () => {
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '' });
       setClientSearch('');
       setProductSearch('');
+      setSelectedSellerId('');
 
       // Set default based on active series
       const activeFacturaSeries = company.series.find(s => s.type === 'FACTURA' && s.is_active);
@@ -149,6 +151,7 @@ export const NewSale: React.FC = () => {
       });
       setClientSearch(sale.client_name);
       setPaymentMethod(sale.payment_method);
+      setSelectedSellerId(sale.seller_id || '');
       setCart(sale.items);
       setIsSearchModalOpen(false);
    };
@@ -172,7 +175,7 @@ export const NewSale: React.FC = () => {
          created_at: new Date().toISOString(),
          items: cart
       };
-      setSaleToPrint(tempSale);
+      generateMassiveInvoicePDF(company, [tempSale]);
    };
 
    // Recalculate prices based on selected Price List
@@ -269,7 +272,8 @@ export const NewSale: React.FC = () => {
       // 2. Filter active auto promos for current conditions (channels, price list)
       const validPromos = autoPromotions.filter(ap => {
          // Defaulting POS channel to IN_STORE, checking against client address
-         if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city, currentUser?.id, currentUser?.role)) return false;
+         // Passing selectedSellerId for appropriate bonifications based on the assigned seller
+         if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
          
          // Check price list
          if (ap.target_price_list_ids?.length > 0 &&
@@ -361,6 +365,16 @@ export const NewSale: React.FC = () => {
       // Auto-select Price List
       const priceList = c.price_list_id || '';
 
+      // Auto-assign seller based on client's zone
+      let autoSellerId = '';
+      if (c.zone_id) {
+         const zone = zones.find(z => z.id === c.zone_id);
+         if (zone && zone.assigned_seller_id) {
+            autoSellerId = zone.assigned_seller_id;
+         }
+      }
+      setSelectedSellerId(autoSellerId);
+
       setClientData({
          name: c.name,
          doc_number: c.doc_number,
@@ -371,7 +385,8 @@ export const NewSale: React.FC = () => {
       setClientSearch(c.name);
       setShowClientSuggestions(false);
 
-      setPaymentMethod(c.payment_condition as any || 'CONTADO');
+      // Default to CONTADO as requested
+      setPaymentMethod('CONTADO');
    };
 
    // --- HANDLERS: PRODUCT SEARCH & SELECTION ---
@@ -418,7 +433,7 @@ export const NewSale: React.FC = () => {
       // Evaluate Classic Promotions
       let defaultDiscount = 0;
       const activePromo = promotions.find(promo => 
-         promo.product_ids.includes(p.id) && isPromoValidForContext(promo, 'IN_STORE', clientData.city, currentUser?.id, currentUser?.role)
+         promo.product_ids.includes(p.id) && isPromoValidForContext(promo, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)
       );
 
       if (activePromo) {
@@ -588,7 +603,9 @@ export const NewSale: React.FC = () => {
       if (isViewMode && !isEditMode) {
          // If viewing history, just print current
          const currentSale = sales.find(s => s.series === series && s.number === docNumber);
-         if (currentSale) setSaleToPrint(currentSale);
+         if (currentSale) {
+            generateMassiveInvoicePDF(company, [currentSale]);
+         }
          return;
       }
 
@@ -616,6 +633,7 @@ export const NewSale: React.FC = () => {
          client_name: clientData.name || 'CLIENTE VARIOS',
          client_ruc: clientData.doc_number || '00000000',
          client_address: clientData.address || '',
+         seller_id: selectedSellerId || undefined,
          subtotal,
          igv,
          total: grandTotal,
@@ -713,6 +731,18 @@ export const NewSale: React.FC = () => {
                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
                   <label className="font-bold text-slate-700 text-sm">F. Emision</label>
                   <input type="date" className="border border-slate-300 rounded px-2 py-1 text-sm bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" defaultValue={new Date().toISOString().split('T')[0]} disabled={isViewMode} />
+               </div>
+               <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
+                  <label className="font-bold text-slate-700 text-sm">Vendedor</label>
+                  <select 
+                     className="border border-slate-300 rounded px-2 py-1 text-sm bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" 
+                     value={selectedSellerId} 
+                     onChange={e => setSelectedSellerId(e.target.value)} 
+                     disabled={isViewMode}
+                  >
+                     <option value="">-- Sin Vendedor --</option>
+                     {sellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
                </div>
             </div>
             {isViewMode && <div className="ml-4 px-3 py-1 bg-yellow-200 text-yellow-800 font-bold rounded animate-pulse">MODO VISUALIZACIÓN</div>}

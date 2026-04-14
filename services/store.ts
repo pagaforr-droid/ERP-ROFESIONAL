@@ -571,65 +571,65 @@ export const useStore = create<AppState>((set, get) => ({
       // Basic implementation for direct sales
       const newBatches = [...state.batches];
 
-      // Auto-recalculate promos to ensure data integrity
-      // Since sale.items are SaleItem[], we temporarily map to OrderItem structure for calculatePromotions
-      // and map back. In a real scenario, calculatePromotions might be generalized.
-      const orderItemsContent: OrderItem[] = sale.items.map(i => ({
-         product_id: i.product_id,
-         product_name: i.product_name,
-         unit_type: i.selected_unit === 'UND' || i.selected_unit === 'PKG' ? i.selected_unit : 'UND',
-         quantity: i.quantity_presentation,
-         unit_price: i.unit_price,
-         total_price: i.total_price,
-         is_promo: i.is_bonus,
-         auto_promo_id: i.auto_promo_id,
-         discount_percent: i.discount_percent,
-         discount_amount: i.discount_amount
-      }));
+      // 1. Confiar en la exactitud del UI respectando su validación guiada de vendedor y ciudad
+      // 2. Auto-asignar lotes a bonificaciones (que tienen batch_allocations vacío)
+      sale.items = sale.items.map(item => {
+         let allocations = item.batch_allocations || [];
+         
+         if (allocations.length === 0 && item.quantity_base > 0) {
+            const product = state.products.find(p => p.id === item.product_id);
+            if (!product) return item;
 
-      const validatedItems = calculatePromotions(orderItemsContent, state.autoPromotions, state.products);
+            const availableBatches = newBatches
+               .filter(b => b.product_id === item.product_id && b.quantity_current > 0)
+               .sort((a, b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
 
-      // Map back to SaleItem (combining with original IDs if possible)
-      sale.items = validatedItems.map((vi, idx) => {
-         const originalItem = sale.items.find(si => si.product_id === vi.product_id && (si.selected_unit === vi.unit_type || (si.selected_unit !== 'UND' && si.selected_unit !== 'PKG')));
-         return {
-            id: originalItem ? originalItem.id : generateUUID(),
-            product_id: vi.product_id,
-            product_sku: originalItem?.product_sku || 'PROMO',
-            product_name: vi.product_name,
-            selected_unit: (vi.unit_type === 'UND' || vi.unit_type === 'PKG') ? vi.unit_type : 'UND', // Fallback for promos which might not have COMBO type legally in SaleItem
-            quantity_presentation: vi.quantity,
-            quantity_base: vi.quantity * (vi.unit_type === 'PKG' ? (state.products.find(p => p.id === vi.product_id)?.package_content || 1) : 1),
-            unit_price: vi.unit_price,
-            total_price: vi.total_price,
-            discount_percent: vi.discount_percent || originalItem?.discount_percent || 0,
-            discount_amount: vi.discount_amount || originalItem?.discount_amount || 0,
-            is_bonus: !!vi.is_promo,
-            auto_promo_id: vi.auto_promo_id || originalItem?.auto_promo_id,
-            batch_allocations: originalItem?.batch_allocations || []
-         };
+            let remaining = item.quantity_base;
+            const newAllocations: typeof allocations = [];
+
+            for (const b of availableBatches) {
+               if (remaining <= 0) break;
+               const take = Math.min(remaining, b.quantity_current);
+
+               const batchIndex = newBatches.findIndex(x => x.id === b.id);
+               if (batchIndex >= 0) {
+                  newBatches[batchIndex] = {
+                     ...newBatches[batchIndex],
+                     quantity_current: newBatches[batchIndex].quantity_current - take
+                  };
+               }
+               newAllocations.push({ batch_id: b.id, batch_code: b.code, quantity: take });
+               remaining -= take;
+            }
+
+            if (remaining > 0) {
+               throw new Error(`KARDEX ERROR: Stock insuficiente real para la bonificación/producto "${product.name}". Restan ${remaining} unid.`);
+            }
+            allocations = newAllocations;
+         } else if (allocations.length > 0) {
+             // Deducir del stock para items regulares ya asignados en el UI
+             allocations.forEach(alloc => {
+                 const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
+                 if (batchIndex >= 0) {
+                    const newQty = newBatches[batchIndex].quantity_current - alloc.quantity;
+                    if (newQty < 0) {
+                        throw new Error(`KARDEX ERROR: Venta bloqueada. El lote ${alloc.batch_code} no tiene stock suficiente para cubrir la venta. (Faltan ${Math.abs(newQty)})`);
+                    }
+                    newBatches[batchIndex] = {
+                       ...newBatches[batchIndex],
+                       quantity_current: newQty
+                    };
+                 }
+             });
+         }
+
+         return { ...item, batch_allocations: allocations };
       });
 
-      // Recalculate totals
+      // Recalcular totales en base a la lista consolidada
       sale.subtotal = sale.items.reduce((acc, item) => acc + item.total_price, 0) / 1.18;
       sale.igv = sale.items.reduce((acc, item) => acc + item.total_price, 0) - sale.subtotal;
       sale.total = sale.items.reduce((acc, item) => acc + item.total_price, 0);
-
-      sale.items.forEach(item => {
-         item.batch_allocations?.forEach(alloc => {
-            const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
-            if (batchIndex >= 0) {
-               const newQty = newBatches[batchIndex].quantity_current - alloc.quantity;
-               if (newQty < 0) {
-                   throw new Error(`KARDEX ERROR: Venta bloqueada. El lote ${alloc.batch_code} no tiene stock suficiente para cubrir la venta. (Faltan ${Math.abs(newQty)})`);
-               }
-               newBatches[batchIndex] = {
-                  ...newBatches[batchIndex],
-                  quantity_current: newQty
-               };
-            }
-         });
-      });
 
       const finalSale = {
          ...sale,
