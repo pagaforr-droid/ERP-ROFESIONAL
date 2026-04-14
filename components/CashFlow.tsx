@@ -391,7 +391,7 @@ export const CashFlow: React.FC = () => {
                <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                   <div>
                      <h3 className="font-bold text-slate-700">Programación de Pagos</h3>
-                     <p className="text-xs text-slate-500">Gastos fijos, alquileres y planilla</p>
+                     <p className="text-xs text-slate-500">Gastos fijos, alquileres y proveedores</p>
                   </div>
                   <button onClick={() => setShowForm(true)} className="bg-slate-900 text-white px-4 py-2 rounded text-sm font-bold flex items-center shadow">
                      <Clock className="w-4 h-4 mr-2" /> Nueva Programación
@@ -455,28 +455,14 @@ export const CashFlow: React.FC = () => {
                               <label className="block text-xs font-bold text-slate-600 mb-1">Tipo Beneficiario</label>
                               <select className="w-full border border-slate-300 p-2 rounded text-sm" value={beneficiaryType} onChange={e => setBeneficiaryType(e.target.value as any)}>
                                  <option value="OTHER">Otro / General</option>
-                                 <option value="EMPLOYEE">Empleado (Sueldo)</option>
                                  <option value="SUPPLIER">Proveedor</option>
                               </select>
                            </div>
                            <div>
                               <label className="block text-xs font-bold text-slate-600 mb-1">
-                                 {beneficiaryType === 'EMPLOYEE' ? 'Seleccionar Empleado' : beneficiaryType === 'SUPPLIER' ? 'Seleccionar Proveedor' : 'Nombre / Concepto'}
+                                 {beneficiaryType === 'SUPPLIER' ? 'Seleccionar Proveedor' : 'Nombre / Concepto'}
                               </label>
-                              {beneficiaryType === 'EMPLOYEE' ? (
-                                 <select className="w-full border border-slate-300 p-2 rounded text-sm" onChange={e => {
-                                    const emp = [...store.drivers, ...store.sellers].find(x => x.id === e.target.value);
-                                    setFormData({ ...formData, beneficiary_id: e.target.value, name: `SUELDO: ${emp?.name}` });
-                                 }}>
-                                    <option value="">-- Seleccionar --</option>
-                                    <optgroup label="Choferes">
-                                       {store.drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                                    </optgroup>
-                                    <optgroup label="Vendedores">
-                                       {store.sellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                    </optgroup>
-                                 </select>
-                              ) : beneficiaryType === 'SUPPLIER' ? (
+                              {beneficiaryType === 'SUPPLIER' ? (
                                  <select className="w-full border border-slate-300 p-2 rounded text-sm" onChange={e => {
                                     const sup = store.suppliers.find(x => x.id === e.target.value);
                                     setFormData({ ...formData, beneficiary_id: e.target.value, name: `PAGO RECURRENTE: ${sup?.name}` });

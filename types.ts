@@ -42,6 +42,7 @@ export interface Batch {
   id: string;
   product_id: string;
   purchase_id?: string; // Link to Purchase for Reversion
+  warehouse_id?: 'CENTRAL' | 'MERMAS'; // NEW: Multi-warehouse segregation (optional for backwards compat during migration)
   code: string;
   quantity_initial: number;
   quantity_current: number;

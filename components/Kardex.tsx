@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Batch } from '../types';
@@ -30,6 +30,7 @@ export const Kardex: React.FC = () => {
   
   // --- FILTERS ---
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterWarehouse, setFilterWarehouse] = useState<'CENTRAL'|'MERMAS'>('CENTRAL');
   const [filterCategory, setFilterCategory] = useState('ALL');
   const [filterSupplier, setFilterSupplier] = useState('ALL');
   const [dateFrom, setDateFrom] = useState(new Date(new Date().setDate(1)).toISOString().split('T')[0]);
@@ -44,11 +45,13 @@ export const Kardex: React.FC = () => {
   // 1. INVENTORY SUMMARY (Snapshot)
   const inventorySnapshot = useMemo(() => {
     return store.products.map(p => {
-       const productBatches = store.batches.filter(b => b.product_id === p.id && b.quantity_current > 0);
+       const productBatches = store.batches.filter(b => b.product_id === p.id && b.quantity_current > 0 && 
+           (filterWarehouse === 'CENTRAL' ? b.warehouse_id !== 'MERMAS' : b.warehouse_id === 'MERMAS')
+       );
        const totalStock = productBatches.reduce((acc, b) => acc + b.quantity_current, 0);
        // Weighted Average Cost Calculation
-       const totalValue = productBatches.reduce((acc, b) => acc + (b.quantity_current * b.cost), 0);
-       const avgCost = totalStock > 0 ? totalValue / totalStock : p.last_cost;
+       const totalValue = filterWarehouse === 'MERMAS' ? 0 : productBatches.reduce((acc, b) => acc + (b.quantity_current * b.cost), 0);
+       const avgCost = filterWarehouse === 'MERMAS' ? 0 : (totalStock > 0 ? totalValue / totalStock : p.last_cost);
 
        return {
           ...p,
@@ -76,7 +79,7 @@ export const Kardex: React.FC = () => {
        if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
        return 0;
     });
-  }, [store.products, store.batches, searchTerm, filterCategory, filterSupplier, sortField, sortOrder]);
+  }, [store.products, store.batches, searchTerm, filterCategory, filterSupplier, sortField, sortOrder, filterWarehouse]);
 
   // 2. MOVEMENTS (Timeline)
   const movements = useMemo(() => {
@@ -212,16 +215,30 @@ export const Kardex: React.FC = () => {
 
   const currentTotalValuation = useMemo(() => inventorySnapshot.reduce((a,b)=>a+b.totalValue, 0), [inventorySnapshot]);
 
+  const handleTransferMermas = (productId: string, batchId: string, maxQty: number) => {
+    const qtyStr = window.prompt(`Â¿CuÃ¡ntas unidades deseas mover a cuarentena/mermas? (MÃ¡ximas disp: ${maxQty})`);
+    if (!qtyStr) return;
+    const qty = parseInt(qtyStr, 10);
+    if (isNaN(qty) || qty <= 0 || qty > maxQty) {
+      alert("Cantidad invÃ¡lida");
+      return;
+    }
+    const res = store.transferToMermas(productId, batchId, qty);
+    if (!res.success) {
+      alert("Error: " + res.msg);
+    }
+  };
+
   const exportExcel = () => {
     const dataToExport = inventorySnapshot.map(p => ({
-      "Código SKU": p.sku,
+      "CÃ³digo SKU": p.sku,
       "Producto": p.name,
-      "Categoría": p.category || '',
+      "CategorÃ­a": p.category || '',
       "Marca": p.brand || '',
       "Proveedor": p.supplierName,
       "Stock Total": p.totalStock,
       "Costo Prom. Unit": parseFloat(p.avgCost.toFixed(4)),
-      "Valorización Total": parseFloat(p.totalValue.toFixed(2)),
+      "ValorizaciÃ³n Total": parseFloat(p.totalValue.toFixed(2)),
       "Estado": p.totalStock <= p.min_stock ? 'BAJO STOCK' : 'OPTIMO'
     }));
 
@@ -240,11 +257,11 @@ export const Kardex: React.FC = () => {
     
     doc.setFontSize(10);
     doc.setTextColor(100, 100, 100);
-    doc.text(`Fecha de Emisión: ${new Date().toLocaleString()}`, 14, 30);
-    doc.text(`Filtros: Categoría (${filterCategory}), Proveedor (${filterSupplier})`, 14, 36);
+    doc.text(`Fecha de EmisiÃ³n: ${new Date().toLocaleString()}`, 14, 30);
+    doc.text(`Filtros: CategorÃ­a (${filterCategory}), Proveedor (${filterSupplier})`, 14, 36);
     doc.text(`Total Capital Valorizado: S/ ${currentTotalValuation.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 14, 42);
 
-    const tableColumn = ["SKU", "Producto", "Categoría / Marca", "Proveedor", "Stock Total", "Costo Prom", "Valor Total"];
+    const tableColumn = ["SKU", "Producto", "CategorÃ­a / Marca", "Proveedor", "Stock Total", "Costo Prom", "Valor Total"];
     const tableRows = inventorySnapshot.map(p => [
       p.sku,
       p.name,
@@ -284,12 +301,12 @@ export const Kardex: React.FC = () => {
              </div>
              <div>
                 <h2 className="text-xl font-bold text-slate-900">Kardex & Inventarios</h2>
-                <p className="text-xs text-slate-500">Control de stock, movimientos y valorización</p>
+                <p className="text-xs text-slate-500">Control de stock, movimientos y valorizaciÃ³n</p>
              </div>
           </div>
           <div className="flex bg-white border border-slate-200 rounded-lg p-1">
              <button onClick={() => setActiveTab('INVENTORY')} className={`px-4 py-2 text-xs font-bold rounded flex items-center transition-all ${activeTab === 'INVENTORY' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
-                <Layers className="w-4 h-4 mr-2" /> Inventario Físico
+                <Layers className="w-4 h-4 mr-2" /> Inventario FÃ­sico
              </button>
              <button onClick={() => setActiveTab('MOVEMENTS')} className={`px-4 py-2 text-xs font-bold rounded flex items-center transition-all ${activeTab === 'MOVEMENTS' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
                 <RefreshCw className="w-4 h-4 mr-2" /> Kardex Movimientos
@@ -298,7 +315,7 @@ export const Kardex: React.FC = () => {
                 <Calendar className="w-4 h-4 mr-2" /> Lotes y Vencimientos
              </button>
              <button onClick={() => setActiveTab('ANALYTICS')} className={`px-4 py-2 text-xs font-bold rounded flex items-center transition-all ${activeTab === 'ANALYTICS' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
-                <BarChart3 className="w-4 h-4 mr-2" /> Reportes Estratégicos
+                <BarChart3 className="w-4 h-4 mr-2" /> Reportes EstratÃ©gicos
              </button>
           </div>
        </div>
@@ -321,10 +338,17 @@ export const Kardex: React.FC = () => {
              
              {activeTab !== 'MOVEMENTS' && (
                 <>
+                   <div className="w-56">
+                      <label className="block text-xs font-bold text-slate-600 mb-1">AlmacÃ©n LogÃ­stico</label>
+                      <select className={`w-full border p-2 rounded text-sm font-bold ${filterWarehouse === 'MERMAS' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-slate-800 text-white border-slate-800'}`} value={filterWarehouse} onChange={e => setFilterWarehouse(e.target.value as any)}>
+                         <option value="CENTRAL">ALMACÃ‰N CENTRAL</option>
+                         <option value="MERMAS">CUARENTENA / MERMAS</option>
+                      </select>
+                   </div>
                    <div className="w-48">
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Filtrar Categoría</label>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Filtrar CategorÃ­a</label>
                       <select className="w-full border border-slate-300 p-2 rounded text-sm" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
-                         <option value="ALL">Todas las Categorías</option>
+                         <option value="ALL">Todas las CategorÃ­as</option>
                          {uniqueCategories.map((c) => <option key={c} value={c}>{c}</option>)}
                       </select>
                    </div>
@@ -368,13 +392,13 @@ export const Kardex: React.FC = () => {
                    <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 border-b border-slate-200">
                        <tr>
                           <th className="p-3 w-28 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('sku')}>
-                             <div className="flex items-center">Código {sortField === 'sku' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                             <div className="flex items-center">CÃ³digo {sortField === 'sku' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
                           </th>
                           <th className="p-3 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('name')}>
                              <div className="flex items-center">Producto {sortField === 'name' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
                           </th>
                           <th className="p-3 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('category')}>
-                             <div className="flex items-center">Categoría / Marca {sortField === 'category' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                             <div className="flex items-center">CategorÃ­a / Marca {sortField === 'category' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
                           </th>
                           <th className="p-3 text-right cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('stock')}>
                              <div className="flex items-center justify-end">Stock Total {sortField === 'stock' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
@@ -419,7 +443,7 @@ export const Kardex: React.FC = () => {
                    </tbody>
                    <tfoot className="bg-slate-50 border-t border-slate-200 font-bold">
                       <tr>
-                         <td colSpan={5} className="p-3 text-right uppercase text-slate-600">Total Valorizado Almacén:</td>
+                         <td colSpan={5} className="p-3 text-right uppercase text-slate-600">Total Valorizado AlmacÃ©n:</td>
                          <td className="p-3 text-right text-blue-800 text-lg">S/ {inventorySnapshot.reduce((a,b)=>a+b.totalValue, 0).toLocaleString()}</td>
                          <td></td>
                       </tr>
@@ -490,7 +514,7 @@ export const Kardex: React.FC = () => {
              <div className="flex-1 overflow-auto p-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                    {store.products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(product => {
-                      const batches = store.batches.filter(b => b.product_id === product.id && b.quantity_current > 0).sort((a,b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
+                      const batches = store.batches.filter(b => b.product_id === product.id && b.quantity_current > 0 && (filterWarehouse === 'CENTRAL' ? b.warehouse_id !== 'MERMAS' : b.warehouse_id === 'MERMAS')).sort((a,b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
                       if (batches.length === 0) return null;
 
                       return (
@@ -514,12 +538,17 @@ export const Kardex: React.FC = () => {
                                         <div>
                                            <div className="font-bold text-slate-700">Lote: {batch.code}</div>
                                            <div className={`text-[10px] ${isExpiring ? 'text-red-600 font-bold' : 'text-slate-500'}`}>
-                                              Vence: {batch.expiration_date} ({daysLeft} días)
+                                              Vence: {batch.expiration_date} ({daysLeft} dÃ­as)
                                            </div>
                                         </div>
-                                        <div className="text-right">
+                                        <div className="text-right flex flex-col items-end gap-1">
                                            <div className="font-bold text-slate-900">{batch.quantity_current} Und</div>
                                            <div className="text-[9px] text-slate-400">Ini: {batch.quantity_initial}</div>
+                                           {filterWarehouse === 'CENTRAL' && (
+                                              <button onClick={() => handleTransferMermas(product.id, batch.id, batch.quantity_current)} title="Mover a mermas" className="mt-1 text-[9px] bg-red-100 hover:bg-red-200 text-red-700 px-2 py-0.5 rounded font-bold transition-colors">
+                                                 A Mermas
+                                              </button>
+                                           )}
                                         </div>
                                      </div>
                                   );
@@ -537,7 +566,7 @@ export const Kardex: React.FC = () => {
              <div className="flex-1 overflow-auto p-6 animate-fade-in-up">
                 <div className="grid grid-cols-3 gap-6 mb-8">
                    <div className="bg-slate-800 text-white p-6 rounded-lg shadow-lg">
-                      <p className="text-slate-400 text-xs font-bold uppercase mb-1">Valorización Total Inventario</p>
+                      <p className="text-slate-400 text-xs font-bold uppercase mb-1">ValorizaciÃ³n Total Inventario</p>
                       <h3 className="text-3xl font-bold">S/ {analyticsData.totalValuation.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</h3>
                    </div>
                    <div className="bg-white p-6 rounded-lg shadow border border-slate-200">
@@ -552,7 +581,7 @@ export const Kardex: React.FC = () => {
 
                 <div className="grid grid-cols-2 gap-8 h-80">
                    <div className="bg-white p-4 rounded-lg shadow border border-slate-200 flex flex-col">
-                      <h4 className="font-bold text-slate-700 mb-4 text-center">Inversión por Categoría</h4>
+                      <h4 className="font-bold text-slate-700 mb-4 text-center">InversiÃ³n por CategorÃ­a</h4>
                       <ResponsiveContainer width="100%" height="100%">
                          <PieChart>
                             <Pie data={analyticsData.catChart} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
@@ -590,3 +619,4 @@ export const Kardex: React.FC = () => {
     </div>
   );
 };
+

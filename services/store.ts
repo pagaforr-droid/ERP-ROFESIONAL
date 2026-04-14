@@ -424,6 +424,7 @@ interface AppState {
 
    // Selectors/Helpers
    getBatchesForProduct: (productId: string) => Batch[];
+   transferToMermas: (productId: string, batchId: string, quantity: number) => { success: boolean, msg?: string };
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -581,7 +582,7 @@ export const useStore = create<AppState>((set, get) => ({
             if (!product) return item;
 
             const availableBatches = newBatches
-               .filter(b => b.product_id === item.product_id && b.quantity_current > 0)
+               .filter(b => b.product_id === item.product_id && b.quantity_current > 0 && b.warehouse_id !== 'MERMAS')
                .sort((a, b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
 
             let remaining = item.quantity_base;
@@ -641,17 +642,62 @@ export const useStore = create<AppState>((set, get) => ({
       return { sales: [finalSale, ...state.sales], batches: newBatches };
    }),
 
+   transferToMermas: (productId, batchId, quantity) => {
+      const state = get();
+      const batches = [...state.batches];
+      const sourceBatchIndex = batches.findIndex(b => b.id === batchId);
+      
+      if (sourceBatchIndex === -1) return { success: false, msg: 'Lote fuente no encontrado' };
+      const sourceBatch = batches[sourceBatchIndex];
+      
+      if (sourceBatch.quantity_current < quantity) {
+         return { success: false, msg: 'Cantidad insuficiente en el lote' };
+      }
+      
+      // Withdraw from origin
+      batches[sourceBatchIndex] = {
+         ...sourceBatch,
+         quantity_current: sourceBatch.quantity_current - quantity
+      };
+      
+      // Inject to Mermas warehouse
+      batches.push({
+         ...sourceBatch,
+         id: crypto.randomUUID(), // New distinct batch instance for mermas
+         warehouse_id: 'MERMAS',
+         quantity_initial: quantity,
+         quantity_current: quantity,
+         created_at: new Date().toISOString()
+      });
+      
+      set({ batches });
+      return { success: true };
+   },
+
    createCreditNote: (creditNote, originalSaleId, returnedItems) => set((state) => {
-      // 1. Revert Items to Kardex (Add stock back)
+      // 1. Revert Items to Kardex (Add stock back or route to Mermas)
       const newBatches = [...state.batches];
       returnedItems.forEach(item => {
          item.batch_allocations?.forEach(alloc => {
             const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
             if (batchIndex >= 0) {
-               newBatches[batchIndex] = {
-                  ...newBatches[batchIndex],
-                  quantity_current: newBatches[batchIndex].quantity_current + alloc.quantity
-               };
+               if (item.warehouse_id === 'MERMAS') {
+                  // Route to Mermas (Defective/Void)
+                  newBatches.push({
+                     ...newBatches[batchIndex],
+                     id: crypto.randomUUID(),
+                     warehouse_id: 'MERMAS',
+                     quantity_initial: alloc.quantity,
+                     quantity_current: alloc.quantity,
+                     created_at: new Date().toISOString()
+                  });
+               } else {
+                  // Return cleanly to Central
+                  newBatches[batchIndex] = {
+                     ...newBatches[batchIndex],
+                     quantity_current: newBatches[batchIndex].quantity_current + alloc.quantity
+                  };
+               }
             }
          });
       });
@@ -721,7 +767,7 @@ export const useStore = create<AppState>((set, get) => ({
 
                // Find batches for this component
                const availableBatches = newBatches
-                  .filter(b => b.product_id === comboItem.product_id && b.quantity_current > 0)
+                  .filter(b => b.product_id === comboItem.product_id && b.quantity_current > 0 && b.warehouse_id !== 'MERMAS')
                   .sort((a, b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
 
                let remaining = totalRequiredForComponent;
@@ -755,7 +801,7 @@ export const useStore = create<AppState>((set, get) => ({
             const requiredBase = item.quantity * conversionFactor;
 
             const availableBatches = newBatches
-               .filter(b => b.product_id === item.product_id && b.quantity_current > 0)
+               .filter(b => b.product_id === item.product_id && b.quantity_current > 0 && b.warehouse_id !== 'MERMAS')
                .sort((a, b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
 
             let remaining = requiredBase;
@@ -1342,6 +1388,7 @@ export const useStore = create<AppState>((set, get) => ({
             id: crypto.randomUUID(),
             product_id: item.product_id,
             purchase_id: finalizedPurchase.id,
+            warehouse_id: 'CENTRAL', // NEW: Segregación Multialmacén
             code: item.batch_code,
             quantity_initial: item.quantity_base,
             quantity_current: item.quantity_base,
@@ -2295,7 +2342,23 @@ export const useStore = create<AppState>((set, get) => ({
          user_id: userId
       };
 
+      // Automatic calculation of next due date
+      let newNextDate = new Date(employee.next_due_date);
+      if (employee.payment_frequency === 'MONTHLY') {
+         newNextDate.setUTCMonth(newNextDate.getUTCMonth() + 1);
+      } else if (employee.payment_frequency === 'WEEKLY') {
+         newNextDate.setUTCDate(newNextDate.getUTCDate() + 7);
+      } else if (employee.payment_frequency === 'BIWEEKLY') {
+         newNextDate.setUTCDate(newNextDate.getUTCDate() + 14);
+      }
+      
+      const updatedEmployee = {
+         ...employee,
+         next_due_date: newNextDate.toISOString().split('T')[0]
+      };
+
       return {
+         employees: s.employees.map(e => e.id === employeeId ? updatedEmployee : e),
          payrollRecords: [...s.payrollRecords, newRecord],
          salaryAdvances: s.salaryAdvances.map(a => 
             (a.employee_id === employeeId && a.status === 'PENDING') ? { ...a, status: 'PAID' } : a
