@@ -33,7 +33,10 @@ BEGIN
     'SELLER', 
     true,
     '["dashboard", "sales", "clients", "products"]'::jsonb -- Permisos básicos
-  );
+  )
+  ON CONFLICT (username) DO UPDATE SET 
+    auth_id = EXCLUDED.auth_id;
+  
   RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
