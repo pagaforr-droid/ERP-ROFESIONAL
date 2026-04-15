@@ -1,8 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
-// En desarrollo, la constante default es VITE_USE_MOCK_DB=true
-// En Vercel o para entorno real hay que pasarle VITE_USE_MOCK_DB=false
-export const USE_MOCK_DB = (import.meta as any).env.VITE_USE_MOCK_DB !== 'false';
+// FORZADO A USAR LA BASE DE DATOS REAL DE SUPABASE
+export const USE_MOCK_DB = false;
 
 // Creamos un dummy genérico para evitar crash si el usuario aún no pone las keys
 const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || 'https://demo-placeholder.supabase.co';
