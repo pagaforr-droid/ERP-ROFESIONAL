@@ -6,7 +6,7 @@ import { supabase, USE_MOCK_DB } from '../services/supabase';
 
 export const Login: React.FC = () => {
   const { users, setCurrentUser, company, setDeliveryMode } = useStore();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
@@ -24,24 +24,35 @@ export const Login: React.FC = () => {
     let validUser: any = null;
 
     if (USE_MOCK_DB) {
-       const user = users.find(u => u.username === username);
+       // Mock fallback
+       const user = users.find(u => (u.username === email || u.email === email));
        if (!user) { setError('Usuario no encontrado.'); return; }
        if (user.password !== password) { setError('Contraseña incorrecta.'); return; }
        validUser = user;
     } else {
-       // Software Auth (Option B): Fetching directly against erp_users to bypass native RLS identity for quick deployment
-       const { data, error } = await supabase
-          .from('erp_users')
-          .select('*')
-          .eq('username', username)
-          .eq('password', password)
-          .maybeSingle();
+       // Native Supabase Auth (Option A)
+       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: email,
+          password: password
+       });
 
-       if (error || !data) {
-          setError('Credenciales incorrectas o el usuario no existe.');
+       if (authError || !authData.user) {
+          setError('Email o contraseña incorrecta.');
           return;
        }
-       validUser = data;
+
+       // Fetch ERP profile using auth_id
+       const { data: profile, error: profileError } = await supabase
+          .from('erp_users')
+          .select('*')
+          .eq('auth_id', authData.user.id)
+          .single();
+
+       if (profileError || !profile) {
+          setError('El perfil de usuario ERP no está configurado. Contacte a soporte.');
+          return;
+       }
+       validUser = profile;
     }
 
     if (!validUser.is_active) {
@@ -83,16 +94,16 @@ export const Login: React.FC = () => {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-xs font-bold text-slate-600 mb-1 uppercase">Usuario</label>
+              <label className="block text-xs font-bold text-slate-600 mb-1 uppercase">Correo Electrónico (o Usuario Mock)</label>
               <div className="relative">
                 <User className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
                 <input
                   autoFocus
                   type="text"
                   className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-slate-800"
-                  placeholder="Ej. admin"
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
+                  placeholder="admin@empresa.com"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
                 />
               </div>
             </div>
@@ -173,13 +184,14 @@ export const Login: React.FC = () => {
         <div className="bg-slate-50 p-4 border-t border-slate-100 text-center">
           <div className="group relative inline-block">
             <p className="text-xs text-slate-400 cursor-help flex items-center justify-center hover:text-slate-600">
-              <Info className="w-3 h-3 mr-1" /> Credenciales Demo
+              <Info className="w-3 h-3 mr-1" /> Instrucciones Supabase Auth
             </p>
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-slate-800 text-white text-xs p-3 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 text-left">
-              <div className="mb-2"><strong>Admin:</strong> admin / 123456</div>
-              <div className="mb-2"><strong>Vendedor:</strong> vendedor1 / 123</div>
-              <div className="mb-2"><strong>Almacén:</strong> almacen / 123</div>
-              <div><strong>Cliente (Tienda):</strong> cliente / 123</div>
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-800 text-white text-xs p-3 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 text-left">
+              <div className="mb-2 text-yellow-300 font-bold">Entorno Nube:</div>
+              <div className="mb-2">Debes registrar tu correo en la pestaña "Authentication" de tu panel de Supabase. El sistema vinculará tus permisos automáticamente.</div>
+              <div className="mb-2 mt-2 text-blue-300 font-bold">Entorno Mock (VITE_USE_MOCK_DB=true):</div>
+              <div className="mb-1"><strong>Admin:</strong> admin / 123456</div>
+              <div><strong>Vendedor:</strong> vendedor1 / 123</div>
             </div>
           </div>
         </div>

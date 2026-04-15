@@ -20,17 +20,3 @@ INSERT INTO clients (code, doc_type, doc_number, name, is_person, address, city,
 VALUES 
 ('CL-001', 'RUC', '20601234567', 'DISTRIBUIDORA SANTA ROSA SAC', false, 'AV. LA CULTURA 200', 'Cusco', 'CREDITO', 5000),
 ('CL-002', 'RUC', '20459876543', 'MINIMARKET EL TIO SAC', false, 'JR. LOS ANDES 450', 'Cusco', 'CONTADO', 0);
-
--- Insertar usuario administrador (Opción B: Passwords temporales)
--- Nota: Deberás asegurarte que la tabla erp_users tenga la columna password (ALTER TABLE erp_users ADD COLUMN IF NOT EXISTS password TEXT;)
-ALTER TABLE erp_users ADD COLUMN IF NOT EXISTS password TEXT;
-
-INSERT INTO erp_users (username, password, name, role, is_active, permissions) 
-VALUES (
-    'admin', 
-    '123456', 
-    'Admin General', 
-    'ADMIN', 
-    true, 
-    '["dashboard", "advanced-orders", "reports", "kardex", "sales", "credit-notes", "document-manager", "print-batch", "mobile-orders", "mobile-delivery", "order-processing", "collection-consolidation", "dispatch", "dispatch-liquidation", "cash-flow", "users", "attendance", "purchases", "products", "clients", "territory", "suppliers", "warehouses", "logistics", "company-settings", "promo-manager", "price-manager", "virtual-store", "sunat-manager", "accounting-reports", "quota-manager", "personnel-management"]'::jsonb
-);
