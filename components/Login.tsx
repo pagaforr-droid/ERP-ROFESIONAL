@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../services/store';
 import { User, Lock, LogIn, AlertCircle, Box, Info, Truck } from 'lucide-react';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
 
 export const Login: React.FC = () => {
   const { users, setCurrentUser, company, setDeliveryMode } = useStore();
@@ -16,30 +17,47 @@ export const Login: React.FC = () => {
   const currentHour = new Date().getHours();
   const isExpressDisabled = currentHour >= 16;
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    const user = users.find(u => u.username === username);
+    let validUser: any = null;
 
-    if (!user) {
-      setError('Usuario no encontrado.');
-      return;
+    if (USE_MOCK_DB) {
+       const user = users.find(u => u.username === username);
+       if (!user) { setError('Usuario no encontrado.'); return; }
+       if (user.password !== password) { setError('Contraseña incorrecta.'); return; }
+       validUser = user;
+    } else {
+       // Software Auth (Option B): Fetching directly against erp_users to bypass native RLS identity for quick deployment
+       const { data, error } = await supabase
+          .from('erp_users')
+          .select('*')
+          .eq('username', username)
+          .eq('password', password)
+          .maybeSingle();
+
+       if (error || !data) {
+          setError('Credenciales incorrectas o el usuario no existe.');
+          return;
+       }
+       validUser = data;
     }
 
-    if (!user.is_active) {
+    if (!validUser.is_active) {
       setError('Esta cuenta ha sido desactivada. Contacte al administrador.');
       return;
     }
 
-    if (user.password !== password) {
-      setError('Contraseña incorrecta.');
-      return;
-    }
-
-    // Success
     setDeliveryMode(selectedMode);
-    setCurrentUser(user.id);
+    
+    // State bridge: inject into Zustand explicitly
+    if (!USE_MOCK_DB) {
+       const storeUser = { ...validUser, permissions: validUser.permissions || [] };
+       useStore.getState().setSupabaseSessionUser(storeUser);
+    } else {
+       setCurrentUser(validUser.id);
+    }
   };
 
   return (

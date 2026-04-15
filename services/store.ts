@@ -419,6 +419,7 @@ interface AppState {
 
    // Auth Actions
    setCurrentUser: (userId: string) => void;
+   setSupabaseSessionUser: (user: import('../types').User) => void; // Bridge for DB Login
    logout: () => void;
    setDeliveryMode: (mode: 'REGULAR' | 'EXPRESS_MISMO_DIA') => void; // Added for order type
 
@@ -2401,6 +2402,11 @@ export const useStore = create<AppState>((set, get) => ({
 
    setCurrentUser: (userId) => set(s => ({
       currentUser: s.users.find(u => u.id === userId) || null
+   })),
+
+   setSupabaseSessionUser: (user) => set(s => ({
+      users: s.users.some(u => u.id === user.id) ? s.users : [...s.users, user],
+      currentUser: user
    })),
 
    logout: () => set(() => ({ currentUser: null, deliveryMode: 'REGULAR' })),

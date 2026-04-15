@@ -32,6 +32,7 @@ CREATE TABLE erp_users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     auth_id UUID, -- Referencia a auth.users (Supabase)
     username TEXT UNIQUE NOT NULL,
+    password TEXT, -- Temporal for software auth (Option B)
     name TEXT NOT NULL,
     role user_role NOT NULL DEFAULT 'SELLER',
     client_id UUID,
