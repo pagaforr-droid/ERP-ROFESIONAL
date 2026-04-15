@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Seller, Client } from '../types';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
 import { Map, Users, User, Search, Save, Plus, ArrowRight, Filter, MapPin } from 'lucide-react';
 
 type Tab = 'SELLERS' | 'ZONING';
@@ -8,6 +9,29 @@ type Tab = 'SELLERS' | 'ZONING';
 export const TerritoryManagement: React.FC = () => {
   const store = useStore();
   const [activeTab, setActiveTab] = useState<Tab>('ZONING');
+  
+  const [realSellers, setRealSellers] = useState<Seller[]>([]);
+  const [realClients, setRealClients] = useState<Client[]>([]);
+  const [realZones, setRealZones] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!USE_MOCK_DB) {
+      const fetchData = async () => {
+         const { data: sData } = await supabase.from('sellers').select('*');
+         if (sData) setRealSellers(sData as Seller[]);
+         const { data: cData } = await supabase.from('clients').select('*');
+         if (cData) setRealClients(cData as Client[]);
+         const { data: zData } = await supabase.from('zones').select('*');
+         if (zData) setRealZones(zData);
+      }
+      fetchData();
+    }
+  }, []);
+
+  const sellers = USE_MOCK_DB ? store.sellers : realSellers;
+  const clients = USE_MOCK_DB ? store.clients : realClients;
+  const zones = USE_MOCK_DB ? store.zones : realZones;
+
   
   // Seller State
   const [editingSeller, setEditingSeller] = useState<Partial<Seller> | null>(null);
@@ -20,20 +44,39 @@ export const TerritoryManagement: React.FC = () => {
   const [targetZone, setTargetZone] = useState('');
 
   // --- SELLERS LOGIC ---
-  const handleSaveSeller = (e: React.FormEvent) => {
+  const handleSaveSeller = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingSeller || !editingSeller.name || !editingSeller.dni) return;
     
-    if (editingSeller.id) {
-      store.updateSeller(editingSeller as Seller);
+    if (USE_MOCK_DB) {
+      if (editingSeller.id) {
+        store.updateSeller(editingSeller as Seller);
+      } else {
+        store.addSeller({ ...editingSeller, id: crypto.randomUUID(), is_active: true } as Seller);
+      }
+      setEditingSeller(null);
     } else {
-      store.addSeller({ ...editingSeller, id: crypto.randomUUID(), is_active: true } as Seller);
+      try {
+        if (editingSeller.id) {
+           await supabase.from('sellers').update(editingSeller).eq('id', editingSeller.id);
+           setRealSellers(prev => prev.map(s => s.id === editingSeller.id ? { ...s, ...editingSeller } as Seller : s));
+           store.updateSeller({ ...editingSeller } as Seller); // Bridge
+        } else {
+           const newId = crypto.randomUUID();
+           const payload = { ...editingSeller, id: newId, is_active: true } as Seller;
+           await supabase.from('sellers').insert([payload]);
+           setRealSellers(prev => [...prev, payload]);
+           store.addSeller(payload); // Bridge
+        }
+        setEditingSeller(null);
+      } catch (error: any) {
+        alert("Error de BD: " + error.message);
+      }
     }
-    setEditingSeller(null);
   };
 
   // --- ZONING LOGIC ---
-  const filteredClients = store.clients.filter(c => {
+  const filteredClients = clients.filter(c => {
     const matchesName = c.name.toLowerCase().includes(filterName.toLowerCase()) || c.code.includes(filterName);
     const matchesAddress = c.address.toLowerCase().includes(filterAddress.toLowerCase());
     const matchesZone = filterZone === 'ALL' || 
@@ -53,18 +96,31 @@ export const TerritoryManagement: React.FC = () => {
     }
   };
 
-  const handleBatchAssign = () => {
+  const handleBatchAssign = async () => {
     if (!targetZone || selectedClients.length === 0) return;
-    store.batchUpdateClientZone(selectedClients, targetZone);
+    
+    if (USE_MOCK_DB) {
+       store.batchUpdateClientZone(selectedClients, targetZone);
+    } else {
+       try {
+          await supabase.from('clients').update({ zone_id: targetZone }).in('id', selectedClients);
+          setRealClients(prev => prev.map(c => selectedClients.includes(c.id) ? { ...c, zone_id: targetZone } : c));
+          store.batchUpdateClientZone(selectedClients, targetZone); // Bridge
+       } catch (e: any) {
+          alert('Error de BD: ' + e.message);
+          return;
+       }
+    }
+    
     setSelectedClients([]);
     alert(`Se asignaron ${selectedClients.length} clientes a la nueva zona.`);
   };
 
   // Helper to find seller name from zone
   const getSellerNameForZone = (zoneId: string) => {
-    const zone = store.zones.find(z => z.id === zoneId);
+    const zone = zones.find(z => z.id === zoneId);
     if (!zone) return '---';
-    const seller = store.sellers.find(s => s.id === zone.assigned_seller_id);
+    const seller = sellers.find(s => s.id === zone.assigned_seller_id);
     return seller ? seller.name : zone.assigned_seller_id; // Fallback for mock strings
   };
 
@@ -90,7 +146,7 @@ export const TerritoryManagement: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {store.sellers.map(seller => (
+              {sellers.map(seller => (
                 <tr key={seller.id} className="hover:bg-slate-50">
                   <td className="p-3 font-mono text-slate-800">{seller.dni}</td>
                   <td className="p-3 font-medium text-slate-900">{seller.name}</td>
@@ -185,7 +241,7 @@ export const TerritoryManagement: React.FC = () => {
               >
                  <option value="ALL">Todas las Zonas</option>
                  <option value="UNASSIGNED">-- Sin Zona Asignada --</option>
-                 {store.zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
+                 {zones.map(z => <option key={z.id} value={z.id}>{z.name}</option>)}
               </select>
            </div>
         </div>
@@ -204,7 +260,7 @@ export const TerritoryManagement: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                  {filteredClients.map(c => {
-                    const zone = store.zones.find(z => z.id === c.zone_id);
+                    const zone = zones.find(z => z.id === c.zone_id);
                     return (
                       <tr key={c.id} className={`hover:bg-blue-50 cursor-pointer ${selectedClients.includes(c.id) ? 'bg-blue-50' : ''}`} onClick={() => handleToggleClient(c.id)}>
                         <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
@@ -259,7 +315,7 @@ export const TerritoryManagement: React.FC = () => {
                   onChange={e => setTargetZone(e.target.value)}
                >
                   <option value="">-- Seleccionar Zona --</option>
-                  {store.zones.map(z => <option key={z.id} value={z.id}>{z.code} - {z.name}</option>)}
+                  {zones.map(z => <option key={z.id} value={z.id}>{z.code} - {z.name}</option>)}
                </select>
             </div>
 

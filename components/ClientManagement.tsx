@@ -1,11 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Client } from '../types';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
 import { PERU_CITIES } from '../utils/promoUtils';
 import { Search, Save, Plus, ArrowLeft, User, MapPin, Briefcase, FileText, Trash2 } from 'lucide-react';
 
 export const ClientManagement: React.FC = () => {
-   const { clients, zones, priceLists, addClient, updateClient } = useStore();
+   const { clients: mockClients, zones, priceLists, addClient: mockAddClient, updateClient: mockUpdateClient } = useStore();
+   
+   const [realClients, setRealClients] = useState<Client[]>([]);
+
+   useEffect(() => {
+     if (!USE_MOCK_DB) {
+       const fetchClients = async () => {
+         const { data, error } = await supabase.from('clients').select('*').order('name');
+         if (!error && data) setRealClients(data as Client[]);
+       }
+       fetchClients();
+     }
+   }, []);
+
+   const clients = USE_MOCK_DB ? mockClients : realClients;
+
    const [viewMode, setViewMode] = useState<'LIST' | 'DETAIL'>('LIST');
    const [activeTab, setActiveTab] = useState<'MAIN' | 'SECONDARY' | 'BRANCHES'>('MAIN');
    const [searchTerm, setSearchTerm] = useState('');
@@ -51,14 +67,36 @@ export const ClientManagement: React.FC = () => {
       setViewMode('DETAIL');
    };
 
-   const handleSave = (e: React.FormEvent) => {
+   const handleSave = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (formData.id) {
-         updateClient(formData as Client);
+      
+      if (USE_MOCK_DB) {
+         if (formData.id) {
+            mockUpdateClient(formData as Client);
+         } else {
+            mockAddClient({ ...formData, id: crypto.randomUUID() } as Client);
+         }
+         setViewMode('LIST');
       } else {
-         addClient({ ...formData, id: crypto.randomUUID() } as Client);
+         try {
+            if (formData.id) {
+               const { error } = await supabase.from('clients').update(formData).eq('id', formData.id);
+               if (error) throw error;
+               setRealClients(prev => prev.map(c => c.id === formData.id ? { ...c, ...formData } as Client : c));
+               mockUpdateClient({ ...formData } as Client); // State Bridge
+            } else {
+               const newId = crypto.randomUUID();
+               const payload = { ...formData, id: newId };
+               const { error } = await supabase.from('clients').insert([payload]);
+               if (error) throw error;
+               setRealClients(prev => [...prev, payload as Client]);
+               mockAddClient(payload as Client); // State Bridge
+            }
+            setViewMode('LIST');
+         } catch (err: any) {
+            alert("Error de BD: " + err.message);
+         }
       }
-      setViewMode('LIST');
    };
 
    const getSellerForZone = (zoneId: string) => {

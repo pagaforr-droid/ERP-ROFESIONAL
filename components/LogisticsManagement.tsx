@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Transporter, Driver, Vehicle } from '../types';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
 import { Truck, Users, User, Plus, Save, ArrowLeft, Search } from 'lucide-react';
 
 type Tab = 'TRANSPORTISTAS' | 'CHOFERES' | 'VEHICULOS';
@@ -10,6 +11,29 @@ export const LogisticsManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('VEHICULOS');
   const [viewMode, setViewMode] = useState<'LIST' | 'FORM'>('LIST');
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  const [realTransporters, setRealTransporters] = useState<Transporter[]>([]);
+  const [realDrivers, setRealDrivers] = useState<Driver[]>([]);
+  const [realVehicles, setRealVehicles] = useState<Vehicle[]>([]);
+
+  useEffect(() => {
+    if (!USE_MOCK_DB) {
+      const fetchData = async () => {
+         const { data: tData } = await supabase.from('transporters').select('*');
+         if (tData) setRealTransporters(tData as Transporter[]);
+         const { data: dData } = await supabase.from('drivers').select('*');
+         if (dData) setRealDrivers(dData as Driver[]);
+         const { data: vData } = await supabase.from('vehicles').select('*');
+         if (vData) setRealVehicles(vData as Vehicle[]);
+      }
+      fetchData();
+    }
+  }, []);
+
+  const transporters = USE_MOCK_DB ? store.transporters : realTransporters;
+  const drivers = USE_MOCK_DB ? store.drivers : realDrivers;
+  const vehicles = USE_MOCK_DB ? store.vehicles : realVehicles;
+
 
   // Forms State
   const [transporterForm, setTransporterForm] = useState<Partial<Transporter>>({});
@@ -32,21 +56,61 @@ export const LogisticsManagement: React.FC = () => {
     setViewMode('FORM');
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (activeTab === 'TRANSPORTISTAS') {
        if(!transporterForm.ruc || !transporterForm.name) return;
-       const data = { ...transporterForm, id: editingId || crypto.randomUUID() } as Transporter;
-       store.addTransporter(data); // In real app, check for update vs add
+       const payload = { ...transporterForm, id: editingId || crypto.randomUUID() } as Transporter;
+       if (USE_MOCK_DB) {
+         store.addTransporter(payload);
+       } else {
+         try {
+           if (editingId) {
+             await supabase.from('transporters').update(payload).eq('id', editingId);
+             setRealTransporters(prev => prev.map(t => t.id === editingId ? payload : t));
+           } else {
+             await supabase.from('transporters').insert([payload]);
+             setRealTransporters(prev => [...prev, payload]);
+           }
+           store.addTransporter(payload);
+         } catch (err: any) { alert(err.message); }
+       }
     } else if (activeTab === 'CHOFERES') {
        if(!driverForm.dni || !driverForm.name) return;
-       const data = { ...driverForm, id: editingId || crypto.randomUUID() } as Driver;
-       store.addDriver(data);
+       const payload = { ...driverForm, id: editingId || crypto.randomUUID() } as Driver;
+       if (USE_MOCK_DB) {
+         store.addDriver(payload);
+       } else {
+         try {
+           if (editingId) {
+             await supabase.from('drivers').update(payload).eq('id', editingId);
+             setRealDrivers(prev => prev.map(d => d.id === editingId ? payload : d));
+           } else {
+             await supabase.from('drivers').insert([payload]);
+             setRealDrivers(prev => [...prev, payload]);
+           }
+           store.addDriver(payload);
+         } catch (err: any) { alert(err.message); }
+       }
     } else if (activeTab === 'VEHICULOS') {
        if(!vehicleForm.plate || !vehicleForm.transporter_id || !vehicleForm.driver_id) return;
-       const data = { ...vehicleForm, id: editingId || crypto.randomUUID() } as Vehicle;
-       if (editingId) store.updateVehicle(data);
-       else store.addVehicle(data);
+       const payload = { ...vehicleForm, id: editingId || crypto.randomUUID() } as Vehicle;
+       if (USE_MOCK_DB) {
+         if (editingId && store.updateVehicle) store.updateVehicle(payload);
+         else store.addVehicle(payload);
+       } else {
+         try {
+           if (editingId) {
+             await supabase.from('vehicles').update(payload).eq('id', editingId);
+             setRealVehicles(prev => prev.map(v => v.id === editingId ? payload : v));
+             if (store.updateVehicle) store.updateVehicle(payload);
+           } else {
+             await supabase.from('vehicles').insert([payload]);
+             setRealVehicles(prev => [...prev, payload]);
+             store.addVehicle(payload);
+           }
+         } catch (err: any) { alert(err.message); }
+       }
     }
     setViewMode('LIST');
   };
@@ -65,7 +129,7 @@ export const LogisticsManagement: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {store.transporters.map(t => (
+            {transporters.map(t => (
               <tr key={t.id} className="border-t hover:bg-slate-50">
                 <td className="p-3 font-mono text-slate-800">{t.ruc}</td>
                 <td className="p-3 font-medium text-slate-900">{t.name}</td>
@@ -74,7 +138,7 @@ export const LogisticsManagement: React.FC = () => {
                 <td className="p-3 text-right text-accent cursor-pointer font-medium" onClick={() => handleEdit(t.id, t)}>Editar</td>
               </tr>
             ))}
-             {store.transporters.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">Sin registros</td></tr>}
+             {transporters.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">Sin registros</td></tr>}
           </tbody>
         </table>
       );
@@ -92,7 +156,7 @@ export const LogisticsManagement: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {store.drivers.map(d => (
+            {drivers.map(d => (
               <tr key={d.id} className="border-t hover:bg-slate-50">
                 <td className="p-3 font-mono text-slate-800">{d.dni}</td>
                 <td className="p-3 font-medium text-slate-900">{d.name}</td>
@@ -101,7 +165,7 @@ export const LogisticsManagement: React.FC = () => {
                 <td className="p-3 text-right text-accent cursor-pointer font-medium" onClick={() => handleEdit(d.id, d)}>Editar</td>
               </tr>
             ))}
-            {store.drivers.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">Sin registros</td></tr>}
+            {drivers.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-slate-400">Sin registros</td></tr>}
           </tbody>
         </table>
       );
@@ -120,9 +184,9 @@ export const LogisticsManagement: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {store.vehicles.map(v => {
-              const trans = store.transporters.find(t => t.id === v.transporter_id);
-              const driver = store.drivers.find(d => d.id === v.driver_id);
+            {vehicles.map(v => {
+              const trans = transporters.find(t => t.id === v.transporter_id);
+              const driver = drivers.find(d => d.id === v.driver_id);
               return (
                 <tr key={v.id} className="border-t hover:bg-slate-50">
                   <td className="p-3 font-mono font-bold bg-slate-100 text-slate-900">{v.plate}</td>
@@ -134,7 +198,7 @@ export const LogisticsManagement: React.FC = () => {
                 </tr>
               );
             })}
-             {store.vehicles.length === 0 && <tr><td colSpan={6} className="p-4 text-center text-slate-400">Sin registros</td></tr>}
+             {vehicles.length === 0 && <tr><td colSpan={6} className="p-4 text-center text-slate-400">Sin registros</td></tr>}
           </tbody>
         </table>
       );
@@ -188,18 +252,18 @@ export const LogisticsManagement: React.FC = () => {
                       <div><label className="block text-xs font-bold text-slate-700 mb-1">Modelo</label><input className="w-full border border-slate-300 p-2 rounded text-slate-900" value={vehicleForm.model || ''} onChange={e => setVehicleForm({...vehicleForm, model: e.target.value})} /></div>
                    </div>
                    <div className="border-t border-slate-200 pt-4 mt-2 space-y-3">
-                      <div>
+                       <div>
                          <label className="block text-xs font-bold text-slate-700 mb-1">Empresa de Transporte</label>
                          <select required className="w-full border border-slate-300 p-2 rounded bg-white text-slate-900" value={vehicleForm.transporter_id || ''} onChange={e => setVehicleForm({...vehicleForm, transporter_id: e.target.value})}>
                             <option value="">-- Seleccionar Transportista --</option>
-                            {store.transporters.map(t => <option key={t.id} value={t.id}>{t.name} (RUC: {t.ruc})</option>)}
+                            {transporters.map(t => <option key={t.id} value={t.id}>{t.name} (RUC: {t.ruc})</option>)}
                          </select>
                       </div>
                       <div>
                          <label className="block text-xs font-bold text-slate-700 mb-1">Chofer Asignado</label>
                          <select required className="w-full border border-slate-300 p-2 rounded bg-white text-slate-900" value={vehicleForm.driver_id || ''} onChange={e => setVehicleForm({...vehicleForm, driver_id: e.target.value})}>
                             <option value="">-- Seleccionar Chofer --</option>
-                            {store.drivers.map(d => <option key={d.id} value={d.id}>{d.name} (Lic: {d.license})</option>)}
+                            {drivers.map(d => <option key={d.id} value={d.id}>{d.name} (Lic: {d.license})</option>)}
                          </select>
                       </div>
                    </div>

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
 import { Users, Truck, Home, Briefcase, Plus, Save } from 'lucide-react';
 
 type MasterType = 'clients' | 'suppliers' | 'warehouses' | 'drivers' | 'transporters';
@@ -13,6 +14,18 @@ export const MasterData: React.FC<Props> = ({ type }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<any>({});
 
+  const [realData, setRealData] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!USE_MOCK_DB) {
+       const fetchData = async () => {
+          const { data } = await supabase.from(type).select('*');
+          if (data) setRealData(data);
+       };
+       fetchData();
+    }
+  }, [type]);
+
   const config = {
     clients: { title: 'Clientes', icon: Users, data: store.clients, add: store.addClient },
     suppliers: { title: 'Proveedores', icon: Briefcase, data: store.suppliers, add: store.addSupplier },
@@ -21,11 +34,29 @@ export const MasterData: React.FC<Props> = ({ type }) => {
     transporters: { title: 'Transportistas', icon: Truck, data: store.transporters, add: store.addTransporter },
   }[type];
 
-  const handleSave = (e: React.FormEvent) => {
+  const renderedData = USE_MOCK_DB ? config.data : realData;
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    config.add({ ...formData, id: crypto.randomUUID() });
-    setIsModalOpen(false);
-    setFormData({});
+    if (USE_MOCK_DB) {
+       config.add({ ...formData, id: crypto.randomUUID() });
+       setIsModalOpen(false);
+       setFormData({});
+    } else {
+       try {
+          const payload = { ...formData, id: crypto.randomUUID() };
+          const { error } = await supabase.from(type).insert([payload]);
+          if (error) throw error;
+          
+          setRealData(prev => [...prev, payload]);
+          config.add(payload); // State Bridge para módulos legacy
+          
+          setIsModalOpen(false);
+          setFormData({});
+       } catch (error: any) {
+          alert('Error BD: ' + error.message);
+       }
+    }
   };
 
   return (
@@ -54,7 +85,7 @@ export const MasterData: React.FC<Props> = ({ type }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {config.data.map((item: any) => (
+            {renderedData.map((item: any) => (
               <tr key={item.id} className="hover:bg-slate-50">
                 {type === 'clients' && <><td className="p-3 font-mono">{item.ruc}</td><td className="p-3 font-medium">{item.name}</td><td className="p-3 text-slate-500">{item.address}</td></>}
                 {type === 'suppliers' && <><td className="p-3 font-mono">{item.ruc}</td><td className="p-3 font-medium">{item.name}</td><td className="p-3 text-slate-500">{item.address}</td></>}
@@ -63,7 +94,7 @@ export const MasterData: React.FC<Props> = ({ type }) => {
                 {type === 'transporters' && <><td className="p-3 font-mono">{item.ruc}</td><td className="p-3 font-medium">{item.name}</td></>}
               </tr>
             ))}
-            {config.data.length === 0 && <tr><td colSpan={4} className="p-4 text-center text-slate-400">No hay registros.</td></tr>}
+            {renderedData.length === 0 && <tr><td colSpan={4} className="p-4 text-center text-slate-400">No hay registros.</td></tr>}
           </tbody>
         </table>
       </div>

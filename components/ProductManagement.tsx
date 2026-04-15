@@ -1,16 +1,38 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Product } from '../types';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
 import { Search, Save, Plus, ArrowLeft, Barcode, DollarSign, Upload, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export const ProductManagement: React.FC = () => {
   const {
-    products, suppliers, addProduct, updateProduct,
+    products: mockProducts, suppliers: mockSuppliers, 
+    addProduct: mockAddProduct, updateProduct: mockUpdateProduct,
     categories, subcategories, brands, unitTypes, packageTypes,
     addCategory, addSubcategory, addBrand, addUnitType, addPackageType
   } = useStore();
+  
+  const [realProducts, setRealProducts] = useState<Product[]>([]);
+  const [realSuppliers, setRealSuppliers] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!USE_MOCK_DB) {
+      const fetchCatalog = async () => {
+        const { data: pData } = await supabase.from('products').select('*').order('name');
+        if (pData) setRealProducts(pData as Product[]);
+        
+        const { data: sData } = await supabase.from('suppliers').select('*');
+        if (sData) setRealSuppliers(sData);
+      };
+      fetchCatalog();
+    }
+  }, []);
+
+  const products = USE_MOCK_DB ? mockProducts : realProducts;
+  const suppliers = USE_MOCK_DB ? mockSuppliers : realSuppliers;
+
   const [viewMode, setViewMode] = useState<'LIST' | 'DETAIL'>('LIST');
   const [activeTab, setActiveTab] = useState<'DETALLE' | 'PRECIOS'>('DETALLE');
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -60,12 +82,36 @@ export const ProductManagement: React.FC = () => {
       return;
     }
 
-    if (formData.id) {
-      updateProduct(formData as Product);
+    if (USE_MOCK_DB) {
+      if (formData.id) {
+        mockUpdateProduct(formData as Product);
+      } else {
+        mockAddProduct({ ...formData, id: crypto.randomUUID() } as Product);
+      }
+      setViewMode('LIST');
     } else {
-      addProduct({ ...formData, id: crypto.randomUUID() } as Product);
+      const saveToDB = async () => {
+        try {
+          if (formData.id) {
+            const { error } = await supabase.from('products').update(formData).eq('id', formData.id);
+            if (error) throw error;
+            setRealProducts(prev => prev.map(p => p.id === formData.id ? { ...p, ...formData } as Product : p));
+            mockUpdateProduct({ ...formData } as Product); // State Bridge para compatibilidad con modulo de Ventas
+          } else {
+            const newId = crypto.randomUUID();
+            const payload = { ...formData, id: newId };
+            const { error } = await supabase.from('products').insert([payload]);
+            if (error) throw error;
+            setRealProducts(prev => [...prev, payload as Product]);
+            mockAddProduct(payload as Product); // State Bridge para compatibilidad heredada
+          }
+          setViewMode('LIST');
+        } catch (err: any) {
+          alert("Error de BD: " + err.message);
+        }
+      };
+      saveToDB();
     }
-    setViewMode('LIST');
   };
 
   const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,7 +187,13 @@ export const ProductManagement: React.FC = () => {
             }
           }
 
-          addProduct(newProduct);
+          if (USE_MOCK_DB) {
+             mockAddProduct(newProduct);
+          } else {
+             supabase.from('products').insert([newProduct]).then(({error}) => {
+                if (!error) setRealProducts(prev => [...prev, newProduct]);
+             });
+          }
           importedCount++;
         });
 
