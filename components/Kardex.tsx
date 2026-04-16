@@ -79,7 +79,7 @@ export const Kardex: React.FC = () => {
 
   // --- DATA COMPUTATION ---
 
-  // 1. INVENTORY SUMMARY (Snapshot) - BLINDADO CONTRA NULOS
+  // 1. INVENTORY SUMMARY (Snapshot) - BLINDADO CONTRA NULOS Y CON CÁLCULO DE CAJAS
   const inventorySnapshot = useMemo(() => {
     return (dbProducts || []).map(p => {
        const productBatches = (dbBatches || []).filter(b => b.product_id === p.id && b.quantity_current > 0 && 
@@ -89,9 +89,16 @@ export const Kardex: React.FC = () => {
        const totalValue = filterWarehouse === 'MERMAS' ? 0 : productBatches.reduce((acc, b) => acc + ((b.quantity_current || 0) * (b.cost || 0)), 0);
        const avgCost = filterWarehouse === 'MERMAS' ? 0 : (totalStock > 0 ? totalValue / totalStock : (p.last_cost || 0));
 
+       // MATEMÁTICA DE CAJAS Y UNIDADES (EJ. 14 CAJAS 7 UNIDADES)
+       const factor = p.package_content > 0 ? p.package_content : 1;
+       const stockPackages = Math.floor(totalStock / factor);
+       const remainingBase = totalStock % factor;
+
        return {
           ...p,
           totalStock,
+          stockPackages,
+          remainingBase,
           avgCost,
           totalValue,
           supplierName: (dbSuppliers || []).find(s => s.id === p.supplier_id)?.name || 'Varios'
@@ -408,7 +415,15 @@ export const Kardex: React.FC = () => {
                                <span className="text-xs text-slate-500 font-bold">{p.brand}</span>
                             </td>
                             <td className="p-4 text-right">
-                               <div className="font-black text-slate-900 text-lg">{p.totalStock} <span className="text-xs text-slate-400 font-bold ml-1">{p.unit_type || 'U'}</span></div>
+                               <div className="font-black text-slate-900 text-lg">
+                                  {p.totalStock} <span className="text-xs text-slate-400 font-bold ml-1">{p.unit_type || 'U'}</span>
+                               </div>
+                               {/* ETIQUETA VISUAL DE CAJAS/UNIDADES */}
+                               {((p.package_content || 1) > 1) && p.totalStock > 0 && (
+                                  <div className="text-[10px] text-blue-600 font-bold mt-1 bg-blue-50 inline-block px-2 py-0.5 rounded border border-blue-100 shadow-sm">
+                                     {p.stockPackages} {p.package_type || 'CAJAS'} y {p.remainingBase} {p.unit_type || 'UND'}
+                                  </div>
+                               )}
                             </td>
                             <td className="p-4 text-right font-mono font-bold text-slate-500">S/ {(p.avgCost || 0).toFixed(4)}</td>
                             <td className="p-4 text-right font-black text-blue-700 bg-blue-50/10 border-l border-blue-50 text-lg">S/ {(p.totalValue || 0).toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
