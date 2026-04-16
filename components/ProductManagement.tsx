@@ -133,17 +133,16 @@ export const ProductManagement: React.FC = () => {
       setIsSaving(false);
     }
   };
-  // --- ALTA RÁPIDA DE PROVEEDOR ---
+ // --- ALTA RÁPIDA DE PROVEEDOR ---
   const handleQuickSupplierSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSupplier.name.trim()) return;
     setIsSavingSupplier(true);
 
     try {
-       // CORRECCIÓN: Usamos exactamente las columnas que existen en 'suppliers'
        const payload = {
           id: crypto.randomUUID(),
-          ruc: newSupplier.ruc || '00000000000', // Usamos 'ruc' en lugar de 'doc_number'
+          ruc: newSupplier.ruc || '00000000000',
           name: newSupplier.name.toUpperCase()
        };
 
@@ -151,8 +150,11 @@ export const ProductManagement: React.FC = () => {
        if (error) throw error;
 
        if (data && data.length > 0) {
-          setRealSuppliers(prev => [...prev, data[0]]);
-          setFormData(prev => ({ ...prev, supplier_id: data[0].id }));
+          const createdSupplier = data[0];
+          // Añadimos el proveedor a la lista y lo seleccionamos automáticamente
+          setRealSuppliers(prev => [...prev, createdSupplier]);
+          setFormData(prev => ({ ...prev, supplier_id: createdSupplier.id }));
+          
           setIsSupplierModalOpen(false);
           setNewSupplier({ ruc: '', name: '' });
        }
