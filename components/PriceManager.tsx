@@ -1,8 +1,8 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
-import { PriceList, Seller } from '../types';
-import { Calculator, Tag, Users, Save, DollarSign, Plus, RefreshCw, TrendingDown, TrendingUp, Equal, Percent, CheckSquare, Square, Search, AlertCircle, CheckCircle2, Loader2, X, MapPin, User, ChevronRight } from 'lucide-react';
+import { PriceList, Seller, Product } from '../types';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
+import { Calculator, Tag, Users, Save, DollarSign, Plus, RefreshCw, TrendingDown, TrendingUp, Equal, Percent, CheckSquare, Square, Search, AlertCircle, CheckCircle2, Loader2, X, Trash2 } from 'lucide-react';
 
 type Tab = 'CALCULATOR' | 'PRICELISTS' | 'SELLERS';
 type OperationMode = 'BASE' | 'DISCOUNT' | 'INCREASE';
@@ -23,6 +23,44 @@ export const PriceManager: React.FC = () => {
   const store = useStore();
   const [activeTab, setActiveTab] = useState<Tab>('CALCULATOR');
 
+  // --- ESTADOS DE BASE DE DATOS (NUBE) ---
+  const [realProducts, setRealProducts] = useState<Product[]>([]);
+  const [realPriceLists, setRealPriceLists] = useState<PriceList[]>([]);
+  const [realSellers, setRealSellers] = useState<Seller[]>([]);
+  const [realSuppliers, setRealSuppliers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+     fetchData();
+  }, []);
+
+  const fetchData = async () => {
+     if (!USE_MOCK_DB) {
+        setIsLoading(true);
+        try {
+           const [pRes, plRes, sRes, supRes] = await Promise.all([
+              supabase.from('products').select('*').order('name'),
+              supabase.from('price_lists').select('*').order('name'),
+              supabase.from('sellers').select('*').order('name'),
+              supabase.from('suppliers').select('*').order('name')
+           ]);
+           if (pRes.data) setRealProducts(pRes.data as Product[]);
+           if (plRes.data) setRealPriceLists(plRes.data as PriceList[]);
+           if (sRes.data) setRealSellers(sRes.data as Seller[]);
+           if (supRes.data) setRealSuppliers(supRes.data);
+        } catch (error: any) {
+           console.error("Error Sincronizando:", error.message);
+        } finally {
+           setIsLoading(false);
+        }
+     }
+  };
+
+  const products = USE_MOCK_DB ? store.products : realProducts;
+  const priceLists = USE_MOCK_DB ? store.priceLists : realPriceLists;
+  const sellers = USE_MOCK_DB ? store.sellers : realSellers;
+  const suppliers = USE_MOCK_DB ? store.suppliers : realSuppliers;
+
   // --- TAB 1: CALCULATOR STATE ---
   const [selectedTargetList, setSelectedTargetList] = useState('BASE'); 
   const [selectedSupplier, setSelectedSupplier] = useState('ALL');
@@ -30,7 +68,6 @@ export const PriceManager: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [targetMargin, setTargetMargin] = useState<number>(30); // Default 30%
   
-  // Selection State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [notification, setNotification] = useState<{msg: string, type: 'success'|'error'} | null>(null);
@@ -44,7 +81,6 @@ export const PriceManager: React.FC = () => {
   const [pendingAssignments, setPendingAssignments] = useState<Record<string, string>>({});
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Sync internal Factor when editing starts
   useEffect(() => {
      if (editingList) {
         const factor = editingList.factor || 1.0;
@@ -62,43 +98,35 @@ export const PriceManager: React.FC = () => {
   }, [editingList]);
 
   // --- HELPERS ---
-  const uniqueCategories = Array.from(new Set(store.products.map(p => p.category))).sort() as string[];
+  const uniqueCategories = Array.from(new Set(products.map(p => p.category))).filter(Boolean).sort() as string[];
   
-  // Get Factor of currently selected list
   const currentListFactor = useMemo(() => {
      if (selectedTargetList === 'BASE') return 1.0;
-     const list = store.priceLists.find(l => l.id === selectedTargetList);
+     const list = priceLists.find(l => l.id === selectedTargetList);
      return list ? list.factor : 1.0;
-  }, [selectedTargetList, store.priceLists]);
+  }, [selectedTargetList, priceLists]);
 
   const currentListName = useMemo(() => {
      if (selectedTargetList === 'BASE') return 'PRECIO BASE (TIENDA)';
-     return store.priceLists.find(l => l.id === selectedTargetList)?.name || 'Desconocido';
-  }, [selectedTargetList, store.priceLists]);
+     return priceLists.find(l => l.id === selectedTargetList)?.name || 'Desconocido';
+  }, [selectedTargetList, priceLists]);
 
   // --- CALCULATION LOGIC ---
   const previewData = useMemo(() => {
-     return store.products.filter(p => {
+     return products.filter(p => {
         const matchSup = selectedSupplier === 'ALL' || p.supplier_id === selectedSupplier;
         const matchCat = selectedCategory === 'ALL' || p.category === selectedCategory;
         const matchSearch = searchTerm === '' || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase());
         return matchSup && matchCat && matchSearch;
      }).map(p => {
-        // 1. Costo Base (GROSS / INC IGV)
         const cost = p.last_cost || 0;
-        
-        // 2. Calcular el Precio Objetivo FINAL (Inc. IGV)
         const targetFinalPriceUnit = cost * (1 + (targetMargin / 100));
-
-        // 3. Ingeniería Inversa para hallar Base
         const requiredBasePriceUnit = targetFinalPriceUnit / currentListFactor;
-
-        // 4. Calcular Precio Caja (Regla de negocio simple: x contenido x 0.95 descuento volumen)
+        
         const content = p.package_content || 1;
         const bulkDiscount = content > 1 ? 0.95 : 1.0;
         const requiredBasePricePackage = requiredBasePriceUnit * content * bulkDiscount;
 
-        // Calcular Variación solo si hay precio anterior
         const priceChange = p.price_unit > 0 ? ((requiredBasePriceUnit - p.price_unit) / p.price_unit) * 100 : 0;
 
         return {
@@ -110,9 +138,8 @@ export const PriceManager: React.FC = () => {
            priceChange
         };
      });
-  }, [store.products, selectedSupplier, selectedCategory, searchTerm, targetMargin, currentListFactor]);
+  }, [products, selectedSupplier, selectedCategory, searchTerm, targetMargin, currentListFactor]);
 
-  // --- SELECTION HANDLERS ---
   const toggleSelect = (id: string) => {
      const newSet = new Set(selectedIds);
      if (newSet.has(id)) newSet.delete(id);
@@ -121,14 +148,11 @@ export const PriceManager: React.FC = () => {
   };
 
   const toggleSelectAll = () => {
-     if (selectedIds.size === previewData.length) {
-        setSelectedIds(new Set());
-     } else {
-        setSelectedIds(new Set(previewData.map(p => p.id)));
-     }
+     if (selectedIds.size === previewData.length) setSelectedIds(new Set());
+     else setSelectedIds(new Set(previewData.map(p => p.id)));
   };
 
-  // --- APPLY CHANGES (CALCULATOR) ---
+  // --- 1. APLICAR PRECIOS MASIVOS (SUPABASE STRICT) ---
   const handleApplyPrices = async () => {
      if (selectedIds.size === 0) {
         setNotification({ msg: "Debe seleccionar al menos un producto.", type: 'error' });
@@ -138,55 +162,110 @@ export const PriceManager: React.FC = () => {
      
      setIsSaving(true);
 
-     // Simulate processing delay for better UX
-     await new Promise(resolve => setTimeout(resolve, 800));
+     try {
+        const updates = previewData
+           .filter(p => selectedIds.has(p.id))
+           .map(p => ({
+              id: p.id,
+              price_unit: Number(p.calculatedBasePrice.toFixed(2)),
+              price_package: Number(p.calculatedPackagePrice.toFixed(2)),
+              profit_margin: targetMargin
+           }));
 
-     const updates = previewData
-        .filter(p => selectedIds.has(p.id))
-        .map(p => ({
-           id: p.id,
-           price_unit: Number(p.calculatedBasePrice.toFixed(2)),
-           price_package: Number(p.calculatedPackagePrice.toFixed(2)),
-           profit_margin: targetMargin
-        }));
-
-     store.batchUpdateProductPrices(updates);
-     
-     setNotification({ msg: `Se actualizaron correctamente ${updates.length} productos.`, type: 'success' });
-     setTimeout(() => setNotification(null), 4000);
-     
-     setSelectedIds(new Set());
-     setIsSaving(false);
+        if (USE_MOCK_DB) {
+           store.batchUpdateProductPrices(updates);
+        } else {
+           // Actualizaciones quirúrgicas en paralelo para no sobreescribir stock accidentalmente
+           const updatePromises = updates.map(updateData => 
+              supabase.from('products').update({
+                 price_unit: updateData.price_unit,
+                 price_package: updateData.price_package,
+                 profit_margin: updateData.profit_margin
+              }).eq('id', updateData.id)
+           );
+           await Promise.all(updatePromises);
+           
+           // Actualizar vista local
+           setRealProducts(prev => prev.map(p => {
+              const u = updates.find(x => x.id === p.id);
+              return u ? { ...p, ...u } as Product : p;
+           }));
+        }
+        
+        setNotification({ msg: `Se actualizaron exitosamente ${updates.length} productos.`, type: 'success' });
+        setSelectedIds(new Set());
+     } catch (error: any) {
+        setNotification({ msg: `Error de BD: ${error.message}`, type: 'error' });
+     } finally {
+        setTimeout(() => setNotification(null), 4000);
+        setIsSaving(false);
+     }
   };
 
-  // --- LISTS & SELLERS LOGIC ---
-  const handleSaveList = (e: React.FormEvent) => {
+  // --- 2. GESTIÓN DE LISTAS DE PRECIOS (CRUD) ---
+  const handleSaveList = async (e: React.FormEvent) => {
      e.preventDefault();
      if (!editingList?.name) return;
+     setIsSaving(true);
+
      let finalFactor = 1.0;
      if (operationMode === 'DISCOUNT') finalFactor = 1 - (percentageValue / 100);
      else if (operationMode === 'INCREASE') finalFactor = 1 + (percentageValue / 100);
 
-     const list: PriceList = {
-        id: editingList.id || crypto.randomUUID(),
-        name: editingList.name,
-        type: operationMode === 'BASE' ? 'BASE' : 'VARIATION',
-        factor: Number(finalFactor.toFixed(4))
-     };
-     
-     if (editingList.id) store.updatePriceList(list);
-     else store.addPriceList(list);
-     setEditingList(null);
-     setNotification({ msg: "Lista de precios guardada.", type: 'success' });
-     setTimeout(() => setNotification(null), 2000);
+     try {
+        const payload: any = {
+           name: editingList.name.toUpperCase(),
+           type: operationMode === 'BASE' ? 'BASE' : 'VARIATION',
+           factor: Number(finalFactor.toFixed(4)),
+           is_active: true
+        };
+        
+        if (USE_MOCK_DB) {
+           payload.id = editingList.id || crypto.randomUUID();
+           if (editingList.id) store.updatePriceList(payload as PriceList);
+           else store.addPriceList(payload as PriceList);
+        } else {
+           if (editingList.id) {
+              const { data, error } = await supabase.from('price_lists').update(payload).eq('id', editingList.id).select();
+              if (error) throw error;
+              if(data) setRealPriceLists(prev => prev.map(l => l.id === editingList.id ? data[0] : l));
+           } else {
+              payload.id = crypto.randomUUID();
+              const { data, error } = await supabase.from('price_lists').insert([payload]).select();
+              if (error) throw error;
+              if(data) setRealPriceLists(prev => [...prev, data[0]]);
+           }
+        }
+        setEditingList(null);
+        setNotification({ msg: "Lista de precios configurada.", type: 'success' });
+     } catch (error: any) {
+        setNotification({ msg: "Error al guardar lista: " + error.message, type: 'error' });
+     } finally {
+        setIsSaving(false);
+        setTimeout(() => setNotification(null), 3000);
+     }
   };
 
-  // --- SELLER ASSIGNMENT LOGIC ---
+  const handleDeleteList = async (id: string, e: React.MouseEvent) => {
+     e.stopPropagation();
+     if(!confirm('¿Eliminar esta lista? Se desvinculará de los vendedores asignados.')) return;
+     
+     try {
+        if (!USE_MOCK_DB) {
+           const { error } = await supabase.from('price_lists').delete().eq('id', id);
+           if (error) throw error;
+           setRealPriceLists(prev => prev.filter(l => l.id !== id));
+        } else {
+           alert("Simulación de borrado local.");
+        }
+     } catch(err: any) {
+        alert("Error al eliminar: " + err.message);
+     }
+  }
+
+  // --- 3. ASIGNACIÓN DE VENDEDORES (UUID NULL FIX) ---
   const handlePendingAssignment = (sellerId: string, listId: string) => {
-     setPendingAssignments(prev => {
-        const newState = { ...prev, [sellerId]: listId };
-        return newState;
-     });
+     setPendingAssignments(prev => ({ ...prev, [sellerId]: listId }));
      setHasChanges(true);
   };
 
@@ -195,106 +274,117 @@ export const PriceManager: React.FC = () => {
      return seller.price_list_id || '';
   };
 
-  const saveAssignments = () => {
+  const saveAssignments = async () => {
      if (!hasChanges) return;
+     setIsSaving(true);
      
-     Object.entries(pendingAssignments).forEach(([sellerId, listId]) => {
-        const seller = store.sellers.find(s => s.id === sellerId);
-        if (seller) {
-           store.updateSeller({ ...seller, price_list_id: listId });
+     try {
+        if (USE_MOCK_DB) {
+           Object.entries(pendingAssignments).forEach(([sellerId, listId]) => {
+              const seller = store.sellers.find(s => s.id === sellerId);
+              if (seller) store.updateSeller({ ...seller, price_list_id: listId });
+           });
+        } else {
+           const updatePromises = Object.entries(pendingAssignments).map(([sellerId, listId]) => {
+              // BLINDAJE UUID: Convertimos el string vacío a NULL estricto
+              const cleanListId = (listId === '' || !listId) ? null : listId;
+              return supabase.from('sellers').update({ price_list_id: cleanListId }).eq('id', sellerId);
+           });
+           
+           await Promise.all(updatePromises);
+           await fetchData(); // Recargar matriz de vendedores
         }
-     });
-     
-     setPendingAssignments({});
-     setHasChanges(false);
-     setNotification({ msg: "Asignaciones actualizadas correctamente.", type: 'success' });
-     setTimeout(() => setNotification(null), 3000);
+        
+        setPendingAssignments({});
+        setHasChanges(false);
+        setNotification({ msg: "Matriz de asignaciones sincronizada.", type: 'success' });
+     } catch(err:any) {
+        setNotification({ msg: "Error al asignar: " + err.message, type: 'error' });
+     } finally {
+        setIsSaving(false);
+        setTimeout(() => setNotification(null), 3000);
+     }
   };
 
   return (
     <div className="h-full flex flex-col space-y-4 font-sans text-slate-800 relative">
-       {/* NOTIFICATIONS */}
        {notification && <Notification msg={notification.msg} type={notification.type} onClose={() => setNotification(null)} />}
 
-       <div className="flex justify-between items-center">
-          <h2 className="text-xl font-bold flex items-center">
-             <DollarSign className="mr-2 text-green-600" /> Gestión de Precios Inteligente
+       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+          <h2 className="text-xl font-black flex items-center">
+             <DollarSign className="mr-2 text-green-600 w-6 h-6" /> Ingeniería de Precios
           </h2>
-       </div>
-
-       {/* TABS */}
-       <div className="flex bg-white rounded-t-lg border-b border-slate-200">
-          <button onClick={() => setActiveTab('CALCULATOR')} className={`px-6 py-3 text-sm font-bold flex items-center ${activeTab === 'CALCULATOR' ? 'text-green-700 border-b-2 border-green-600 bg-green-50' : 'text-slate-500 hover:bg-slate-50'}`}>
-             <Calculator className="w-4 h-4 mr-2" /> Calculadora Masiva
-          </button>
-          <button onClick={() => setActiveTab('PRICELISTS')} className={`px-6 py-3 text-sm font-bold flex items-center ${activeTab === 'PRICELISTS' ? 'text-blue-700 border-b-2 border-blue-600 bg-blue-50' : 'text-slate-500 hover:bg-slate-50'}`}>
-             <Tag className="w-4 h-4 mr-2" /> Listas de Precios
-          </button>
-          <button onClick={() => setActiveTab('SELLERS')} className={`px-6 py-3 text-sm font-bold flex items-center ${activeTab === 'SELLERS' ? 'text-purple-700 border-b-2 border-purple-600 bg-purple-50' : 'text-slate-500 hover:bg-slate-50'}`}>
-             <Users className="w-4 h-4 mr-2" /> Asignación Vendedores
+          <button onClick={fetchData} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg flex items-center transition-colors shadow-sm border border-slate-200" title="Sincronizar Base de Datos">
+             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-green-600' : ''}`} />
           </button>
        </div>
 
-       {/* CONTENT */}
-       <div className="flex-1 bg-white rounded-b-lg shadow border border-slate-200 p-6 overflow-hidden flex flex-col relative">
+       <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-1">
+          <button onClick={() => setActiveTab('CALCULATOR')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'CALCULATOR' ? 'bg-green-50 text-green-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <Calculator className="w-4 h-4 mr-2" /> 1. Calculadora Masiva Base
+          </button>
+          <button onClick={() => setActiveTab('PRICELISTS')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'PRICELISTS' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <Tag className="w-4 h-4 mr-2" /> 2. Reglas y Listas de Precio
+          </button>
+          <button onClick={() => setActiveTab('SELLERS')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'SELLERS' ? 'bg-purple-50 text-purple-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <Users className="w-4 h-4 mr-2" /> 3. Matriz de Vendedores
+          </button>
+       </div>
+
+       <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col relative">
           
           {/* --- TAB 1: MASS CALCULATOR --- */}
           {activeTab === 'CALCULATOR' && (
-             <div className="flex flex-col h-full">
-                
-                {/* CONTROL PANEL */}
-                <div className="grid grid-cols-12 gap-4 mb-4 items-end bg-slate-50 p-4 rounded-lg border border-slate-200">
+             <div className="flex flex-col h-full p-6">
+                <div className="grid grid-cols-12 gap-4 mb-6 items-end bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-inner">
                    
-                   {/* Row 1: Strategy */}
                    <div className="col-span-12 md:col-span-4">
-                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Estrategia (Lista Objetivo)</label>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-wider">Proyectar Hacia (Lista Objetivo)</label>
                       <select 
-                        className="w-full border-2 border-slate-300 p-2 rounded text-sm font-bold text-slate-800 shadow-sm focus:border-green-500 outline-none"
+                        className="w-full border-2 border-slate-300 p-2.5 rounded-lg text-sm font-bold text-slate-800 focus:border-green-500 outline-none transition-colors"
                         value={selectedTargetList}
                         onChange={e => setSelectedTargetList(e.target.value)}
                       >
-                         <option value="BASE">PRECIO BASE (TIENDA / ESTÁNDAR)</option>
-                         {store.priceLists.map(l => <option key={l.id} value={l.id}>{l.name.toUpperCase()} (Factor: {l.factor}x)</option>)}
+                         <option value="BASE">PRECIO BASE (1.00x)</option>
+                         {priceLists.map(l => <option key={l.id} value={l.id}>{l.name.toUpperCase()} (Factor: {l.factor}x)</option>)}
                       </select>
                    </div>
 
-                   {/* Row 1: Filters */}
                    <div className="col-span-6 md:col-span-3">
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Filtrar Proveedor</label>
-                      <select className="w-full border border-slate-300 p-2 rounded text-sm" value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)}>
-                         <option value="ALL">Todos los Proveedores</option>
-                         {store.suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-wider">Proveedor</label>
+                      <select className="w-full border-2 border-slate-300 p-2.5 rounded-lg text-sm font-bold text-slate-800 focus:border-green-500 outline-none" value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)}>
+                         <option value="ALL">TODOS LOS PROVEEDORES</option>
+                         {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                    </div>
+                   
                    <div className="col-span-6 md:col-span-3">
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Filtrar Categoría</label>
-                      <select className="w-full border border-slate-300 p-2 rounded text-sm" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
-                         <option value="ALL">Todas las Categorías</option>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-wider">Categoría</label>
+                      <select className="w-full border-2 border-slate-300 p-2.5 rounded-lg text-sm font-bold text-slate-800 focus:border-green-500 outline-none" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
+                         <option value="ALL">TODAS LAS CATEGORÍAS</option>
                          {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                    </div>
 
-                   {/* Row 1: Margin Input */}
                    <div className="col-span-12 md:col-span-2">
-                      <label className="block text-xs font-bold text-green-700 mb-1">Margen Objetivo</label>
+                      <label className="block text-[10px] font-black text-green-700 uppercase mb-2 tracking-wider">Margen Objetivo</label>
                       <div className="relative">
                          <input 
                            type="number" 
-                           className="w-full pl-3 pr-8 border-2 border-green-400 p-2 rounded text-lg font-bold text-green-800 focus:ring-green-500 outline-none"
+                           className="w-full pl-4 pr-8 border-2 border-green-400 p-2.5 rounded-lg text-xl font-black text-green-800 focus:border-green-600 outline-none shadow-sm"
                            value={targetMargin}
                            onChange={e => setTargetMargin(Number(e.target.value))}
                         />
-                         <span className="absolute right-3 top-2.5 text-green-600 font-bold">%</span>
+                         <span className="absolute right-3 top-3 text-green-600 font-black">%</span>
                       </div>
                    </div>
 
-                   {/* Row 2: Search */}
                    <div className="col-span-12 mt-2">
                       <div className="relative">
-                         <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                         <Search className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
                          <input 
-                           className="w-full pl-9 border border-slate-300 rounded p-2 text-sm bg-white" 
-                           placeholder="Buscar producto por nombre o código..."
+                           className="w-full pl-10 border-2 border-slate-200 rounded-lg p-3 text-sm font-medium focus:border-green-500 outline-none transition-colors" 
+                           placeholder="Filtrar matriz por nombre o código SKU..."
                            value={searchTerm}
                            onChange={e => setSearchTerm(e.target.value)}
                          />
@@ -302,65 +392,66 @@ export const PriceManager: React.FC = () => {
                    </div>
                 </div>
 
-                {/* TABLE PREVIEW */}
-                <div className="flex-1 overflow-auto border border-slate-300 rounded-lg bg-white relative">
+                <div className="flex-1 overflow-auto border border-slate-200 rounded-xl bg-white relative shadow-sm">
                    <table className="w-full text-sm text-left border-collapse">
-                      <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10 shadow-sm uppercase text-xs tracking-wider">
+                      <thead className="bg-slate-100 text-slate-600 font-black sticky top-0 z-10 uppercase text-[10px] tracking-wider shadow-sm">
                          <tr>
-                            <th className="p-3 w-10 text-center border-b border-slate-200">
-                               <button onClick={toggleSelectAll} className="flex items-center justify-center text-slate-500 hover:text-blue-600">
+                            <th className="p-4 w-12 text-center border-b border-slate-200">
+                               <button onClick={toggleSelectAll} className="flex items-center justify-center text-slate-400 hover:text-green-600 transition-colors">
                                   {selectedIds.size > 0 && selectedIds.size === previewData.length ? <CheckSquare className="w-5 h-5"/> : <Square className="w-5 h-5"/>}
                                </button>
                             </th>
-                            <th className="p-3 border-b border-slate-200">Producto / Código</th>
-                            <th className="p-3 text-right border-b border-slate-200 bg-slate-50">Costo (Inc. IGV)</th>
-                            <th className="p-3 text-right border-b border-slate-200">P. Base Actual</th>
+                            <th className="p-4 border-b border-slate-200">Identificación Producto</th>
+                            <th className="p-4 text-right border-b border-slate-200 bg-slate-50">Costo Vencido</th>
+                            <th className="p-4 text-right border-b border-slate-200">Precio Base Actual</th>
                             
                             {selectedTargetList !== 'BASE' && (
-                               <th className="p-3 text-right bg-blue-50 text-blue-800 border-b border-blue-200 border-l border-r">
-                                  Simulación {currentListName}
+                               <th className="p-4 text-right bg-blue-50 text-blue-800 border-b border-blue-200 border-l border-r">
+                                  Proyección {currentListName}
                                </th>
                             )}
 
-                            <th className="p-3 text-right bg-green-50 text-green-800 border-b border-green-200 border-l">
-                               Nuevo P. Base
+                            <th className="p-4 text-right bg-green-50 text-green-800 border-b border-green-200 border-l">
+                               Nuevo Precio Base
                             </th>
-                            <th className="p-3 text-center border-b border-slate-200">Variación</th>
+                            <th className="p-4 text-center border-b border-slate-200">Impacto</th>
                          </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                         {previewData.map(p => (
-                            <tr key={p.id} className={`hover:bg-blue-50 transition-colors ${selectedIds.has(p.id) ? 'bg-blue-50' : ''}`} onClick={() => toggleSelect(p.id)}>
-                               <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                         {isLoading && products.length === 0 ? (
+                            <tr><td colSpan={7} className="p-12 text-center"><RefreshCw className="w-6 h-6 animate-spin mx-auto text-green-500 mb-3"/></td></tr>
+                         ) : previewData.map(p => (
+                            <tr key={p.id} className={`hover:bg-green-50/50 transition-colors cursor-pointer ${selectedIds.has(p.id) ? 'bg-green-50' : ''}`} onClick={() => toggleSelect(p.id)}>
+                               <td className="p-4 text-center" onClick={e => e.stopPropagation()}>
                                   <input 
                                     type="checkbox" 
-                                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                    className="w-4 h-4 rounded text-green-600 focus:ring-green-500 cursor-pointer border-slate-300"
                                     checked={selectedIds.has(p.id)}
                                     onChange={() => toggleSelect(p.id)}
                                   />
                                </td>
-                               <td className="p-3">
-                                  <div className="font-bold text-slate-700 text-sm">{p.name}</div>
+                               <td className="p-4">
+                                  <div className="font-bold text-slate-800 text-sm">{p.name}</div>
                                   <div className="flex items-center gap-2 mt-1">
-                                     <span className="text-[10px] font-mono bg-slate-200 px-1.5 rounded text-slate-600">{p.sku}</span>
-                                     <span className="text-[10px] text-slate-400">{p.category}</span>
+                                     <span className="text-[10px] font-mono font-bold bg-slate-200 px-2 py-0.5 rounded text-slate-600">{p.sku}</span>
+                                     <span className="text-[10px] font-bold text-slate-400">{p.category || 'SIN CAT'}</span>
                                   </div>
                                </td>
-                               <td className="p-3 text-right text-slate-500 font-medium">S/ {p.last_cost.toFixed(2)}</td>
-                               <td className="p-3 text-right font-medium text-slate-600">S/ {p.currentBasePrice.toFixed(2)}</td>
+                               <td className="p-4 text-right text-slate-500 font-bold">S/ {p.last_cost.toFixed(2)}</td>
+                               <td className="p-4 text-right font-bold text-slate-700">S/ {p.currentBasePrice.toFixed(2)}</td>
                                
                                {selectedTargetList !== 'BASE' && (
-                                  <td className="p-3 text-right font-bold text-blue-700 bg-blue-50/50 border-l border-r border-blue-100">
+                                  <td className="p-4 text-right font-black text-blue-700 bg-blue-50/30 border-l border-r border-blue-100">
                                      S/ {p.finalPriceInList.toFixed(2)}
                                   </td>
                                )}
 
-                               <td className="p-3 text-right border-l border-green-100 bg-green-50/30">
-                                  <div className="font-bold text-green-700 text-base">S/ {p.calculatedBasePrice.toFixed(2)}</div>
-                                  <div className="text-[10px] text-green-600">Caja: S/ {p.calculatedPackagePrice.toFixed(2)}</div>
+                               <td className="p-4 text-right border-l border-green-100 bg-green-50/30">
+                                  <div className="font-black text-green-700 text-base">S/ {p.calculatedBasePrice.toFixed(2)}</div>
+                                  <div className="text-[10px] text-green-600 font-bold mt-0.5">Caja: S/ {p.calculatedPackagePrice.toFixed(2)}</div>
                                </td>
-                               <td className="p-3 text-center">
-                                  <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${
+                               <td className="p-4 text-center">
+                                  <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border shadow-sm ${
                                      p.priceChange > 0 ? 'bg-blue-100 text-blue-700 border-blue-200' : 
                                      p.priceChange < 0 ? 'bg-red-100 text-red-700 border-red-200' : 
                                      'bg-slate-100 text-slate-500 border-slate-200'
@@ -370,30 +461,29 @@ export const PriceManager: React.FC = () => {
                                </td>
                             </tr>
                          ))}
-                         {previewData.length === 0 && (
-                            <tr><td colSpan={7} className="p-10 text-center text-slate-400 italic">No se encontraron productos con los filtros seleccionados.</td></tr>
+                         {previewData.length === 0 && !isLoading && (
+                            <tr><td colSpan={7} className="p-10 text-center text-slate-400 font-bold">La matriz de filtros no generó resultados.</td></tr>
                          )}
                       </tbody>
                    </table>
                 </div>
 
-                {/* BOTTOM ACTION BAR (Appears when items are selected) */}
                 {selectedIds.size > 0 && (
-                   <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-auto min-w-[400px] bg-slate-900 text-white p-4 rounded-xl shadow-2xl flex items-center justify-between gap-6 animate-fade-in-up border border-slate-700 z-20">
+                   <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-auto min-w-[450px] bg-slate-900 text-white p-5 rounded-2xl shadow-2xl flex items-center justify-between gap-6 animate-fade-in-up border-2 border-slate-700 z-20">
                       <div className="flex items-center">
-                         <div className="bg-green-500 text-slate-900 font-bold w-8 h-8 rounded-full flex items-center justify-center mr-3">
+                         <div className="bg-green-500 text-slate-900 font-black text-xl w-10 h-10 rounded-full flex items-center justify-center mr-4 shadow-inner">
                             {selectedIds.size}
                          </div>
                          <div>
-                            <p className="text-sm font-bold">Productos Seleccionados</p>
-                            <p className="text-xs text-slate-400">Listos para actualizar precios</p>
+                            <p className="text-sm font-black uppercase tracking-wide">Lote en Memoria</p>
+                            <p className="text-xs text-green-400 font-bold">Listos para inyectar a Base de Datos</p>
                          </div>
                       </div>
                       
-                      <div className="flex gap-2">
+                      <div className="flex gap-3">
                          <button 
                            onClick={() => setSelectedIds(new Set())}
-                           className="px-4 py-2 rounded text-slate-400 hover:text-white hover:bg-slate-800 text-sm font-medium transition-colors"
+                           className="px-4 py-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 text-sm font-bold transition-colors"
                            disabled={isSaving}
                          >
                             Cancelar
@@ -401,10 +491,10 @@ export const PriceManager: React.FC = () => {
                          <button 
                            onClick={handleApplyPrices}
                            disabled={isSaving}
-                           className="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg font-bold shadow flex items-center transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                           className="bg-green-600 hover:bg-green-500 text-white px-6 py-2.5 rounded-xl font-black shadow-lg shadow-green-600/30 flex items-center transition-all disabled:opacity-50"
                          >
-                            {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin"/> : <RefreshCw className="w-4 h-4 mr-2" />}
-                            {isSaving ? 'Procesando...' : 'APLICAR CAMBIOS'}
+                            {isSaving ? <Loader2 className="w-5 h-5 mr-2 animate-spin"/> : <RefreshCw className="w-5 h-5 mr-2" />}
+                            {isSaving ? 'Inyectando...' : 'APLICAR PRECIOS'}
                          </button>
                       </div>
                    </div>
@@ -412,38 +502,36 @@ export const PriceManager: React.FC = () => {
              </div>
           )}
 
-          {/* --- TAB 2: PRICE LISTS (REDESIGNED) --- */}
+          {/* --- TAB 2: PRICE LISTS --- */}
           {activeTab === 'PRICELISTS' && (
-             <div className="flex gap-6 h-full">
-                {/* LIST SELECTOR - Left Panel */}
-                <div className="w-1/3 border-r border-slate-200 pr-6 flex flex-col">
+             <div className="flex gap-6 h-full p-6 animate-fade-in">
+                <div className="w-1/3 bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col shadow-inner">
                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-bold text-slate-700">Listas Definidas</h3>
+                      <h3 className="font-black text-slate-800">Listas Dinámicas</h3>
                       <button 
                         onClick={() => {
                            setEditingList({ name: '', factor: 1.0 });
                            setOperationMode('BASE');
                            setPercentageValue(0);
                         }} 
-                        className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-full hover:bg-slate-700 flex items-center transition-colors shadow-sm"
+                        className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 font-bold flex items-center transition-colors shadow-sm"
                       >
                          <Plus className="w-3 h-3 mr-1" /> Nueva
                       </button>
                    </div>
                    <div className="space-y-3 overflow-y-auto pr-2">
-                      {store.priceLists.map(list => {
-                         // Derive visual info
+                      {priceLists.map(list => {
                          let label = "Precio Base";
-                         let colorStyles = "bg-slate-100 text-slate-600 border-slate-200";
+                         let colorStyles = "bg-slate-200 text-slate-600 border-slate-300";
                          let value = "";
 
                          if (list.factor < 1) {
                             label = "Descuento";
-                            colorStyles = "bg-green-50 text-green-700 border-green-200";
+                            colorStyles = "bg-green-100 text-green-700 border-green-300";
                             value = `-${((1 - list.factor) * 100).toFixed(0)}%`;
                          } else if (list.factor > 1) {
-                            label = "Aumento";
-                            colorStyles = "bg-blue-50 text-blue-700 border-blue-200";
+                            label = "Recargo";
+                            colorStyles = "bg-blue-100 text-blue-700 border-blue-300";
                             value = `+${((list.factor - 1) * 100).toFixed(0)}%`;
                          }
 
@@ -451,227 +539,214 @@ export const PriceManager: React.FC = () => {
                             <div 
                               key={list.id} 
                               onClick={() => setEditingList(list)} 
-                              className={`p-4 rounded-xl border transition-all cursor-pointer group ${editingList?.id === list.id ? 'border-slate-800 bg-slate-50 ring-1 ring-slate-800' : 'border-slate-100 bg-white hover:border-slate-300 hover:shadow-md'}`}
+                              className={`p-4 rounded-xl border-2 transition-all cursor-pointer group relative ${editingList?.id === list.id ? 'border-blue-600 bg-white shadow-md' : 'border-slate-200 bg-white hover:border-blue-300'}`}
                             >
                                <div className="flex justify-between items-start mb-2">
                                   <div>
-                                     <div className="font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{list.name}</div>
-                                     <div className="text-[10px] text-slate-400 font-mono mt-0.5">{list.id.substring(0,8)}</div>
+                                     <div className="font-black text-slate-800 group-hover:text-blue-600 transition-colors">{list.name}</div>
+                                     <div className="text-[9px] text-slate-400 font-mono mt-0.5">{list.id.substring(0,8)}</div>
                                   </div>
-                                  <div className={`text-[10px] uppercase font-bold px-2 py-1 rounded border ${colorStyles}`}>
+                                  <div className={`text-[9px] uppercase font-black px-2 py-1 rounded border ${colorStyles}`}>
                                      {label}
                                   </div>
                                </div>
                                <div className="flex justify-between items-end mt-3 border-t border-slate-100 pt-2">
-                                  <div className="text-xs text-slate-500">Factor Multiplicador</div>
-                                  <div className="text-xl font-bold text-slate-700 flex items-center">
-                                     <span className="text-xs text-slate-400 mr-2 font-normal">x{list.factor.toFixed(2)}</span>
+                                  <div className="text-xs font-bold text-slate-500">Factor / Variación</div>
+                                  <div className="text-lg font-black text-slate-800 flex items-center">
+                                     <span className="text-xs text-slate-400 mr-2 font-bold">x{list.factor.toFixed(2)}</span>
                                      {value}
                                   </div>
                                </div>
+                               
+                               <button 
+                                  onClick={(e) => handleDeleteList(list.id, e)} 
+                                  className="absolute -top-2 -right-2 bg-red-100 text-red-600 p-1.5 rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-500 hover:text-white transition-all border border-red-200 shadow-sm"
+                               >
+                                  <Trash2 className="w-3 h-3"/>
+                               </button>
                             </div>
                          );
                       })}
                    </div>
                 </div>
                 
-                {/* EDITOR FORM - Right Panel */}
-                <div className="flex-1 pl-4 flex flex-col justify-center">
+                <div className="flex-1 flex flex-col justify-center px-4">
                    {editingList ? (
-                      <form onSubmit={handleSaveList} className="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 max-w-lg mx-auto w-full relative overflow-hidden">
-                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-purple-500"></div>
-                         <h3 className="font-bold text-xl mb-8 text-slate-800 flex items-center">
-                            <Tag className="mr-3 text-slate-400 w-6 h-6" />
-                            {editingList.id ? 'Editar Lista de Precios' : 'Nueva Lista de Precios'}
+                      <form onSubmit={handleSaveList} className="bg-white p-8 rounded-2xl shadow-xl border border-slate-200 max-w-lg mx-auto w-full relative overflow-hidden">
+                         <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-600"></div>
+                         <h3 className="font-black text-xl mb-8 text-slate-800 flex items-center">
+                            <Tag className="mr-3 text-blue-600 w-6 h-6" />
+                            {editingList.id ? 'Modificar Regla Comercial' : 'Crear Regla Comercial'}
                          </h3>
                          
                          <div className="space-y-8">
-                            {/* NAME */}
                             <div className="relative">
-                               <label className="absolute -top-2.5 left-3 bg-white px-1 text-xs font-bold text-blue-600">Nombre de la Lista</label>
+                               <label className="absolute -top-2.5 left-3 bg-white px-1 text-[10px] font-black text-blue-600 uppercase tracking-wider">Identificador de la Lista</label>
                                <input 
                                  required 
-                                 className="w-full border-2 border-slate-200 p-4 rounded-xl text-lg font-bold text-slate-800 focus:border-blue-500 outline-none transition-colors bg-slate-50 focus:bg-white" 
+                                 className="w-full border-2 border-slate-200 p-4 rounded-xl text-lg font-black text-slate-800 focus:border-blue-500 outline-none transition-colors uppercase bg-slate-50 focus:bg-white" 
                                  value={editingList.name || ''} 
-                                 onChange={e => setEditingList({...editingList, name: e.target.value})} 
+                                 onChange={e => setEditingList({...editingList, name: e.target.value.toUpperCase()})} 
                                  placeholder="Ej. MAYORISTA, HORECA, VIP..." 
                                />
                             </div>
 
-                            {/* LOGIC SELECTOR */}
                             <div>
-                               <label className="block text-xs font-bold text-slate-400 uppercase mb-3 ml-1">Regla de Cálculo</label>
+                               <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 ml-1">Comportamiento del Motor</label>
                                <div className="grid grid-cols-3 gap-3">
                                   <button 
                                     type="button" 
                                     onClick={() => { setOperationMode('BASE'); setPercentageValue(0); }}
-                                    className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${operationMode === 'BASE' ? 'border-slate-800 bg-slate-800 text-white shadow-lg transform scale-105' : 'border-slate-200 text-slate-400 hover:border-slate-400 hover:bg-slate-50'}`}
+                                    className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${operationMode === 'BASE' ? 'border-slate-800 bg-slate-800 text-white shadow-md transform scale-105' : 'border-slate-200 text-slate-400 hover:border-slate-400 hover:bg-slate-50'}`}
                                   >
                                      <Equal className="w-6 h-6 mb-2" />
-                                     <span className="text-xs font-bold">Igual (Base)</span>
+                                     <span className="text-[10px] font-black uppercase">Neutral</span>
                                   </button>
                                   <button 
                                     type="button" 
                                     onClick={() => { setOperationMode('DISCOUNT'); setPercentageValue(5); }}
-                                    className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${operationMode === 'DISCOUNT' ? 'border-green-500 bg-green-500 text-white shadow-lg transform scale-105' : 'border-slate-200 text-slate-400 hover:border-green-300 hover:bg-green-50'}`}
+                                    className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${operationMode === 'DISCOUNT' ? 'border-green-500 bg-green-500 text-white shadow-md transform scale-105' : 'border-slate-200 text-slate-400 hover:border-green-300 hover:bg-green-50'}`}
                                   >
                                      <TrendingDown className="w-6 h-6 mb-2" />
-                                     <span className="text-xs font-bold">Descuento</span>
+                                     <span className="text-[10px] font-black uppercase">Descuento</span>
                                   </button>
                                   <button 
                                     type="button" 
                                     onClick={() => { setOperationMode('INCREASE'); setPercentageValue(10); }}
-                                    className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${operationMode === 'INCREASE' ? 'border-blue-500 bg-blue-500 text-white shadow-lg transform scale-105' : 'border-slate-200 text-slate-400 hover:border-blue-300 hover:bg-blue-50'}`}
+                                    className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${operationMode === 'INCREASE' ? 'border-blue-500 bg-blue-500 text-white shadow-md transform scale-105' : 'border-slate-200 text-slate-400 hover:border-blue-300 hover:bg-blue-50'}`}
                                   >
                                      <TrendingUp className="w-6 h-6 mb-2" />
-                                     <span className="text-xs font-bold">Aumento</span>
+                                     <span className="text-[10px] font-black uppercase">Recargo</span>
                                   </button>
                                </div>
                             </div>
 
-                            {/* PERCENTAGE INPUT */}
                             {operationMode !== 'BASE' && (
-                               <div className="animate-fade-in-down">
-                                  <label className="block text-xs font-bold text-slate-400 uppercase mb-2 ml-1">
-                                     {operationMode === 'DISCOUNT' ? 'Porcentaje de Descuento' : 'Porcentaje de Recargo'}
+                               <div className="animate-fade-in-down bg-slate-50 p-5 rounded-xl border border-slate-200">
+                                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2 ml-1">
+                                     {operationMode === 'DISCOUNT' ? 'Intensidad del Descuento' : 'Intensidad del Recargo'}
                                   </label>
                                   <div className="relative">
                                      <Percent className={`absolute left-4 top-4 w-6 h-6 ${operationMode === 'DISCOUNT' ? 'text-green-500' : 'text-blue-500'}`} />
                                      <input 
                                        type="number" 
-                                       min="0" 
+                                       min="0.1" 
                                        max="100" 
                                        step="0.1"
-                                       className={`w-full pl-12 pr-4 py-4 border-2 rounded-xl text-3xl font-bold focus:outline-none bg-white ${operationMode === 'DISCOUNT' ? 'border-green-100 text-green-600 focus:border-green-500' : 'border-blue-100 text-blue-600 focus:border-blue-500'}`}
+                                       className={`w-full pl-12 pr-4 py-4 border-2 rounded-xl text-3xl font-black focus:outline-none bg-white shadow-inner ${operationMode === 'DISCOUNT' ? 'border-green-200 text-green-700 focus:border-green-500' : 'border-blue-200 text-blue-700 focus:border-blue-500'}`}
                                        value={percentageValue}
                                        onChange={e => setPercentageValue(Number(e.target.value))}
                                      />
                                   </div>
+                                  
+                                  <div className="mt-4 flex justify-between items-center text-sm">
+                                     <span className="font-bold text-slate-500">Ejemplo S/ 100.00 ➔</span>
+                                     <span className={`font-black text-lg ${operationMode === 'DISCOUNT' ? 'text-green-600' : 'text-blue-600'}`}>
+                                        S/ {operationMode === 'DISCOUNT' ? (100 * (1 - percentageValue/100)).toFixed(2) : (100 * (1 + percentageValue/100)).toFixed(2)}
+                                     </span>
+                                  </div>
                                </div>
                             )}
 
-                            {/* SIMULATOR */}
-                            <div className="bg-slate-50 p-5 rounded-xl border border-slate-200">
-                               <h4 className="text-[10px] font-bold text-slate-400 uppercase mb-3 tracking-widest">Vista Previa</h4>
-                               <div className="flex justify-between items-center text-sm mb-2 text-slate-500">
-                                  <span>Precio Base Ejemplo:</span>
-                                  <span>S/ 100.00</span>
-                               </div>
-                               <div className="flex justify-between items-center text-lg font-bold border-t border-slate-200 pt-2">
-                                  <span className="text-slate-800">Resultado:</span>
-                                  <span className={operationMode === 'DISCOUNT' ? 'text-green-600' : operationMode === 'INCREASE' ? 'text-blue-600' : 'text-slate-800'}>
-                                     S/ {operationMode === 'BASE' ? '100.00' : operationMode === 'DISCOUNT' ? (100 * (1 - percentageValue/100)).toFixed(2) : (100 * (1 + percentageValue/100)).toFixed(2)}
-                                  </span>
-                               </div>
-                            </div>
-
-                            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-                               <button type="button" onClick={() => setEditingList(null)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors">Cancelar</button>
-                               <button type="submit" className="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold hover:bg-slate-800 shadow-xl shadow-slate-200 transform active:scale-95 transition-all">
-                                  Guardar Lista
+                            <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
+                               <button type="button" onClick={() => setEditingList(null)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
+                               <button type="submit" disabled={isSaving} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black hover:bg-blue-700 shadow-lg shadow-blue-600/30 transform active:scale-95 transition-all flex items-center disabled:opacity-50">
+                                  {isSaving ? <RefreshCw className="w-5 h-5 mr-2 animate-spin"/> : <Save className="w-5 h-5 mr-2" />}
+                                  Guardar Motor
                                </button>
                             </div>
                          </div>
                       </form>
                    ) : (
                       <div className="h-full flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-200 rounded-3xl p-10 bg-slate-50">
-                         <Tag className="w-16 h-16 mb-4 opacity-50 text-slate-400" />
-                         <p className="font-medium text-lg">Seleccione una lista para editar</p>
-                         <p className="text-sm">o cree una nueva configuración</p>
+                         <Tag className="w-16 h-16 mb-4 opacity-30 text-blue-600" />
+                         <p className="font-black text-xl text-slate-400 uppercase tracking-widest">Motor Inactivo</p>
+                         <p className="text-sm font-medium mt-2">Seleccione o cree una regla comercial a la izquierda.</p>
                       </div>
                    )}
                 </div>
              </div>
           )}
 
-          {/* --- TAB 3: SELLER ASSIGNMENT (IMPROVED) --- */}
+          {/* --- TAB 3: SELLER ASSIGNMENT --- */}
           {activeTab === 'SELLERS' && (
-             <div className="flex flex-col h-full relative">
+             <div className="flex flex-col h-full relative p-6 animate-fade-in">
                 
-                {/* Changes Notification Bar */}
                 {hasChanges && (
-                   <div className="absolute top-0 left-1/2 -translate-x-1/2 z-20 mt-4 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 animate-fade-in-down border border-slate-700">
-                      <span className="text-sm font-bold flex items-center">
-                         <AlertCircle className="w-4 h-4 mr-2 text-yellow-400" /> 
-                         Tiene cambios pendientes sin guardar
+                   <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 bg-slate-900 text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-4 animate-fade-in-down border-2 border-slate-700">
+                      <span className="text-sm font-black flex items-center uppercase tracking-wide">
+                         <AlertCircle className="w-4 h-4 mr-2 text-yellow-400" /> Cambios detectados en la matriz
                       </span>
                       <button 
                          onClick={saveAssignments}
-                         className="bg-green-600 hover:bg-green-500 text-white px-4 py-1.5 rounded-full text-xs font-bold transition-all shadow-lg"
+                         disabled={isSaving}
+                         className="bg-purple-600 hover:bg-purple-500 text-white px-5 py-2 rounded-full text-xs font-black transition-all shadow-lg shadow-purple-600/30 flex items-center disabled:opacity-50"
                       >
-                         GUARDAR CAMBIOS
+                         {isSaving ? <RefreshCw className="w-3 h-3 mr-2 animate-spin"/> : null}
+                         SINCRONIZAR
                       </button>
                    </div>
                 )}
 
-                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6 flex items-start">
-                   <div className="bg-blue-100 p-2 rounded-full mr-3">
-                      <Users className="w-5 h-5 text-blue-600" />
+                <div className="bg-purple-50 p-5 rounded-xl border border-purple-200 mb-6 flex items-start shadow-sm">
+                   <div className="bg-purple-100 p-2.5 rounded-full mr-4 shadow-inner">
+                      <Users className="w-6 h-6 text-purple-700" />
                    </div>
                    <div>
-                      <h4 className="font-bold text-blue-800 text-sm">Asignación de Listas por Ruta</h4>
-                      <p className="text-xs text-blue-600 mt-1">
-                         Configure qué lista de precios predeterminada utilizará cada vendedor. 
-                         Esto se aplicará automáticamente a los clientes de su ruta que no tengan una lista específica.
+                      <h4 className="font-black text-purple-900 text-lg">Matriz de Precios por Vendedor</h4>
+                      <p className="text-xs font-medium text-purple-700 mt-1">
+                         La lista seleccionada se inyectará automáticamente en la App Móvil del vendedor y se aplicará a todos los clientes de su ruta que no tengan una lista personalizada.
                       </p>
                    </div>
                 </div>
                 
                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1">
                    <table className="w-full text-sm text-left border-collapse">
-                      <thead className="bg-slate-50 text-slate-500 font-bold text-xs uppercase tracking-wider border-b border-slate-200">
+                      <thead className="bg-slate-100 text-slate-500 font-black text-[10px] uppercase tracking-wider border-b border-slate-200 sticky top-0">
                          <tr>
-                            <th className="p-4 w-16">Avatar</th>
-                            <th className="p-4">Vendedor</th>
-                            <th className="p-4">Zona Asignada</th>
-                            <th className="p-4">Lista de Precios</th>
-                            <th className="p-4 text-center">Factor Aplicado</th>
+                            <th className="p-4 w-16 text-center">Avatar</th>
+                            <th className="p-4">Fuerza de Venta</th>
+                            <th className="p-4">Lista Asignada (Inyección Automática)</th>
+                            <th className="p-4 text-center">Multiplicador</th>
                          </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                         {store.sellers.map(seller => {
+                         {sellers.length === 0 ? (
+                            <tr><td colSpan={4} className="p-10 text-center text-slate-400 font-bold">No hay vendedores registrados en la base de datos.</td></tr>
+                         ) : sellers.map(seller => {
                             const currentListId = getSellerListId(seller);
-                            const assignedList = store.priceLists.find(l => l.id === currentListId);
-                            const zone = store.zones.find(z => z.assigned_seller_id === seller.id);
-                            
+                            const assignedList = priceLists.find(l => l.id === currentListId);
                             const isModified = pendingAssignments[seller.id] !== undefined;
 
                             return (
-                               <tr key={seller.id} className={`transition-colors ${isModified ? 'bg-yellow-50/50' : 'hover:bg-slate-50'}`}>
-                                  <td className="p-4">
-                                     <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold border-2 border-white shadow-sm">
+                               <tr key={seller.id} className={`transition-colors ${isModified ? 'bg-yellow-50' : 'hover:bg-slate-50'}`}>
+                                  <td className="p-4 text-center">
+                                     <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-white font-black text-xs mx-auto shadow-md">
                                         {seller.name.substring(0,2).toUpperCase()}
                                      </div>
                                   </td>
                                   <td className="p-4">
-                                     <div className="font-bold text-slate-800">{seller.name}</div>
-                                     <div className="text-xs text-slate-400 font-mono mt-0.5">{seller.dni}</div>
+                                     <div className="font-black text-slate-800 text-base">{seller.name}</div>
+                                     <div className="text-[10px] text-slate-400 font-mono font-bold mt-0.5">{seller.dni}</div>
                                   </td>
                                   <td className="p-4">
-                                     {zone ? (
-                                        <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-xs font-bold border border-slate-200 flex w-fit items-center">
-                                           <MapPin className="w-3 h-3 mr-1" /> {zone.name}
-                                        </span>
-                                     ) : (
-                                        <span className="text-slate-300 text-xs italic">Sin Zona</span>
-                                     )}
-                                  </td>
-                                  <td className="p-4">
-                                     <div className="relative max-w-xs">
+                                     <div className="relative max-w-sm">
                                         <select 
-                                          className={`w-full appearance-none border-2 rounded-lg p-2.5 pl-3 pr-8 text-sm font-bold outline-none transition-all cursor-pointer ${isModified ? 'border-yellow-400 bg-white text-slate-800' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-blue-300 hover:bg-white'}`}
+                                          className={`w-full appearance-none border-2 rounded-xl p-3 pl-4 pr-10 text-sm font-black outline-none transition-all cursor-pointer ${isModified ? 'border-yellow-400 bg-white text-slate-900 shadow-sm' : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-purple-400 hover:bg-white'}`}
                                           value={currentListId}
                                           onChange={e => handlePendingAssignment(seller.id, e.target.value)}
                                         >
-                                           <option value="">-- Precio Base (Estándar) --</option>
-                                           {store.priceLists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                                           <option value="">[ PRECIO BASE / ESTÁNDAR ]</option>
+                                           {priceLists.map(l => <option key={l.id} value={l.id}>{l.name.toUpperCase()}</option>)}
                                         </select>
-                                        <ChevronRight className="absolute right-3 top-3 w-4 h-4 text-slate-400 pointer-events-none rotate-90" />
+                                        <div className="absolute right-3 top-3.5 pointer-events-none bg-slate-200 text-slate-600 rounded p-0.5">
+                                           <TrendingUp className="w-3 h-3" />
+                                        </div>
                                      </div>
                                   </td>
                                   <td className="p-4 text-center">
-                                     <span className={`font-mono font-bold text-xs px-2 py-1 rounded ${assignedList ? (assignedList.factor < 1 ? 'text-green-600 bg-green-50' : assignedList.factor > 1 ? 'text-blue-600 bg-blue-50' : 'text-slate-500') : 'text-slate-400'}`}>
-                                        {assignedList ? assignedList.factor.toFixed(2) + 'x' : '1.00x'}
+                                     <span className={`font-mono font-black text-xs px-3 py-1.5 rounded-lg border shadow-sm ${assignedList ? (assignedList.factor < 1 ? 'text-green-700 bg-green-50 border-green-200' : assignedList.factor > 1 ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-600 bg-slate-100 border-slate-200') : 'text-slate-500 bg-slate-100 border-slate-200'}`}>
+                                        {assignedList ? assignedList.factor.toFixed(2) + 'X' : '1.00X'}
                                      </span>
                                   </td>
                                </tr>
