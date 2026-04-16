@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase, USE_MOCK_DB } from '../services/supabase';
 import { Product, Batch, Purchase, Sale, DispatchLiquidation } from '../types';
-import { Package, ArrowUpRight, ArrowDownLeft, Search, Filter, Calendar, BarChart3, FileText, Layers, RefreshCw, Printer, AlertTriangle, ArrowUpDown, FileDown, Plus, DollarSign, Hash } from 'lucide-react';
+import { Package, ArrowUpRight, ArrowDownLeft, Search, Filter, Calendar, BarChart3, FileText, Layers, RefreshCw, Printer, AlertTriangle, ArrowUpDown, FileDown, Plus, DollarSign, Hash, Briefcase, CheckCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -79,35 +79,35 @@ export const Kardex: React.FC = () => {
 
   // --- DATA COMPUTATION ---
 
-  // 1. INVENTORY SUMMARY (Snapshot)
+  // 1. INVENTORY SUMMARY (Snapshot) - BLINDADO CONTRA NULOS
   const inventorySnapshot = useMemo(() => {
-    return dbProducts.map(p => {
-       const productBatches = dbBatches.filter(b => b.product_id === p.id && b.quantity_current > 0 && 
+    return (dbProducts || []).map(p => {
+       const productBatches = (dbBatches || []).filter(b => b.product_id === p.id && b.quantity_current > 0 && 
            (filterWarehouse === 'CENTRAL' ? b.warehouse_id !== 'MERMAS' : b.warehouse_id === 'MERMAS')
        );
-       const totalStock = productBatches.reduce((acc, b) => acc + b.quantity_current, 0);
-       const totalValue = filterWarehouse === 'MERMAS' ? 0 : productBatches.reduce((acc, b) => acc + (b.quantity_current * b.cost), 0);
-       const avgCost = filterWarehouse === 'MERMAS' ? 0 : (totalStock > 0 ? totalValue / totalStock : p.last_cost);
+       const totalStock = productBatches.reduce((acc, b) => acc + (b.quantity_current || 0), 0);
+       const totalValue = filterWarehouse === 'MERMAS' ? 0 : productBatches.reduce((acc, b) => acc + ((b.quantity_current || 0) * (b.cost || 0)), 0);
+       const avgCost = filterWarehouse === 'MERMAS' ? 0 : (totalStock > 0 ? totalValue / totalStock : (p.last_cost || 0));
 
        return {
           ...p,
           totalStock,
           avgCost,
           totalValue,
-          supplierName: dbSuppliers.find(s => s.id === p.supplier_id)?.name || 'Varios'
+          supplierName: (dbSuppliers || []).find(s => s.id === p.supplier_id)?.name || 'Varios'
        };
     }).filter(p => {
-       const matchSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.includes(searchTerm);
+       const matchSearch = (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || (p.sku || '').toLowerCase().includes(searchTerm.toLowerCase());
        const matchCat = filterCategory === 'ALL' || p.category === filterCategory;
        const matchSup = filterSupplier === 'ALL' || p.supplier_id === filterSupplier;
        return matchSearch && matchCat && matchSup;
     }).sort((a,b) => {
        let valA: string | number = '';
        let valB: string | number = '';
-       if (sortField === 'sku') { valA = a.sku; valB = b.sku; }
-       if (sortField === 'name') { valA = a.name; valB = b.name; }
-       if (sortField === 'category') { valA = a.category; valB = b.category; }
-       if (sortField === 'supplier') { valA = a.supplierName; valB = b.supplierName; }
+       if (sortField === 'sku') { valA = a.sku || ''; valB = b.sku || ''; }
+       if (sortField === 'name') { valA = a.name || ''; valB = b.name || ''; }
+       if (sortField === 'category') { valA = a.category || ''; valB = b.category || ''; }
+       if (sortField === 'supplier') { valA = a.supplierName || ''; valB = b.supplierName || ''; }
        if (sortField === 'stock') { valA = a.totalStock; valB = b.totalStock; }
        if (sortField === 'value') { valA = a.totalValue; valB = b.totalValue; }
        
@@ -115,70 +115,70 @@ export const Kardex: React.FC = () => {
        if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
        return 0;
     });
-  }, [dbProducts, dbBatches, searchTerm, filterCategory, filterSupplier, sortField, sortOrder, filterWarehouse]);
+  }, [dbProducts, dbBatches, dbSuppliers, searchTerm, filterCategory, filterSupplier, sortField, sortOrder, filterWarehouse]);
 
-  // 2. MOVEMENTS (Timeline)
+  // 2. MOVEMENTS (Timeline) - BLINDADO CONTRA NULOS
   const movements = useMemo(() => {
      const list: Movement[] = [];
 
-     dbPurchases.forEach(p => {
-        if (p.issue_date < dateFrom || p.issue_date > dateTo) return;
-        p.items.forEach(item => {
-           const prod = dbProducts.find(x => x.id === item.product_id);
-           if (!prod || (searchTerm && !prod.name.toLowerCase().includes(searchTerm.toLowerCase()))) return;
+     (dbPurchases || []).forEach(p => {
+        if (!p.issue_date || p.issue_date < dateFrom || p.issue_date > dateTo) return;
+        (p.items || []).forEach(item => {
+           const prod = (dbProducts || []).find(x => x.id === item.product_id);
+           if (!prod || (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()))) return;
            list.push({
               id: `PUR-${p.id}-${item.product_id}`,
-              date: p.issue_date, type: 'IN', docType: 'COMPRA', docNumber: p.document_number,
-              productName: prod.name, sku: prod.sku, quantity: item.quantity_base,
-              unitPrice: item.quantity_base > 0 ? item.total_cost / item.quantity_base : 0, 
-              total: item.total_cost, reference: p.supplier_name
+              date: p.issue_date, type: 'IN', docType: 'COMPRA', docNumber: p.document_number || 'S/N',
+              productName: prod.name || 'Desconocido', sku: prod.sku || 'S/N', quantity: item.quantity_base || 0,
+              unitPrice: item.quantity_base > 0 ? (item.total_cost || 0) / item.quantity_base : 0, 
+              total: item.total_cost || 0, reference: p.supplier_name || 'Desconocido'
            });
         });
      });
 
-     dbSales.forEach(s => {
-        const date = (s.created_at || '').split('T')[0];
+     (dbSales || []).forEach(s => {
+        const date = (s.created_at || new Date().toISOString()).split('T')[0];
         if (date < dateFrom || date > dateTo) return;
-        s.items.forEach(item => {
-           const prod = dbProducts.find(x => x.id === item.product_id);
-           if (!prod || (searchTerm && !prod.name.toLowerCase().includes(searchTerm.toLowerCase()))) return;
+        (s.items || []).forEach(item => {
+           const prod = (dbProducts || []).find(x => x.id === item.product_id);
+           if (!prod || (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()))) return;
            list.push({
               id: `SALE-${s.id}-${item.id}`,
-              date: date, type: 'OUT', docType: s.document_type, docNumber: `${s.series}-${s.number}`,
-              productName: prod.name, sku: prod.sku, quantity: item.quantity_base, 
-              unitPrice: item.quantity_base > 0 ? item.total_price / item.quantity_base : 0,
-              total: item.total_price, reference: s.client_name
+              date: date, type: 'OUT', docType: s.document_type || 'VENTA', docNumber: `${s.series || ''}-${s.number || ''}`,
+              productName: prod.name || 'Desconocido', sku: prod.sku || 'S/N', quantity: item.quantity_base || 0, 
+              unitPrice: item.quantity_base > 0 ? (item.total_price || 0) / item.quantity_base : 0,
+              total: item.total_price || 0, reference: s.client_name || 'Desconocido'
            });
         });
      });
 
-     dbLiquidations.forEach(liq => {
-        const date = liq.date.split('T')[0];
+     (dbLiquidations || []).forEach(liq => {
+        const date = (liq.date || new Date().toISOString()).split('T')[0];
         if (date < dateFrom || date > dateTo) return;
-        liq.documents.forEach(doc => {
+        (liq.documents || []).forEach(doc => {
            if (doc.action === 'PARTIAL_RETURN' || doc.action === 'VOID') {
-              const sale = dbSales.find(s => s.id === doc.sale_id);
+              const sale = (dbSales || []).find(s => s.id === doc.sale_id);
               if (doc.action === 'VOID' && sale) {
-                 sale.items.forEach(item => {
-                    const prod = dbProducts.find(x => x.id === item.product_id);
-                    if (!prod || (searchTerm && !prod.name.toLowerCase().includes(searchTerm.toLowerCase()))) return;
+                 (sale.items || []).forEach(item => {
+                    const prod = (dbProducts || []).find(x => x.id === item.product_id);
+                    if (!prod || (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()))) return;
                     list.push({
                        id: `VOID-${doc.sale_id}-${item.id}`,
-                       date, type: 'IN', docType: 'ANULACION', docNumber: `${sale.series}-${sale.number}`,
-                       productName: prod.name, sku: prod.sku, quantity: item.quantity_base, unitPrice: 0, total: 0, reference: 'REINGRESO ALMACEN'
+                       date, type: 'IN', docType: 'ANULACION', docNumber: `${sale.series || ''}-${sale.number || ''}`,
+                       productName: prod.name || '', sku: prod.sku || '', quantity: item.quantity_base || 0, unitPrice: 0, total: 0, reference: 'REINGRESO ALMACEN'
                     });
                  });
               }
               if (doc.action === 'PARTIAL_RETURN') {
-                 doc.returned_items.forEach(ret => {
-                    const prod = dbProducts.find(x => x.id === ret.product_id);
-                    if (!prod || (searchTerm && !prod.name.toLowerCase().includes(searchTerm.toLowerCase()))) return;
+                 (doc.returned_items || []).forEach(ret => {
+                    const prod = (dbProducts || []).find(x => x.id === ret.product_id);
+                    if (!prod || (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()))) return;
                     list.push({
                        id: `RET-${doc.sale_id}-${ret.product_id}`,
                        date, type: 'IN', docType: 'NOTA CREDITO', docNumber: doc.credit_note_series || 'NC-000',
-                       productName: prod.name, sku: prod.sku, quantity: ret.quantity_base, 
-                       unitPrice: ret.quantity_base > 0 ? ret.total_refund / ret.quantity_base : 0, 
-                       total: ret.total_refund, reference: sale?.client_name || 'CLIENTE'
+                       productName: prod.name || '', sku: prod.sku || '', quantity: ret.quantity_base || 0, 
+                       unitPrice: ret.quantity_base > 0 ? (ret.total_refund || 0) / ret.quantity_base : 0, 
+                       total: ret.total_refund || 0, reference: sale?.client_name || 'CLIENTE'
                     });
                  });
               }
@@ -194,23 +194,23 @@ export const Kardex: React.FC = () => {
      const byCategory: Record<string, number> = {};
      const bySupplier: Record<string, number> = {};
      inventorySnapshot.forEach(p => {
-        byCategory[p.category || 'OTROS'] = (byCategory[p.category || 'OTROS'] || 0) + p.totalValue;
-        bySupplier[p.supplierName] = (bySupplier[p.supplierName] || 0) + p.totalValue;
+        byCategory[p.category || 'OTROS'] = (byCategory[p.category || 'OTROS'] || 0) + (p.totalValue || 0);
+        bySupplier[p.supplierName || 'OTROS'] = (bySupplier[p.supplierName || 'OTROS'] || 0) + (p.totalValue || 0);
      });
      const catChart = Object.entries(byCategory).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value).slice(0, 6);
      const supChart = Object.entries(bySupplier).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value).slice(0, 6);
-     return { catChart, supChart, totalValuation: inventorySnapshot.reduce((acc, i) => acc + i.totalValue, 0) };
+     return { catChart, supChart, totalValuation: inventorySnapshot.reduce((acc, i) => acc + (i.totalValue || 0), 0) };
   }, [inventorySnapshot]);
 
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
-  const uniqueCategories = Array.from(new Set(dbProducts.map(p => p.category))).sort() as string[];
+  const uniqueCategories = Array.from(new Set(dbProducts.map(p => p.category).filter(Boolean))).sort() as string[];
 
   const handleSort = (field: 'sku'|'name'|'category'|'supplier'|'stock'|'value') => {
     if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortOrder(field === 'name' || field === 'sku' ? 'asc' : 'desc'); }
   };
 
-  const currentTotalValuation = useMemo(() => inventorySnapshot.reduce((a,b)=>a+b.totalValue, 0), [inventorySnapshot]);
+  const currentTotalValuation = useMemo(() => inventorySnapshot.reduce((a,b)=>a+(b.totalValue || 0), 0), [inventorySnapshot]);
 
   // --- ACCIONES SUPABASE: TRANSFERENCIA A MERMAS ---
   const handleTransferMermas = async (productId: string, batchId: string, maxQty: number) => {
@@ -233,8 +233,8 @@ export const Kardex: React.FC = () => {
            code: `${batchToMove.code}-M`,
            quantity_initial: qty,
            quantity_current: qty,
-           cost: batchToMove.cost,
-           expiration_date: batchToMove.expiration_date
+           cost: batchToMove.cost || 0,
+           expiration_date: batchToMove.expiration_date || null
         }]);
 
         alert("Unidades movidas a Mermas correctamente.");
@@ -246,9 +246,9 @@ export const Kardex: React.FC = () => {
 
   const exportExcel = () => {
     const dataToExport = inventorySnapshot.map(p => ({
-      "Código SKU": p.sku, "Producto": p.name, "Categoría": p.category || '', "Marca": p.brand || '', "Proveedor": p.supplierName,
-      "Stock Total": p.totalStock, "Costo Prom. Unit": parseFloat(p.avgCost.toFixed(4)), "Valorización Total": parseFloat(p.totalValue.toFixed(2)),
-      "Estado": p.totalStock <= p.min_stock ? 'BAJO STOCK' : 'OPTIMO'
+      "Código SKU": p.sku || '', "Producto": p.name || '', "Categoría": p.category || '', "Marca": p.brand || '', "Proveedor": p.supplierName || '',
+      "Stock Total": p.totalStock || 0, "Costo Prom. Unit": parseFloat((p.avgCost || 0).toFixed(4)), "Valorización Total": parseFloat((p.totalValue || 0).toFixed(2)),
+      "Estado": p.totalStock <= (p.min_stock || 0) ? 'BAJO STOCK' : 'OPTIMO'
     }));
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
@@ -266,7 +266,7 @@ export const Kardex: React.FC = () => {
 
     const tableColumn = ["SKU", "Producto", "Categoría / Marca", "Proveedor", "Stock Total", "Costo Prom", "Valor Total"];
     const tableRows = inventorySnapshot.map(p => [
-      p.sku, p.name, `${p.category || '-'} / ${p.brand || '-'}`, p.supplierName, `${p.totalStock} ${p.unit_type || 'U'}`, `S/ ${p.avgCost.toFixed(2)}`, `S/ ${p.totalValue.toFixed(2)}`
+      p.sku || '', p.name || '', `${p.category || '-'} / ${p.brand || '-'}`, p.supplierName || '', `${p.totalStock || 0} ${p.unit_type || 'U'}`, `S/ ${(p.avgCost || 0).toFixed(2)}`, `S/ ${(p.totalValue || 0).toFixed(2)}`
     ]);
 
     autoTable(doc, {
@@ -410,14 +410,14 @@ export const Kardex: React.FC = () => {
                             <td className="p-4 text-right">
                                <div className="font-black text-slate-900 text-lg">{p.totalStock} <span className="text-xs text-slate-400 font-bold ml-1">{p.unit_type || 'U'}</span></div>
                             </td>
-                            <td className="p-4 text-right font-mono font-bold text-slate-500">S/ {p.avgCost.toFixed(4)}</td>
-                            <td className="p-4 text-right font-black text-blue-700 bg-blue-50/10 border-l border-blue-50 text-lg">S/ {p.totalValue.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td className="p-4 text-right font-mono font-bold text-slate-500">S/ {(p.avgCost || 0).toFixed(4)}</td>
+                            <td className="p-4 text-right font-black text-blue-700 bg-blue-50/10 border-l border-blue-50 text-lg">S/ {(p.totalValue || 0).toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                             <td className="p-4 text-center">
                                {p.totalStock <= 0 ? (
                                   <span className="flex items-center justify-center text-red-600 text-[10px] font-black bg-red-100 px-3 py-1 rounded-full border border-red-200 shadow-sm">
                                      <AlertTriangle className="w-3 h-3 mr-1" /> AGOTADO
                                   </span>
-                               ) : p.totalStock <= p.min_stock ? (
+                               ) : p.totalStock <= (p.min_stock || 0) ? (
                                   <span className="flex items-center justify-center text-orange-600 text-[10px] font-black bg-orange-100 px-3 py-1 rounded-full border border-orange-200 shadow-sm animate-pulse">
                                      <AlertTriangle className="w-3 h-3 mr-1" /> STOCK BAJO
                                   </span>
@@ -433,7 +433,7 @@ export const Kardex: React.FC = () => {
                    <tfoot className="bg-slate-800 text-white font-black sticky bottom-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
                       <tr>
                          <td colSpan={5} className="p-4 text-right uppercase tracking-wider text-xs text-slate-400">Capitalización Total en Almacén:</td>
-                         <td className="p-4 text-right text-emerald-400 text-xl border-l border-slate-700">S/ {inventorySnapshot.reduce((a,b)=>a+b.totalValue, 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</td>
+                         <td className="p-4 text-right text-emerald-400 text-xl border-l border-slate-700">S/ {inventorySnapshot.reduce((a,b)=>a+(b.totalValue||0), 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</td>
                          <td></td>
                       </tr>
                    </tfoot>
@@ -506,8 +506,8 @@ export const Kardex: React.FC = () => {
                     <div className="flex flex-col items-center justify-center h-full text-slate-400 font-bold"><RefreshCw className="w-8 h-8 animate-spin mb-4 text-purple-500"/> Sincronizando Lotes...</div>
                 ) : (
                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                      {dbProducts.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase())).map(product => {
-                         const batches = dbBatches.filter(b => b.product_id === product.id && b.quantity_current > 0 && (filterWarehouse === 'CENTRAL' ? b.warehouse_id !== 'MERMAS' : b.warehouse_id === 'MERMAS')).sort((a,b) => new Date(a.expiration_date || '2099-01-01').getTime() - new Date(b.expiration_date || '2099-01-01').getTime());
+                      {(dbProducts || []).filter(p => (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || (p.sku || '').toLowerCase().includes(searchTerm.toLowerCase())).map(product => {
+                         const batches = (dbBatches || []).filter(b => b.product_id === product.id && b.quantity_current > 0 && (filterWarehouse === 'CENTRAL' ? b.warehouse_id !== 'MERMAS' : b.warehouse_id === 'MERMAS')).sort((a,b) => new Date(a.expiration_date || '2099-01-01').getTime() - new Date(b.expiration_date || '2099-01-01').getTime());
                          if (batches.length === 0) return null;
 
                          return (
@@ -519,7 +519,7 @@ export const Kardex: React.FC = () => {
                                         <p className="text-[10px] text-slate-400 font-mono mt-1">{product.sku}</p>
                                      </div>
                                      <div className="bg-blue-600 text-white text-xs px-2 py-1 rounded-lg font-black shadow-inner whitespace-nowrap">
-                                        {batches.reduce((a,b)=>a+b.quantity_current,0)} Und
+                                        {batches.reduce((a,b)=>a+(b.quantity_current||0),0)} Und
                                      </div>
                                   </div>
                                </div>
@@ -581,7 +581,7 @@ export const Kardex: React.FC = () => {
                    </div>
                    <div className="bg-white p-8 rounded-2xl shadow-sm border-2 border-red-100">
                       <p className="text-red-500 text-xs font-black uppercase tracking-widest mb-2">Productos Críticos (Bajo Stock)</p>
-                      <h3 className="text-4xl font-black text-red-600 tracking-tighter">{inventorySnapshot.filter(p => p.totalStock <= p.min_stock).length}</h3>
+                      <h3 className="text-4xl font-black text-red-600 tracking-tighter">{inventorySnapshot.filter(p => p.totalStock <= (p.min_stock || 0)).length}</h3>
                    </div>
                 </div>
 
