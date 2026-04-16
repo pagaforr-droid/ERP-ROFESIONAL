@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
-import { Package, Calendar, DollarSign, Hash, Search, ArrowUpDown, TrendingDown, Layers, FileDown, Plus, Printer, AlertTriangle } from 'lucide-react';
+import { Package, Calendar, DollarSign, Hash, Search, ArrowUpDown, TrendingDown, Layers, FileDown, Plus, Printer, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -16,10 +16,12 @@ export const Inventory: React.FC = () => {
   const [realProducts, setRealProducts] = useState<any[]>([]);
   const [realBatches, setRealBatches] = useState<any[]>([]);
   const [realSuppliers, setRealSuppliers] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
       if (!USE_MOCK_DB) {
+        setIsLoading(true);
         try {
           const [pRes, bRes, sRes] = await Promise.all([
             supabase.from('products').select('*'),
@@ -31,11 +33,13 @@ export const Inventory: React.FC = () => {
           if (sRes.data) setRealSuppliers(sRes.data);
         } catch (error) {
           console.error("Error fetching Supabase data:", error);
+        } finally {
+          setIsLoading(false);
         }
       }
     };
     fetchData();
-  }, [activeTab]); // Recargar al cambiar de tab
+  }, [activeTab]);
 
   const products = USE_MOCK_DB ? store.products : realProducts;
   const batches = USE_MOCK_DB ? store.batches : realBatches;
@@ -85,7 +89,6 @@ export const Inventory: React.FC = () => {
     }
 
     setFormData({ productId: '', code: '', quantity: 0, cost: 0, expirationDate: '' });
-    // Opcional: Forzar recarga de tabs
     setActiveTab('MONITOR');
   };
 
@@ -97,27 +100,25 @@ export const Inventory: React.FC = () => {
   const [sortField, setSortField] = useState<'name' | 'stock' | 'value'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
-  // Extract unique categories and suppliers for dropdowns
-  const uniqueCategories = useMemo(() => Array.from(new Set(products.map(p => p.category).filter(Boolean))), [products]);
+  const uniqueCategories = useMemo(() => Array.from(new Set((products || []).map(p => p.category).filter(Boolean))), [products]);
   const activeSuppliers = useMemo(() => {
-     const ids = Array.from(new Set(products.map(p => p.supplier_id).filter(Boolean)));
-     return ids.map(id => suppliers.find(s => s.id === id)).filter(Boolean) as typeof suppliers;
+     const ids = Array.from(new Set((products || []).map(p => p.supplier_id).filter(Boolean)));
+     return ids.map(id => (suppliers || []).find(s => s.id === id)).filter(Boolean) as typeof suppliers;
   }, [products, suppliers]);
 
-  // Enriched Inventory Data
+  // Enriched Inventory Data - BLINDADO
   const inventoryData = useMemo(() => {
-    return products.map(p => {
-      const productBatches = batches.filter(b => b.product_id === p.id);
-      const stockBase = productBatches.reduce((acc, b) => acc + b.quantity_current, 0);
+    return (products || []).map(p => {
+      const productBatches = (batches || []).filter(b => b.product_id === p.id);
+      const stockBase = productBatches.reduce((acc, b) => acc + (b.quantity_current || 0), 0);
       
       const factor = p.package_content || 1;
       const stockPackages = Math.floor(stockBase / factor);
       const remainingBase = stockBase % factor;
       
-      const supplierName = suppliers.find(s => s.id === p.supplier_id)?.name || 'Sin Proveedor';
-      // Use average cost if there are batches, otherwise last_cost
-      const totalCostBatch = productBatches.reduce((acc, b) => acc + (b.cost * b.quantity_current), 0);
-      const avgCost = stockBase > 0 ? totalCostBatch / stockBase : p.last_cost;
+      const supplierName = (suppliers || []).find(s => s.id === p.supplier_id)?.name || 'Sin Proveedor';
+      const totalCostBatch = productBatches.reduce((acc, b) => acc + ((b.cost || 0) * (b.quantity_current || 0)), 0);
+      const avgCost = stockBase > 0 ? totalCostBatch / stockBase : (p.last_cost || 0);
       const totalValue = stockBase * avgCost;
 
       return {
@@ -128,16 +129,15 @@ export const Inventory: React.FC = () => {
         supplierName,
         avgCost,
         totalValue,
-        isLowStock: stockBase <= p.min_stock
+        isLowStock: stockBase <= (p.min_stock || 0)
       };
     });
   }, [products, batches, suppliers]);
 
-  // Filtered & Sorted
   const filteredData = useMemo(() => {
     return inventoryData
       .filter(p => {
-         if (searchQuery && !p.name.toLowerCase().includes(searchQuery.toLowerCase()) && !p.sku.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+         if (searchQuery && !(p.name || '').toLowerCase().includes(searchQuery.toLowerCase()) && !(p.sku || '').toLowerCase().includes(searchQuery.toLowerCase())) return false;
          if (selectedCategory && p.category !== selectedCategory) return false;
          if (selectedSupplier && p.supplier_id !== selectedSupplier) return false;
          return true;
@@ -145,7 +145,7 @@ export const Inventory: React.FC = () => {
       .sort((a, b) => {
          let valA: string | number = '';
          let valB: string | number = '';
-         if (sortField === 'name') { valA = a.name; valB = b.name; }
+         if (sortField === 'name') { valA = a.name || ''; valB = b.name || ''; }
          if (sortField === 'stock') { valA = a.stockBase; valB = b.stockBase; }
          if (sortField === 'value') { valA = a.totalValue; valB = b.totalValue; }
          
@@ -155,7 +155,6 @@ export const Inventory: React.FC = () => {
       });
   }, [inventoryData, searchQuery, selectedCategory, selectedSupplier, sortField, sortOrder]);
 
-  // KPIs
   const totalCapital = inventoryData.reduce((acc, p) => acc + p.totalValue, 0);
   const criticalStockCount = inventoryData.filter(p => p.isLowStock && p.stockBase > 0).length;
   const zeroStockCount = inventoryData.filter(p => p.stockBase <= 0).length;
@@ -165,21 +164,21 @@ export const Inventory: React.FC = () => {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
-      setSortOrder(field === 'name' ? 'asc' : 'desc'); // defaults
+      setSortOrder(field === 'name' ? 'asc' : 'desc');
     }
   };
 
   const exportExcel = () => {
     const dataToExport = filteredData.map(p => ({
-      "Código SKU": p.sku,
-      "Producto": p.name,
+      "Código SKU": p.sku || '',
+      "Producto": p.name || '',
       "Categoría": p.category || '',
-      "Proveedor": p.supplierName,
-      "Stock Total (Base)": p.stockBase,
+      "Proveedor": p.supplierName || '',
+      "Stock Total (Base)": p.stockBase || 0,
       "Unidad Medida": p.unit_type || '',
-      "Stock Empaques": p.stockPackages,
-      "Costo Prom. Unit": p.avgCost,
-      "Valorización Total": p.totalValue,
+      "Stock Empaques": p.stockPackages || 0,
+      "Costo Prom. Unit": p.avgCost || 0,
+      "Valorización Total": p.totalValue || 0,
       "Alerta": p.stockBase <= 0 ? 'AGOTADO' : (p.isLowStock ? 'STOCK BAJO' : 'OK')
     }));
 
@@ -191,42 +190,23 @@ export const Inventory: React.FC = () => {
 
   const exportPDF = () => {
     const doc = new jsPDF('landscape');
-    
-    // Header
-    doc.setFontSize(18);
-    doc.setTextColor(40, 40, 40);
-    doc.text("Reporte de Inventario Valorizado", 14, 22);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
+    doc.setFontSize(18); doc.setTextColor(40, 40, 40); doc.text("Reporte de Inventario Valorizado", 14, 22);
+    doc.setFontSize(10); doc.setTextColor(100, 100, 100);
     doc.text(`Fecha de Emisión: ${new Date().toLocaleString()}`, 14, 30);
     doc.text(`Total Capital Valorizado: S/ ${totalCapital.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 14, 36);
 
     const tableColumn = ["SKU", "Producto", "Categoría", "Proveedor", "Stock Real", "Costo Unit", "Total Val."];
     const tableRows = filteredData.map(p => [
-      p.sku,
-      p.name,
-      p.category || '-',
-      p.supplierName,
+      p.sku || '', p.name || '', p.category || '-', p.supplierName || '',
       `${p.stockBase} ${p.unit_type || 'U'} ${p.stockPackages > 0 ? `(${p.stockPackages} ${p.package_type || 'CJ'})` : ''}`,
-      `S/ ${p.avgCost.toFixed(2)}`,
-      `S/ ${p.totalValue.toFixed(2)}`
+      `S/ ${(p.avgCost || 0).toFixed(2)}`, `S/ ${(p.totalValue || 0).toFixed(2)}`
     ]);
 
     autoTable(doc, {
-      head: [tableColumn],
-      body: tableRows,
-      startY: 42,
-      theme: 'grid',
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [30, 41, 59] }, // slate-800
-      alternateRowStyles: { fillColor: [248, 250, 252] }, // slate-50
-      columnStyles: {
-        5: { halign: 'right' },
-        6: { halign: 'right', fontStyle: 'bold' }
-      }
+      head: [tableColumn], body: tableRows, startY: 42, theme: 'grid', styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [30, 41, 59] }, alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: { 5: { halign: 'right' }, 6: { halign: 'right', fontStyle: 'bold' } }
     });
-
     doc.save(`Inventario_Valorizado_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
@@ -238,16 +218,10 @@ export const Inventory: React.FC = () => {
           <Layers className="mr-3 h-7 w-7 text-accent" /> Control de Inventario y Reportes
         </h2>
         <div className="flex space-x-2 bg-slate-200 p-1 rounded-lg shrink-0">
-          <button 
-            onClick={() => setActiveTab('MONITOR')} 
-            className={`px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center ${activeTab === 'MONITOR' ? 'bg-white shadow text-blue-700' : 'text-slate-600 hover:bg-slate-300'}`}
-          >
+          <button onClick={() => setActiveTab('MONITOR')} className={`px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center ${activeTab === 'MONITOR' ? 'bg-white shadow text-blue-700' : 'text-slate-600 hover:bg-slate-300'}`}>
             <TrendingDown className="w-4 h-4 mr-2" /> Monitor de Stock
           </button>
-          <button 
-            onClick={() => setActiveTab('INCOME')} 
-            className={`px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center ${activeTab === 'INCOME' ? 'bg-white shadow text-blue-700' : 'text-slate-600 hover:bg-slate-300'}`}
-          >
+          <button onClick={() => setActiveTab('INCOME')} className={`px-4 py-2 rounded-md font-bold text-sm transition-all flex items-center ${activeTab === 'INCOME' ? 'bg-white shadow text-blue-700' : 'text-slate-600 hover:bg-slate-300'}`}>
             <Plus className="w-4 h-4 mr-2" /> Ingreso Manual Lotes
           </button>
         </div>
@@ -255,7 +229,6 @@ export const Inventory: React.FC = () => {
 
       {activeTab === 'MONITOR' ? (
         <div className="flex flex-col h-full space-y-4">
-          {/* KPIs */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-blue-500 flex items-center justify-between">
               <div>
@@ -282,7 +255,6 @@ export const Inventory: React.FC = () => {
             </div>
           </div>
 
-          {/* Filters & Export */}
           <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-end justify-between">
              <div className="flex flex-wrap gap-4 items-end">
                 <div className="flex flex-col relative">
@@ -290,22 +262,16 @@ export const Inventory: React.FC = () => {
                     <div className="relative">
                       <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-slate-400" />
                       <input 
-                          type="text" 
-                          placeholder="SKU o Nombre..."
+                          type="text" placeholder="SKU o Nombre..."
                           className="border border-slate-300 rounded-lg py-2 pl-9 pr-3 text-sm w-64 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" 
-                          value={searchQuery} 
-                          onChange={e => setSearchQuery(e.target.value)} 
+                          value={searchQuery} onChange={e => setSearchQuery(e.target.value)} 
                       />
                     </div>
                 </div>
 
                 <div className="flex flex-col">
                     <label className="text-xs font-bold text-slate-600 mb-1">Categoría</label>
-                    <select 
-                      className="border border-slate-300 rounded-lg py-2 px-3 text-sm w-48 focus:ring-2 focus:ring-blue-500"
-                      value={selectedCategory}
-                      onChange={e => setSelectedCategory(e.target.value)}
-                    >
+                    <select className="border border-slate-300 rounded-lg py-2 px-3 text-sm w-48 focus:ring-2 focus:ring-blue-500" value={selectedCategory} onChange={e => setSelectedCategory(e.target.value)}>
                       <option value="">Todas las Categorías</option>
                       {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
@@ -313,11 +279,7 @@ export const Inventory: React.FC = () => {
 
                 <div className="flex flex-col">
                     <label className="text-xs font-bold text-slate-600 mb-1">Proveedor</label>
-                    <select 
-                      className="border border-slate-300 rounded-lg py-2 px-3 text-sm w-56 focus:ring-2 focus:ring-blue-500"
-                      value={selectedSupplier}
-                      onChange={e => setSelectedSupplier(e.target.value)}
-                    >
+                    <select className="border border-slate-300 rounded-lg py-2 px-3 text-sm w-56 focus:ring-2 focus:ring-blue-500" value={selectedSupplier} onChange={e => setSelectedSupplier(e.target.value)}>
                       <option value="">Todos los Proveedores</option>
                       {activeSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
@@ -325,22 +287,15 @@ export const Inventory: React.FC = () => {
              </div>
 
              <div className="flex gap-2">
-                <button 
-                  onClick={exportExcel}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold flex items-center shadow-sm transition-colors text-sm"
-                >
+                <button onClick={exportExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold flex items-center shadow-sm transition-colors text-sm">
                   <FileDown className="w-4 h-4 mr-2" /> Excel
                 </button>
-                <button 
-                  onClick={exportPDF}
-                  className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg font-bold flex items-center shadow-sm transition-colors text-sm"
-                >
+                <button onClick={exportPDF} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg font-bold flex items-center shadow-sm transition-colors text-sm">
                   <Printer className="w-4 h-4 mr-2" /> PDF
                 </button>
              </div>
           </div>
 
-          {/* Table */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 overflow-hidden flex flex-col">
             <div className="overflow-auto flex-1 relative">
               <table className="w-full text-left border-collapse">
@@ -362,8 +317,11 @@ export const Inventory: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-sm">
-                  {filteredData.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-slate-400">No se encontraron productos en el inventario.</td></tr>}
-                  {filteredData.map(p => (
+                  {isLoading && filteredData.length === 0 ? (
+                      <tr><td colSpan={7} className="p-12 text-center text-slate-500 font-bold"><RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-blue-500"/> Sincronizando Inventario...</td></tr>
+                  ) : filteredData.length === 0 ? (
+                      <tr><td colSpan={7} className="p-8 text-center text-slate-400">No se encontraron productos en el inventario.</td></tr>
+                  ) : filteredData.map(p => (
                     <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                       <td className="p-3 font-mono text-slate-500 text-xs">{p.sku}</td>
                       <td className="p-3">
