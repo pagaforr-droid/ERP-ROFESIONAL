@@ -135,12 +135,11 @@ export const ProductManagement: React.FC = () => {
     setIsSavingSupplier(true);
 
     try {
+       // CORRECCIÓN: Usamos exactamente las columnas que existen en 'suppliers'
        const payload = {
           id: crypto.randomUUID(),
-          doc_number: newSupplier.ruc || '00000000000',
-          doc_type: newSupplier.ruc ? 'RUC' : 'OTROS',
-          name: newSupplier.name.toUpperCase(),
-          is_active: true
+          ruc: newSupplier.ruc || '00000000000', // Usamos 'ruc' en lugar de 'doc_number'
+          name: newSupplier.name.toUpperCase()
        };
 
        const { data, error } = await supabase.from('suppliers').insert([payload]).select();
