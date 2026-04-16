@@ -105,24 +105,35 @@ export const PromoManager: React.FC = () => {
       }
    };
 
-  const handleSaveAutoPromo = async (ap: AutoPromotion) => {
+ const handleSaveAutoPromo = async (ap: AutoPromotion) => {
       if (USE_MOCK_DB) {
          if (editingAutoPromo?.id) store.updateAutoPromotion(ap);
          else store.addAutoPromotion(ap);
          closeEditor();
       } else {
          try {
-            // BLINDAJE DE UUIDs y NUMÉRICOS: 
-            // Supabase rechaza strings vacíos en UUIDs y nulos en columnas NOT NULL
             const payload: any = { ...ap };
             if (!payload.id) delete payload.id;
             
-            // Limpieza de UUIDs (convertir string vacío a null)
+            // 1. Limpieza de campos vacíos a null
             if (payload.condition_product_id === '') payload.condition_product_id = null;
             if (payload.condition_supplier_id === '') payload.condition_supplier_id = null;
             if (payload.reward_product_id === '') payload.reward_product_id = null;
 
-            // Blindaje Numérico (Garantizar que nunca viajen como null o undefined)
+            // 2. ESCUDO VALIDADOR DE UUIDs (Evita que viajen datos "p1", "p2", etc.)
+            const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+            
+            if (payload.condition_product_id && !isUUID(payload.condition_product_id)) {
+               throw new Error(`El producto condición seleccionado es de prueba (ID: ${payload.condition_product_id}). Seleccione un producto real de la base de datos.`);
+            }
+            if (payload.reward_product_id && !isUUID(payload.reward_product_id)) {
+               throw new Error(`El producto premio seleccionado es de prueba (ID: ${payload.reward_product_id}). Seleccione un producto real de la base de datos.`);
+            }
+            if (payload.condition_supplier_id && !isUUID(payload.condition_supplier_id)) {
+               throw new Error(`El proveedor seleccionado es de prueba. Seleccione un proveedor real de la base de datos.`);
+            }
+
+            // 3. Blindaje Numérico
             payload.condition_amount = Number(payload.condition_amount) || 0;
             payload.reward_quantity = Number(payload.reward_quantity) || 0;
 
