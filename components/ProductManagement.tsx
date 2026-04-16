@@ -78,7 +78,7 @@ export const ProductManagement: React.FC = () => {
     setViewMode('DETAIL');
   };
 
-  // --- GUARDADO ESTRICTO DE PRODUCTO ---
+ // --- GUARDADO ESTRICTO DE PRODUCTO ---
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.sku || formData.sku.trim() === '') {
@@ -100,8 +100,14 @@ export const ProductManagement: React.FC = () => {
         else mockAddProduct({ ...formData, id: crypto.randomUUID() } as Product);
         setViewMode('LIST');
       } else {
-        const payload = { ...formData };
+        // Clonamos los datos para limpiarlos antes de enviarlos
+        const payload: any = { ...formData };
         
+        // BLINDAJE UUID: Si no hay proveedor, debe ser estrictamente null, no un texto vacío ""
+        if (!payload.supplier_id || payload.supplier_id === '') {
+           payload.supplier_id = null;
+        }
+
         if (formData.id) {
           const { data, error } = await supabase.from('products').update(payload).eq('id', formData.id).select();
           if (error) throw error;
@@ -127,7 +133,6 @@ export const ProductManagement: React.FC = () => {
       setIsSaving(false);
     }
   };
-
   // --- ALTA RÁPIDA DE PROVEEDOR ---
   const handleQuickSupplierSave = async (e: React.FormEvent) => {
     e.preventDefault();
