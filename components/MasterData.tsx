@@ -98,7 +98,6 @@ export const MasterData: React.FC<Props> = ({ type }) => {
     setIsSaving(true);
 
     try {
-       // 1. Mapear datos de la UI a la estructura estricta de la Base de Datos
        const payload: any = {
           name: (formData.name || '').toUpperCase(),
        };
@@ -106,19 +105,23 @@ export const MasterData: React.FC<Props> = ({ type }) => {
        if (formData.address) payload.address = formData.address.toUpperCase();
        if (formData.phone) payload.phone = formData.phone;
 
-       // Lógica específica para Clientes, Proveedores y Transportistas
-       if (type === 'clients' || type === 'suppliers' || type === 'transporters') {
+       // 1. Lógica EXCLUSIVA para Clientes
+       if (type === 'clients') {
           payload.doc_number = formData.ruc; 
           payload.doc_type = (formData.ruc && formData.ruc.length === 8) ? 'DNI' : 'RUC';
           payload.is_active = true;
-          
-          if (type === 'clients' && !editingId) {
-             payload.code = `CLI-${String(Date.now()).slice(-6)}`; // Exigencia de DB
+          if (!editingId) {
+             payload.code = `CLI-${String(Date.now()).slice(-6)}`;
              payload.is_person = true;
           }
        }
 
-       // Lógica para Choferes
+       // 2. Lógica EXCLUSIVA para Proveedores y Transportistas (Usan la columna 'ruc')
+       if (type === 'suppliers' || type === 'transporters') {
+          payload.ruc = formData.ruc || '00000000000';
+       }
+
+       // 3. Lógica EXCLUSIVA para Choferes
        if (type === 'drivers') {
           payload.license = (formData.license || '').toUpperCase();
        }
@@ -127,21 +130,15 @@ export const MasterData: React.FC<Props> = ({ type }) => {
           config.add({ ...payload, id: editingId || crypto.randomUUID() });
        } else {
           if (editingId) {
-             // Actualizar
              const { data, error } = await supabase.from(type).update(payload).eq('id', editingId).select();
              if (error) throw error;
-             if (data && data.length > 0) {
-                setRealData(prev => prev.map(item => item.id === editingId ? data[0] : item));
-             }
+             if (data && data.length > 0) setRealData(prev => prev.map(item => item.id === editingId ? data[0] : item));
           } else {
-             // Insertar
              const newId = crypto.randomUUID();
              payload.id = newId;
              const { data, error } = await supabase.from(type).insert([payload]).select();
              if (error) throw error;
-             if (data && data.length > 0) {
-                setRealData(prev => [...prev, data[0]]);
-             }
+             if (data && data.length > 0) setRealData(prev => [...prev, data[0]]);
           }
        }
        setIsModalOpen(false);
