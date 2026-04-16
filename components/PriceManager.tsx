@@ -214,9 +214,10 @@ export const PriceManager: React.FC = () => {
      else if (operationMode === 'INCREASE') finalFactor = 1 + (percentageValue / 100);
 
      try {
-        // CORRECCIÓN EXACTA: Quitamos is_active y type, solo pasamos lo que existe en DB.
+        // CORRECCIÓN EXACTA: Enviamos 'name', 'factor' y obligatoriamente 'type'
         const payload: any = {
            name: editingList.name.toUpperCase(),
+           type: operationMode === 'BASE' ? 'BASE' : 'VARIATION', // <- LA PIEZA QUE FALTABA
            factor: Number(finalFactor.toFixed(4))
         };
         
@@ -238,7 +239,7 @@ export const PriceManager: React.FC = () => {
               payload.id = crypto.randomUUID();
               const { data, error } = await supabase.from('price_lists').insert([payload]).select();
               if (error) throw error;
-              if (!data || data.length === 0) throw new Error("Bloqueo RLS. La base de datos rechazó la inserción silenciosamente.");
+              if (!data || data.length === 0) throw new Error("Bloqueo RLS. La base de datos rechazó la inserción.");
               setRealPriceLists(prev => [...prev, data[0]]);
            }
         }
@@ -251,7 +252,6 @@ export const PriceManager: React.FC = () => {
         setTimeout(() => setNotification(null), 4000);
      }
   };
-
   const handleDeleteList = async (id: string, e: React.MouseEvent) => {
      e.stopPropagation();
      if(!confirm('¿Eliminar esta lista? Si hay clientes o vendedores en esta lista, podrían perder su asignación.')) return;
