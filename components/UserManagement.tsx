@@ -82,7 +82,6 @@ export const UserManagement: React.FC = () => {
 
    const [formData, setFormData] = useState<Partial<User>>(initialForm);
 
-   // --- SUPABASE FETCH ---
    useEffect(() => {
       fetchUsers();
    }, []);
@@ -116,7 +115,7 @@ export const UserManagement: React.FC = () => {
       setIsModalOpen(true);
    };
 
-   // --- SUPABASE SAVE / UPDATE ---
+   // --- SUPABASE SAVE / UPDATE MEJORADO ---
    const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!formData.username || !formData.name) {
@@ -138,25 +137,35 @@ export const UserManagement: React.FC = () => {
          };
 
          if (formData.id) {
-            // Actualizar usuario existente
-            const { error } = await supabase
+            // Actualizar usuario existente: Forzamos .select() para validar la respuesta
+            const { data, error } = await supabase
                .from('erp_users')
                .update(payload)
-               .eq('id', formData.id);
+               .eq('id', formData.id)
+               .select(); // <--- EL TRUCO ESTÁ AQUÍ
+               
             if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error("Supabase bloqueó el guardado en silencio. Verifica las políticas RLS.");
+            }
          } else {
-            // Crear nuevo usuario (Solo Perfil DB)
-            const { error } = await supabase
+            // Crear nuevo usuario
+            const { data, error } = await supabase
                .from('erp_users')
-               .insert([payload]);
+               .insert([payload])
+               .select();
+               
             if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error("Supabase bloqueó la creación en silencio. Verifica las políticas RLS.");
+            }
             alert("Perfil creado en Supabase.\n\nIMPORTANTE: Para que este usuario pueda iniciar sesión, debes ir a Supabase -> Authentication, crearle una cuenta con este mismo correo y pegar su 'Auth ID' en la tabla erp_users.");
          }
 
          await fetchUsers(); // Recargar la tabla con los datos frescos
          setIsModalOpen(false);
       } catch (error: any) {
-         alert("Error al guardar en Supabase: " + error.message);
+         alert("Error al guardar: " + error.message);
       } finally {
          setIsSaving(false);
       }
@@ -229,7 +238,6 @@ export const UserManagement: React.FC = () => {
             </div>
          </div>
 
-         {/* Search Bar */}
          <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
             <div className="relative max-w-md">
                <Search className="absolute left-2 top-2.5 w-4 h-4 text-slate-400" />
@@ -242,7 +250,6 @@ export const UserManagement: React.FC = () => {
             </div>
          </div>
 
-         {/* User Table */}
          <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col">
             <div className="overflow-y-auto flex-1">
                <table className="w-full text-left text-sm">
@@ -305,11 +312,9 @@ export const UserManagement: React.FC = () => {
             </div>
          </div>
 
-         {/* --- USER EDIT MODAL --- */}
          {isModalOpen && (
             <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
-                  {/* Header */}
                   <div className="bg-slate-900 p-4 text-white flex justify-between items-center">
                      <h3 className="font-bold text-lg flex items-center">
                         <UserCheck className="mr-2" /> {formData.id ? 'Editar Usuario & Permisos' : 'Crear Usuario DB'}
@@ -319,7 +324,6 @@ export const UserManagement: React.FC = () => {
                      </button>
                   </div>
 
-                  {/* Tabs */}
                   <div className="flex border-b border-slate-200 bg-slate-50">
                      <button
                         onClick={() => setActiveTab('PROFILE')}
@@ -335,7 +339,6 @@ export const UserManagement: React.FC = () => {
                      </button>
                   </div>
 
-                  {/* Content */}
                   <form id="user-form" onSubmit={handleSubmit} className="flex-1 overflow-auto bg-white">
                      {activeTab === 'PROFILE' && (
                         <div className="p-8 space-y-6">
@@ -368,7 +371,6 @@ export const UserManagement: React.FC = () => {
                               </div>
                            </div>
 
-                           {/* AVATAR UPLOAD */}
                            <div className="bg-slate-50 p-4 rounded border border-slate-200 flex items-center gap-4">
                               <div className="relative group w-16 h-16 shrink-0">
                                  {formData.avatar_url ? (
@@ -454,7 +456,6 @@ export const UserManagement: React.FC = () => {
                      )}
                   </form>
 
-                  {/* Footer */}
                   <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
                      <button type="button" onClick={() => setIsModalOpen(false)} disabled={isSaving} className="px-4 py-2 text-slate-600 hover:bg-slate-200 font-bold rounded disabled:opacity-50">Cancelar</button>
                      <button type="submit" form="user-form" disabled={isSaving} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow flex items-center disabled:opacity-50">
