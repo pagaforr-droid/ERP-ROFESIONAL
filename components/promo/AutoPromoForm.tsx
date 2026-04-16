@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { AutoPromotion, Product, Supplier } from '../../types';
-import { useStore } from '../../services/store';
-import { Save, X, Search, Plus, Trash2, MapPin } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { AutoPromotion, Product, Supplier, PriceList, Seller } from '../../types';
+import { Save, X, Search, Plus, MapPin } from 'lucide-react';
 import { PERU_CITIES } from '../../utils/promoUtils';
+import { supabase, USE_MOCK_DB } from '../../services/supabase';
+import { useStore } from '../../services/store';
 
 interface Props {
     initialData?: Partial<AutoPromotion> | null;
@@ -11,7 +12,38 @@ interface Props {
 }
 
 export const AutoPromoForm: React.FC<Props> = ({ initialData, onClose, onSave }) => {
-    const { products, suppliers, priceLists, sellers } = useStore();
+    const store = useStore();
+    const [dbProducts, setDbProducts] = useState<Product[]>([]);
+    const [dbSuppliers, setDbSuppliers] = useState<Supplier[]>([]);
+    const [dbPriceLists, setDbPriceLists] = useState<PriceList[]>([]);
+    const [dbSellers, setDbSellers] = useState<Seller[]>([]);
+
+    useEffect(() => {
+        const fetchMasterData = async () => {
+            if (!USE_MOCK_DB) {
+                try {
+                    const [pRes, sRes, plRes, slRes] = await Promise.all([
+                        supabase.from('products').select('*').eq('is_active', true).order('name'),
+                        supabase.from('suppliers').select('*').order('name'),
+                        supabase.from('price_lists').select('*').order('name'),
+                        supabase.from('sellers').select('*').order('name')
+                    ]);
+                    if (pRes.data) setDbProducts(pRes.data as Product[]);
+                    if (sRes.data) setDbSuppliers(sRes.data as Supplier[]);
+                    if (plRes.data) setDbPriceLists(plRes.data as PriceList[]);
+                    if (slRes.data) setDbSellers(slRes.data as Seller[]);
+                } catch (error) {
+                    console.error("Error fetching data for AutoPromoForm:", error);
+                }
+            }
+        };
+        fetchMasterData();
+    }, []);
+
+    const products = USE_MOCK_DB ? store.products : dbProducts;
+    const suppliers = USE_MOCK_DB ? store.suppliers : dbSuppliers;
+    const priceLists = USE_MOCK_DB ? store.priceLists : dbPriceLists;
+    const sellers = USE_MOCK_DB ? store.sellers : dbSellers;
 
     const [formData, setFormData] = useState<Partial<AutoPromotion>>({
         id: initialData?.id || crypto.randomUUID(),
@@ -49,10 +81,10 @@ export const AutoPromoForm: React.FC<Props> = ({ initialData, onClose, onSave })
         }
     };
 
-    const categories = Array.from(new Set(products.map(p => p.category).filter(Boolean)));
-    const filteredProducts = products.filter(p => {
-        const matchesSearch = p.name.toLowerCase().includes(prodSearch.toLowerCase()) || p.sku.toLowerCase().includes(prodSearch.toLowerCase());
-        const matchesCat = categoryFilter ? p.category === categoryFilter : true;
+    const categories = Array.from(new Set((products || []).map(p => p?.category).filter(Boolean)));
+    const filteredProducts = (products || []).filter(p => {
+        const matchesSearch = (p?.name || '').toLowerCase().includes(prodSearch.toLowerCase()) || (p?.sku || '').toLowerCase().includes(prodSearch.toLowerCase());
+        const matchesCat = categoryFilter ? p?.category === categoryFilter : true;
         return matchesSearch && matchesCat;
     });
 
