@@ -66,7 +66,7 @@ export const PriceManager: React.FC = () => {
   const [selectedSupplier, setSelectedSupplier] = useState('ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [targetMargin, setTargetMargin] = useState<number>(30); // Default 30%
+  const [targetMargin, setTargetMargin] = useState<number>(30); // Porcentaje de ganancia sobre costo
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
@@ -111,7 +111,9 @@ export const PriceManager: React.FC = () => {
      return priceLists.find(l => l.id === selectedTargetList)?.name || 'Desconocido';
   }, [selectedTargetList, priceLists]);
 
-  // --- CALCULATION LOGIC ---
+  // ============================================================================
+  // --- NÚCLEO MATEMÁTICO: CASCADA (COSTO -> PRECIO BASE -> OTRAS LISTAS) ---
+  // ============================================================================
   const previewData = useMemo(() => {
      return products.filter(p => {
         const matchSup = selectedSupplier === 'ALL' || p.supplier_id === selectedSupplier;
@@ -120,21 +122,27 @@ export const PriceManager: React.FC = () => {
         return matchSup && matchCat && matchSearch;
      }).map(p => {
         const cost = p.last_cost || 0;
-        const targetFinalPriceUnit = cost * (1 + (targetMargin / 100));
-        const requiredBasePriceUnit = targetFinalPriceUnit / currentListFactor;
         
+        // 1. CÁLCULO DIRECTO: Costo + Margen% = NUEVO PRECIO BASE
+        const newBasePriceUnit = cost * (1 + (targetMargin / 100));
+        
+        // 2. CÁLCULO CAJA: Precio Base * Contenido * (0.95 de descuento por volumen por defecto)
         const content = p.package_content || 1;
         const bulkDiscount = content > 1 ? 0.95 : 1.0;
-        const requiredBasePricePackage = requiredBasePriceUnit * content * bulkDiscount;
+        const newBasePricePackage = newBasePriceUnit * content * bulkDiscount;
 
-        const priceChange = p.price_unit > 0 ? ((requiredBasePriceUnit - p.price_unit) / p.price_unit) * 100 : 0;
+        // 3. PROYECCIÓN VISUAL: Si eligió otra lista en el combo, le mostramos cómo quedaría su precio
+        const projectedListPrice = newBasePriceUnit * currentListFactor;
+
+        // 4. IMPACTO: Variación porcentual contra su precio base anterior
+        const priceChange = p.price_unit > 0 ? ((newBasePriceUnit - p.price_unit) / p.price_unit) * 100 : 0;
 
         return {
            ...p,
            currentBasePrice: p.price_unit,
-           calculatedBasePrice: requiredBasePriceUnit,
-           calculatedPackagePrice: requiredBasePricePackage,
-           finalPriceInList: targetFinalPriceUnit, 
+           calculatedBasePrice: newBasePriceUnit,
+           calculatedPackagePrice: newBasePricePackage,
+           finalPriceInList: projectedListPrice, 
            priceChange
         };
      });
@@ -169,13 +177,13 @@ export const PriceManager: React.FC = () => {
               id: p.id,
               price_unit: Number(p.calculatedBasePrice.toFixed(2)),
               price_package: Number(p.calculatedPackagePrice.toFixed(2)),
-              profit_margin: targetMargin
+              profit_margin: targetMargin // Inyectamos el nuevo margen
            }));
 
         if (USE_MOCK_DB) {
            store.batchUpdateProductPrices(updates);
         } else {
-           // Actualizaciones quirúrgicas en paralelo
+           // Actualizaciones quirúrgicas en paralelo en Supabase
            const updatePromises = updates.map(updateData => 
               supabase.from('products').update({
                  price_unit: updateData.price_unit,
@@ -186,14 +194,14 @@ export const PriceManager: React.FC = () => {
            
            await Promise.all(updatePromises);
            
-           // Actualizar vista local
+           // Actualizar la vista local para que los cambios se reflejen al instante
            setRealProducts(prev => prev.map(p => {
               const u = updates.find(x => x.id === p.id);
               return u ? { ...p, ...u } as Product : p;
            }));
         }
         
-        setNotification({ msg: `Se inyectaron exitosamente los nuevos precios en ${updates.length} productos.`, type: 'success' });
+        setNotification({ msg: `Se inyectaron exitosamente los nuevos precios bases en ${updates.length} productos.`, type: 'success' });
         setSelectedIds(new Set());
      } catch (error: any) {
         setNotification({ msg: `Error de Base de Datos: ${error.message}`, type: 'error' });
@@ -214,10 +222,9 @@ export const PriceManager: React.FC = () => {
      else if (operationMode === 'INCREASE') finalFactor = 1 + (percentageValue / 100);
 
      try {
-        // CORRECCIÓN EXACTA: Enviamos 'name', 'factor' y obligatoriamente 'type'
         const payload: any = {
            name: editingList.name.toUpperCase(),
-           type: operationMode === 'BASE' ? 'BASE' : 'VARIATION', // <- LA PIEZA QUE FALTABA
+           type: operationMode === 'BASE' ? 'BASE' : 'VARIATION',
            factor: Number(finalFactor.toFixed(4))
         };
         
@@ -252,6 +259,7 @@ export const PriceManager: React.FC = () => {
         setTimeout(() => setNotification(null), 4000);
      }
   };
+
   const handleDeleteList = async (id: string, e: React.MouseEvent) => {
      e.stopPropagation();
      if(!confirm('¿Eliminar esta lista? Si hay clientes o vendedores en esta lista, podrían perder su asignación.')) return;
@@ -270,7 +278,7 @@ export const PriceManager: React.FC = () => {
      }
   }
 
-  // --- 3. ASIGNACIÓN DE VENDEDORES (UUID NULL FIX) ---
+  // --- 3. ASIGNACIÓN DE VENDEDORES ---
   const handlePendingAssignment = (sellerId: string, listId: string) => {
      setPendingAssignments(prev => ({ ...prev, [sellerId]: listId }));
      setHasChanges(true);
@@ -327,10 +335,10 @@ export const PriceManager: React.FC = () => {
 
        <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-1">
           <button onClick={() => setActiveTab('CALCULATOR')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'CALCULATOR' ? 'bg-green-50 text-green-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
-             <Calculator className="w-4 h-4 mr-2" /> 1. Calculadora Masiva Base
+             <Calculator className="w-4 h-4 mr-2" /> 1. Generador Masivo (Precio Base)
           </button>
           <button onClick={() => setActiveTab('PRICELISTS')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'PRICELISTS' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
-             <Tag className="w-4 h-4 mr-2" /> 2. Reglas y Listas de Precio
+             <Tag className="w-4 h-4 mr-2" /> 2. Reglas y Listas Derivadas
           </button>
           <button onClick={() => setActiveTab('SELLERS')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'SELLERS' ? 'bg-purple-50 text-purple-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
              <Users className="w-4 h-4 mr-2" /> 3. Matriz de Vendedores
@@ -344,14 +352,27 @@ export const PriceManager: React.FC = () => {
              <div className="flex flex-col h-full p-6">
                 <div className="grid grid-cols-12 gap-4 mb-6 items-end bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-inner">
                    
+                   <div className="col-span-12 md:col-span-2">
+                      <label className="block text-[10px] font-black text-green-700 uppercase mb-2 tracking-wider">Margen Global a Aplicar</label>
+                      <div className="relative">
+                         <input 
+                           type="number" 
+                           className="w-full pl-4 pr-8 border-2 border-green-400 p-2.5 rounded-lg text-xl font-black text-green-800 focus:border-green-600 outline-none shadow-sm"
+                           value={targetMargin}
+                           onChange={e => setTargetMargin(Number(e.target.value))}
+                        />
+                         <span className="absolute right-3 top-3 text-green-600 font-black">%</span>
+                      </div>
+                   </div>
+
                    <div className="col-span-12 md:col-span-4">
-                      <label className="block text-[10px] font-black text-slate-500 uppercase mb-2 tracking-wider">Proyectar Hacia (Lista Objetivo)</label>
+                      <label className="block text-[10px] font-black text-blue-600 uppercase mb-2 tracking-wider">Ver Simulación en Lista (Opcional)</label>
                       <select 
-                        className="w-full border-2 border-slate-300 p-2.5 rounded-lg text-sm font-bold text-slate-800 focus:border-green-500 outline-none transition-colors"
+                        className="w-full border-2 border-blue-200 bg-blue-50 p-2.5 rounded-lg text-sm font-bold text-blue-800 focus:border-blue-500 outline-none transition-colors"
                         value={selectedTargetList}
                         onChange={e => setSelectedTargetList(e.target.value)}
                       >
-                         <option value="BASE">PRECIO BASE (1.00x)</option>
+                         <option value="BASE">NO SIMULAR (MOSTRAR PRECIO TIENDA)</option>
                          {priceLists.map(l => <option key={l.id} value={l.id}>{l.name.toUpperCase()} (Factor: {l.factor}x)</option>)}
                       </select>
                    </div>
@@ -370,19 +391,6 @@ export const PriceManager: React.FC = () => {
                          <option value="ALL">TODAS LAS CATEGORÍAS</option>
                          {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
-                   </div>
-
-                   <div className="col-span-12 md:col-span-2">
-                      <label className="block text-[10px] font-black text-green-700 uppercase mb-2 tracking-wider">Margen Objetivo</label>
-                      <div className="relative">
-                         <input 
-                           type="number" 
-                           className="w-full pl-4 pr-8 border-2 border-green-400 p-2.5 rounded-lg text-xl font-black text-green-800 focus:border-green-600 outline-none shadow-sm"
-                           value={targetMargin}
-                           onChange={e => setTargetMargin(Number(e.target.value))}
-                        />
-                         <span className="absolute right-3 top-3 text-green-600 font-black">%</span>
-                      </div>
                    </div>
 
                    <div className="col-span-12 mt-2">
@@ -408,19 +416,19 @@ export const PriceManager: React.FC = () => {
                                </button>
                             </th>
                             <th className="p-4 border-b border-slate-200">Identificación Producto</th>
-                            <th className="p-4 text-right border-b border-slate-200 bg-slate-50">Costo Vencido</th>
-                            <th className="p-4 text-right border-b border-slate-200">Precio Base Actual</th>
+                            <th className="p-4 text-right border-b border-slate-200 bg-slate-50">Costo de Compra</th>
+                            <th className="p-4 text-right border-b border-slate-200">P. Base Actual</th>
                             
+                            <th className="p-4 text-right bg-green-50 text-green-800 border-b border-green-200 border-l">
+                               Nuevo Precio Base
+                            </th>
+                            <th className="p-4 text-center border-b border-slate-200">Impacto</th>
+
                             {selectedTargetList !== 'BASE' && (
                                <th className="p-4 text-right bg-blue-50 text-blue-800 border-b border-blue-200 border-l border-r">
                                   Proyección {currentListName}
                                </th>
                             )}
-
-                            <th className="p-4 text-right bg-green-50 text-green-800 border-b border-green-200 border-l">
-                               Nuevo Precio Base
-                            </th>
-                            <th className="p-4 text-center border-b border-slate-200">Impacto</th>
                          </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -446,25 +454,25 @@ export const PriceManager: React.FC = () => {
                                <td className="p-4 text-right text-slate-500 font-bold">S/ {p.last_cost.toFixed(2)}</td>
                                <td className="p-4 text-right font-bold text-slate-700">S/ {p.currentBasePrice.toFixed(2)}</td>
                                
-                               {selectedTargetList !== 'BASE' && (
-                                  <td className="p-4 text-right font-black text-blue-700 bg-blue-50/30 border-l border-r border-blue-100">
-                                     S/ {p.finalPriceInList.toFixed(2)}
-                                  </td>
-                               )}
-
                                <td className="p-4 text-right border-l border-green-100 bg-green-50/30">
                                   <div className="font-black text-green-700 text-base">S/ {p.calculatedBasePrice.toFixed(2)}</div>
                                   <div className="text-[10px] text-green-600 font-bold mt-0.5">Caja: S/ {p.calculatedPackagePrice.toFixed(2)}</div>
                                </td>
                                <td className="p-4 text-center">
                                   <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border shadow-sm ${
-                                     p.priceChange > 0 ? 'bg-blue-100 text-blue-700 border-blue-200' : 
+                                     p.priceChange > 0 ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
                                      p.priceChange < 0 ? 'bg-red-100 text-red-700 border-red-200' : 
                                      'bg-slate-100 text-slate-500 border-slate-200'
                                   }`}>
                                      {p.priceChange > 0 ? '+' : ''}{p.priceChange.toFixed(1)}%
                                   </span>
                                </td>
+
+                               {selectedTargetList !== 'BASE' && (
+                                  <td className="p-4 text-right font-black text-blue-700 bg-blue-50/30 border-l border-r border-blue-100">
+                                     S/ {p.finalPriceInList.toFixed(2)}
+                                  </td>
+                               )}
                             </tr>
                          ))}
                          {previewData.length === 0 && !isLoading && (
@@ -482,7 +490,7 @@ export const PriceManager: React.FC = () => {
                          </div>
                          <div>
                             <p className="text-sm font-black uppercase tracking-wide">Lote en Memoria</p>
-                            <p className="text-xs text-emerald-400 font-bold">Listos para inyectar a Base de Datos</p>
+                            <p className="text-xs text-emerald-400 font-bold">Listos para fijar el Precio Base</p>
                          </div>
                       </div>
                       
@@ -500,7 +508,7 @@ export const PriceManager: React.FC = () => {
                            className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl font-black shadow-lg shadow-emerald-600/30 flex items-center transition-all disabled:opacity-50"
                          >
                             {isSaving ? <Loader2 className="w-5 h-5 mr-2 animate-spin"/> : <RefreshCw className="w-5 h-5 mr-2" />}
-                            {isSaving ? 'Inyectando...' : 'APLICAR PRECIOS'}
+                            {isSaving ? 'Aplicando...' : 'GUARDAR PRECIOS'}
                          </button>
                       </div>
                    </div>
@@ -513,7 +521,7 @@ export const PriceManager: React.FC = () => {
              <div className="flex gap-6 h-full p-6 animate-fade-in">
                 <div className="w-1/3 bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col shadow-inner">
                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="font-black text-slate-800">Listas Dinámicas</h3>
+                      <h3 className="font-black text-slate-800">Listas Derivadas</h3>
                       <button 
                         onClick={() => {
                            setEditingList({ name: '', factor: 1.0 });
@@ -526,6 +534,18 @@ export const PriceManager: React.FC = () => {
                       </button>
                    </div>
                    <div className="space-y-3 overflow-y-auto pr-2">
+                      <div className="p-4 rounded-xl border-2 border-slate-300 bg-slate-200 opacity-70">
+                         <div className="flex justify-between items-start mb-2">
+                             <div>
+                                <div className="font-black text-slate-800">PRECIO BASE (TIENDA)</div>
+                                <div className="text-[9px] text-slate-500 font-bold mt-0.5">Precio Original</div>
+                             </div>
+                             <div className="text-[9px] uppercase font-black px-2 py-1 rounded border bg-slate-100 text-slate-600 border-slate-300">
+                                NEUTRAL
+                             </div>
+                         </div>
+                      </div>
+
                       {priceLists.map(list => {
                          let label = "Precio Base";
                          let colorStyles = "bg-slate-200 text-slate-600 border-slate-300";
@@ -533,7 +553,7 @@ export const PriceManager: React.FC = () => {
 
                          if (list.factor < 1) {
                             label = "Descuento";
-                            colorStyles = "bg-green-100 text-green-700 border-green-300";
+                            colorStyles = "bg-emerald-100 text-emerald-700 border-emerald-300";
                             value = `-${((1 - list.factor) * 100).toFixed(0)}%`;
                          } else if (list.factor > 1) {
                             label = "Recargo";
@@ -557,7 +577,7 @@ export const PriceManager: React.FC = () => {
                                   </div>
                                </div>
                                <div className="flex justify-between items-end mt-3 border-t border-slate-100 pt-2">
-                                  <div className="text-xs font-bold text-slate-500">Factor / Variación</div>
+                                  <div className="text-xs font-bold text-slate-500">Factor Multiplicador</div>
                                   <div className="text-lg font-black text-slate-800 flex items-center">
                                      <span className="text-xs text-slate-400 mr-2 font-bold">x{list.factor.toFixed(2)}</span>
                                      {value}
@@ -582,7 +602,7 @@ export const PriceManager: React.FC = () => {
                          <div className="absolute top-0 left-0 w-full h-1.5 bg-blue-600"></div>
                          <h3 className="font-black text-xl mb-8 text-slate-800 flex items-center">
                             <Tag className="mr-3 text-blue-600 w-6 h-6" />
-                            {editingList.id ? 'Modificar Regla Comercial' : 'Crear Regla Comercial'}
+                            {editingList.id ? 'Modificar Regla Derivada' : 'Crear Regla Derivada'}
                          </h3>
                          
                          <div className="space-y-8">
@@ -598,7 +618,7 @@ export const PriceManager: React.FC = () => {
                             </div>
 
                             <div>
-                               <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 ml-1">Comportamiento del Motor</label>
+                               <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-3 ml-1">Comportamiento (Sobre el Precio Base)</label>
                                <div className="grid grid-cols-3 gap-3">
                                   <button 
                                     type="button" 
@@ -645,9 +665,9 @@ export const PriceManager: React.FC = () => {
                                      />
                                   </div>
                                   
-                                  <div className="mt-4 flex justify-between items-center text-sm">
-                                     <span className="font-bold text-slate-500">Ejemplo S/ 100.00 ➔</span>
-                                     <span className={`font-black text-lg ${operationMode === 'DISCOUNT' ? 'text-emerald-600' : 'text-blue-600'}`}>
+                                  <div className="mt-4 flex justify-between items-center text-sm border-t border-slate-200 pt-4">
+                                     <span className="font-bold text-slate-500">Si un Precio Base es S/ 100.00 ➔</span>
+                                     <span className={`font-black text-lg bg-white px-3 py-1 rounded-lg border shadow-sm ${operationMode === 'DISCOUNT' ? 'text-emerald-600 border-emerald-200' : 'text-blue-600 border-blue-200'}`}>
                                         S/ {operationMode === 'DISCOUNT' ? (100 * (1 - percentageValue/100)).toFixed(2) : (100 * (1 + percentageValue/100)).toFixed(2)}
                                      </span>
                                   </div>
@@ -658,16 +678,16 @@ export const PriceManager: React.FC = () => {
                                <button type="button" onClick={() => setEditingList(null)} disabled={isSaving} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50">Cancelar</button>
                                <button type="submit" disabled={isSaving} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black hover:bg-blue-700 shadow-lg shadow-blue-600/30 transform active:scale-95 transition-all flex items-center disabled:opacity-50">
                                   {isSaving ? <RefreshCw className="w-5 h-5 mr-2 animate-spin"/> : <Save className="w-5 h-5 mr-2" />}
-                                  {isSaving ? 'Guardando...' : 'Guardar Motor'}
+                                  Guardar Regla
                                </button>
                             </div>
                          </div>
                       </form>
                    ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-200 rounded-3xl p-10 bg-slate-50">
+                      <div className="h-full flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-3xl p-10 bg-slate-50">
                          <Tag className="w-16 h-16 mb-4 opacity-30 text-blue-600" />
-                         <p className="font-black text-xl text-slate-400 uppercase tracking-widest">Motor Inactivo</p>
-                         <p className="text-sm font-medium mt-2">Seleccione o cree una regla comercial a la izquierda.</p>
+                         <p className="font-black text-xl text-slate-400 uppercase tracking-widest">Calculadora de Listas</p>
+                         <p className="text-sm font-medium mt-2 text-center max-w-sm">Crea una regla de descuento o recargo. El sistema calculará el precio final automáticamente multiplicando esta regla por el Precio Base de cada producto.</p>
                       </div>
                    )}
                 </div>
@@ -689,7 +709,7 @@ export const PriceManager: React.FC = () => {
                          className="bg-purple-600 hover:bg-purple-500 text-white px-5 py-2 rounded-full text-xs font-black transition-all shadow-lg shadow-purple-600/30 flex items-center disabled:opacity-50"
                       >
                          {isSaving ? <RefreshCw className="w-3 h-3 mr-2 animate-spin"/> : null}
-                         SINCRONIZAR
+                         SINCRONIZAR DB
                       </button>
                    </div>
                 )}
@@ -701,7 +721,7 @@ export const PriceManager: React.FC = () => {
                    <div>
                       <h4 className="font-black text-purple-900 text-lg">Matriz de Precios por Vendedor</h4>
                       <p className="text-xs font-medium text-purple-700 mt-1">
-                         La lista seleccionada se inyectará automáticamente en la App Móvil del vendedor y se aplicará a todos los clientes de su ruta que no tengan una lista personalizada.
+                         La lista que elijas aquí será la "Lista Predeterminada" para ese vendedor. El sistema usará los precios de esta lista para todos los clientes de su ruta.
                       </p>
                    </div>
                 </div>
@@ -713,7 +733,7 @@ export const PriceManager: React.FC = () => {
                             <th className="p-4 w-16 text-center">Avatar</th>
                             <th className="p-4">Fuerza de Venta</th>
                             <th className="p-4">Lista Asignada (Inyección Automática)</th>
-                            <th className="p-4 text-center">Multiplicador</th>
+                            <th className="p-4 text-center">Variación Base</th>
                          </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
