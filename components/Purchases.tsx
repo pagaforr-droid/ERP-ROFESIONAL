@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { ShoppingBag, Plus, Trash2, Calendar, DollarSign, Package, CheckSquare, Save, CreditCard, AlertTriangle, Search, FileText, Loader2, XCircle, CheckCircle, Clock, Edit, List } from 'lucide-react';
 import { PurchaseItem, Purchase, Product } from '../types';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
 
 // Simple Toast Component
 interface ToastProps {
@@ -33,12 +34,46 @@ const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
 };
 
 export const Purchases: React.FC = () => {
-  const { products, suppliers, warehouses, purchases, createPurchase, updatePurchase, addPurchasePayment, currentUser } = useStore();
+  const store = useStore();
+  const { createPurchase, updatePurchase, addPurchasePayment, currentUser } = store;
   
   const [activeTab, setActiveTab] = useState<'FORM' | 'LIST'>('LIST');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: 'error' | 'success' | 'warning' }>>([]);
+
+  // === SUPABASE STATE (INYECCIÓN DE DATOS DE LA NUBE) ===
+  const [realProducts, setRealProducts] = useState<Product[]>([]);
+  const [realSuppliers, setRealSuppliers] = useState<any[]>([]);
+  const [realWarehouses, setRealWarehouses] = useState<any[]>([]);
+  const [realPurchases, setRealPurchases] = useState<Purchase[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!USE_MOCK_DB) {
+        try {
+          const [pRes, sRes, wRes, purRes] = await Promise.all([
+            supabase.from('products').select('*'),
+            supabase.from('suppliers').select('*'),
+            supabase.from('warehouses').select('*'),
+            supabase.from('purchases').select('*, items:purchase_items(*)').order('issue_date', { ascending: false })
+          ]);
+          if (pRes.data) setRealProducts(pRes.data as Product[]);
+          if (sRes.data) setRealSuppliers(sRes.data);
+          if (wRes.data) setRealWarehouses(wRes.data);
+          if (purRes.data) setRealPurchases(purRes.data as Purchase[]);
+        } catch (error) {
+          console.error("Error fetching Supabase data:", error);
+        }
+      }
+    };
+    fetchData();
+  }, [activeTab]);
+
+  const products = USE_MOCK_DB ? store.products : realProducts;
+  const suppliers = USE_MOCK_DB ? store.suppliers : realSuppliers;
+  const warehouses = USE_MOCK_DB ? store.warehouses : realWarehouses;
+  const purchases = USE_MOCK_DB ? store.purchases : realPurchases;
 
   // === PAYMENT MODAL STATE ===
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -322,6 +357,7 @@ export const Purchases: React.FC = () => {
     }, 10);
   };
 
+  // === INTEGRACIÓN SUPABASE (GUARDADO Y TRANSACCIÓN DE KARDEX) ===
   const handleSave = async (status: 'PENDING' | 'PAID') => {
     if (!supplierId) { showToast("Falta seleccionar el Proveedor.", "error"); return; }
     if (!docNumber) { showToast("Falta ingresar el Número de Documento.", "error"); return; }
@@ -337,53 +373,126 @@ export const Purchases: React.FC = () => {
 
     setIsProcessing(true);
 
-    // Simulate API Delay
-    await new Promise(resolve => setTimeout(resolve, 1500));
-
     const subtotal = cart.reduce((acc, item) => acc + item.total_value, 0);
     const total = cart.reduce((acc, item) => acc + item.total_cost, 0);
     const igv = total - subtotal;
     const supplier = suppliers.find(s => s.id === supplierId);
 
-    const purchaseData: Purchase = {
-      id: editingId || crypto.randomUUID(),
-      supplier_id: supplier!.id,
-      supplier_name: supplier!.name,
-      warehouse_id: warehouseId,
-      document_type: docType,
-      document_number: docNumber,
-      issue_date: issueDate,
-      entry_date: entryDate,
-      due_date: dueDate,
-      accounting_date: accountingDate,
-      observation: observation,
-      currency: currency,
-      exchange_rate: exchangeRate,
-      subtotal: subtotal,
-      igv: igv,
-      total: total,
-      payment_status: status,
-      items: cart
-    };
+    try {
+      if (USE_MOCK_DB) {
+        const purchaseData: Purchase = {
+          id: editingId || crypto.randomUUID(),
+          supplier_id: supplier!.id,
+          supplier_name: supplier!.name,
+          warehouse_id: warehouseId,
+          document_type: docType,
+          document_number: docNumber,
+          issue_date: issueDate,
+          entry_date: entryDate,
+          due_date: dueDate,
+          accounting_date: accountingDate,
+          observation: observation,
+          currency: currency,
+          exchange_rate: exchangeRate,
+          subtotal: subtotal,
+          igv: igv,
+          total: total,
+          payment_status: status,
+          items: cart
+        };
 
-    if (editingId) {
-      // UPDATE Logic (with Kardex Reversion)
-      const success = updatePurchase(purchaseData);
-      if (success) {
-        showToast("Compra actualizada y Kardex rectificado correctamente.", "success");
+        if (editingId) {
+          const success = updatePurchase(purchaseData);
+          if (success) {
+            showToast("Compra actualizada (Mock).", "success");
+          } else {
+            showToast("Error actualizando (Mock).", "error");
+          }
+        } else {
+          createPurchase(purchaseData);
+          showToast(status === 'PAID' ? "Compra registrada y PAGADA." : "Compra registrada como PENDIENTE.", "success");
+        }
         resetForm();
         setActiveTab('LIST');
       } else {
-        showToast("No se puede editar: Los lotes de esta compra ya han sido vendidos.", "error");
+        // --- LÓGICA SUPABASE NATIVA ---
+        const purchaseHeader = {
+          supplier_id: supplier!.id,
+          warehouse_id: warehouseId || null,
+          document_type: docType,
+          document_number: docNumber,
+          issue_date: issueDate,
+          due_date: dueDate,
+          currency: currency,
+          subtotal: subtotal,
+          igv: igv,
+          total: total,
+          payment_status: status,
+          observation: observation,
+          balance: status === 'PAID' ? 0 : total
+        };
+
+        if (editingId) {
+          // 1. UPDATE HEADER
+          await supabase.from('purchases').update(purchaseHeader).eq('id', editingId);
+          
+          // 2. BORRAR ITEMS Y LOTES ANTERIORES PARA REHACERLOS
+          await supabase.from('purchase_items').delete().eq('purchase_id', editingId);
+          await supabase.from('batches').delete().eq('purchase_id', editingId);
+
+          // 3. REINSERTAR NUEVOS ITEMS Y LOTES
+          for (const item of cart) {
+            await supabase.from('purchase_items').insert({ ...item, purchase_id: editingId });
+            
+            await supabase.from('batches').insert({
+              product_id: item.product_id,
+              purchase_id: editingId,
+              warehouse_id: warehouseId || null,
+              code: item.batch_code,
+              quantity_initial: item.quantity_base,
+              quantity_current: item.quantity_base,
+              cost: item.unit_price / item.factor,
+              expiration_date: item.expiration_date || null
+            });
+            
+            // Actualizar último costo en el producto
+            await supabase.from('products').update({ last_cost: item.unit_value / item.factor }).eq('id', item.product_id);
+          }
+          showToast("Compra actualizada y Kardex rectificado en la nube.", "success");
+        } else {
+          // 1. INSERT HEADER
+          const newId = crypto.randomUUID();
+          const { error: headerErr } = await supabase.from('purchases').insert([{ ...purchaseHeader, id: newId }]);
+          if (headerErr) throw headerErr;
+
+          // 2. INSERT ITEMS, BATCHES & COSTOS
+          for (const item of cart) {
+            await supabase.from('purchase_items').insert({ ...item, purchase_id: newId });
+            
+            await supabase.from('batches').insert({
+              product_id: item.product_id,
+              purchase_id: newId,
+              warehouse_id: warehouseId || null,
+              code: item.batch_code,
+              quantity_initial: item.quantity_base,
+              quantity_current: item.quantity_base,
+              cost: item.unit_price / item.factor,
+              expiration_date: item.expiration_date || null
+            });
+
+            await supabase.from('products').update({ last_cost: item.unit_value / item.factor }).eq('id', item.product_id);
+          }
+          showToast(status === 'PAID' ? "Compra registrada y PAGADA en la Nube." : "Compra registrada como PENDIENTE.", "success");
+        }
+        
+        resetForm();
+        setActiveTab('LIST');
       }
-    } else {
-      // CREATE Logic
-      createPurchase(purchaseData);
-      showToast(status === 'PAID' ? "Compra registrada y PAGADA." : "Compra registrada como PENDIENTE.", "success");
-      resetForm();
+    } catch (err: any) {
+      showToast("Error de BD: " + err.message, "error");
+    } finally {
+      setIsProcessing(false);
     }
-    
-    setIsProcessing(false);
   };
 
   const resetForm = () => {
@@ -405,7 +514,7 @@ export const Purchases: React.FC = () => {
     setDueDate(p.due_date);
     setObservation(p.observation || '');
     setCurrency(p.currency);
-    setCart(p.items);
+    setCart(p.items || []); // Protección contra arrays nulos
     setActiveTab('FORM');
     showToast("Modo Edición: Se revertirá el stock anterior al guardar.", "success");
   };
@@ -419,7 +528,7 @@ export const Purchases: React.FC = () => {
     setShowPaymentModal(true);
   };
 
-  const handleProcessPayment = () => {
+  const handleProcessPayment = async () => {
     if (!paymentPurchase) return;
     if (paymentAmount <= 0) {
       showToast('El monto debe ser mayor a 0', 'error');
@@ -431,18 +540,63 @@ export const Purchases: React.FC = () => {
       return;
     }
 
-    addPurchasePayment(
-      paymentPurchase.id, 
-      {
-        amount: Number(paymentAmount),
-        date: paymentDate,
-        method: paymentMethod,
-        reference: paymentReference
-      }, 
-      currentUser ? currentUser.id : 'ADMIN'
-    );
-    showToast(`Pago de S/ ${paymentAmount} registrado en Caja`, 'success');
-    setShowPaymentModal(false);
+    setIsProcessing(true);
+    try {
+      if (USE_MOCK_DB) {
+        addPurchasePayment(
+          paymentPurchase.id, 
+          {
+            amount: Number(paymentAmount),
+            date: paymentDate,
+            method: paymentMethod,
+            reference: paymentReference
+          }, 
+          currentUser ? currentUser.id : 'ADMIN'
+        );
+      } else {
+        // LÓGICA SUPABASE PARA PAGOS Y CAJA
+        const paymentId = crypto.randomUUID();
+        
+        // 1. Insertar movimiento en Caja
+        await supabase.from('cash_movements').insert([{
+           id: paymentId,
+           type: 'EXPENSE',
+           category_name: 'PAGO A PROVEEDORES',
+           description: `Pago compra ${paymentPurchase.document_type} ${paymentPurchase.document_number}`,
+           amount: Number(paymentAmount),
+           date: paymentDate,
+           reference_id: paymentPurchase.id
+        }]);
+
+        // 2. Insertar historial de pago
+        await supabase.from('purchase_payments').insert([{
+           purchase_id: paymentPurchase.id,
+           cash_movement_id: paymentId,
+           amount: Number(paymentAmount),
+           payment_date: paymentDate,
+           payment_method: paymentMethod,
+           reference_number: paymentReference
+        }]);
+
+        // 3. Actualizar Saldo y Estado en Compra
+        const newBalance = currentBalance - Number(paymentAmount);
+        const newStatus = newBalance <= 0.05 ? 'PAID' : 'PENDING';
+        
+        await supabase.from('purchases').update({
+           balance: newBalance,
+           payment_status: newStatus
+        }).eq('id', paymentPurchase.id);
+      }
+      
+      showToast(`Pago de S/ ${paymentAmount} registrado en Caja`, 'success');
+      setShowPaymentModal(false);
+      // Forzar recarga de tabla cambiando a otra pestaña y regresando sutilmente (o puedes llamar fetch)
+      setActiveTab('LIST');
+    } catch(err: any) {
+      showToast("Error registrando pago: " + err.message, "error");
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const sumTotalValue = cart.reduce((acc, item) => acc + item.total_value, 0); 
@@ -466,7 +620,7 @@ export const Purchases: React.FC = () => {
         <div className="absolute inset-0 bg-white/80 z-50 flex flex-col items-center justify-center backdrop-blur-sm rounded-lg">
           <Loader2 className="w-12 h-12 text-accent animate-spin mb-4" />
           <h3 className="text-xl font-bold text-slate-800">Procesando Compra...</h3>
-          <p className="text-slate-500 mt-2">Actualizando Kardex y Lotes</p>
+          <p className="text-slate-500 mt-2">Actualizando Kardex y Lotes en la Base de Datos</p>
         </div>
       )}
 
@@ -547,11 +701,14 @@ export const Purchases: React.FC = () => {
                       }
                       return true;
                   })
-                  .map(p => (
+                  .map(p => {
+                    // Mapeo seguro del nombre del proveedor
+                    const sName = p.supplier_name || suppliers.find(s => s.id === p.supplier_id)?.name || 'Proveedor Desconocido';
+                    return (
                  <tr key={p.id} className="hover:bg-slate-50">
                    <td className="p-3 text-slate-600">{p.issue_date}</td>
                    <td className="p-3 font-medium text-slate-800">{p.document_type} {p.document_number}</td>
-                   <td className="p-3 text-slate-600">{p.supplier_name}</td>
+                   <td className="p-3 text-slate-600">{sName}</td>
                    <td className="p-3 text-right">
                      <div className="font-bold text-slate-900">
                        {p.currency === 'USD' ? '$' : 'S/'} {p.total.toFixed(2)}
@@ -581,7 +738,7 @@ export const Purchases: React.FC = () => {
                       </div>
                    </td>
                  </tr>
-               ))}
+                )})}
              </tbody>
            </table>
         </div>
@@ -932,7 +1089,7 @@ export const Purchases: React.FC = () => {
 
           {/* Save Buttons */}
           <div className="flex justify-end gap-2 mt-4">
-            <button onClick={() => handleSave('PENDING')} className="bg-slate-600 text-white px-6 py-2 rounded hover:bg-slate-700 font-bold shadow-sm">
+            <button onClick={() => handleSave('PENDING')} disabled={isProcessing} className="bg-slate-600 text-white px-6 py-2 rounded hover:bg-slate-700 font-bold shadow-sm disabled:opacity-50">
                 {editingId ? 'Guardar Cambios' : 'Guardar Compra (Pendiente de Pago)'}
             </button>
           </div>
@@ -990,10 +1147,12 @@ export const Purchases: React.FC = () => {
               </div>
 
               <button 
+                disabled={isProcessing}
                 onClick={handleProcessPayment}
-                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-md shadow flex justify-center items-center transition-all mt-6"
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-md shadow flex justify-center items-center transition-all mt-6 disabled:opacity-50"
               >
-                <CheckCircle className="w-5 h-5 mr-2" /> Confirmar Pago
+                {isProcessing ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <CheckCircle className="w-5 h-5 mr-2" />}
+                Confirmar Pago
               </button>
             </div>
           </div>
