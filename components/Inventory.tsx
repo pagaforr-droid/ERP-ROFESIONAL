@@ -1,14 +1,45 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Package, Calendar, DollarSign, Hash, Search, ArrowUpDown, TrendingDown, Layers, FileDown, Plus, Printer, AlertTriangle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
 
 export const Inventory: React.FC = () => {
-  const { products, batches, suppliers, addBatch } = useStore();
+  const store = useStore();
+  const { addBatch } = store;
   
   const [activeTab, setActiveTab] = useState<'MONITOR' | 'INCOME'>('MONITOR');
+
+  // === ESTADOS SUPABASE ===
+  const [realProducts, setRealProducts] = useState<any[]>([]);
+  const [realBatches, setRealBatches] = useState<any[]>([]);
+  const [realSuppliers, setRealSuppliers] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!USE_MOCK_DB) {
+        try {
+          const [pRes, bRes, sRes] = await Promise.all([
+            supabase.from('products').select('*'),
+            supabase.from('batches').select('*'),
+            supabase.from('suppliers').select('*')
+          ]);
+          if (pRes.data) setRealProducts(pRes.data);
+          if (bRes.data) setRealBatches(bRes.data);
+          if (sRes.data) setRealSuppliers(sRes.data);
+        } catch (error) {
+          console.error("Error fetching Supabase data:", error);
+        }
+      }
+    };
+    fetchData();
+  }, [activeTab]); // Recargar al cambiar de tab
+
+  const products = USE_MOCK_DB ? store.products : realProducts;
+  const batches = USE_MOCK_DB ? store.batches : realBatches;
+  const suppliers = USE_MOCK_DB ? store.suppliers : realSuppliers;
 
   // === RECEPTION FORM STATE ===
   const [formData, setFormData] = useState({
@@ -19,23 +50,43 @@ export const Inventory: React.FC = () => {
     expirationDate: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.productId) return;
 
-    addBatch({
-      id: crypto.randomUUID(),
-      product_id: formData.productId,
-      code: formData.code,
-      quantity_initial: formData.quantity,
-      quantity_current: formData.quantity,
-      cost: formData.cost,
-      expiration_date: formData.expirationDate,
-      created_at: new Date().toISOString()
-    });
+    if (USE_MOCK_DB) {
+      addBatch({
+        id: crypto.randomUUID(),
+        product_id: formData.productId,
+        code: formData.code,
+        quantity_initial: formData.quantity,
+        quantity_current: formData.quantity,
+        cost: formData.cost,
+        expiration_date: formData.expirationDate,
+        created_at: new Date().toISOString()
+      });
+      alert("¡Lote recepcionado correctamente (Mock)!");
+    } else {
+      try {
+        const { error } = await supabase.from('batches').insert([{
+          product_id: formData.productId,
+          code: formData.code,
+          quantity_initial: formData.quantity,
+          quantity_current: formData.quantity,
+          cost: formData.cost,
+          expiration_date: formData.expirationDate || null
+        }]);
+        if (error) throw error;
+        alert("¡Lote recepcionado correctamente en Supabase!");
+      } catch (error: any) {
+        alert("Error de BD: " + error.message);
+        return;
+      }
+    }
 
-    alert("¡Lote recepcionado correctamente!");
     setFormData({ productId: '', code: '', quantity: 0, cost: 0, expirationDate: '' });
+    // Opcional: Forzar recarga de tabs
+    setActiveTab('MONITOR');
   };
 
   // === MONITOR STATE ===
