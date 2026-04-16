@@ -358,6 +358,7 @@ export const Purchases: React.FC = () => {
   };
 
   // === INTEGRACIÓN SUPABASE (GUARDADO Y TRANSACCIÓN DE KARDEX) ===
+ // === INTEGRACIÓN SUPABASE (GUARDADO Y TRANSACCIÓN DE KARDEX) ===
   const handleSave = async (status: 'PENDING' | 'PAID') => {
     if (!supplierId) { showToast("Falta seleccionar el Proveedor.", "error"); return; }
     if (!docNumber) { showToast("Falta ingresar el Número de Documento.", "error"); return; }
@@ -418,6 +419,7 @@ export const Purchases: React.FC = () => {
         // --- LÓGICA SUPABASE NATIVA ---
         const purchaseHeader = {
           supplier_id: supplier!.id,
+          supplier_name: supplier!.name, // <--- ¡LA SOLUCIÓN EXACTA ESTÁ AQUÍ!
           warehouse_id: warehouseId || null,
           document_type: docType,
           document_number: docNumber,
