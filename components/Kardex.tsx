@@ -1,8 +1,7 @@
-﻿
-import React, { useState, useMemo } from 'react';
-import { useStore } from '../services/store';
-import { Product, Batch } from '../types';
-import { Package, ArrowUpRight, ArrowDownLeft, Search, Filter, Calendar, BarChart3, FileText, Layers, RefreshCw, Printer, AlertTriangle, ArrowUpDown, FileDown } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
+import { Product, Batch, Purchase, Sale, DispatchLiquidation } from '../types';
+import { Package, ArrowUpRight, ArrowDownLeft, Search, Filter, Calendar, BarChart3, FileText, Layers, RefreshCw, Printer, AlertTriangle, ArrowUpDown, FileDown, Plus, DollarSign, Hash } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -21,13 +20,51 @@ interface Movement {
   quantity: number;
   unitPrice: number;
   total: number;
-  reference: string; // Proveedor o Cliente
+  reference: string;
 }
 
 export const Kardex: React.FC = () => {
-  const store = useStore();
   const [activeTab, setActiveTab] = useState<ViewTab>('INVENTORY');
   
+  // --- ESTADOS SUPABASE ---
+  const [dbProducts, setDbProducts] = useState<Product[]>([]);
+  const [dbBatches, setDbBatches] = useState<Batch[]>([]);
+  const [dbSuppliers, setDbSuppliers] = useState<any[]>([]);
+  const [dbPurchases, setDbPurchases] = useState<Purchase[]>([]);
+  const [dbSales, setDbSales] = useState<Sale[]>([]);
+  const [dbLiquidations, setDbLiquidations] = useState<DispatchLiquidation[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+     fetchMasterData();
+  }, []);
+
+  const fetchMasterData = async () => {
+     if (!USE_MOCK_DB) {
+        setIsLoading(true);
+        try {
+           const [pRes, bRes, sRes, purRes, salRes, liqRes] = await Promise.all([
+              supabase.from('products').select('*').eq('is_active', true),
+              supabase.from('batches').select('*').gt('quantity_current', 0),
+              supabase.from('suppliers').select('*'),
+              supabase.from('purchases').select('*, items:purchase_items(*)'),
+              supabase.from('sales').select('*, items:sale_items(*)').neq('status', 'canceled'),
+              supabase.from('dispatch_liquidations').select('*')
+           ]);
+           if (pRes.data) setDbProducts(pRes.data as Product[]);
+           if (bRes.data) setDbBatches(bRes.data as Batch[]);
+           if (sRes.data) setDbSuppliers(sRes.data);
+           if (purRes.data) setDbPurchases(purRes.data as any[]);
+           if (salRes.data) setDbSales(salRes.data as any[]);
+           if (liqRes.data) setDbLiquidations(liqRes.data as any[]);
+        } catch (error) {
+           console.error("Error sincronizando Kardex:", error);
+        } finally {
+           setIsLoading(false);
+        }
+     }
+  };
+
   // --- FILTERS ---
   const [searchTerm, setSearchTerm] = useState('');
   const [filterWarehouse, setFilterWarehouse] = useState<'CENTRAL'|'MERMAS'>('CENTRAL');
@@ -44,12 +81,11 @@ export const Kardex: React.FC = () => {
 
   // 1. INVENTORY SUMMARY (Snapshot)
   const inventorySnapshot = useMemo(() => {
-    return store.products.map(p => {
-       const productBatches = store.batches.filter(b => b.product_id === p.id && b.quantity_current > 0 && 
+    return dbProducts.map(p => {
+       const productBatches = dbBatches.filter(b => b.product_id === p.id && b.quantity_current > 0 && 
            (filterWarehouse === 'CENTRAL' ? b.warehouse_id !== 'MERMAS' : b.warehouse_id === 'MERMAS')
        );
        const totalStock = productBatches.reduce((acc, b) => acc + b.quantity_current, 0);
-       // Weighted Average Cost Calculation
        const totalValue = filterWarehouse === 'MERMAS' ? 0 : productBatches.reduce((acc, b) => acc + (b.quantity_current * b.cost), 0);
        const avgCost = filterWarehouse === 'MERMAS' ? 0 : (totalStock > 0 ? totalValue / totalStock : p.last_cost);
 
@@ -58,7 +94,7 @@ export const Kardex: React.FC = () => {
           totalStock,
           avgCost,
           totalValue,
-          supplierName: store.suppliers.find(s => s.id === p.supplier_id)?.name || 'Varios'
+          supplierName: dbSuppliers.find(s => s.id === p.supplier_id)?.name || 'Varios'
        };
     }).filter(p => {
        const matchSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.includes(searchTerm);
@@ -79,80 +115,52 @@ export const Kardex: React.FC = () => {
        if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
        return 0;
     });
-  }, [store.products, store.batches, searchTerm, filterCategory, filterSupplier, sortField, sortOrder, filterWarehouse]);
+  }, [dbProducts, dbBatches, searchTerm, filterCategory, filterSupplier, sortField, sortOrder, filterWarehouse]);
 
   // 2. MOVEMENTS (Timeline)
   const movements = useMemo(() => {
      const list: Movement[] = [];
 
-     // A. PURCHASES (IN)
-     store.purchases.forEach(p => {
+     dbPurchases.forEach(p => {
         if (p.issue_date < dateFrom || p.issue_date > dateTo) return;
         p.items.forEach(item => {
-           const prod = store.products.find(x => x.id === item.product_id);
-           if (!prod) return;
-           // Apply Filters
-           if (searchTerm && !prod.name.toLowerCase().includes(searchTerm.toLowerCase())) return;
-           
+           const prod = dbProducts.find(x => x.id === item.product_id);
+           if (!prod || (searchTerm && !prod.name.toLowerCase().includes(searchTerm.toLowerCase()))) return;
            list.push({
               id: `PUR-${p.id}-${item.product_id}`,
-              date: p.issue_date,
-              type: 'IN',
-              docType: 'COMPRA',
-              docNumber: p.document_number,
-              productName: prod.name,
-              sku: prod.sku,
-              quantity: item.quantity_base,
-              // FIX: Use Total Cost (Inc IGV) / Base Quantity to get the displayed Unit Price (Gross)
-              // This ensures Quantity * UnitPrice = Total displayed
+              date: p.issue_date, type: 'IN', docType: 'COMPRA', docNumber: p.document_number,
+              productName: prod.name, sku: prod.sku, quantity: item.quantity_base,
               unitPrice: item.quantity_base > 0 ? item.total_cost / item.quantity_base : 0, 
-              total: item.total_cost,
-              reference: p.supplier_name
+              total: item.total_cost, reference: p.supplier_name
            });
         });
      });
 
-     // B. SALES (OUT)
-     store.sales.forEach(s => {
-        const date = s.created_at.split('T')[0];
-        if (date < dateFrom || date > dateTo || s.status === 'canceled') return;
-        
+     dbSales.forEach(s => {
+        const date = (s.created_at || '').split('T')[0];
+        if (date < dateFrom || date > dateTo) return;
         s.items.forEach(item => {
-           const prod = store.products.find(x => x.id === item.product_id);
-           if (!prod) return;
-           // Apply Filters
-           if (searchTerm && !prod.name.toLowerCase().includes(searchTerm.toLowerCase())) return;
-
+           const prod = dbProducts.find(x => x.id === item.product_id);
+           if (!prod || (searchTerm && !prod.name.toLowerCase().includes(searchTerm.toLowerCase()))) return;
            list.push({
               id: `SALE-${s.id}-${item.id}`,
-              date: date,
-              type: 'OUT',
-              docType: s.document_type,
-              docNumber: `${s.series}-${s.number}`,
-              productName: prod.name,
-              sku: prod.sku,
-              quantity: item.quantity_base, // Sold base units
-              // FIX: Consistent calculation for Sales too
+              date: date, type: 'OUT', docType: s.document_type, docNumber: `${s.series}-${s.number}`,
+              productName: prod.name, sku: prod.sku, quantity: item.quantity_base, 
               unitPrice: item.quantity_base > 0 ? item.total_price / item.quantity_base : 0,
-              total: item.total_price,
-              reference: s.client_name
+              total: item.total_price, reference: s.client_name
            });
         });
      });
 
-     // C. RETURNS (IN via NC) - From Dispatch Liquidations
-     store.dispatchLiquidations.forEach(liq => {
+     dbLiquidations.forEach(liq => {
         const date = liq.date.split('T')[0];
         if (date < dateFrom || date > dateTo) return;
-
         liq.documents.forEach(doc => {
            if (doc.action === 'PARTIAL_RETURN' || doc.action === 'VOID') {
-              const sale = store.sales.find(s => s.id === doc.sale_id);
-              
-              // If VOID, all items returned
+              const sale = dbSales.find(s => s.id === doc.sale_id);
               if (doc.action === 'VOID' && sale) {
                  sale.items.forEach(item => {
-                    const prod = store.products.find(x => x.id === item.product_id);
+                    const prod = dbProducts.find(x => x.id === item.product_id);
                     if (!prod || (searchTerm && !prod.name.toLowerCase().includes(searchTerm.toLowerCase()))) return;
                     list.push({
                        id: `VOID-${doc.sale_id}-${item.id}`,
@@ -161,10 +169,9 @@ export const Kardex: React.FC = () => {
                     });
                  });
               }
-              // If Partial, specific items
               if (doc.action === 'PARTIAL_RETURN') {
                  doc.returned_items.forEach(ret => {
-                    const prod = store.products.find(x => x.id === ret.product_id);
+                    const prod = dbProducts.find(x => x.id === ret.product_id);
                     if (!prod || (searchTerm && !prod.name.toLowerCase().includes(searchTerm.toLowerCase()))) return;
                     list.push({
                        id: `RET-${doc.sale_id}-${ret.product_id}`,
@@ -180,68 +187,69 @@ export const Kardex: React.FC = () => {
      });
 
      return list.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [store.sales, store.purchases, store.dispatchLiquidations, store.products, dateFrom, dateTo, searchTerm]);
+  }, [dbSales, dbPurchases, dbLiquidations, dbProducts, dateFrom, dateTo, searchTerm]);
 
   // --- ANALYTICS DATA ---
   const analyticsData = useMemo(() => {
      const byCategory: Record<string, number> = {};
      const bySupplier: Record<string, number> = {};
-     
      inventorySnapshot.forEach(p => {
-        byCategory[p.category] = (byCategory[p.category] || 0) + p.totalValue;
+        byCategory[p.category || 'OTROS'] = (byCategory[p.category || 'OTROS'] || 0) + p.totalValue;
         bySupplier[p.supplierName] = (bySupplier[p.supplierName] || 0) + p.totalValue;
      });
-
      const catChart = Object.entries(byCategory).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value).slice(0, 6);
      const supChart = Object.entries(bySupplier).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value).slice(0, 6);
-
      return { catChart, supChart, totalValuation: inventorySnapshot.reduce((acc, i) => acc + i.totalValue, 0) };
   }, [inventorySnapshot]);
 
-  // --- COLORS ---
   const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
-
-  // --- HELPERS ---
-  const uniqueCategories = Array.from(new Set(store.products.map(p => p.category))).sort() as string[];
+  const uniqueCategories = Array.from(new Set(dbProducts.map(p => p.category))).sort() as string[];
 
   const handleSort = (field: 'sku'|'name'|'category'|'supplier'|'stock'|'value') => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortOrder(field === 'name' || field === 'sku' || field === 'category' || field === 'supplier' ? 'asc' : 'desc');
-    }
+    if (sortField === field) setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortOrder(field === 'name' || field === 'sku' ? 'asc' : 'desc'); }
   };
 
   const currentTotalValuation = useMemo(() => inventorySnapshot.reduce((a,b)=>a+b.totalValue, 0), [inventorySnapshot]);
 
-  const handleTransferMermas = (productId: string, batchId: string, maxQty: number) => {
-    const qtyStr = window.prompt(`Â¿CuÃ¡ntas unidades deseas mover a cuarentena/mermas? (MÃ¡ximas disp: ${maxQty})`);
+  // --- ACCIONES SUPABASE: TRANSFERENCIA A MERMAS ---
+  const handleTransferMermas = async (productId: string, batchId: string, maxQty: number) => {
+    const qtyStr = window.prompt(`¿Cuántas unidades base deseas mover a Mermas/Cuarentena? (Máximas disp: ${maxQty})`);
     if (!qtyStr) return;
     const qty = parseInt(qtyStr, 10);
-    if (isNaN(qty) || qty <= 0 || qty > maxQty) {
-      alert("Cantidad invÃ¡lida");
-      return;
-    }
-    const res = store.transferToMermas(productId, batchId, qty);
-    if (!res.success) {
-      alert("Error: " + res.msg);
+    if (isNaN(qty) || qty <= 0 || qty > maxQty) { alert("Cantidad inválida"); return; }
+    
+    try {
+        const batchToMove = dbBatches.find(b => b.id === batchId);
+        if(!batchToMove) throw new Error("Lote no encontrado");
+
+        // 1. Restar del lote original
+        await supabase.from('batches').update({ quantity_current: batchToMove.quantity_current - qty }).eq('id', batchId);
+        
+        // 2. Crear lote en MERMAS
+        await supabase.from('batches').insert([{
+           product_id: productId,
+           warehouse_id: 'MERMAS',
+           code: `${batchToMove.code}-M`,
+           quantity_initial: qty,
+           quantity_current: qty,
+           cost: batchToMove.cost,
+           expiration_date: batchToMove.expiration_date
+        }]);
+
+        alert("Unidades movidas a Mermas correctamente.");
+        fetchMasterData(); // Refrescar pantalla
+    } catch(err: any) {
+        alert("Error moviendo a mermas: " + err.message);
     }
   };
 
   const exportExcel = () => {
     const dataToExport = inventorySnapshot.map(p => ({
-      "CÃ³digo SKU": p.sku,
-      "Producto": p.name,
-      "CategorÃ­a": p.category || '',
-      "Marca": p.brand || '',
-      "Proveedor": p.supplierName,
-      "Stock Total": p.totalStock,
-      "Costo Prom. Unit": parseFloat(p.avgCost.toFixed(4)),
-      "ValorizaciÃ³n Total": parseFloat(p.totalValue.toFixed(2)),
+      "Código SKU": p.sku, "Producto": p.name, "Categoría": p.category || '', "Marca": p.brand || '', "Proveedor": p.supplierName,
+      "Stock Total": p.totalStock, "Costo Prom. Unit": parseFloat(p.avgCost.toFixed(4)), "Valorización Total": parseFloat(p.totalValue.toFixed(2)),
       "Estado": p.totalStock <= p.min_stock ? 'BAJO STOCK' : 'OPTIMO'
     }));
-
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Kardex_Inventario");
@@ -250,201 +258,182 @@ export const Kardex: React.FC = () => {
 
   const exportPDF = () => {
     const doc = new jsPDF('landscape');
-    
-    doc.setFontSize(18);
-    doc.setTextColor(40, 40, 40);
-    doc.text("Reporte de Kardex e Inventario Valorizado", 14, 22);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 100);
-    doc.text(`Fecha de EmisiÃ³n: ${new Date().toLocaleString()}`, 14, 30);
-    doc.text(`Filtros: CategorÃ­a (${filterCategory}), Proveedor (${filterSupplier})`, 14, 36);
+    doc.setFontSize(18); doc.setTextColor(40, 40, 40); doc.text("Reporte de Kardex e Inventario Valorizado", 14, 22);
+    doc.setFontSize(10); doc.setTextColor(100, 100, 100);
+    doc.text(`Fecha de Emisión: ${new Date().toLocaleString()}`, 14, 30);
+    doc.text(`Filtros: Categoría (${filterCategory}), Proveedor (${filterSupplier})`, 14, 36);
     doc.text(`Total Capital Valorizado: S/ ${currentTotalValuation.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 14, 42);
 
-    const tableColumn = ["SKU", "Producto", "CategorÃ­a / Marca", "Proveedor", "Stock Total", "Costo Prom", "Valor Total"];
+    const tableColumn = ["SKU", "Producto", "Categoría / Marca", "Proveedor", "Stock Total", "Costo Prom", "Valor Total"];
     const tableRows = inventorySnapshot.map(p => [
-      p.sku,
-      p.name,
-      `${p.category || '-'} / ${p.brand || '-'}`,
-      p.supplierName,
-      `${p.totalStock} ${p.unit_type || 'U'}`,
-      `S/ ${p.avgCost.toFixed(2)}`,
-      `S/ ${p.totalValue.toFixed(2)}`
+      p.sku, p.name, `${p.category || '-'} / ${p.brand || '-'}`, p.supplierName, `${p.totalStock} ${p.unit_type || 'U'}`, `S/ ${p.avgCost.toFixed(2)}`, `S/ ${p.totalValue.toFixed(2)}`
     ]);
 
     autoTable(doc, {
-      head: [tableColumn],
-      body: tableRows,
-      startY: 48,
-      theme: 'grid',
-      styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [15, 23, 42] },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
-      columnStyles: {
-        4: { halign: 'right', fontStyle: 'bold' },
-        5: { halign: 'right' },
-        6: { halign: 'right', fontStyle: 'bold', textColor: [29, 78, 216] }
-      }
+      head: [tableColumn], body: tableRows, startY: 48, theme: 'grid', styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [15, 23, 42] }, alternateRowStyles: { fillColor: [248, 250, 252] },
+      columnStyles: { 4: { halign: 'right', fontStyle: 'bold' }, 5: { halign: 'right' }, 6: { halign: 'right', fontStyle: 'bold', textColor: [29, 78, 216] } }
     });
-
     doc.save(`Reporte_Kardex_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   return (
     <div className="flex flex-col h-full space-y-4 font-sans text-slate-800">
-       
-       {/* HEADER */}
-       <div className="flex justify-between items-center">
+       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
           <div className="flex items-center gap-3">
-             <div className="bg-orange-100 p-2 rounded-lg text-orange-600">
+             <div className="bg-orange-100 p-2.5 rounded-lg text-orange-600 shadow-inner">
                 <Package className="w-6 h-6" />
              </div>
              <div>
-                <h2 className="text-xl font-bold text-slate-900">Kardex & Inventarios</h2>
-                <p className="text-xs text-slate-500">Control de stock, movimientos y valorizaciÃ³n</p>
+                <h2 className="text-xl font-black text-slate-900">Centro de Control de Inventario</h2>
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Kardex, Lotes y Valorización de Activos</p>
              </div>
           </div>
-          <div className="flex bg-white border border-slate-200 rounded-lg p-1">
-             <button onClick={() => setActiveTab('INVENTORY')} className={`px-4 py-2 text-xs font-bold rounded flex items-center transition-all ${activeTab === 'INVENTORY' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
-                <Layers className="w-4 h-4 mr-2" /> Inventario FÃ­sico
+          <div className="flex gap-2">
+             <button onClick={fetchMasterData} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg flex items-center transition-colors shadow-sm border border-slate-200 font-bold text-sm">
+                <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin text-orange-600' : ''}`} /> Sincronizar
              </button>
-             <button onClick={() => setActiveTab('MOVEMENTS')} className={`px-4 py-2 text-xs font-bold rounded flex items-center transition-all ${activeTab === 'MOVEMENTS' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
-                <RefreshCw className="w-4 h-4 mr-2" /> Kardex Movimientos
+             <button onClick={exportExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold shadow-md flex items-center transition-colors text-sm">
+                <FileDown className="w-4 h-4 mr-2" /> Excel
              </button>
-             <button onClick={() => setActiveTab('BATCHES')} className={`px-4 py-2 text-xs font-bold rounded flex items-center transition-all ${activeTab === 'BATCHES' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
-                <Calendar className="w-4 h-4 mr-2" /> Lotes y Vencimientos
-             </button>
-             <button onClick={() => setActiveTab('ANALYTICS')} className={`px-4 py-2 text-xs font-bold rounded flex items-center transition-all ${activeTab === 'ANALYTICS' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:bg-slate-50'}`}>
-                <BarChart3 className="w-4 h-4 mr-2" /> Reportes EstratÃ©gicos
+             <button onClick={exportPDF} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-lg font-bold shadow-md flex items-center transition-colors text-sm">
+                <Printer className="w-4 h-4 mr-2" /> PDF
              </button>
           </div>
        </div>
 
-       {/* GLOBAL FILTERS */}
-       <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+       <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-1">
+          <button onClick={() => setActiveTab('INVENTORY')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'INVENTORY' ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <Layers className="w-4 h-4 mr-2" /> 1. Inventario Físico
+          </button>
+          <button onClick={() => setActiveTab('MOVEMENTS')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'MOVEMENTS' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <ArrowUpDown className="w-4 h-4 mr-2" /> 2. Kardex Movimientos
+          </button>
+          <button onClick={() => setActiveTab('BATCHES')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'BATCHES' ? 'bg-purple-50 text-purple-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <Calendar className="w-4 h-4 mr-2" /> 3. Lotes y Vencimientos
+          </button>
+          <button onClick={() => setActiveTab('ANALYTICS')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'ANALYTICS' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <BarChart3 className="w-4 h-4 mr-2" /> 4. Reportes y Capital
+          </button>
+       </div>
+
+       <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
           <div className="flex flex-wrap gap-4 items-end">
              <div className="flex-1 min-w-[200px]">
-                <label className="block text-xs font-bold text-slate-600 mb-1">Buscar Producto / SKU</label>
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Buscador Universal</label>
                 <div className="relative">
-                   <Search className="absolute left-2 top-2.5 w-4 h-4 text-slate-400" />
-                   <input 
-                      className="w-full pl-8 border border-slate-300 p-2 rounded text-sm focus:ring-1 focus:ring-orange-500 outline-none" 
-                      placeholder="Ej. Whisky, 1050..."
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                   />
+                   <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                   <input className="w-full pl-10 border-2 border-slate-200 p-2.5 rounded-lg text-sm font-bold focus:border-orange-500 outline-none transition-colors" placeholder="Buscar por SKU o Nombre..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
              </div>
              
              {activeTab !== 'MOVEMENTS' && (
                 <>
                    <div className="w-56">
-                      <label className="block text-xs font-bold text-slate-600 mb-1">AlmacÃ©n LogÃ­stico</label>
-                      <select className={`w-full border p-2 rounded text-sm font-bold ${filterWarehouse === 'MERMAS' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-slate-800 text-white border-slate-800'}`} value={filterWarehouse} onChange={e => setFilterWarehouse(e.target.value as any)}>
-                         <option value="CENTRAL">ALMACÃ‰N CENTRAL</option>
-                         <option value="MERMAS">CUARENTENA / MERMAS</option>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Ubicación Lógica</label>
+                      <select className={`w-full border-2 p-2.5 rounded-lg text-sm font-bold focus:outline-none transition-colors ${filterWarehouse === 'MERMAS' ? 'bg-red-50 text-red-700 border-red-300 focus:border-red-500' : 'bg-slate-50 text-slate-800 border-slate-200 focus:border-orange-500'}`} value={filterWarehouse} onChange={e => setFilterWarehouse(e.target.value as any)}>
+                         <option value="CENTRAL">📦 ALMACÉN CENTRAL</option>
+                         <option value="MERMAS">⚠️ CUARENTENA / MERMAS</option>
                       </select>
                    </div>
                    <div className="w-48">
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Filtrar CategorÃ­a</label>
-                      <select className="w-full border border-slate-300 p-2 rounded text-sm" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
-                         <option value="ALL">Todas las CategorÃ­as</option>
-                         {uniqueCategories.map((c) => <option key={c} value={c}>{c}</option>)}
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Categoría</label>
+                      <select className="w-full border-2 border-slate-200 p-2.5 rounded-lg text-sm font-bold bg-white focus:border-orange-500 outline-none" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+                         <option value="ALL">Todas las Familias</option>
+                         {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                    </div>
-                   <div className="w-48">
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Filtrar Proveedor</label>
-                      <select className="w-full border border-slate-300 p-2 rounded text-sm" value={filterSupplier} onChange={e => setFilterSupplier(e.target.value)}>
+                   <div className="w-56">
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Proveedor Origen</label>
+                      <select className="w-full border-2 border-slate-200 p-2.5 rounded-lg text-sm font-bold bg-white focus:border-orange-500 outline-none" value={filterSupplier} onChange={e => setFilterSupplier(e.target.value)}>
                          <option value="ALL">Todos los Proveedores</option>
-                         {store.suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                         {dbSuppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                       </select>
                    </div>
                 </>
              )}
 
              {activeTab === 'MOVEMENTS' && (
-                <div className="flex items-center gap-2 bg-slate-50 p-1 rounded border border-slate-200">
-                   <Calendar className="w-4 h-4 text-slate-400 ml-2" />
-                   <input type="date" className="bg-transparent border-none text-xs font-bold text-slate-600 outline-none focus:ring-0" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-                   <span className="text-slate-300">-</span>
-                   <input type="date" className="bg-transparent border-none text-xs font-bold text-slate-600 outline-none focus:ring-0" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+                <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border-2 border-slate-200">
+                   <Calendar className="w-5 h-5 text-slate-400 ml-2" />
+                   <input type="date" className="bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+                   <span className="text-slate-300 font-bold">-</span>
+                   <input type="date" className="bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer pr-2" value={dateTo} onChange={e => setDateTo(e.target.value)} />
                 </div>
              )}
-
-             <div className="flex gap-2">
-                <button onClick={exportExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded font-bold shadow-sm flex items-center transition-colors text-xs whitespace-nowrap">
-                   <FileDown className="w-4 h-4 mr-2" /> Excel
-                </button>
-                <button onClick={exportPDF} className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded font-bold shadow-sm flex items-center transition-colors text-xs whitespace-nowrap">
-                   <Printer className="w-4 h-4 mr-2" /> PDF
-                </button>
-             </div>
           </div>
        </div>
 
-       {/* CONTENT AREA */}
-       <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+       <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
           
           {/* TAB: INVENTORY */}
           {activeTab === 'INVENTORY' && (
              <div className="flex-1 overflow-auto">
-                <table className="w-full text-sm text-left">
-                   <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 border-b border-slate-200">
+                <table className="w-full text-sm text-left border-collapse">
+                   <thead className="bg-slate-100 text-slate-600 font-black uppercase text-[10px] tracking-wider sticky top-0 z-10 shadow-sm border-b border-slate-200">
                        <tr>
-                          <th className="p-3 w-28 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('sku')}>
-                             <div className="flex items-center">CÃ³digo {sortField === 'sku' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                          <th className="p-4 w-28 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('sku')}>
+                             <div className="flex items-center">Código {sortField === 'sku' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
                           </th>
-                          <th className="p-3 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('name')}>
+                          <th className="p-4 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('name')}>
                              <div className="flex items-center">Producto {sortField === 'name' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
                           </th>
-                          <th className="p-3 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('category')}>
-                             <div className="flex items-center">CategorÃ­a / Marca {sortField === 'category' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                          <th className="p-4 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('category')}>
+                             <div className="flex items-center">Categoría / Marca {sortField === 'category' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
                           </th>
-                          <th className="p-3 text-right cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('stock')}>
-                             <div className="flex items-center justify-end">Stock Total {sortField === 'stock' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                          <th className="p-4 text-right cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('stock')}>
+                             <div className="flex items-center justify-end">Stock Total Base {sortField === 'stock' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
                           </th>
-                          <th className="p-3 text-right">Costo Prom.</th>
-                          <th className="p-3 text-right text-blue-700 cursor-pointer hover:bg-slate-200 transition-colors" onClick={() => handleSort('value')}>
-                             <div className="flex items-center justify-end">Valor Total {sortField === 'value' && <ArrowUpDown className="w-3 h-3 ml-1 text-slate-500" />}</div>
+                          <th className="p-4 text-right">Costo Promedio (Base)</th>
+                          <th className="p-4 text-right text-blue-700 cursor-pointer hover:bg-slate-200 transition-colors bg-blue-50/30 border-l border-blue-100" onClick={() => handleSort('value')}>
+                             <div className="flex items-center justify-end">Capital Inmovilizado {sortField === 'value' && <ArrowUpDown className="w-3 h-3 ml-1 text-blue-500" />}</div>
                           </th>
-                          <th className="p-3 text-center">Estado</th>
+                          <th className="p-4 text-center">Salud de Stock</th>
                        </tr>
                    </thead>
                    <tbody className="divide-y divide-slate-100">
-                      {inventorySnapshot.map(p => (
-                         <tr key={p.id} className="hover:bg-slate-50 group">
-                            <td className="p-3 font-mono text-slate-600 font-bold">{p.sku}</td>
-                            <td className="p-3">
-                               <div className="font-bold text-slate-800">{p.name}</div>
-                               <div className="text-[10px] text-slate-500">{p.supplierName}</div>
+                      {isLoading && inventorySnapshot.length === 0 ? (
+                         <tr><td colSpan={7} className="p-12 text-center text-slate-500 font-bold"><RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-orange-500"/> Sincronizando Activos...</td></tr>
+                      ) : inventorySnapshot.length === 0 ? (
+                         <tr><td colSpan={7} className="p-12 text-center text-slate-400 font-medium">No se encontraron productos con los filtros actuales.</td></tr>
+                      ) : inventorySnapshot.map(p => (
+                         <tr key={p.id} className="hover:bg-slate-50 transition-colors group">
+                            <td className="p-4 font-mono font-bold text-slate-500">{p.sku}</td>
+                            <td className="p-4">
+                               <div className="font-black text-slate-800 text-base">{p.name}</div>
+                               <div className="text-[10px] font-bold text-slate-400 mt-0.5 flex items-center"><Briefcase className="w-3 h-3 mr-1" /> {p.supplierName}</div>
                             </td>
-                            <td className="p-3 text-xs">
-                               <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 border border-slate-200 mr-1">{p.category}</span>
-                               <span className="text-slate-400">{p.brand}</span>
+                            <td className="p-4">
+                               <span className="bg-slate-100 px-2 py-1 rounded text-[10px] font-bold text-slate-600 border border-slate-200 mr-2">{p.category || 'SIN CAT'}</span>
+                               <span className="text-xs text-slate-500 font-bold">{p.brand}</span>
                             </td>
-                            <td className="p-3 text-right font-bold text-lg">
-                               {p.totalStock} <span className="text-[10px] font-normal text-slate-400">Und</span>
+                            <td className="p-4 text-right">
+                               <div className="font-black text-slate-900 text-lg">{p.totalStock} <span className="text-xs text-slate-400 font-bold ml-1">{p.unit_type || 'U'}</span></div>
                             </td>
-                            <td className="p-3 text-right font-mono text-slate-600">S/ {p.avgCost.toFixed(2)}</td>
-                            <td className="p-3 text-right font-bold text-blue-700">S/ {p.totalValue.toFixed(2)}</td>
-                            <td className="p-3 text-center">
-                               {p.totalStock <= p.min_stock ? (
-                                  <span className="flex items-center justify-center text-red-600 text-[10px] font-bold bg-red-50 px-2 py-1 rounded border border-red-100 animate-pulse">
-                                     <AlertTriangle className="w-3 h-3 mr-1" /> BAJO STOCK
+                            <td className="p-4 text-right font-mono font-bold text-slate-500">S/ {p.avgCost.toFixed(4)}</td>
+                            <td className="p-4 text-right font-black text-blue-700 bg-blue-50/10 border-l border-blue-50 text-lg">S/ {p.totalValue.toLocaleString('es-PE', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                            <td className="p-4 text-center">
+                               {p.totalStock <= 0 ? (
+                                  <span className="flex items-center justify-center text-red-600 text-[10px] font-black bg-red-100 px-3 py-1 rounded-full border border-red-200 shadow-sm">
+                                     <AlertTriangle className="w-3 h-3 mr-1" /> AGOTADO
+                                  </span>
+                               ) : p.totalStock <= p.min_stock ? (
+                                  <span className="flex items-center justify-center text-orange-600 text-[10px] font-black bg-orange-100 px-3 py-1 rounded-full border border-orange-200 shadow-sm animate-pulse">
+                                     <AlertTriangle className="w-3 h-3 mr-1" /> STOCK BAJO
                                   </span>
                                ) : (
-                                  <span className="text-green-600 text-[10px] font-bold bg-green-50 px-2 py-1 rounded border border-green-100">
-                                     OPTIMO
+                                  <span className="flex items-center justify-center text-green-600 text-[10px] font-black bg-green-100 px-3 py-1 rounded-full border border-green-200 shadow-sm">
+                                     <CheckCircle className="w-3 h-3 mr-1" /> ÓPTIMO
                                   </span>
                                )}
                             </td>
                          </tr>
                       ))}
                    </tbody>
-                   <tfoot className="bg-slate-50 border-t border-slate-200 font-bold">
+                   <tfoot className="bg-slate-800 text-white font-black sticky bottom-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
                       <tr>
-                         <td colSpan={5} className="p-3 text-right uppercase text-slate-600">Total Valorizado AlmacÃ©n:</td>
-                         <td className="p-3 text-right text-blue-800 text-lg">S/ {inventorySnapshot.reduce((a,b)=>a+b.totalValue, 0).toLocaleString()}</td>
+                         <td colSpan={5} className="p-4 text-right uppercase tracking-wider text-xs text-slate-400">Capitalización Total en Almacén:</td>
+                         <td className="p-4 text-right text-emerald-400 text-xl border-l border-slate-700">S/ {inventorySnapshot.reduce((a,b)=>a+b.totalValue, 0).toLocaleString('es-PE', {minimumFractionDigits: 2})}</td>
                          <td></td>
                       </tr>
                    </tfoot>
@@ -455,55 +444,56 @@ export const Kardex: React.FC = () => {
           {/* TAB: MOVEMENTS (KARDEX) */}
           {activeTab === 'MOVEMENTS' && (
              <div className="flex-1 overflow-auto">
-                <table className="w-full text-sm text-left">
-                   <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 z-10 border-b border-slate-200">
+                <table className="w-full text-sm text-left border-collapse">
+                   <thead className="bg-slate-100 text-slate-600 font-black uppercase text-[10px] tracking-wider sticky top-0 z-10 border-b border-slate-200 shadow-sm">
                       <tr>
-                         <th className="p-3 w-32">Fecha</th>
-                         <th className="p-3 w-24 text-center">Tipo</th>
-                         <th className="p-3">Documento</th>
-                         <th className="p-3">Producto</th>
-                         <th className="p-3 text-right">Cant.</th>
-                         <th className="p-3 text-right">Precio Unit</th>
-                         <th className="p-3 text-right">Total</th>
+                         <th className="p-4 w-32">Fecha (UTC)</th>
+                         <th className="p-4 w-28 text-center">Naturaleza</th>
+                         <th className="p-4">Documento Origen</th>
+                         <th className="p-4">Producto Movilizado</th>
+                         <th className="p-4 text-right">Cant. Base</th>
+                         <th className="p-4 text-right">P. Unitario</th>
+                         <th className="p-4 text-right">Importe Total</th>
                       </tr>
                    </thead>
                    <tbody className="divide-y divide-slate-100">
-                      {movements.map((m, idx) => (
-                         <tr key={idx} className="hover:bg-slate-50">
-                            <td className="p-3 text-slate-600 font-mono text-xs">{m.date}</td>
-                            <td className="p-3 text-center">
+                      {isLoading && movements.length === 0 ? (
+                         <tr><td colSpan={7} className="p-12 text-center text-slate-500 font-bold"><RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-blue-500"/> Sincronizando Movimientos...</td></tr>
+                      ) : movements.length === 0 ? (
+                         <tr><td colSpan={7} className="p-12 text-center text-slate-400 font-medium">No hay movimientos registrados en este rango de fechas.</td></tr>
+                      ) : movements.map((m, idx) => (
+                         <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                            <td className="p-4 text-slate-500 font-mono text-xs font-bold">{m.date}</td>
+                            <td className="p-4 text-center">
                                {m.type === 'IN' ? (
-                                  <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded text-[10px] font-bold flex items-center justify-center w-fit mx-auto border border-green-200">
-                                     <ArrowDownLeft className="w-3 h-3 mr-1" /> ENTRADA
+                                  <span className="bg-green-100 text-green-700 px-3 py-1 rounded-lg text-[9px] font-black flex items-center justify-center w-full border border-green-200 shadow-sm">
+                                     <ArrowDownLeft className="w-3 h-3 mr-1" /> INGRESO
                                   </span>
                                ) : (
-                                  <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded text-[10px] font-bold flex items-center justify-center w-fit mx-auto border border-red-200">
+                                  <span className="bg-red-100 text-red-700 px-3 py-1 rounded-lg text-[9px] font-black flex items-center justify-center w-full border border-red-200 shadow-sm">
                                      <ArrowUpRight className="w-3 h-3 mr-1" /> SALIDA
                                   </span>
                                )}
                             </td>
-                            <td className="p-3 text-xs">
-                               <div className="font-bold text-slate-700">{m.docType} {m.docNumber}</div>
-                               <div className="text-slate-500 truncate max-w-[150px]">{m.reference}</div>
+                            <td className="p-4">
+                               <div className="font-bold text-slate-800">{m.docType} {m.docNumber}</div>
+                               <div className="text-[10px] text-slate-500 font-bold mt-0.5 truncate max-w-[200px]">{m.reference}</div>
                             </td>
-                            <td className="p-3">
-                               <div className="font-bold text-slate-800">{m.productName}</div>
-                               <div className="text-[10px] text-slate-400 font-mono">SKU: {m.sku}</div>
+                            <td className="p-4">
+                               <div className="font-bold text-slate-900">{m.productName}</div>
+                               <div className="text-[10px] text-slate-400 font-mono mt-0.5">SKU: {m.sku}</div>
                             </td>
-                            <td className={`p-3 text-right font-bold ${m.type === 'IN' ? 'text-green-700' : 'text-red-700'}`}>
+                            <td className={`p-4 text-right font-black text-lg ${m.type === 'IN' ? 'text-green-600' : 'text-red-600'}`}>
                                {m.type === 'IN' ? '+' : '-'}{m.quantity}
                             </td>
-                            <td className="p-3 text-right font-mono text-slate-600">
+                            <td className="p-4 text-right font-mono font-bold text-slate-500">
                                {m.unitPrice > 0 ? `S/ ${m.unitPrice.toFixed(2)}` : '-'}
                             </td>
-                            <td className="p-3 text-right font-bold text-slate-800">
+                            <td className="p-4 text-right font-black text-slate-800">
                                {m.total > 0 ? `S/ ${m.total.toFixed(2)}` : '-'}
                             </td>
                          </tr>
                       ))}
-                      {movements.length === 0 && (
-                         <tr><td colSpan={7} className="p-8 text-center text-slate-400 italic">No hay movimientos en el rango de fechas seleccionado.</td></tr>
-                      )}
                    </tbody>
                 </table>
              </div>
@@ -511,105 +501,125 @@ export const Kardex: React.FC = () => {
 
           {/* TAB: BATCHES (LOTES) */}
           {activeTab === 'BATCHES' && (
-             <div className="flex-1 overflow-auto p-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                   {store.products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(product => {
-                      const batches = store.batches.filter(b => b.product_id === product.id && b.quantity_current > 0 && (filterWarehouse === 'CENTRAL' ? b.warehouse_id !== 'MERMAS' : b.warehouse_id === 'MERMAS')).sort((a,b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
-                      if (batches.length === 0) return null;
+             <div className="flex-1 overflow-auto p-6 bg-slate-50">
+                {isLoading && dbBatches.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-slate-400 font-bold"><RefreshCw className="w-8 h-8 animate-spin mb-4 text-purple-500"/> Sincronizando Lotes...</div>
+                ) : (
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                      {dbProducts.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase())).map(product => {
+                         const batches = dbBatches.filter(b => b.product_id === product.id && b.quantity_current > 0 && (filterWarehouse === 'CENTRAL' ? b.warehouse_id !== 'MERMAS' : b.warehouse_id === 'MERMAS')).sort((a,b) => new Date(a.expiration_date || '2099-01-01').getTime() - new Date(b.expiration_date || '2099-01-01').getTime());
+                         if (batches.length === 0) return null;
 
-                      return (
-                         <div key={product.id} className="bg-white border border-slate-200 rounded-lg shadow-sm p-4 flex flex-col">
-                            <div className="flex justify-between items-start mb-2">
-                               <div>
-                                  <h4 className="font-bold text-slate-800 text-sm">{product.name}</h4>
-                                  <p className="text-xs text-slate-500 font-mono">{product.sku}</p>
+                         return (
+                            <div key={product.id} className="bg-white border border-slate-200 rounded-2xl shadow-sm hover:shadow-md transition-shadow flex flex-col overflow-hidden">
+                               <div className="bg-slate-900 p-4 text-white">
+                                  <div className="flex justify-between items-start">
+                                     <div className="pr-4">
+                                        <h4 className="font-black text-sm leading-tight line-clamp-2">{product.name}</h4>
+                                        <p className="text-[10px] text-slate-400 font-mono mt-1">{product.sku}</p>
+                                     </div>
+                                     <div className="bg-blue-600 text-white text-xs px-2 py-1 rounded-lg font-black shadow-inner whitespace-nowrap">
+                                        {batches.reduce((a,b)=>a+b.quantity_current,0)} Und
+                                     </div>
+                                  </div>
                                </div>
-                               <span className="bg-blue-50 text-blue-700 text-xs px-2 py-1 rounded font-bold">
-                                  {batches.reduce((a,b)=>a+b.quantity_current,0)} Und
-                               </span>
-                            </div>
-                            
-                            <div className="space-y-2 mt-2 flex-1">
-                               {batches.map(batch => {
-                                  const daysLeft = Math.ceil((new Date(batch.expiration_date).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-                                  const isExpiring = daysLeft < 30;
-                                  return (
-                                     <div key={batch.id} className={`text-xs p-2 rounded border flex justify-between items-center ${isExpiring ? 'bg-red-50 border-red-200' : 'bg-slate-50 border-slate-100'}`}>
-                                        <div>
-                                           <div className="font-bold text-slate-700">Lote: {batch.code}</div>
-                                           <div className={`text-[10px] ${isExpiring ? 'text-red-600 font-bold' : 'text-slate-500'}`}>
-                                              Vence: {batch.expiration_date} ({daysLeft} dÃ­as)
+                               
+                               <div className="p-4 space-y-3 flex-1 bg-slate-50 overflow-y-auto max-h-[300px]">
+                                  {batches.map(batch => {
+                                     const expDate = batch.expiration_date ? new Date(batch.expiration_date) : null;
+                                     const daysLeft = expDate ? Math.ceil((expDate.getTime() - new Date().getTime()) / (1000 * 3600 * 24)) : 999;
+                                     const isExpiring = daysLeft < 45; // Alerta amarilla/roja a los 45 dias
+                                     const isCritical = daysLeft < 15;
+
+                                     return (
+                                        <div key={batch.id} className={`p-3 rounded-xl border-2 transition-colors flex justify-between items-center ${isCritical ? 'bg-red-50 border-red-200 shadow-sm' : isExpiring ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-200'}`}>
+                                           <div>
+                                              <div className="font-black text-slate-800 flex items-center text-sm">
+                                                 <Hash className="w-3 h-3 mr-1 text-slate-400"/> {batch.code}
+                                              </div>
+                                              {batch.expiration_date ? (
+                                                 <div className={`text-[10px] mt-1 font-bold flex items-center ${isCritical ? 'text-red-600' : isExpiring ? 'text-orange-600' : 'text-slate-500'}`}>
+                                                    <Calendar className="w-3 h-3 mr-1"/> Vence: {batch.expiration_date} ({daysLeft}d)
+                                                 </div>
+                                              ) : (
+                                                 <div className="text-[10px] mt-1 font-bold text-slate-400 flex items-center"><Calendar className="w-3 h-3 mr-1"/> Sin Vencimiento</div>
+                                              )}
+                                           </div>
+                                           <div className="text-right flex flex-col items-end">
+                                              <div className="font-black text-xl text-slate-900">{batch.quantity_current}</div>
+                                              <div className="text-[9px] text-slate-400 font-bold mb-2">Ingresó: {batch.quantity_initial}</div>
+                                              {filterWarehouse === 'CENTRAL' && (
+                                                 <button onClick={() => handleTransferMermas(product.id, batch.id, batch.quantity_current)} title="Mover a Cuarentena/Mermas" className="text-[9px] bg-red-100 hover:bg-red-600 text-red-700 hover:text-white px-2 py-1 rounded-md font-black transition-all border border-red-200 uppercase tracking-widest shadow-sm active:scale-95">
+                                                    A Mermas
+                                                 </button>
+                                              )}
                                            </div>
                                         </div>
-                                        <div className="text-right flex flex-col items-end gap-1">
-                                           <div className="font-bold text-slate-900">{batch.quantity_current} Und</div>
-                                           <div className="text-[9px] text-slate-400">Ini: {batch.quantity_initial}</div>
-                                           {filterWarehouse === 'CENTRAL' && (
-                                              <button onClick={() => handleTransferMermas(product.id, batch.id, batch.quantity_current)} title="Mover a mermas" className="mt-1 text-[9px] bg-red-100 hover:bg-red-200 text-red-700 px-2 py-0.5 rounded font-bold transition-colors">
-                                                 A Mermas
-                                              </button>
-                                           )}
-                                        </div>
-                                     </div>
-                                  );
-                               })}
+                                     );
+                                  })}
+                               </div>
                             </div>
-                         </div>
-                      );
-                   })}
-                </div>
+                         );
+                      })}
+                   </div>
+                )}
              </div>
           )}
 
           {/* TAB: ANALYTICS */}
           {activeTab === 'ANALYTICS' && (
-             <div className="flex-1 overflow-auto p-6 animate-fade-in-up">
-                <div className="grid grid-cols-3 gap-6 mb-8">
-                   <div className="bg-slate-800 text-white p-6 rounded-lg shadow-lg">
-                      <p className="text-slate-400 text-xs font-bold uppercase mb-1">ValorizaciÃ³n Total Inventario</p>
-                      <h3 className="text-3xl font-bold">S/ {analyticsData.totalValuation.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</h3>
+             <div className="flex-1 overflow-auto p-8 bg-slate-50 animate-fade-in-up">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                   <div className="bg-slate-900 text-white p-8 rounded-2xl shadow-xl relative overflow-hidden border border-slate-800">
+                      <div className="absolute top-0 right-0 p-4 opacity-10"><DollarSign className="w-24 h-24" /></div>
+                      <p className="text-slate-400 text-xs font-black uppercase tracking-widest mb-2">Valorización de Almacén Central</p>
+                      <h3 className="text-4xl font-black tracking-tighter">S/ {analyticsData.totalValuation.toLocaleString('es-PE', { minimumFractionDigits: 2 })}</h3>
                    </div>
-                   <div className="bg-white p-6 rounded-lg shadow border border-slate-200">
-                      <p className="text-slate-500 text-xs font-bold uppercase mb-1">Productos Activos</p>
-                      <h3 className="text-3xl font-bold text-slate-800">{inventorySnapshot.length}</h3>
+                   <div className="bg-white p-8 rounded-2xl shadow-sm border-2 border-slate-200">
+                      <p className="text-slate-500 text-xs font-black uppercase tracking-widest mb-2">Productos Activos en Catálogo</p>
+                      <h3 className="text-4xl font-black text-blue-600 tracking-tighter">{inventorySnapshot.length}</h3>
                    </div>
-                   <div className="bg-white p-6 rounded-lg shadow border border-slate-200">
-                      <p className="text-slate-500 text-xs font-bold uppercase mb-1">Productos Bajo Stock</p>
-                      <h3 className="text-3xl font-bold text-red-600">{inventorySnapshot.filter(p => p.totalStock <= p.min_stock).length}</h3>
+                   <div className="bg-white p-8 rounded-2xl shadow-sm border-2 border-red-100">
+                      <p className="text-red-500 text-xs font-black uppercase tracking-widest mb-2">Productos Críticos (Bajo Stock)</p>
+                      <h3 className="text-4xl font-black text-red-600 tracking-tighter">{inventorySnapshot.filter(p => p.totalStock <= p.min_stock).length}</h3>
                    </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-8 h-80">
-                   <div className="bg-white p-4 rounded-lg shadow border border-slate-200 flex flex-col">
-                      <h4 className="font-bold text-slate-700 mb-4 text-center">InversiÃ³n por CategorÃ­a</h4>
-                      <ResponsiveContainer width="100%" height="100%">
-                         <PieChart>
-                            <Pie data={analyticsData.catChart} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                               {analyticsData.catChart.map((entry, index) => (
-                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                               ))}
-                            </Pie>
-                            <Tooltip formatter={(value: number) => `S/ ${value.toLocaleString()}`} />
-                            <Legend />
-                         </PieChart>
-                      </ResponsiveContainer>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-96">
+                   <div className="bg-white p-6 rounded-2xl shadow-sm border-2 border-slate-200 flex flex-col">
+                      <h4 className="font-black text-slate-800 mb-6 text-center uppercase tracking-wider text-sm">Distribución de Capital por Categoría</h4>
+                      <div className="flex-1">
+                         <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                               <Pie data={analyticsData.catChart} cx="50%" cy="50%" innerRadius={80} outerRadius={110} paddingAngle={5} dataKey="value">
+                                  {analyticsData.catChart.map((entry, index) => (
+                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                               </Pie>
+                               <Tooltip formatter={(value: number) => `S/ ${value.toLocaleString()}`} />
+                               <Legend />
+                            </PieChart>
+                         </ResponsiveContainer>
+                      </div>
                    </div>
 
-                   <div className="bg-white p-4 rounded-lg shadow border border-slate-200 flex flex-col">
-                      <h4 className="font-bold text-slate-700 mb-4 text-center">Top Proveedores (Valor Stock)</h4>
-                      <ResponsiveContainer width="100%" height="100%">
-                         <BarChart data={analyticsData.supChart} layout="vertical">
-                            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                            <XAxis type="number" hide />
-                            <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 10}} />
-                            <Tooltip formatter={(value: number) => `S/ ${value.toLocaleString()}`} cursor={{fill: 'transparent'}} />
-                            <Bar dataKey="value" fill="#8884d8" radius={[0, 4, 4, 0]}>
-                               {analyticsData.supChart.map((entry, index) => (
-                                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                               ))}
-                            </Bar>
-                         </BarChart>
-                      </ResponsiveContainer>
+                   <div className="bg-white p-6 rounded-2xl shadow-sm border-2 border-slate-200 flex flex-col">
+                      <h4 className="font-black text-slate-800 mb-6 text-center uppercase tracking-wider text-sm">Top Inversión por Proveedor</h4>
+                      <div className="flex-1">
+                         <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={analyticsData.supChart} layout="vertical" margin={{top: 5, right: 30, left: 20, bottom: 5}}>
+                               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+                               <XAxis type="number" hide />
+                               <YAxis dataKey="name" type="category" width={120} tick={{fontSize: 10, fill: '#475569', fontWeight: 'bold'}} />
+                               <Tooltip formatter={(value: number) => `S/ ${value.toLocaleString()}`} cursor={{fill: '#f1f5f9'}} />
+                               <Bar dataKey="value" fill="#3b82f6" radius={[0, 6, 6, 0]}>
+                                  {analyticsData.supChart.map((entry, index) => (
+                                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                  ))}
+                               </Bar>
+                            </BarChart>
+                         </ResponsiveContainer>
+                      </div>
                    </div>
                 </div>
              </div>
@@ -619,4 +629,3 @@ export const Kardex: React.FC = () => {
     </div>
   );
 };
-
