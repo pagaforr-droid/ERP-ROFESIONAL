@@ -66,7 +66,7 @@ export const PriceManager: React.FC = () => {
   const [selectedSupplier, setSelectedSupplier] = useState('ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [targetMargin, setTargetMargin] = useState<number>(30);
+  const [targetMargin, setTargetMargin] = useState<number>(30); // Default 30%
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
@@ -214,11 +214,10 @@ export const PriceManager: React.FC = () => {
      else if (operationMode === 'INCREASE') finalFactor = 1 + (percentageValue / 100);
 
      try {
-        // Payload estricto (solo las columnas matemáticas que importan)
+        // CORRECCIÓN EXACTA: Quitamos is_active y type, solo pasamos lo que existe en DB.
         const payload: any = {
            name: editingList.name.toUpperCase(),
-           factor: Number(finalFactor.toFixed(4)),
-           is_active: true
+           factor: Number(finalFactor.toFixed(4))
         };
         
         if (USE_MOCK_DB) {
@@ -294,13 +293,12 @@ export const PriceManager: React.FC = () => {
            });
         } else {
            const updatePromises = Object.entries(pendingAssignments).map(([sellerId, listId]) => {
-              // BLINDAJE UUID: Evitar strings vacíos
               const cleanListId = (listId === '' || !listId) ? null : listId;
               return supabase.from('sellers').update({ price_list_id: cleanListId }).eq('id', sellerId);
            });
            
            await Promise.all(updatePromises);
-           await fetchData(); // Recargar matriz fresca
+           await fetchData(); 
         }
         
         setPendingAssignments({});
