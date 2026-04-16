@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../services/store';
-import { Combo, Product } from '../../types';
+import { Combo, Product, Supplier } from '../../types';
 import { Save, X, Search, Trash2, Image as ImageIcon, Plus, MapPin, Package } from 'lucide-react';
 import { PERU_CITIES } from '../../utils/promoUtils';
+import { supabase, USE_MOCK_DB } from '../../services/supabase';
 
 interface ComboFormProps {
     initialData?: Partial<Combo> | null;
@@ -11,8 +12,37 @@ interface ComboFormProps {
 }
 
 export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSave }) => {
-    const { products, sellers } = useStore();
+    const store = useStore();
+    const [dbProducts, setDbProducts] = useState<Product[]>([]);
+    const [dbSuppliers, setDbSuppliers] = useState<Supplier[]>([]);
+    const [dbSellers, setDbSellers] = useState<any[]>([]);
+
+    useEffect(() => {
+        const fetchMasterData = async () => {
+            if (!USE_MOCK_DB) {
+                try {
+                    const [pRes, sRes, slRes] = await Promise.all([
+                        supabase.from('products').select('*').eq('is_active', true).order('name'),
+                        supabase.from('suppliers').select('*').order('name'),
+                        supabase.from('sellers').select('*').order('name')
+                    ]);
+                    if (pRes.data) setDbProducts(pRes.data as Product[]);
+                    if (sRes.data) setDbSuppliers(sRes.data as Supplier[]);
+                    if (slRes.data) setDbSellers(slRes.data as any[]);
+                } catch (error) {
+                    console.error("Error fetching data for ComboForm:", error);
+                }
+            }
+        };
+        fetchMasterData();
+    }, []);
+
+    const products = USE_MOCK_DB ? store.products : dbProducts;
+    const suppliers = USE_MOCK_DB ? store.suppliers : dbSuppliers;
+    const sellers = USE_MOCK_DB ? store.sellers : dbSellers;
+
     const [formData, setFormData] = useState<Partial<Combo>>({
+        id: initialData?.id || crypto.randomUUID(),
         name: '', description: '', price: 0, items: [],
         start_date: new Date().toISOString().split('T')[0],
         end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
@@ -27,31 +57,21 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
     const [categoryFilter, setCategoryFilter] = useState('');
     const [supplierFilter, setSupplierFilter] = useState('');
 
-    // Extraer categorías únicas para el filtro
-    const categories = useMemo(() => {
-        const cats = products.map(p => p.category).filter(Boolean);
-        return Array.from(new Set(cats));
-    }, [products]);
+    const categories = useMemo(() => Array.from(new Set((products || []).map(p => p?.category).filter(Boolean))), [products]);
+    const brands = useMemo(() => Array.from(new Set((products || []).map(p => p?.brand).filter(Boolean))), [products]);
 
-    // Extraer marcas/proveedores únicos
-    const brands = useMemo(() => {
-        const brs = products.map(p => p.brand).filter(Boolean);
-        return Array.from(new Set(brs));
-    }, [products]);
-
-    // Filtered Products for efficient rendering
     const filteredProducts = useMemo(() => {
-        return products.filter(p => {
-            const matchesSearch = p.name.toLowerCase().includes(prodSearch.toLowerCase()) || p.sku.toLowerCase().includes(prodSearch.toLowerCase());
-            const matchesCategory = categoryFilter ? p.category === categoryFilter : true;
-            const matchesSupplier = supplierFilter ? p.brand === supplierFilter : true;
+        return (products || []).filter(p => {
+            const matchesSearch = (p?.name || '').toLowerCase().includes(prodSearch.toLowerCase()) || (p?.sku || '').toLowerCase().includes(prodSearch.toLowerCase());
+            const matchesCategory = categoryFilter ? p?.category === categoryFilter : true;
+            const matchesSupplier = supplierFilter ? p?.brand === supplierFilter : true;
             return matchesSearch && matchesCategory && matchesSupplier;
-        }).slice(0, 30); // Limit
+        }).slice(0, 30);
     }, [products, prodSearch, categoryFilter, supplierFilter]);
 
     useEffect(() => {
         if (initialData) {
-            setFormData({ ...formData, ...initialData });
+            setFormData(prev => ({ ...prev, ...initialData }));
         }
     }, [initialData]);
 
@@ -60,7 +80,7 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
         if (!formData.name) { alert('Ingrese el nombre del combo'); return; }
         if (formData.price === undefined || formData.price < 0) { alert('Ingrese un precio válido para el combo'); return; }
         if ((formData.items?.length || 0) === 0) { alert('Agregue al menos un producto al combo'); return; }
-        onSave({ ...formData, id: formData.id || crypto.randomUUID() } as Combo);
+        onSave(formData as Combo);
     };
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234,7 +254,7 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
                                             </div>
                                             {sellers.map(s => (
                                                 <label key={s.id} className="flex items-center p-1 hover:bg-fuchsia-100 rounded cursor-pointer text-fuchsia-900">
-                                                    <input type="checkbox" className="mr-2 rounded text-fuchsia-600 focus:ring-fuchsia-500" checked={formData.allowed_seller_ids?.includes(s.id)} onChange={() => toggleSeller(s.id)} />
+                                                    <input type="checkbox" className="mr-2 rounded border-fuchsia-300 text-fuchsia-600 focus:ring-fuchsia-500" checked={formData.allowed_seller_ids?.includes(s.id)} onChange={() => toggleSeller(s.id)} />
                                                     {s.name}
                                                 </label>
                                             ))}
@@ -290,7 +310,7 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
                                                             <div className="font-bold text-slate-700 truncate">{p.name}</div>
                                                             <div className="text-[10px] text-slate-500">{p.sku} | {p.brand} | {p.category}</div>
                                                         </div>
-                                                        <div className="font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">S/ {p.price_unit.toFixed(2)}</div>
+                                                        <div className="font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded">S/ {(p.price_unit || 0).toFixed(2)}</div>
                                                         <div className="opacity-0 group-hover:opacity-100 ml-2 text-purple-600 bg-purple-100 p-1 rounded-full"><Plus className="w-3 h-3" /></div>
                                                     </div>
                                                 ))}
