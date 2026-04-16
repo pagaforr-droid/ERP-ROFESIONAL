@@ -56,57 +56,84 @@ export const PromoManager: React.FC = () => {
    const autoPromotions = USE_MOCK_DB ? store.autoPromotions : dbAutoPromos;
 
    // --- HANDLERS (SUPABASE INYECTADO) ---
+  // --- HANDLERS (SUPABASE INYECTADO Y BLINDADO) ---
    const handleSavePromo = async (promo: Promotion) => {
       if (USE_MOCK_DB) {
          if (editingPromo?.id) store.updatePromotion(promo);
          else store.addPromotion(promo);
+         closeEditor();
       } else {
          try {
+            const payload = { ...promo };
+            if (!payload.id) delete payload.id; // Supabase generará el UUID
+
             if (editingPromo?.id) {
-               await supabase.from('promotions').update(promo).eq('id', promo.id);
+               const { error } = await supabase.from('promotions').update(payload).eq('id', editingPromo.id);
+               if (error) throw error;
             } else {
-               await supabase.from('promotions').insert([promo]);
+               const { data, error } = await supabase.from('promotions').insert([payload]).select();
+               if (error) throw error;
+               if (!data || data.length === 0) throw new Error("Bloqueo de seguridad (RLS). No se guardó en Supabase.");
             }
             fetchPromoData();
-         } catch (err: any) { alert("Error DB: " + err.message); }
+            closeEditor();
+         } catch (err: any) { alert("Error DB Promoción: " + err.message); }
       }
-      closeEditor();
    };
 
    const handleSaveCombo = async (combo: Combo) => {
       if (USE_MOCK_DB) {
          if (editingCombo?.id) store.updateCombo(combo);
          else store.addCombo(combo);
+         closeEditor();
       } else {
          try {
+            const payload = { ...combo };
+            if (!payload.id) delete payload.id;
+
             if (editingCombo?.id) {
-               await supabase.from('combos').update(combo).eq('id', combo.id);
+               const { error } = await supabase.from('combos').update(payload).eq('id', editingCombo.id);
+               if (error) throw error;
             } else {
-               await supabase.from('combos').insert([combo]);
+               const { data, error } = await supabase.from('combos').insert([payload]).select();
+               if (error) throw error;
+               if (!data || data.length === 0) throw new Error("Bloqueo de seguridad (RLS). No se guardó en Supabase.");
             }
             fetchPromoData();
-         } catch (err: any) { alert("Error DB: " + err.message); }
+            closeEditor();
+         } catch (err: any) { alert("Error DB Combo: " + err.message); }
       }
-      closeEditor();
    };
 
    const handleSaveAutoPromo = async (ap: AutoPromotion) => {
       if (USE_MOCK_DB) {
          if (editingAutoPromo?.id) store.updateAutoPromotion(ap);
          else store.addAutoPromotion(ap);
+         closeEditor();
       } else {
          try {
+            // BLINDAJE DE UUIDs: Supabase rechaza los strings vacíos en columnas UUID
+            const payload: any = { ...ap };
+            if (!payload.id) delete payload.id;
+            if (payload.condition_product_id === '') payload.condition_product_id = null;
+            if (payload.condition_supplier_id === '') payload.condition_supplier_id = null;
+            if (payload.reward_product_id === '') payload.reward_product_id = null;
+
             if (editingAutoPromo?.id) {
-               await supabase.from('auto_promotions').update(ap).eq('id', ap.id);
+               const { error } = await supabase.from('auto_promotions').update(payload).eq('id', editingAutoPromo.id);
+               if (error) throw error;
             } else {
-               await supabase.from('auto_promotions').insert([ap]);
+               const { data, error } = await supabase.from('auto_promotions').insert([payload]).select();
+               if (error) throw error;
+               if (!data || data.length === 0) throw new Error("Bloqueo de seguridad (RLS) en la tabla auto_promotions.");
             }
             fetchPromoData();
-         } catch (err: any) { alert("Error DB: " + err.message); }
+            closeEditor();
+         } catch (err: any) { 
+            alert("Error DB Bonificación: " + err.message); 
+         }
       }
-      closeEditor();
    };
-
    const closeEditor = () => {
       setEditingPromo(null);
       setEditingCombo(null);
