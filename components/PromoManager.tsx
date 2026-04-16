@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Promotion, Combo, AutoPromotion } from '../types';
-import { Tag, Package, Plus, Search, Gift, Edit, Trash2, Zap, BarChart3, RefreshCw } from 'lucide-react';
+import { Tag, Package, Plus, Search, Gift, Edit, Trash2, Zap, BarChart3, RefreshCw, Calendar } from 'lucide-react';
 import { PromoForm } from './promo/PromoForm';
 import { ComboForm } from './promo/ComboForm';
 import { AutoPromoForm } from './promo/AutoPromoForm';
@@ -55,8 +55,7 @@ export const PromoManager: React.FC = () => {
    const combos = USE_MOCK_DB ? store.combos : dbCombos;
    const autoPromotions = USE_MOCK_DB ? store.autoPromotions : dbAutoPromos;
 
-   // --- HANDLERS (SUPABASE INYECTADO) ---
-  // --- HANDLERS (SUPABASE INYECTADO Y BLINDADO) ---
+   // --- HANDLERS (SUPABASE INYECTADO Y BLINDADO) ---
    const handleSavePromo = async (promo: Promotion) => {
       if (USE_MOCK_DB) {
          if (editingPromo?.id) store.updatePromotion(promo);
@@ -105,7 +104,7 @@ export const PromoManager: React.FC = () => {
       }
    };
 
- const handleSaveAutoPromo = async (ap: AutoPromotion) => {
+   const handleSaveAutoPromo = async (ap: AutoPromotion) => {
       if (USE_MOCK_DB) {
          if (editingAutoPromo?.id) store.updateAutoPromotion(ap);
          else store.addAutoPromotion(ap);
@@ -152,6 +151,7 @@ export const PromoManager: React.FC = () => {
          }
       }
    };
+
    const closeEditor = () => {
       setEditingPromo(null);
       setEditingCombo(null);
