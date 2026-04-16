@@ -105,19 +105,26 @@ export const PromoManager: React.FC = () => {
       }
    };
 
-   const handleSaveAutoPromo = async (ap: AutoPromotion) => {
+  const handleSaveAutoPromo = async (ap: AutoPromotion) => {
       if (USE_MOCK_DB) {
          if (editingAutoPromo?.id) store.updateAutoPromotion(ap);
          else store.addAutoPromotion(ap);
          closeEditor();
       } else {
          try {
-            // BLINDAJE DE UUIDs: Supabase rechaza los strings vacíos en columnas UUID
+            // BLINDAJE DE UUIDs y NUMÉRICOS: 
+            // Supabase rechaza strings vacíos en UUIDs y nulos en columnas NOT NULL
             const payload: any = { ...ap };
             if (!payload.id) delete payload.id;
+            
+            // Limpieza de UUIDs (convertir string vacío a null)
             if (payload.condition_product_id === '') payload.condition_product_id = null;
             if (payload.condition_supplier_id === '') payload.condition_supplier_id = null;
             if (payload.reward_product_id === '') payload.reward_product_id = null;
+
+            // Blindaje Numérico (Garantizar que nunca viajen como null o undefined)
+            payload.condition_amount = Number(payload.condition_amount) || 0;
+            payload.reward_quantity = Number(payload.reward_quantity) || 0;
 
             if (editingAutoPromo?.id) {
                const { error } = await supabase.from('auto_promotions').update(payload).eq('id', editingAutoPromo.id);
