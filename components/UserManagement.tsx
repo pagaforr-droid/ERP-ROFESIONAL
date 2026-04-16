@@ -1,8 +1,7 @@
-
-import React, { useState } from 'react';
-import { useStore } from '../services/store';
-import { User, ViewState } from '../types';
-import { Users, Shield, Edit, Save, Plus, Search, UserCheck, Lock, CheckSquare, Square, Camera } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../services/supabase';
+import { User } from '../types';
+import { Users, Shield, Edit, Save, Plus, Search, UserCheck, CheckSquare, Camera, RefreshCw } from 'lucide-react';
 
 // Configuration for permission groups
 const PERMISSION_GROUPS = [
@@ -34,6 +33,10 @@ const PERMISSION_GROUPS = [
       permissions: [
          { key: 'cash-flow', label: 'Flujo de Caja' },
          { key: 'reports', label: 'Reportes Gerenciales' },
+         { key: 'accounting-reports', label: 'Reportes Contables' },
+         { key: 'collection-consolidation', label: 'Cobranzas' },
+         { key: 'credit-notes', label: 'Notas de Crédito' },
+         { key: 'sunat-manager', label: 'Facturación SUNAT' },
          { key: 'purchases', label: 'Compras' },
          { key: 'company-settings', label: 'Configuración Global' },
       ]
@@ -42,6 +45,7 @@ const PERMISSION_GROUPS = [
       name: 'Gestión RRHH & Terceros',
       permissions: [
          { key: 'users', label: 'Usuarios & Accesos' },
+         { key: 'quota-manager', label: 'Gestión de Cuotas' },
          { key: 'personnel-management', label: 'Planilla y Personal' },
          { key: 'attendance', label: 'Asistencia' },
          { key: 'clients', label: 'Clientes' },
@@ -51,23 +55,24 @@ const PERMISSION_GROUPS = [
    }
 ];
 
-// Presets based on roles
 const ROLE_PRESETS: Record<string, string[]> = {
-   'ADMIN': PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key)), // All
+   'ADMIN': PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key)),
    'SELLER': ['sales', 'advanced-orders', 'mobile-orders', 'clients', 'products', 'inventory'],
    'WAREHOUSE': ['inventory', 'kardex', 'products', 'dispatch', 'warehouses'],
    'LOGISTICS': ['dispatch', 'dispatch-liquidation', 'logistics', 'territory']
 };
 
 export const UserManagement: React.FC = () => {
-   const { users, addUser, updateUser } = useStore();
+   const [dbUsers, setDbUsers] = useState<any[]>([]);
+   const [isLoading, setIsLoading] = useState(false);
+   const [isSaving, setIsSaving] = useState(false);
+   
    const [isModalOpen, setIsModalOpen] = useState(false);
    const [searchTerm, setSearchTerm] = useState('');
    const [activeTab, setActiveTab] = useState<'PROFILE' | 'PERMISSIONS'>('PROFILE');
 
    const initialForm: Partial<User> = {
       username: '',
-      password: '',
       name: '',
       role: 'SELLER',
       requires_attendance: false,
@@ -77,9 +82,26 @@ export const UserManagement: React.FC = () => {
 
    const [formData, setFormData] = useState<Partial<User>>(initialForm);
 
-   const filteredUsers = users.filter(u =>
-      u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.username.toLowerCase().includes(searchTerm.toLowerCase())
+   // --- SUPABASE FETCH ---
+   useEffect(() => {
+      fetchUsers();
+   }, []);
+
+   const fetchUsers = async () => {
+      setIsLoading(true);
+      const { data, error } = await supabase
+         .from('erp_users')
+         .select('*')
+         .order('name', { ascending: true });
+         
+      if (data) setDbUsers(data);
+      if (error) console.error("Error cargando usuarios:", error);
+      setIsLoading(false);
+   };
+
+   const filteredUsers = dbUsers.filter(u =>
+      (u.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (u.username?.toLowerCase() || '').includes(searchTerm.toLowerCase())
    );
 
    const handleEdit = (user: User) => {
@@ -94,23 +116,53 @@ export const UserManagement: React.FC = () => {
       setIsModalOpen(true);
    };
 
-   const handleSubmit = (e: React.FormEvent) => {
+   // --- SUPABASE SAVE / UPDATE ---
+   const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!formData.username || !formData.name || !formData.password) {
+      if (!formData.username || !formData.name) {
          alert("Complete los campos obligatorios");
          return;
       }
 
-      if (formData.id) {
-         updateUser(formData as User);
-      } else {
-         addUser({ ...formData, id: crypto.randomUUID() } as User);
+      setIsSaving(true);
+
+      try {
+         const payload = {
+            name: formData.name,
+            username: formData.username,
+            role: formData.role,
+            permissions: formData.permissions,
+            is_active: formData.is_active,
+            requires_attendance: formData.requires_attendance,
+            avatar_url: formData.avatar_url
+         };
+
+         if (formData.id) {
+            // Actualizar usuario existente
+            const { error } = await supabase
+               .from('erp_users')
+               .update(payload)
+               .eq('id', formData.id);
+            if (error) throw error;
+         } else {
+            // Crear nuevo usuario (Solo Perfil DB)
+            const { error } = await supabase
+               .from('erp_users')
+               .insert([payload]);
+            if (error) throw error;
+            alert("Perfil creado en Supabase.\n\nIMPORTANTE: Para que este usuario pueda iniciar sesión, debes ir a Supabase -> Authentication, crearle una cuenta con este mismo correo y pegar su 'Auth ID' en la tabla erp_users.");
+         }
+
+         await fetchUsers(); // Recargar la tabla con los datos frescos
+         setIsModalOpen(false);
+      } catch (error: any) {
+         alert("Error al guardar en Supabase: " + error.message);
+      } finally {
+         setIsSaving(false);
       }
-      setIsModalOpen(false);
    };
 
    const handleRoleChange = (role: string) => {
-      // Auto-apply preset permissions when role changes
       const permissions = ROLE_PRESETS[role] || [];
       setFormData({ ...formData, role: role as any, permissions });
    };
@@ -129,10 +181,8 @@ export const UserManagement: React.FC = () => {
       const allSelected = groupKeys.every(k => current.includes(k));
 
       if (allSelected) {
-         // Deselect all in group
          setFormData({ ...formData, permissions: current.filter(p => !groupKeys.includes(p)) });
       } else {
-         // Select all in group
          const newPerms = new Set([...current, ...groupKeys]);
          setFormData({ ...formData, permissions: Array.from(newPerms) });
       }
@@ -144,14 +194,14 @@ export const UserManagement: React.FC = () => {
          case 'SELLER': return <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded font-bold border border-blue-200">VENDEDOR</span>;
          case 'WAREHOUSE': return <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded font-bold border border-orange-200">ALMACÉN</span>;
          case 'LOGISTICS': return <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded font-bold border border-gray-200">LOGÍSTICA</span>;
-         default: return role;
+         default: return <span className="bg-slate-100 text-slate-800 text-xs px-2 py-1 rounded font-bold border border-slate-200">{role}</span>;
       }
    };
 
    const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
-         if (file.size > 1024 * 1024) { // Limit to 1MB
+         if (file.size > 1024 * 1024) { 
             alert("La imagen es muy grande. Máximo 1MB.");
             return;
          }
@@ -169,9 +219,14 @@ export const UserManagement: React.FC = () => {
             <h2 className="text-xl font-bold text-slate-800 flex items-center">
                <Shield className="mr-2 h-6 w-6 text-slate-600" /> Gestión de Usuarios y Permisos
             </h2>
-            <button onClick={handleNew} className="bg-slate-900 text-white px-4 py-2 rounded flex items-center shadow hover:bg-slate-800">
-               <Plus className="w-4 h-4 mr-2" /> Nuevo Usuario
-            </button>
+            <div className="flex gap-2">
+               <button onClick={fetchUsers} className="bg-white text-slate-600 border border-slate-300 px-4 py-2 rounded flex items-center shadow-sm hover:bg-slate-50 transition-colors">
+                  <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+               </button>
+               <button onClick={handleNew} className="bg-slate-900 text-white px-4 py-2 rounded flex items-center shadow hover:bg-slate-800 transition-colors">
+                  <Plus className="w-4 h-4 mr-2" /> Nuevo Usuario
+               </button>
+            </div>
          </div>
 
          {/* Search Bar */}
@@ -188,58 +243,66 @@ export const UserManagement: React.FC = () => {
          </div>
 
          {/* User Table */}
-         <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-            <table className="w-full text-left text-sm">
-               <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0">
-                  <tr>
-                     <th className="p-4">Usuario</th>
-                     <th className="p-4">Nombre Completo</th>
-                     <th className="p-4">Rol Principal</th>
-                     <th className="p-4 text-center">Acceso Áreas</th>
-                     <th className="p-4 text-center">Control Asistencia</th>
-                     <th className="p-4 text-center">Estado</th>
-                     <th className="p-4 text-right">Acciones</th>
-                  </tr>
-               </thead>
-               <tbody className="divide-y divide-slate-100">
-                  {filteredUsers.map(user => (
-                     <tr key={user.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="p-4 flex items-center gap-3">
-                           {user.avatar_url ? (
-                              <img src={user.avatar_url} alt={user.name} className="w-8 h-8 rounded-full border border-slate-300 object-cover" />
-                           ) : (
-                              <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-xs border border-slate-300">
-                                 {user.name.charAt(0)}
-                              </div>
-                           )}
-                           <span className="font-mono font-bold text-slate-700">{user.username}</span>
-                        </td>
-                        <td className="p-4 font-medium">{user.name}</td>
-                        <td className="p-4">{getRoleBadge(user.role)}</td>
-                        <td className="p-4 text-center">
-                           <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold border border-slate-200">
-                              {user.permissions?.length || 0} módulos
-                           </span>
-                        </td>
-                        <td className="p-4 text-center">
-                           {user.requires_attendance ? (
-                              <span className="text-green-600 flex justify-center items-center font-bold text-xs"><UserCheck className="w-4 h-4 mr-1" /> SÍ</span>
-                           ) : (
-                              <span className="text-slate-400 text-xs">NO</span>
-                           )}
-                        </td>
-                        <td className="p-4 text-center">
-                           {user.is_active ? <span className="text-green-600 font-bold text-xs">ACTIVO</span> : <span className="text-red-500 font-bold text-xs">INACTIVO</span>}
-                        </td>
-                        <td className="p-4 text-right">
-                           <button onClick={() => handleEdit(user)} className="text-blue-600 hover:text-blue-800 font-bold flex items-center justify-end w-full">
-                              <Edit className="w-4 h-4 mr-1" /> Editar
-                           </button>
-                        </td>
+         <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+            <div className="overflow-y-auto flex-1">
+               <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10 shadow-sm">
+                     <tr>
+                        <th className="p-4">Usuario</th>
+                        <th className="p-4">Nombre Completo</th>
+                        <th className="p-4">Rol Principal</th>
+                        <th className="p-4 text-center">Acceso Áreas</th>
+                        <th className="p-4 text-center">Control Asistencia</th>
+                        <th className="p-4 text-center">Estado</th>
+                        <th className="p-4 text-right">Acciones</th>
                      </tr>
-                  ))}
-               </tbody>
-            </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                     {isLoading && dbUsers.length === 0 ? (
+                        <tr><td colSpan={7} className="p-8 text-center text-slate-500">Cargando usuarios desde Supabase...</td></tr>
+                     ) : filteredUsers.length === 0 ? (
+                        <tr><td colSpan={7} className="p-8 text-center text-slate-500">No se encontraron usuarios.</td></tr>
+                     ) : (
+                        filteredUsers.map(user => (
+                           <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="p-4 flex items-center gap-3">
+                                 {user.avatar_url ? (
+                                    <img src={user.avatar_url} alt={user.name} className="w-8 h-8 rounded-full border border-slate-300 object-cover" />
+                                 ) : (
+                                    <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-xs border border-slate-300">
+                                       {(user.name || '?').charAt(0).toUpperCase()}
+                                    </div>
+                                 )}
+                                 <span className="font-mono font-bold text-slate-700">{user.username}</span>
+                              </td>
+                              <td className="p-4 font-medium">{user.name}</td>
+                              <td className="p-4">{getRoleBadge(user.role)}</td>
+                              <td className="p-4 text-center">
+                                 <span className="bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold border border-slate-200">
+                                    {user.permissions?.length || 0} módulos
+                                 </span>
+                              </td>
+                              <td className="p-4 text-center">
+                                 {user.requires_attendance ? (
+                                    <span className="text-green-600 flex justify-center items-center font-bold text-xs"><UserCheck className="w-4 h-4 mr-1" /> SÍ</span>
+                                 ) : (
+                                    <span className="text-slate-400 text-xs">NO</span>
+                                 )}
+                              </td>
+                              <td className="p-4 text-center">
+                                 {user.is_active ? <span className="text-green-600 font-bold text-xs">ACTIVO</span> : <span className="text-red-500 font-bold text-xs">INACTIVO</span>}
+                              </td>
+                              <td className="p-4 text-right">
+                                 <button onClick={() => handleEdit(user)} className="text-blue-600 hover:text-blue-800 font-bold flex items-center justify-end w-full">
+                                    <Edit className="w-4 h-4 mr-1" /> Editar
+                                 </button>
+                              </td>
+                           </tr>
+                        ))
+                     )}
+                  </tbody>
+               </table>
+            </div>
          </div>
 
          {/* --- USER EDIT MODAL --- */}
@@ -249,9 +312,11 @@ export const UserManagement: React.FC = () => {
                   {/* Header */}
                   <div className="bg-slate-900 p-4 text-white flex justify-between items-center">
                      <h3 className="font-bold text-lg flex items-center">
-                        <UserCheck className="mr-2" /> {formData.id ? 'Editar Usuario & Permisos' : 'Crear Usuario'}
+                        <UserCheck className="mr-2" /> {formData.id ? 'Editar Usuario & Permisos' : 'Crear Usuario DB'}
                      </h3>
-                     <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-white"><span className="text-2xl">&times;</span></button>
+                     <button onClick={() => !isSaving && setIsModalOpen(false)} className="text-slate-400 hover:text-white disabled:opacity-50" disabled={isSaving}>
+                        <span className="text-2xl">&times;</span>
+                     </button>
                   </div>
 
                   {/* Tabs */}
@@ -271,13 +336,13 @@ export const UserManagement: React.FC = () => {
                   </div>
 
                   {/* Content */}
-                  <form onSubmit={handleSubmit} className="flex-1 overflow-auto bg-white">
+                  <form id="user-form" onSubmit={handleSubmit} className="flex-1 overflow-auto bg-white">
                      {activeTab === 'PROFILE' && (
                         <div className="p-8 space-y-6">
                            <div className="grid grid-cols-2 gap-6">
                               <div>
                                  <label className="block text-xs font-bold text-slate-600 mb-1">Nombre Completo</label>
-                                 <input required className="w-full border border-slate-300 p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                                 <input required className="w-full border border-slate-300 p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} />
                               </div>
                               <div>
                                  <label className="block text-xs font-bold text-slate-600 mb-1">Rol Principal</label>
@@ -295,14 +360,11 @@ export const UserManagement: React.FC = () => {
                               </div>
                            </div>
 
-                           <div className="grid grid-cols-2 gap-6">
+                           <div className="grid grid-cols-1 gap-6">
                               <div>
-                                 <label className="block text-xs font-bold text-slate-600 mb-1">Usuario (Login)</label>
-                                 <input required className="w-full border border-slate-300 p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none" value={formData.username} onChange={e => setFormData({ ...formData, username: e.target.value })} />
-                              </div>
-                              <div>
-                                 <label className="block text-xs font-bold text-slate-600 mb-1">Contraseña</label>
-                                 <input required type="text" className="w-full border border-slate-300 p-2 rounded font-mono focus:ring-2 focus:ring-blue-500 outline-none" value={formData.password} onChange={e => setFormData({ ...formData, password: e.target.value })} />
+                                 <label className="block text-xs font-bold text-slate-600 mb-1">Correo Electrónico (Login)</label>
+                                 <input required type="email" className="w-full border border-slate-300 p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50" value={formData.username || ''} onChange={e => setFormData({ ...formData, username: e.target.value })} placeholder="usuario@empresa.com" />
+                                 {!formData.id && <p className="text-[10px] font-bold text-amber-600 mt-1">Nota: Las contraseñas se configuran en el panel de Authentication de Supabase por seguridad.</p>}
                               </div>
                            </div>
 
@@ -394,9 +456,14 @@ export const UserManagement: React.FC = () => {
 
                   {/* Footer */}
                   <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
-                     <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-200 font-bold rounded">Cancelar</button>
-                     <button onClick={handleSubmit} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow flex items-center">
-                        <Save className="w-4 h-4 mr-2" /> Guardar Cambios
+                     <button type="button" onClick={() => setIsModalOpen(false)} disabled={isSaving} className="px-4 py-2 text-slate-600 hover:bg-slate-200 font-bold rounded disabled:opacity-50">Cancelar</button>
+                     <button type="submit" form="user-form" disabled={isSaving} className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow flex items-center disabled:opacity-50">
+                        {isSaving ? (
+                           <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                           <Save className="w-4 h-4 mr-2" /> 
+                        )}
+                        {isSaving ? 'Guardando...' : 'Guardar Cambios'}
                      </button>
                   </div>
                </div>
