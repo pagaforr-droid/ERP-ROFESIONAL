@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../services/store';
 import { Promotion, Product } from '../../types';
-import { Save, X, Search, CheckSquare, Square, Image as ImageIcon, Filter, MapPin } from 'lucide-react';
+import { Save, X, Search, Square, Image as ImageIcon, MapPin } from 'lucide-react';
 import { PERU_CITIES } from '../../utils/promoUtils';
+import { supabase, USE_MOCK_DB } from '../../services/supabase';
 
 interface PromoFormProps {
     initialData?: Partial<Promotion> | null;
@@ -11,8 +12,33 @@ interface PromoFormProps {
 }
 
 export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSave }) => {
-    const { products, sellers } = useStore();
+    const store = useStore();
+    const [dbProducts, setDbProducts] = useState<Product[]>([]);
+    const [dbSellers, setDbSellers] = useState<any[]>([]);
+
+    useEffect(() => {
+        const fetchMasterData = async () => {
+            if (!USE_MOCK_DB) {
+                try {
+                    const [pRes, slRes] = await Promise.all([
+                        supabase.from('products').select('*').eq('is_active', true).order('name'),
+                        supabase.from('sellers').select('*').order('name')
+                    ]);
+                    if (pRes.data) setDbProducts(pRes.data as Product[]);
+                    if (slRes.data) setDbSellers(slRes.data as any[]);
+                } catch (error) {
+                    console.error("Error fetching data for PromoForm:", error);
+                }
+            }
+        };
+        fetchMasterData();
+    }, []);
+
+    const products = USE_MOCK_DB ? store.products : dbProducts;
+    const sellers = USE_MOCK_DB ? store.sellers : dbSellers;
+
     const [formData, setFormData] = useState<Partial<Promotion>>({
+        id: initialData?.id || crypto.randomUUID(),
         name: '', type: 'PERCENTAGE_DISCOUNT', value: 0, product_ids: [],
         start_date: new Date().toISOString().split('T')[0],
         end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
@@ -28,28 +54,19 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
     const [categoryFilter, setCategoryFilter] = useState('');
     const [supplierFilter, setSupplierFilter] = useState('');
 
-    // Extraer categorías únicas para el filtro
-    const categories = useMemo(() => {
-        const cats = products.map(p => p.category).filter(Boolean);
-        return Array.from(new Set(cats));
-    }, [products]);
-
-    // Extraer marcas/proveedores únicos
-    const brands = useMemo(() => {
-        const brs = products.map(p => p.brand).filter(Boolean);
-        return Array.from(new Set(brs));
-    }, [products]);
+    const categories = useMemo(() => Array.from(new Set((products || []).map(p => p?.category).filter(Boolean))), [products]);
+    const brands = useMemo(() => Array.from(new Set((products || []).map(p => p?.brand).filter(Boolean))), [products]);
 
     useEffect(() => {
         if (initialData) {
-            setFormData({ ...formData, ...initialData });
+            setFormData(prev => ({ ...prev, ...initialData }));
         }
     }, [initialData]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name || !formData.value) return alert('Ingrese nombre y valor de descuento');
-        onSave({ ...formData, id: formData.id || crypto.randomUUID() } as Promotion);
+        onSave(formData as Promotion);
     };
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,17 +112,15 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
         setFormData({ ...formData, allowed_seller_ids: newSellers });
     };
 
-    // Filtered Products for efficient rendering
     const filteredProducts = useMemo(() => {
-        return products.filter(p => {
-            const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.includes(searchTerm);
-            const matchesCategory = categoryFilter ? p.category === categoryFilter : true;
-            const matchesSupplier = supplierFilter ? p.brand === supplierFilter : true;
+        return (products || []).filter(p => {
+            const matchesSearch = (p?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || (p?.sku || '').includes(searchTerm);
+            const matchesCategory = categoryFilter ? p?.category === categoryFilter : true;
+            const matchesSupplier = supplierFilter ? p?.brand === supplierFilter : true;
             return matchesSearch && matchesCategory && matchesSupplier;
-        }).slice(0, 100); // Limit to 100 for performance if searching empty
+        }).slice(0, 100);
     }, [products, searchTerm, categoryFilter, supplierFilter]);
 
-    // Add all filtered to selection
     const selectAllFiltered = () => {
         const filteredIds = filteredProducts.map(p => p.id);
         const currentIds = formData.product_ids || [];
@@ -113,7 +128,6 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
         setFormData({ ...formData, product_ids: newIds });
     };
 
-    // Remove all filtered from selection
     const deselectAllFiltered = () => {
         const filteredIds = filteredProducts.map(p => p.id);
         const currentIds = formData.product_ids || [];
@@ -198,15 +212,15 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
                                     <div className="flex gap-4">
                                         <label className="flex items-center gap-2 cursor-pointer">
                                             <input type="checkbox" checked={formData.channels?.includes('IN_STORE')} onChange={() => toggleChannel('IN_STORE')} className="w-4 h-4 text-purple-600 rounded" />
-                                            <span className="text-xs font-medium text-purple-800">Tienda (Interno)</span>
+                                            <span className="text-sm font-medium text-purple-800">Tienda de Ventas (Interno)</span>
                                         </label>
                                         <label className="flex items-center gap-2 cursor-pointer">
                                             <input type="checkbox" checked={formData.channels?.includes('SELLER_APP')} onChange={() => toggleChannel('SELLER_APP')} className="w-4 h-4 text-purple-600 rounded" />
-                                            <span className="text-xs font-medium text-purple-800">App Vendedores</span>
+                                            <span className="text-sm font-medium text-purple-800">App Vendedores</span>
                                         </label>
                                         <label className="flex items-center gap-2 cursor-pointer">
                                             <input type="checkbox" checked={formData.channels?.includes('DIRECT_SALE')} onChange={() => toggleChannel('DIRECT_SALE')} className="w-4 h-4 text-purple-600 rounded" />
-                                            <span className="text-xs font-medium text-purple-800">Venta Directa</span>
+                                            <span className="text-sm font-medium text-purple-800">Venta Directa</span>
                                         </label>
                                     </div>
                                 </div>
@@ -298,7 +312,7 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
                                                     </td>
                                                     <td className="p-2">{p.name}</td>
                                                     <td className="p-2 text-slate-500">{p.sku}</td>
-                                                    <td className="p-2 text-right">S/ {p.price_unit.toFixed(2)}</td>
+                                                    <td className="p-2 text-right">S/ {(p.price_unit || 0).toFixed(2)}</td>
                                                 </tr>
                                             );
                                         })}
