@@ -9,11 +9,11 @@ type OperationMode = 'BASE' | 'DISCOUNT' | 'INCREASE';
 
 // Toast Notification Component
 const Notification = ({ msg, type, onClose }: { msg: string, type: 'success' | 'error', onClose: () => void }) => (
-  <div className={`fixed top-4 right-4 z-50 flex items-center p-4 rounded-lg shadow-xl border-l-4 animate-fade-in-down bg-white ${type === 'success' ? 'border-green-500' : 'border-red-500'}`}>
-    {type === 'success' ? <CheckCircle2 className="w-5 h-5 text-green-600 mr-3" /> : <AlertCircle className="w-5 h-5 text-red-600 mr-3" />}
+  <div className={`fixed top-4 right-4 z-50 flex items-center p-4 rounded-lg shadow-xl border-l-4 animate-fade-in-down bg-white ${type === 'success' ? 'border-emerald-500' : 'border-red-500'}`}>
+    {type === 'success' ? <CheckCircle2 className="w-5 h-5 text-emerald-600 mr-3" /> : <AlertCircle className="w-5 h-5 text-red-600 mr-3" />}
     <div>
-       <h4 className={`font-bold text-sm ${type === 'success' ? 'text-green-800' : 'text-red-800'}`}>{type === 'success' ? 'Éxito' : 'Error'}</h4>
-       <p className="text-xs text-slate-600">{msg}</p>
+       <h4 className={`font-bold text-sm ${type === 'success' ? 'text-emerald-800' : 'text-red-800'}`}>{type === 'success' ? 'Operación Exitosa' : 'Alerta del Sistema'}</h4>
+       <p className="text-xs text-slate-600 font-medium">{msg}</p>
     </div>
     <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600"><X className="w-4 h-4" /></button>
   </div>
@@ -66,7 +66,7 @@ export const PriceManager: React.FC = () => {
   const [selectedSupplier, setSelectedSupplier] = useState('ALL');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [targetMargin, setTargetMargin] = useState<number>(30); // Default 30%
+  const [targetMargin, setTargetMargin] = useState<number>(30);
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
@@ -175,14 +175,15 @@ export const PriceManager: React.FC = () => {
         if (USE_MOCK_DB) {
            store.batchUpdateProductPrices(updates);
         } else {
-           // Actualizaciones quirúrgicas en paralelo para no sobreescribir stock accidentalmente
+           // Actualizaciones quirúrgicas en paralelo
            const updatePromises = updates.map(updateData => 
               supabase.from('products').update({
                  price_unit: updateData.price_unit,
                  price_package: updateData.price_package,
                  profit_margin: updateData.profit_margin
-              }).eq('id', updateData.id)
+              }).eq('id', updateData.id).select()
            );
+           
            await Promise.all(updatePromises);
            
            // Actualizar vista local
@@ -192,17 +193,17 @@ export const PriceManager: React.FC = () => {
            }));
         }
         
-        setNotification({ msg: `Se actualizaron exitosamente ${updates.length} productos.`, type: 'success' });
+        setNotification({ msg: `Se inyectaron exitosamente los nuevos precios en ${updates.length} productos.`, type: 'success' });
         setSelectedIds(new Set());
      } catch (error: any) {
-        setNotification({ msg: `Error de BD: ${error.message}`, type: 'error' });
+        setNotification({ msg: `Error de Base de Datos: ${error.message}`, type: 'error' });
      } finally {
         setTimeout(() => setNotification(null), 4000);
         setIsSaving(false);
      }
   };
 
-  // --- 2. GESTIÓN DE LISTAS DE PRECIOS (CRUD) ---
+  // --- 2. GESTIÓN DE LISTAS DE PRECIOS (CRUD BLINDADO) ---
   const handleSaveList = async (e: React.FormEvent) => {
      e.preventDefault();
      if (!editingList?.name) return;
@@ -213,9 +214,9 @@ export const PriceManager: React.FC = () => {
      else if (operationMode === 'INCREASE') finalFactor = 1 + (percentageValue / 100);
 
      try {
+        // Payload estricto (solo las columnas matemáticas que importan)
         const payload: any = {
            name: editingList.name.toUpperCase(),
-           type: operationMode === 'BASE' ? 'BASE' : 'VARIATION',
            factor: Number(finalFactor.toFixed(4)),
            is_active: true
         };
@@ -224,42 +225,49 @@ export const PriceManager: React.FC = () => {
            payload.id = editingList.id || crypto.randomUUID();
            if (editingList.id) store.updatePriceList(payload as PriceList);
            else store.addPriceList(payload as PriceList);
+           setRealPriceLists(prev => {
+              if (editingList.id) return prev.map(l => l.id === editingList.id ? payload : l);
+              return [...prev, payload];
+           });
         } else {
            if (editingList.id) {
               const { data, error } = await supabase.from('price_lists').update(payload).eq('id', editingList.id).select();
               if (error) throw error;
-              if(data) setRealPriceLists(prev => prev.map(l => l.id === editingList.id ? data[0] : l));
+              if (!data || data.length === 0) throw new Error("Bloqueo RLS. No se pudo actualizar en Supabase.");
+              setRealPriceLists(prev => prev.map(l => l.id === editingList.id ? data[0] : l));
            } else {
               payload.id = crypto.randomUUID();
               const { data, error } = await supabase.from('price_lists').insert([payload]).select();
               if (error) throw error;
-              if(data) setRealPriceLists(prev => [...prev, data[0]]);
+              if (!data || data.length === 0) throw new Error("Bloqueo RLS. La base de datos rechazó la inserción silenciosamente.");
+              setRealPriceLists(prev => [...prev, data[0]]);
            }
         }
         setEditingList(null);
-        setNotification({ msg: "Lista de precios configurada.", type: 'success' });
+        setNotification({ msg: "Regla Comercial guardada en la base de datos.", type: 'success' });
      } catch (error: any) {
-        setNotification({ msg: "Error al guardar lista: " + error.message, type: 'error' });
+        setNotification({ msg: "Error al guardar: " + error.message, type: 'error' });
      } finally {
         setIsSaving(false);
-        setTimeout(() => setNotification(null), 3000);
+        setTimeout(() => setNotification(null), 4000);
      }
   };
 
   const handleDeleteList = async (id: string, e: React.MouseEvent) => {
      e.stopPropagation();
-     if(!confirm('¿Eliminar esta lista? Se desvinculará de los vendedores asignados.')) return;
+     if(!confirm('¿Eliminar esta lista? Si hay clientes o vendedores en esta lista, podrían perder su asignación.')) return;
      
      try {
         if (!USE_MOCK_DB) {
            const { error } = await supabase.from('price_lists').delete().eq('id', id);
            if (error) throw error;
-           setRealPriceLists(prev => prev.filter(l => l.id !== id));
-        } else {
-           alert("Simulación de borrado local.");
         }
+        setRealPriceLists(prev => prev.filter(l => l.id !== id));
+        setNotification({ msg: "Lista eliminada permanentemente.", type: 'success' });
      } catch(err: any) {
-        alert("Error al eliminar: " + err.message);
+        setNotification({ msg: "Error al eliminar: " + err.message, type: 'error' });
+     } finally {
+        setTimeout(() => setNotification(null), 3000);
      }
   }
 
@@ -286,20 +294,20 @@ export const PriceManager: React.FC = () => {
            });
         } else {
            const updatePromises = Object.entries(pendingAssignments).map(([sellerId, listId]) => {
-              // BLINDAJE UUID: Convertimos el string vacío a NULL estricto
+              // BLINDAJE UUID: Evitar strings vacíos
               const cleanListId = (listId === '' || !listId) ? null : listId;
               return supabase.from('sellers').update({ price_list_id: cleanListId }).eq('id', sellerId);
            });
            
            await Promise.all(updatePromises);
-           await fetchData(); // Recargar matriz de vendedores
+           await fetchData(); // Recargar matriz fresca
         }
         
         setPendingAssignments({});
         setHasChanges(false);
-        setNotification({ msg: "Matriz de asignaciones sincronizada.", type: 'success' });
+        setNotification({ msg: "Matriz de asignaciones sincronizada con éxito.", type: 'success' });
      } catch(err:any) {
-        setNotification({ msg: "Error al asignar: " + err.message, type: 'error' });
+        setNotification({ msg: "Error al sincronizar matriz: " + err.message, type: 'error' });
      } finally {
         setIsSaving(false);
         setTimeout(() => setNotification(null), 3000);
@@ -471,12 +479,12 @@ export const PriceManager: React.FC = () => {
                 {selectedIds.size > 0 && (
                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-auto min-w-[450px] bg-slate-900 text-white p-5 rounded-2xl shadow-2xl flex items-center justify-between gap-6 animate-fade-in-up border-2 border-slate-700 z-20">
                       <div className="flex items-center">
-                         <div className="bg-green-500 text-slate-900 font-black text-xl w-10 h-10 rounded-full flex items-center justify-center mr-4 shadow-inner">
+                         <div className="bg-emerald-500 text-slate-900 font-black text-xl w-10 h-10 rounded-full flex items-center justify-center mr-4 shadow-inner">
                             {selectedIds.size}
                          </div>
                          <div>
                             <p className="text-sm font-black uppercase tracking-wide">Lote en Memoria</p>
-                            <p className="text-xs text-green-400 font-bold">Listos para inyectar a Base de Datos</p>
+                            <p className="text-xs text-emerald-400 font-bold">Listos para inyectar a Base de Datos</p>
                          </div>
                       </div>
                       
@@ -491,7 +499,7 @@ export const PriceManager: React.FC = () => {
                          <button 
                            onClick={handleApplyPrices}
                            disabled={isSaving}
-                           className="bg-green-600 hover:bg-green-500 text-white px-6 py-2.5 rounded-xl font-black shadow-lg shadow-green-600/30 flex items-center transition-all disabled:opacity-50"
+                           className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2.5 rounded-xl font-black shadow-lg shadow-emerald-600/30 flex items-center transition-all disabled:opacity-50"
                          >
                             {isSaving ? <Loader2 className="w-5 h-5 mr-2 animate-spin"/> : <RefreshCw className="w-5 h-5 mr-2" />}
                             {isSaving ? 'Inyectando...' : 'APLICAR PRECIOS'}
@@ -605,7 +613,7 @@ export const PriceManager: React.FC = () => {
                                   <button 
                                     type="button" 
                                     onClick={() => { setOperationMode('DISCOUNT'); setPercentageValue(5); }}
-                                    className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${operationMode === 'DISCOUNT' ? 'border-green-500 bg-green-500 text-white shadow-md transform scale-105' : 'border-slate-200 text-slate-400 hover:border-green-300 hover:bg-green-50'}`}
+                                    className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center transition-all ${operationMode === 'DISCOUNT' ? 'border-emerald-500 bg-emerald-500 text-white shadow-md transform scale-105' : 'border-slate-200 text-slate-400 hover:border-emerald-300 hover:bg-emerald-50'}`}
                                   >
                                      <TrendingDown className="w-6 h-6 mb-2" />
                                      <span className="text-[10px] font-black uppercase">Descuento</span>
@@ -627,13 +635,13 @@ export const PriceManager: React.FC = () => {
                                      {operationMode === 'DISCOUNT' ? 'Intensidad del Descuento' : 'Intensidad del Recargo'}
                                   </label>
                                   <div className="relative">
-                                     <Percent className={`absolute left-4 top-4 w-6 h-6 ${operationMode === 'DISCOUNT' ? 'text-green-500' : 'text-blue-500'}`} />
+                                     <Percent className={`absolute left-4 top-4 w-6 h-6 ${operationMode === 'DISCOUNT' ? 'text-emerald-500' : 'text-blue-500'}`} />
                                      <input 
                                        type="number" 
                                        min="0.1" 
                                        max="100" 
                                        step="0.1"
-                                       className={`w-full pl-12 pr-4 py-4 border-2 rounded-xl text-3xl font-black focus:outline-none bg-white shadow-inner ${operationMode === 'DISCOUNT' ? 'border-green-200 text-green-700 focus:border-green-500' : 'border-blue-200 text-blue-700 focus:border-blue-500'}`}
+                                       className={`w-full pl-12 pr-4 py-4 border-2 rounded-xl text-3xl font-black focus:outline-none bg-white shadow-inner ${operationMode === 'DISCOUNT' ? 'border-emerald-200 text-emerald-700 focus:border-emerald-500' : 'border-blue-200 text-blue-700 focus:border-blue-500'}`}
                                        value={percentageValue}
                                        onChange={e => setPercentageValue(Number(e.target.value))}
                                      />
@@ -641,7 +649,7 @@ export const PriceManager: React.FC = () => {
                                   
                                   <div className="mt-4 flex justify-between items-center text-sm">
                                      <span className="font-bold text-slate-500">Ejemplo S/ 100.00 ➔</span>
-                                     <span className={`font-black text-lg ${operationMode === 'DISCOUNT' ? 'text-green-600' : 'text-blue-600'}`}>
+                                     <span className={`font-black text-lg ${operationMode === 'DISCOUNT' ? 'text-emerald-600' : 'text-blue-600'}`}>
                                         S/ {operationMode === 'DISCOUNT' ? (100 * (1 - percentageValue/100)).toFixed(2) : (100 * (1 + percentageValue/100)).toFixed(2)}
                                      </span>
                                   </div>
@@ -649,10 +657,10 @@ export const PriceManager: React.FC = () => {
                             )}
 
                             <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">
-                               <button type="button" onClick={() => setEditingList(null)} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
+                               <button type="button" onClick={() => setEditingList(null)} disabled={isSaving} className="px-6 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50">Cancelar</button>
                                <button type="submit" disabled={isSaving} className="bg-blue-600 text-white px-8 py-3 rounded-xl font-black hover:bg-blue-700 shadow-lg shadow-blue-600/30 transform active:scale-95 transition-all flex items-center disabled:opacity-50">
                                   {isSaving ? <RefreshCw className="w-5 h-5 mr-2 animate-spin"/> : <Save className="w-5 h-5 mr-2" />}
-                                  Guardar Motor
+                                  {isSaving ? 'Guardando...' : 'Guardar Motor'}
                                </button>
                             </div>
                          </div>
@@ -745,7 +753,7 @@ export const PriceManager: React.FC = () => {
                                      </div>
                                   </td>
                                   <td className="p-4 text-center">
-                                     <span className={`font-mono font-black text-xs px-3 py-1.5 rounded-lg border shadow-sm ${assignedList ? (assignedList.factor < 1 ? 'text-green-700 bg-green-50 border-green-200' : assignedList.factor > 1 ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-600 bg-slate-100 border-slate-200') : 'text-slate-500 bg-slate-100 border-slate-200'}`}>
+                                     <span className={`font-mono font-black text-xs px-3 py-1.5 rounded-lg border shadow-sm ${assignedList ? (assignedList.factor < 1 ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : assignedList.factor > 1 ? 'text-blue-700 bg-blue-50 border-blue-200' : 'text-slate-600 bg-slate-100 border-slate-200') : 'text-slate-500 bg-slate-100 border-slate-200'}`}>
                                         {assignedList ? assignedList.factor.toFixed(2) + 'X' : '1.00X'}
                                      </span>
                                   </td>
