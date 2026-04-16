@@ -25,7 +25,7 @@ interface Movement {
 
 export const Kardex: React.FC = () => {
   const [activeTab, setActiveTab] = useState<ViewTab>('INVENTORY');
-  const [isDataVisible, setIsDataVisible] = useState(false); // <--- NUEVO ESTADO DE RENDIMIENTO
+  const [isDataVisible, setIsDataVisible] = useState(false); // ESTADO DE RENDIMIENTO
   
   // --- ESTADOS SUPABASE ---
   const [dbProducts, setDbProducts] = useState<Product[]>([]);
@@ -85,6 +85,8 @@ export const Kardex: React.FC = () => {
   };
 
   // --- DATA COMPUTATION ---
+
+  // 1. INVENTORY SUMMARY (Snapshot)
   const inventorySnapshot = useMemo(() => {
     return (dbProducts || []).map(p => {
        const productBatches = (dbBatches || []).filter(b => b.product_id === p.id && b.quantity_current > 0 && 
@@ -94,7 +96,6 @@ export const Kardex: React.FC = () => {
        const totalValue = filterWarehouse === 'MERMAS' ? 0 : productBatches.reduce((acc, b) => acc + ((b.quantity_current || 0) * (b.cost || 0)), 0);
        const avgCost = filterWarehouse === 'MERMAS' ? 0 : (totalStock > 0 ? totalValue / totalStock : (p.last_cost || 0));
 
-       // MATEMÁTICA DE CAJAS Y UNIDADES 
        const factor = (p.package_content || 0) > 0 ? p.package_content : 1;
        const stockPackages = Math.floor(totalStock / factor);
        const remainingBase = totalStock % factor;
@@ -129,6 +130,7 @@ export const Kardex: React.FC = () => {
     });
   }, [dbProducts, dbBatches, dbSuppliers, searchTerm, filterCategory, filterSupplier, sortField, sortOrder, filterWarehouse]);
 
+  // 2. MOVEMENTS (Timeline)
   const movements = useMemo(() => {
      const list: Movement[] = [];
 
@@ -136,12 +138,18 @@ export const Kardex: React.FC = () => {
         if (!p.issue_date || p.issue_date < dateFrom || p.issue_date > dateTo) return;
         (p.items || []).forEach(item => {
            const prod = (dbProducts || []).find(x => x.id === item.product_id);
-           if (!prod || (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()))) return;
+           if (!prod) return;
+           
+           // Filtros Universales para Movimientos
+           if (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()) && !(prod.sku || '').toLowerCase().includes(searchTerm.toLowerCase())) return;
+           if (filterCategory !== 'ALL' && prod.category !== filterCategory) return;
+           if (filterSupplier !== 'ALL' && prod.supplier_id !== filterSupplier) return;
+
            list.push({
               id: `PUR-${p.id}-${item.product_id}`,
               date: p.issue_date, type: 'IN', docType: 'COMPRA', docNumber: p.document_number || 'S/N',
               productName: prod.name || 'Desconocido', sku: prod.sku || 'S/N', quantity: item.quantity_base || 0,
-              unitPrice: item.quantity_base > 0 ? (item.total_cost || 0) / item.quantity_base : 0, 
+              unitPrice: (item.quantity_base || 0) > 0 ? (item.total_cost || 0) / item.quantity_base : 0, 
               total: item.total_cost || 0, reference: p.supplier_name || 'Desconocido'
            });
         });
@@ -152,12 +160,18 @@ export const Kardex: React.FC = () => {
         if (date < dateFrom || date > dateTo) return;
         (s.items || []).forEach(item => {
            const prod = (dbProducts || []).find(x => x.id === item.product_id);
-           if (!prod || (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()))) return;
+           if (!prod) return;
+
+           // Filtros Universales para Movimientos
+           if (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()) && !(prod.sku || '').toLowerCase().includes(searchTerm.toLowerCase())) return;
+           if (filterCategory !== 'ALL' && prod.category !== filterCategory) return;
+           if (filterSupplier !== 'ALL' && prod.supplier_id !== filterSupplier) return;
+
            list.push({
               id: `SALE-${s.id}-${item.id}`,
               date: date, type: 'OUT', docType: s.document_type || 'VENTA', docNumber: `${s.series || ''}-${s.number || ''}`,
               productName: prod.name || 'Desconocido', sku: prod.sku || 'S/N', quantity: item.quantity_base || 0, 
-              unitPrice: item.quantity_base > 0 ? (item.total_price || 0) / item.quantity_base : 0,
+              unitPrice: (item.quantity_base || 0) > 0 ? (item.total_price || 0) / item.quantity_base : 0,
               total: item.total_price || 0, reference: s.client_name || 'Desconocido'
            });
         });
@@ -172,7 +186,11 @@ export const Kardex: React.FC = () => {
               if (doc.action === 'VOID' && sale) {
                  (sale.items || []).forEach(item => {
                     const prod = (dbProducts || []).find(x => x.id === item.product_id);
-                    if (!prod || (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()))) return;
+                    if (!prod) return;
+                    if (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()) && !(prod.sku || '').toLowerCase().includes(searchTerm.toLowerCase())) return;
+                    if (filterCategory !== 'ALL' && prod.category !== filterCategory) return;
+                    if (filterSupplier !== 'ALL' && prod.supplier_id !== filterSupplier) return;
+
                     list.push({
                        id: `VOID-${doc.sale_id}-${item.id}`,
                        date, type: 'IN', docType: 'ANULACION', docNumber: `${sale.series || ''}-${sale.number || ''}`,
@@ -183,12 +201,16 @@ export const Kardex: React.FC = () => {
               if (doc.action === 'PARTIAL_RETURN') {
                  (doc.returned_items || []).forEach(ret => {
                     const prod = (dbProducts || []).find(x => x.id === ret.product_id);
-                    if (!prod || (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()))) return;
+                    if (!prod) return;
+                    if (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()) && !(prod.sku || '').toLowerCase().includes(searchTerm.toLowerCase())) return;
+                    if (filterCategory !== 'ALL' && prod.category !== filterCategory) return;
+                    if (filterSupplier !== 'ALL' && prod.supplier_id !== filterSupplier) return;
+
                     list.push({
                        id: `RET-${doc.sale_id}-${ret.product_id}`,
                        date, type: 'IN', docType: 'NOTA CREDITO', docNumber: doc.credit_note_series || 'NC-000',
                        productName: prod.name || '', sku: prod.sku || '', quantity: ret.quantity_base || 0, 
-                       unitPrice: ret.quantity_base > 0 ? (ret.total_refund || 0) / ret.quantity_base : 0, 
+                       unitPrice: (ret.quantity_base || 0) > 0 ? (ret.total_refund || 0) / ret.quantity_base : 0, 
                        total: ret.total_refund || 0, reference: sale?.client_name || 'CLIENTE'
                     });
                  });
@@ -198,7 +220,7 @@ export const Kardex: React.FC = () => {
      });
 
      return list.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [dbSales, dbPurchases, dbLiquidations, dbProducts, dateFrom, dateTo, searchTerm]);
+  }, [dbSales, dbPurchases, dbLiquidations, dbProducts, dateFrom, dateTo, searchTerm, filterCategory, filterSupplier]);
 
   const analyticsData = useMemo(() => {
      const byCategory: Record<string, number> = {};
@@ -223,40 +245,53 @@ export const Kardex: React.FC = () => {
   const currentTotalValuation = useMemo(() => inventorySnapshot.reduce((a,b)=>a+(b.totalValue || 0), 0), [inventorySnapshot]);
 
   const exportExcel = () => {
-    const dataToExport = inventorySnapshot.map(p => ({
+    const dataToExport = activeTab === 'MOVEMENTS' ? movements.map(m => ({
+      "Fecha": m.date, "Tipo": m.type, "Documento": `${m.docType} ${m.docNumber}`, "Producto": m.productName, "SKU": m.sku,
+      "Cantidad": m.quantity, "P. Unitario": m.unitPrice, "Total": m.total, "Referencia": m.reference
+    })) : inventorySnapshot.map(p => ({
       "Código SKU": p.sku || '', "Producto": p.name || '', "Categoría": p.category || '', "Marca": p.brand || '', "Proveedor": p.supplierName || '',
-      "Stock Total": p.totalStock || 0, "Costo Prom. Unit": parseFloat((p.avgCost || 0).toFixed(4)), "Valorización Total": parseFloat((p.totalValue || 0).toFixed(2)),
+      "Stock Total (Base)": p.totalStock || 0, "Unidad Medida": p.unit_type || '', "Stock Empaques": p.stockPackages || 0, 
+      "Costo Prom. Unit": parseFloat((p.avgCost || 0).toFixed(4)), "Valorización Total": parseFloat((p.totalValue || 0).toFixed(2)),
       "Estado": (p.totalStock || 0) <= (p.min_stock || 0) ? 'BAJO STOCK' : 'OPTIMO'
     }));
+
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Kardex_Inventario");
-    XLSX.writeFile(workbook, `Reporte_Kardex_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, activeTab === 'MOVEMENTS' ? "Kardex_Movimientos" : "Kardex_Inventario");
+    XLSX.writeFile(workbook, `Reporte_${activeTab}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const exportPDF = () => {
     const doc = new jsPDF('landscape');
-    doc.setFontSize(18); doc.setTextColor(40, 40, 40); doc.text("Reporte de Kardex e Inventario Valorizado", 14, 22);
+    doc.setFontSize(18); doc.setTextColor(40, 40, 40); 
+    doc.text(activeTab === 'MOVEMENTS' ? "Reporte de Movimientos (Kardex)" : "Reporte de Inventario Valorizado", 14, 22);
     doc.setFontSize(10); doc.setTextColor(100, 100, 100);
     doc.text(`Fecha de Emisión: ${new Date().toLocaleString()}`, 14, 30);
-    doc.text(`Filtros: Categoría (${filterCategory}), Proveedor (${filterSupplier})`, 14, 36);
-    doc.text(`Total Capital Valorizado: S/ ${currentTotalValuation.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 14, 42);
 
-    const tableColumn = ["SKU", "Producto", "Categoría / Marca", "Proveedor", "Stock Total", "Costo Prom", "Valor Total"];
-    const tableRows = inventorySnapshot.map(p => [
-      p.sku || '', p.name || '', `${p.category || '-'} / ${p.brand || '-'}`, p.supplierName || '', `${p.totalStock || 0} ${p.unit_type || 'U'}`, `S/ ${(p.avgCost || 0).toFixed(2)}`, `S/ ${(p.totalValue || 0).toFixed(2)}`
-    ]);
-
-    autoTable(doc, {
-      head: [tableColumn], body: tableRows, startY: 48, theme: 'grid', styles: { fontSize: 8, cellPadding: 2 },
-      headStyles: { fillColor: [15, 23, 42] }, alternateRowStyles: { fillColor: [248, 250, 252] },
-      columnStyles: { 4: { halign: 'right', fontStyle: 'bold' }, 5: { halign: 'right' }, 6: { halign: 'right', fontStyle: 'bold', textColor: [29, 78, 216] } }
-    });
-    doc.save(`Reporte_Kardex_${new Date().toISOString().split('T')[0]}.pdf`);
+    if (activeTab === 'MOVEMENTS') {
+       const tableColumn = ["Fecha", "Tipo", "Documento", "Producto", "SKU", "Cant", "Total"];
+       const tableRows = movements.map(m => [
+         m.date, m.type === 'IN' ? 'INGRESO' : 'SALIDA', `${m.docType} ${m.docNumber}`, m.productName, m.sku, m.quantity.toString(), `S/ ${m.total.toFixed(2)}`
+       ]);
+       autoTable(doc, { head: [tableColumn], body: tableRows, startY: 38, theme: 'grid', styles: { fontSize: 8 } });
+    } else {
+       doc.text(`Total Capital Valorizado: S/ ${(currentTotalValuation || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 14, 36);
+       const tableColumn = ["SKU", "Producto", "Categoría / Marca", "Proveedor", "Stock Total", "Costo Prom", "Valor Total"];
+       const tableRows = inventorySnapshot.map(p => [
+         p.sku || '', p.name || '', `${p.category || '-'} / ${p.brand || '-'}`, p.supplierName || '', `${p.totalStock || 0} ${p.unit_type || 'U'} ${p.stockPackages > 0 ? `(${p.stockPackages} CJ)` : ''}`, `S/ ${(p.avgCost || 0).toFixed(2)}`, `S/ ${(p.totalValue || 0).toFixed(2)}`
+       ]);
+       autoTable(doc, {
+         head: [tableColumn], body: tableRows, startY: 48, theme: 'grid', styles: { fontSize: 8, cellPadding: 2 },
+         headStyles: { fillColor: [30, 41, 59] }, alternateRowStyles: { fillColor: [248, 250, 252] },
+         columnStyles: { 4: { halign: 'right', fontStyle: 'bold' }, 5: { halign: 'right' }, 6: { halign: 'right', fontStyle: 'bold', textColor: [29, 78, 216] } }
+       });
+    }
+    doc.save(`Reporte_${activeTab}_${new Date().toISOString().split('T')[0]}.pdf`);
   };
 
   return (
     <div className="flex flex-col h-full space-y-4 font-sans text-slate-800">
+       {/* ENCABEZADO */}
        <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
           <div className="flex items-center gap-3">
              <div className="bg-orange-100 p-2.5 rounded-lg text-orange-600 shadow-inner">
@@ -280,6 +315,7 @@ export const Kardex: React.FC = () => {
           </div>
        </div>
 
+       {/* TABS */}
        <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-1">
           <button onClick={() => {setActiveTab('INVENTORY'); setIsDataVisible(false);}} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'INVENTORY' ? 'bg-orange-50 text-orange-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
              <Layers className="w-4 h-4 mr-2" /> 1. Inventario Físico
@@ -295,10 +331,10 @@ export const Kardex: React.FC = () => {
           </button>
        </div>
 
-       {/* ÁREA DE FILTROS + BOTÓN MOSTRAR */}
+       {/* BARRA DE FILTROS UNIVERSAL (VISIBLE EN INVENTORY, MOVEMENTS Y BATCHES) */}
        {activeTab !== 'ANALYTICS' && (
-         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-            <div className="flex flex-wrap gap-4 items-end">
+         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-4 items-end justify-between">
+            <div className="flex flex-wrap gap-4 items-end flex-1">
                <div className="flex-1 min-w-[200px]">
                   <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Buscador Universal</label>
                   <div className="relative">
@@ -307,59 +343,59 @@ export const Kardex: React.FC = () => {
                   </div>
                </div>
                
-               {activeTab !== 'MOVEMENTS' && (
-                  <>
-                     <div className="w-56">
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Ubicación Lógica</label>
-                        <select className={`w-full border-2 p-2.5 rounded-lg text-sm font-bold focus:outline-none transition-colors ${filterWarehouse === 'MERMAS' ? 'bg-red-50 text-red-700 border-red-300 focus:border-red-500' : 'bg-slate-50 text-slate-800 border-slate-200 focus:border-orange-500'}`} value={filterWarehouse} onChange={e => handleFilterChange(setFilterWarehouse, e.target.value as any)}>
-                           <option value="CENTRAL">📦 ALMACÉN CENTRAL</option>
-                           <option value="MERMAS">⚠️ CUARENTENA / MERMAS</option>
-                        </select>
-                     </div>
-                     <div className="w-48">
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Categoría</label>
-                        <select className="w-full border-2 border-slate-200 p-2.5 rounded-lg text-sm font-bold bg-white focus:border-orange-500 outline-none" value={filterCategory} onChange={e => handleFilterChange(setFilterCategory, e.target.value)}>
-                           <option value="ALL">Todas las Familias</option>
-                           {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                     </div>
-                     <div className="w-56">
-                        <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Proveedor Origen</label>
-                        <select className="w-full border-2 border-slate-200 p-2.5 rounded-lg text-sm font-bold bg-white focus:border-orange-500 outline-none" value={filterSupplier} onChange={e => handleFilterChange(setFilterSupplier, e.target.value)}>
-                           <option value="ALL">Todos los Proveedores</option>
-                           {(dbSuppliers || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                     </div>
-                  </>
-               )}
+               <div className="w-48">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Ubicación Lógica</label>
+                  <select className={`w-full border-2 p-2.5 rounded-lg text-sm font-bold focus:outline-none transition-colors ${filterWarehouse === 'MERMAS' ? 'bg-red-50 text-red-700 border-red-300 focus:border-red-500' : 'bg-slate-50 text-slate-800 border-slate-200 focus:border-orange-500'}`} value={filterWarehouse} onChange={e => handleFilterChange(setFilterWarehouse, e.target.value as any)}>
+                     <option value="CENTRAL">📦 ALMACÉN CENTRAL</option>
+                     <option value="MERMAS">⚠️ CUARENTENA / MERMAS</option>
+                  </select>
+               </div>
+               
+               <div className="w-48">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Categoría</label>
+                  <select className="w-full border-2 border-slate-200 p-2.5 rounded-lg text-sm font-bold bg-white focus:border-orange-500 outline-none" value={filterCategory} onChange={e => handleFilterChange(setFilterCategory, e.target.value)}>
+                     <option value="ALL">Todas las Familias</option>
+                     {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+               </div>
+               
+               <div className="w-56">
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">Proveedor Origen</label>
+                  <select className="w-full border-2 border-slate-200 p-2.5 rounded-lg text-sm font-bold bg-white focus:border-orange-500 outline-none" value={filterSupplier} onChange={e => handleFilterChange(setFilterSupplier, e.target.value)}>
+                     <option value="ALL">Todos los Proveedores</option>
+                     {(dbSuppliers || []).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+               </div>
 
+               {/* SELECTOR DE FECHAS (SOLO PARA MOVIMIENTOS) */}
                {activeTab === 'MOVEMENTS' && (
-                  <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border-2 border-slate-200">
-                     <Calendar className="w-5 h-5 text-slate-400 ml-2" />
-                     <input type="date" className="bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer" value={dateFrom} onChange={e => handleFilterChange(setDateFrom, e.target.value)} />
+                  <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-lg border-2 border-slate-200 h-[44px]">
+                     <Calendar className="w-4 h-4 text-slate-400" />
+                     <input type="date" className="bg-transparent border-none text-xs font-bold text-slate-700 outline-none cursor-pointer" value={dateFrom} onChange={e => handleFilterChange(setDateFrom, e.target.value)} />
                      <span className="text-slate-300 font-bold">-</span>
-                     <input type="date" className="bg-transparent border-none text-sm font-bold text-slate-700 outline-none cursor-pointer pr-2" value={dateTo} onChange={e => handleFilterChange(setDateTo, e.target.value)} />
+                     <input type="date" className="bg-transparent border-none text-xs font-bold text-slate-700 outline-none cursor-pointer" value={dateTo} onChange={e => handleFilterChange(setDateTo, e.target.value)} />
                   </div>
                )}
-
-               {/* BOTÓN MOSTRAR: ESTE ES EL GATILLO QUE PERMITE VER LOS DATOS */}
-               <button 
-                  onClick={() => setIsDataVisible(true)} 
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-black shadow-md flex items-center transition-all active:scale-95 text-sm h-[44px]"
-               >
-                  <Eye className="w-4 h-4 mr-2" /> MOSTRAR
-               </button>
             </div>
+
+            {/* BOTÓN MOSTRAR (GATILLO DE DATOS) */}
+            <button 
+               onClick={() => setIsDataVisible(true)} 
+               className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 rounded-lg font-black shadow-md flex items-center transition-all active:scale-95 text-sm h-[44px] ml-4"
+            >
+               <Eye className="w-4 h-4 mr-2" /> MOSTRAR DATOS
+            </button>
          </div>
        )}
 
        <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col relative">
           
+          {/* PANTALLA DE BLOQUEO DE RENDIMIENTO */}
           {!isDataVisible && activeTab !== 'ANALYTICS' ? (
              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50 z-20">
                 <Search className="w-16 h-16 text-slate-300 mb-4" />
                 <h3 className="text-xl font-black text-slate-400 uppercase tracking-widest">Esperando Parámetros</h3>
-                <p className="text-slate-400 font-medium mt-2">Seleccione los filtros arriba y haga clic en "MOSTRAR" para cargar los datos.</p>
+                <p className="text-slate-400 font-medium mt-2">Seleccione los filtros arriba y haga clic en "MOSTRAR DATOS" para cargar la información.</p>
              </div>
           ) : null}
 
@@ -465,7 +501,7 @@ export const Kardex: React.FC = () => {
                       {isLoading && movements.length === 0 ? (
                          <tr><td colSpan={7} className="p-12 text-center text-slate-500 font-bold"><RefreshCw className="w-6 h-6 animate-spin mx-auto mb-3 text-blue-500"/> Sincronizando Movimientos...</td></tr>
                       ) : movements.length === 0 ? (
-                         <tr><td colSpan={7} className="p-12 text-center text-slate-400 font-medium">No hay movimientos registrados en este rango de fechas.</td></tr>
+                         <tr><td colSpan={7} className="p-12 text-center text-slate-400 font-medium">No hay movimientos registrados con estos filtros.</td></tr>
                       ) : movements.map((m, idx) => (
                          <tr key={idx} className="hover:bg-slate-50 transition-colors">
                             <td className="p-4 text-slate-500 font-mono text-xs font-bold">{m.date}</td>
@@ -492,10 +528,10 @@ export const Kardex: React.FC = () => {
                                {m.type === 'IN' ? '+' : '-'}{m.quantity}
                             </td>
                             <td className="p-4 text-right font-mono font-bold text-slate-500">
-                               {(m.unitPrice || 0) > 0 ? `S/ ${(m.unitPrice || 0).toFixed(2)}` : '-'}
+                               {(m?.unitPrice || 0) > 0 ? `S/ ${(m.unitPrice || 0).toFixed(2)}` : '-'}
                             </td>
                             <td className="p-4 text-right font-black text-slate-800">
-                               {(m.total || 0) > 0 ? `S/ ${(m.total || 0).toFixed(2)}` : '-'}
+                               {(m?.total || 0) > 0 ? `S/ ${(m.total || 0).toFixed(2)}` : '-'}
                             </td>
                          </tr>
                       ))}
