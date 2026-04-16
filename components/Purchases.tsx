@@ -374,6 +374,9 @@ export const Purchases: React.FC = () => {
 
     setIsProcessing(true);
 
+    // Simulate API Delay
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
     const subtotal = cart.reduce((acc, item) => acc + item.total_value, 0);
     const total = cart.reduce((acc, item) => acc + item.total_cost, 0);
     const igv = total - subtotal;
@@ -419,11 +422,13 @@ export const Purchases: React.FC = () => {
         // --- LÓGICA SUPABASE NATIVA ---
         const purchaseHeader = {
           supplier_id: supplier!.id,
-          supplier_name: supplier!.name, // <--- ¡LA SOLUCIÓN EXACTA ESTÁ AQUÍ!
+          supplier_name: supplier!.name, 
           warehouse_id: warehouseId || null,
           document_type: docType,
           document_number: docNumber,
           issue_date: issueDate,
+          entry_date: entryDate,         // <--- AÑADIDO: FECHA DE INGRESO
+          accounting_date: accountingDate, // <--- AÑADIDO: FECHA CONTABLE
           due_date: dueDate,
           currency: currency,
           subtotal: subtotal,
