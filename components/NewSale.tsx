@@ -1,9 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion } from '../types';
-import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin } from 'lucide-react';
+import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion, Batch } from '../types';
+import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2 } from 'lucide-react';
 import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
 import { isPromoValidForContext } from '../utils/promoUtils';
+import { supabase, USE_MOCK_DB } from '../services/supabase';
+
+// Utilidad Anti-Mocks
+const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export const NewSale: React.FC = () => {
    const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions, promotions, sellers, zones } = useStore();
@@ -18,6 +22,7 @@ export const NewSale: React.FC = () => {
 
    // --- ADMIN LOCK STATE ---
    const [priceLocked, setPriceLocked] = useState(true);
+   const [isSaving, setIsSaving] = useState(false);
 
    // --- HEADER STATE ---
    const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
@@ -38,25 +43,95 @@ export const NewSale: React.FC = () => {
    const [exchangeRate, setExchangeRate] = useState(3.750);
 
    // --- CLIENT STATE ---
-   // Default client or selected one
    const [selectedClientId, setSelectedClientId] = useState('');
    const [clientData, setClientData] = useState<Partial<Client>>({
-      name: '', doc_number: '', address: '', price_list_id: ''
+      name: '', doc_number: '', address: '', price_list_id: '', city: ''
    });
    const [clientSearch, setClientSearch] = useState('');
    const [showClientSuggestions, setShowClientSuggestions] = useState(false);
    const [showBranchSelector, setShowBranchSelector] = useState(false);
    const [selectedSellerId, setSelectedSellerId] = useState('');
 
+   // Estados de Optimización Supabase (Clientes)
+   const [searchedClients, setSearchedClients] = useState<Client[]>([]);
+   const [isSearchingClient, setIsSearchingClient] = useState(false);
+
+   useEffect(() => {
+       if (USE_MOCK_DB || clientSearch.length < 3) {
+           setSearchedClients([]);
+           return;
+       }
+       const timer = setTimeout(async () => {
+           setIsSearchingClient(true);
+           const { data } = await supabase.from('clients')
+               .select('*')
+               .or(`name.ilike.%${clientSearch}%,doc_number.ilike.%${clientSearch}%`)
+               .limit(10);
+           if (data) setSearchedClients(data as Client[]);
+           setIsSearchingClient(false);
+       }, 400); 
+       return () => clearTimeout(timer);
+   }, [clientSearch]);
+
    // --- LINE ENTRY STATE ---
    const [productSearch, setProductSearch] = useState('');
    const [showProductSuggestions, setShowProductSuggestions] = useState(false);
    const [highlightedIndex, setHighlightedIndex] = useState(0);
 
+   // Estados de Optimización Supabase (Productos y Lotes)
+   const [searchedProducts, setSearchedProducts] = useState<(Product & { current_stock: number })[]>([]);
+   const [loadedBatches, setLoadedBatches] = useState<Record<string, Batch[]>>({}); // Caché de lotes en memoria
+   const [isSearchingProd, setIsSearchingProd] = useState(false);
+
+   useEffect(() => {
+       if (USE_MOCK_DB || productSearch.length < 2) {
+           setSearchedProducts([]);
+           return;
+       }
+       const timer = setTimeout(async () => {
+           setIsSearchingProd(true);
+           try {
+               const { data: pData } = await supabase.from('products')
+                   .select('*')
+                   .or(`name.ilike.%${productSearch}%,sku.ilike.%${productSearch}%`)
+                   .eq('is_active', true)
+                   .limit(15);
+                   
+               if (pData && pData.length > 0) {
+                   const pIds = pData.map(p => p.id);
+                   const { data: bData } = await supabase.from('batches')
+                       .select('*')
+                       .in('product_id', pIds)
+                       .eq('warehouse_id', 'CENTRAL')
+                       .gt('quantity_current', 0)
+                       .order('expiration_date', { ascending: true });
+                   
+                   const batchCache: Record<string, Batch[]> = {};
+                   const enriched = pData.map(p => {
+                       const prodBatches = (bData || []).filter(b => b.product_id === p.id) as Batch[];
+                       batchCache[p.id] = prodBatches;
+                       const stock = prodBatches.reduce((sum, b) => sum + b.quantity_current, 0);
+                       return { ...p, current_stock: stock };
+                   });
+                   
+                   setLoadedBatches(prev => ({ ...prev, ...batchCache }));
+                   setSearchedProducts(enriched);
+               } else {
+                   setSearchedProducts([]);
+               }
+           } catch (error) {
+               console.error(error);
+           } finally {
+               setIsSearchingProd(false);
+           }
+       }, 350);
+       return () => clearTimeout(timer);
+   }, [productSearch]);
+
    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
    const [unitType, setUnitType] = useState<'UND' | 'PKG'>('UND');
    const [quantity, setQuantity] = useState<number>(1);
-   const [unitPrice, setUnitPrice] = useState<number>(0); // Editable
+   const [unitPrice, setUnitPrice] = useState<number>(0); 
    const [discountPercent, setDiscountPercent] = useState<number>(0);
    const [isBonus, setIsBonus] = useState(false);
 
@@ -65,9 +140,29 @@ export const NewSale: React.FC = () => {
    // --- SEARCH SALES MODAL STATE ---
    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
    const [saleSearchTerm, setSaleSearchTerm] = useState('');
-   const [isViewMode, setIsViewMode] = useState(false); // If true, we are viewing a past sale
-   const [isEditMode, setIsEditMode] = useState(false); // If true, we are actively modifying a past sale
+   const [searchedSales, setSearchedSales] = useState<Sale[]>([]);
+   const [isSearchingSale, setIsSearchingSale] = useState(false);
+   const [isViewMode, setIsViewMode] = useState(false); 
+   const [isEditMode, setIsEditMode] = useState(false); 
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
+
+   useEffect(() => {
+       if (USE_MOCK_DB || saleSearchTerm.length < 3) {
+           setSearchedSales([]);
+           return;
+       }
+       const timer = setTimeout(async () => {
+           setIsSearchingSale(true);
+           const { data } = await supabase.from('sales')
+               .select('*')
+               .or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`)
+               .order('created_at', { ascending: false })
+               .limit(20);
+           if (data) setSearchedSales(data as Sale[]);
+           setIsSearchingSale(false);
+       }, 500);
+       return () => clearTimeout(timer);
+   }, [saleSearchTerm]);
 
    // --- HISTORY MODAL STATE ---
    const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
@@ -75,7 +170,7 @@ export const NewSale: React.FC = () => {
    // --- PRINT STATE ---
    const [saleToPrint, setSaleToPrint] = useState<Sale | null>(null);
 
-   // --- FILTERING LOGIC ---
+   // --- FILTERING LOGIC (MOCK FALLBACK) ---
    const filteredClients = clients.filter(c =>
       c.name.toLowerCase().includes(clientSearch.toLowerCase()) ||
       c.doc_number.includes(clientSearch) ||
@@ -93,6 +188,11 @@ export const NewSale: React.FC = () => {
       s.number.includes(saleSearchTerm) ||
       s.client_ruc.includes(saleSearchTerm)
    );
+
+   // Determinar qué lista usar en UI
+   const displayClients = USE_MOCK_DB ? filteredClients : searchedClients;
+   const displayProducts = USE_MOCK_DB ? filteredProducts.map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
+   const displaySales = USE_MOCK_DB ? filteredSales : searchedSales;
 
    // --- CALCULATIONS ---
    const calculateTotal = (qty: number, price: number, discPct: number) => {
@@ -115,7 +215,7 @@ export const NewSale: React.FC = () => {
       setOriginalSale(null);
       setCart([]);
       setSelectedClientId('');
-      setClientData({ name: '', doc_number: '', address: '', price_list_id: '' });
+      setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
       setClientSearch('');
       setProductSearch('');
       setSelectedSellerId('');
@@ -132,14 +232,21 @@ export const NewSale: React.FC = () => {
       }
    };
 
-   const loadSale = (sale: Sale, mode: 'VIEW' | 'EDIT' = 'VIEW') => {
+   const loadSale = async (sale: Sale, mode: 'VIEW' | 'EDIT' = 'VIEW') => {
       if (mode === 'EDIT' && (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED')) {
          alert('No se puede modificar un comprobante enviado o aceptado por SUNAT.');
          return;
       }
+      
+      let itemsToLoad = sale.items;
+      if (!USE_MOCK_DB) {
+          const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id);
+          if (data) itemsToLoad = data as SaleItem[];
+      }
+
       setIsViewMode(mode === 'VIEW');
       setIsEditMode(mode === 'EDIT');
-      if (mode === 'EDIT') setOriginalSale(sale);
+      if (mode === 'EDIT') setOriginalSale({ ...sale, items: itemsToLoad });
 
       setDocType(sale.document_type as any);
       setSeries(sale.series);
@@ -152,12 +259,11 @@ export const NewSale: React.FC = () => {
       setClientSearch(sale.client_name);
       setPaymentMethod(sale.payment_method);
       setSelectedSellerId(sale.seller_id || '');
-      setCart(sale.items);
+      setCart(itemsToLoad);
       setIsSearchModalOpen(false);
    };
 
    const handlePreview = () => {
-      // Construct a temporary Sale object for preview
       const tempSale: Sale = {
          id: 'preview',
          document_type: docType,
@@ -178,7 +284,6 @@ export const NewSale: React.FC = () => {
       generateMassiveInvoicePDF(company, [tempSale]);
    };
 
-   // Recalculate prices based on selected Price List
    const removeFromCart = (index: number) => {
       const newItems = cart.filter((_, i) => i !== index);
       applyAutoPromotions(newItems);
@@ -189,13 +294,15 @@ export const NewSale: React.FC = () => {
       if (isNaN(newQty) || newQty <= 0) return;
 
       const item = cart[index];
-      const product = products.find(p => p.id === item.product_id);
+      // Buscar en memoria local o Supabase Cache
+      const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : searchedProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
       if (!product) return;
 
-      // Validate Stock
       const conversionFactor = item.selected_unit === 'PKG' ? (product.package_content || 1) : 1;
       const requiredBaseUnits = newQty * conversionFactor;
-      const availableBatches = getBatchesForProduct(product.id);
+      
+      // Obtener lotes de caché o store
+      const availableBatches = USE_MOCK_DB ? getBatchesForProduct(product.id) : (loadedBatches[product.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
       if (totalStock < requiredBaseUnits) {
@@ -203,7 +310,6 @@ export const NewSale: React.FC = () => {
          return;
       }
 
-      // Re-Allocate Batches
       let remaining = requiredBaseUnits;
       const selectedBatches: BatchAllocation[] = [];
       for (const batch of availableBatches) {
@@ -214,7 +320,6 @@ export const NewSale: React.FC = () => {
       }
 
       const updatedCart = [...cart];
-
       const newPrice = calculateTotal(newQty, item.unit_price, item.discount_percent);
       updatedCart[index] = {
          ...item,
@@ -237,15 +342,10 @@ export const NewSale: React.FC = () => {
          const product = products.find(p => p.id === item.product_id);
          if (!product) return item;
 
-         // Logic to simulate Price Lists (In real app this comes from DB)
-         // Default: Base Price
          let newPrice = item.selected_unit === 'PKG' ? product.price_package : product.price_unit;
 
-         // Mock Modifiers
-         if (clientData.price_list_id === 'pl1') newPrice = newPrice * 0.92; // Mayorista (-8%)
-         if (clientData.price_list_id === 'pl3') newPrice = newPrice * 1.05; // Horeca (+5%)
-
-         // Keep bonus zero
+         if (clientData.price_list_id === 'pl1') newPrice = newPrice * 0.92; 
+         if (clientData.price_list_id === 'pl3') newPrice = newPrice * 1.05; 
          if (item.is_bonus) newPrice = 0;
 
          const newTotal = calculateTotal(item.quantity_presentation, newPrice, item.discount_percent);
@@ -266,27 +366,20 @@ export const NewSale: React.FC = () => {
 
    // --- AUTO PROMOTIONS LOGIC ---
    const applyAutoPromotions = (currentCart: SaleItem[]) => {
-      // 1. Remove existing auto-promotions from cart first to recalculate cleanly
       let newCart = currentCart.filter(item => !item.auto_promo_id);
 
-      // 2. Filter active auto promos for current conditions (channels, price list)
       const validPromos = autoPromotions.filter(ap => {
-         // Defaulting POS channel to IN_STORE, checking against client address
-         // Passing selectedSellerId for appropriate bonifications based on the assigned seller
          if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
-         
-         // Check price list
          if (ap.target_price_list_ids?.length > 0 &&
-            clientData.price_list_id &&
-            !ap.target_price_list_ids.includes('ALL') &&
-            !ap.target_price_list_ids.includes(clientData.price_list_id)) return false;
+             clientData.price_list_id &&
+             !ap.target_price_list_ids.includes('ALL') &&
+             !ap.target_price_list_ids.includes(clientData.price_list_id)) return false;
          return true;
       });
 
-      // 3. Check conditions and apply rewards
       validPromos.forEach(ap => {
          let applies = false;
-         let multiplyFactor = 0; // How many times the reward is given
+         let multiplyFactor = 0; 
 
          if (ap.condition_type === 'BUY_X_PRODUCT') {
             const qtyBought = newCart
@@ -325,21 +418,22 @@ export const NewSale: React.FC = () => {
                const rewardQty = ap.reward_quantity * multiplyFactor;
                newCart.push({
                   id: crypto.randomUUID(),
+                  sale_id: '',
                   product_id: rewardProd.id,
                   product_sku: rewardProd.sku,
                   product_name: rewardProd.name,
-                  quantity_base: rewardQty * (rewardProd.package_content || 1), // Assuming base units, simpler for bonifications
-                  batch_allocations: [], // Auto-allocate later
-                  quantity: rewardQty, // Base quantity alias
+                  quantity_base: rewardQty * (rewardProd.package_content || 1), 
+                  batch_allocations: [], 
+                  quantity: rewardQty, 
                   quantity_presentation: rewardQty,
                   unit_price: 0,
                   discount_percent: 100,
-                  discount_amount: 0, // Since unit price is 0
+                  discount_amount: 0, 
                   total_price: 0,
                   selected_unit: ap.reward_unit_type as 'UND' | 'PKG',
                   is_bonus: true,
-                  auto_promo_id: ap.id // Tag it
-               });
+                  auto_promo_id: ap.id 
+               } as any);
             }
          }
       });
@@ -350,22 +444,16 @@ export const NewSale: React.FC = () => {
    // --- HANDLERS: CLIENT ---
    const selectClient = (c: Client) => {
       setSelectedClientId(c.id);
-
-      // Logic: Auto-select document type
       const newDocType: 'FACTURA' | 'BOLETA' = c.doc_number.length === 11 ? 'FACTURA' : 'BOLETA';
       setDocType(newDocType);
-
-      // Update series based on doc type automatically using store's active series
+      
       const activeSeries = company.series.find(s => s.type === newDocType && s.is_active);
       if (activeSeries) {
          setSeries(activeSeries.series);
          setDocNumber(String(activeSeries.current_number).padStart(8, '0'));
       }
 
-      // Auto-select Price List
       const priceList = c.price_list_id || '';
-
-      // Auto-assign seller based on client's zone
       let autoSellerId = '';
       if (c.zone_id) {
          const zone = zones.find(z => z.id === c.zone_id);
@@ -376,16 +464,10 @@ export const NewSale: React.FC = () => {
       setSelectedSellerId(autoSellerId);
 
       setClientData({
-         name: c.name,
-         doc_number: c.doc_number,
-         address: c.address,
-         price_list_id: priceList,
-         city: c.city
+         name: c.name, doc_number: c.doc_number, address: c.address, price_list_id: priceList, city: c.city
       });
       setClientSearch(c.name);
       setShowClientSuggestions(false);
-
-      // Default to CONTADO as requested
       setPaymentMethod('CONTADO');
    };
 
@@ -393,73 +475,50 @@ export const NewSale: React.FC = () => {
    const handleProductKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === 'ArrowDown') {
          e.preventDefault();
-         setHighlightedIndex(prev => (prev + 1) % filteredProducts.length);
+         setHighlightedIndex(prev => (prev + 1) % displayProducts.length);
       } else if (e.key === 'ArrowUp') {
          e.preventDefault();
-         setHighlightedIndex(prev => (prev - 1 + filteredProducts.length) % filteredProducts.length);
+         setHighlightedIndex(prev => (prev - 1 + displayProducts.length) % displayProducts.length);
       } else if (e.key === 'Enter') {
          e.preventDefault();
-         if (filteredProducts.length > 0) {
-            selectProduct(filteredProducts[highlightedIndex]);
-         }
+         if (displayProducts.length > 0) selectProduct(displayProducts[highlightedIndex]);
       } else if (e.key === 'Escape') {
          setShowProductSuggestions(false);
       }
    };
 
-   const selectProduct = (p: Product) => {
-      // --- DUPLICATE ALERT ---
+   const selectProduct = (p: Product & { current_stock?: number }) => {
       const isDuplicate = cart.some(item => item.product_id === p.id);
       if (isDuplicate) {
          const confirmAction = window.confirm(`¡ADVERTENCIA!\nEl producto "${p.name}" ya se encuentra en el detalle.\n¿Desea continuar agregándolo?`);
          if (!confirmAction) {
-            setProductSearch('');
-            setShowProductSuggestions(false);
-            productInputRef.current?.focus();
-            return;
+            setProductSearch(''); setShowProductSuggestions(false); productInputRef.current?.focus(); return;
          }
       }
 
-      setSelectedProduct(p);
-      setProductSearch(p.name);
-      setShowProductSuggestions(false);
-      setUnitType('UND'); // Default
+      setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitType('UND'); 
 
-      // Calculate Price based on current selected list
       let price = p.price_unit;
       if (clientData.price_list_id === 'pl1') price = price * 0.92;
       if (clientData.price_list_id === 'pl3') price = price * 1.05;
 
-      // Evaluate Classic Promotions
       let defaultDiscount = 0;
       const activePromo = promotions.find(promo => 
          promo.product_ids.includes(p.id) && isPromoValidForContext(promo, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)
       );
 
       if (activePromo) {
-         if (activePromo.type === 'PERCENTAGE_DISCOUNT') {
-            defaultDiscount = activePromo.value;
-         } else if (activePromo.type === 'FIXED_PRICE') {
-            price = activePromo.value;
-         }
+         if (activePromo.type === 'PERCENTAGE_DISCOUNT') defaultDiscount = activePromo.value;
+         else if (activePromo.type === 'FIXED_PRICE') price = activePromo.value;
       }
 
-      setUnitPrice(price);
-      setQuantity(1);
-      setDiscountPercent(defaultDiscount);
-      setIsBonus(false);
+      setUnitPrice(price); setQuantity(1); setDiscountPercent(defaultDiscount); setIsBonus(false); setPriceLocked(true);
 
-      // Lock prices by default for the new line
-      setPriceLocked(true);
-
-      // Move focus to Qty and highlight text
       setTimeout(() => {
          qtyInputRef.current?.focus();
          qtyInputRef.current?.select();
       }, 50);
    };
-
-
 
    const handleUnitChange = (type: 'UND' | 'PKG') => {
       setUnitType(type);
@@ -476,10 +535,11 @@ export const NewSale: React.FC = () => {
       if (!selectedProduct) return;
       if (quantity <= 0) { alert("Cantidad inválida"); return; }
 
-      const prod = selectedProduct;
+      const prod = selectedProduct as any;
       const conversionFactor = unitType === 'PKG' ? (prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
-      const availableBatches = getBatchesForProduct(prod.id);
+      
+      const availableBatches = USE_MOCK_DB ? getBatchesForProduct(prod.id) : (loadedBatches[prod.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
       if (totalStock < requiredBaseUnits) {
@@ -487,7 +547,6 @@ export const NewSale: React.FC = () => {
          return;
       }
 
-      // Allocate Batches
       let remaining = requiredBaseUnits;
       const selectedBatches: BatchAllocation[] = [];
       for (const batch of availableBatches) {
@@ -498,7 +557,6 @@ export const NewSale: React.FC = () => {
       }
 
       let initialNewCart = [...cart];
-
       const existingItemIndex = initialNewCart.findIndex(item => item.product_id === prod.id && item.selected_unit === unitType && !item.is_bonus && !item.auto_promo_id);
 
       if (existingItemIndex >= 0) {
@@ -509,10 +567,11 @@ export const NewSale: React.FC = () => {
             initialNewCart[existingItemIndex] = {
                ...existing,
                quantity_presentation: newQty,
-               quantity: unitType === 'PKG' ? newQty * (prod.package_content || 1) : newQty,
+               quantity_base: unitType === 'PKG' ? newQty * (prod.package_content || 1) : newQty,
                total_price: newPrice,
                discount_percent: discountPercent,
-               discount_amount: (newQty * unitPrice) * (discountPercent / 100)
+               discount_amount: (newQty * unitPrice) * (discountPercent / 100),
+               batch_allocations: selectedBatches
             };
          } else {
             return;
@@ -539,13 +598,7 @@ export const NewSale: React.FC = () => {
 
       applyAutoPromotions(initialNewCart);
 
-      // Reset
-      setSelectedProduct(null);
-      setProductSearch('');
-      setQuantity(1);
-      setUnitPrice(0);
-      setDiscountPercent(0);
-      setIsBonus(false);
+      setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0); setDiscountPercent(0); setIsBonus(false);
       setTimeout(() => productInputRef.current?.focus(), 50);
    };
 
@@ -563,14 +616,12 @@ export const NewSale: React.FC = () => {
             }
          }
       } else if (e.key === 'Escape') {
-         // Reset entry
-         setSelectedProduct(null);
-         setProductSearch('');
+         setSelectedProduct(null); setProductSearch('');
          setTimeout(() => productInputRef.current?.focus(), 50);
       }
    };
 
-   // --- ADMIN AUTHORIZATION FOR BONUS / DISCOUNT ---
+   // --- ADMIN AUTHORIZATION ---
    const [showAdminAuthModal, setShowAdminAuthModal] = useState<{ isOpen: boolean, triggerAction: () => void, targetActionName: string }>({ isOpen: false, triggerAction: () => { }, targetActionName: '' });
    const [adminPasswordInput, setAdminPasswordInput] = useState('');
 
@@ -598,14 +649,11 @@ export const NewSale: React.FC = () => {
       }
    };
 
-   // --- FINAL SAVE ---
-   const handleSaveSale = () => {
+   // --- FINAL SAVE (RPC TITANIUM LOCK) ---
+   const handleSaveSale = async () => {
       if (isViewMode && !isEditMode) {
-         // If viewing history, just print current
          const currentSale = sales.find(s => s.series === series && s.number === docNumber);
-         if (currentSale) {
-            generateMassiveInvoicePDF(company, [currentSale]);
-         }
+         if (currentSale) generateMassiveInvoicePDF(company, [currentSale]);
          return;
       }
 
@@ -613,12 +661,14 @@ export const NewSale: React.FC = () => {
       if (!selectedClientId && !clientData.name) { alert("Ingrese datos del cliente"); return; }
       if (!series) { alert("No hay una serie asignada a este tipo de documento. Configure una en los Ajustes de Empresa."); return; }
 
-      // --- CONFIRMATION MODAL ---
+      // Anti-Mock Shield
+      if (selectedClientId && !isUUID(selectedClientId) && !USE_MOCK_DB) { alert("El cliente seleccionado es de prueba. Busque un cliente real."); return; }
+      if (!USE_MOCK_DB && cart.some(i => !isUUID(i.product_id))) { alert("Hay productos de prueba en el carrito. Elimínelos y use productos reales."); return; }
+
       const confirmSave = window.confirm(`¿Está seguro que desea ${isEditMode ? 'MODIFICAR' : 'emitir'} el comprobante ${docType} ${series}?`);
       if (!confirmSave) return;
 
       const correlative = getNextDocumentNumber(docType, series);
-
       if (!correlative && !isEditMode) {
          alert("Error al obtener la serie. Verifique la configuración de la empresa.");
          return;
@@ -634,6 +684,7 @@ export const NewSale: React.FC = () => {
          client_ruc: clientData.doc_number || '00000000',
          client_address: clientData.address || '',
          seller_id: selectedSellerId || undefined,
+         client_id: selectedClientId || undefined,
          subtotal,
          igv,
          total: grandTotal,
@@ -644,32 +695,51 @@ export const NewSale: React.FC = () => {
          sunat_status: isEditMode && originalSale ? originalSale.sunat_status : 'PENDING'
       };
 
-      if (isEditMode && originalSale) {
-         const result = updateSaleDetailed(newSaleData, originalSale, currentUser?.name || 'ADMIN');
-         if (!result.success) {
-            alert(result.msg);
-            return;
+      setIsSaving(true);
+
+      if (!USE_MOCK_DB && !isEditMode) {
+         try {
+            const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
+            if (error) throw error;
+            if (data && data.success) {
+               alert("Venta guardada y stock descontado exitosamente.");
+               generateMassiveInvoicePDF(company, [newSaleData]);
+               handleNewSale();
+            }
+         } catch (err: any) {
+            alert(`Error crítico en la transacción: ${err.message}`);
+         } finally {
+            setIsSaving(false);
          }
-         alert(result.msg);
       } else {
-         createSale(newSaleData);
+         // Lógica fallback y para Edición (Más compleja de manejar en un solo RPC por ahora)
+         if (isEditMode && originalSale) {
+            const result = updateSaleDetailed(newSaleData, originalSale, currentUser?.name || 'ADMIN');
+            if (!result.success) { alert(result.msg); setIsSaving(false); return; }
+            alert(result.msg);
+         } else {
+            createSale(newSaleData);
+         }
+         generateMassiveInvoicePDF(company, [newSaleData]);
+         handleNewSale();
+         setIsSaving(false);
       }
-
-      // Trigger Print
-      generateMassiveInvoicePDF(company, [newSaleData]);
-
-      handleNewSale(); // automatically resets to next doc number
    };
 
    return (
       <div className="flex flex-col h-full bg-slate-200 p-2 font-sans text-xs relative">
 
-         {/* PRINT COMPONENT OVERLAY */}
-         {/* PDF Generator handles printing programmatically now */}
+         {/* PANTALLA DE CARGA TRANSACCIONAL (NUEVO) */}
+         {isSaving && (
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded">
+               <Loader2 className="w-16 h-16 text-blue-500 animate-spin mb-4" />
+               <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO TRANSACCIÓN...</h2>
+               <p className="text-blue-200 font-medium mt-2">Asegurando stock y registrando lote por FIFO</p>
+            </div>
+         )}
 
          {/* === HEADER SECTION === */}
          <div className="bg-white p-2 rounded shadow-sm border border-slate-300 mb-2 space-y-2 relative">
-            {/* Top Actions */}
             <div className="absolute top-2 right-2 flex gap-2">
                <button onClick={handleNewSale} className="bg-slate-700 text-white px-3 py-1 rounded shadow text-xs font-bold hover:bg-slate-600 flex items-center">
                   <FilePlus className="w-3.5 h-3.5 mr-1" /> Nuevo (F2)
@@ -679,7 +749,6 @@ export const NewSale: React.FC = () => {
                </button>
             </div>
 
-            {/* Row 1: Document Data */}
             <div className="flex items-center gap-3 mt-1 py-1">
                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
                   <label className="font-bold text-slate-700 text-sm">Tipo</label>
@@ -692,10 +761,7 @@ export const NewSale: React.FC = () => {
                         if (activeSeries) {
                            setSeries(activeSeries.series);
                            setDocNumber(String(activeSeries.current_number).padStart(8, '0'));
-                        } else {
-                           setSeries('');
-                           setDocNumber('');
-                        }
+                        } else { setSeries(''); setDocNumber(''); }
                      }}
                      disabled={isViewMode}
                   >
@@ -745,12 +811,12 @@ export const NewSale: React.FC = () => {
                   </select>
                </div>
             </div>
-            {isViewMode && <div className="ml-4 px-3 py-1 bg-yellow-200 text-yellow-800 font-bold rounded animate-pulse">MODO VISUALIZACIÓN</div>}
-            {isEditMode && <div className="ml-4 px-3 py-1 bg-red-600 text-white font-bold rounded animate-pulse relative pr-8">
+            {isViewMode && <div className="ml-4 px-3 py-1 bg-yellow-200 text-yellow-800 font-bold rounded animate-pulse w-fit">MODO VISUALIZACIÓN</div>}
+            {isEditMode && <div className="ml-4 px-3 py-1 bg-red-600 text-white font-bold rounded animate-pulse relative pr-8 w-fit">
                MODIFICANDO DOCUMENTO
                <button onClick={handleNewSale} className="absolute right-1 top-1.5 hover:text-red-200"><X className="w-4 h-4" /></button>
             </div>}
-            {!series && !isViewMode && !isEditMode && <div className="ml-4 px-3 py-1 bg-red-100 text-red-800 text-[10px] font-bold rounded border border-red-300">¡DEBE CONFIGURAR UNA SERIE EN AJUSTES!</div>}
+            {!series && !isViewMode && !isEditMode && <div className="ml-4 px-3 py-1 bg-red-100 text-red-800 text-[10px] font-bold rounded border border-red-300 w-fit">¡DEBE CONFIGURAR UNA SERIE EN AJUSTES!</div>}
          </div>
 
          {/* Row 2: Client Data */}
@@ -769,16 +835,19 @@ export const NewSale: React.FC = () => {
                         onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
                         disabled={isViewMode}
                      />
-                     {showClientSuggestions && clientSearch && (
+                     {isSearchingClient && <Loader2 className="absolute right-1 top-1 w-3 h-3 text-blue-500 animate-spin" />}
+                     {showClientSuggestions && clientSearch && displayClients.length > 0 && (
                         <div className="absolute top-full left-0 w-[300px] bg-white border border-slate-400 shadow-xl z-50 max-h-48 overflow-auto">
-                           {filteredClients.map(c => (
+                           {displayClients.map(c => (
                               <div key={c.id} onMouseDown={() => selectClient(c)} className="p-2 hover:bg-blue-100 cursor-pointer border-b border-slate-100">
                                  <div className="font-bold text-slate-800">{c.name}</div>
                                  <div className="text-[10px] text-slate-500">{c.doc_number} | {c.address}</div>
                               </div>
                            ))}
-                           {filteredClients.length === 0 && <div className="p-2 text-slate-400 italic">No encontrado</div>}
                         </div>
+                     )}
+                     {showClientSuggestions && clientSearch && displayClients.length === 0 && !isSearchingClient && (
+                         <div className="absolute top-full left-0 w-[300px] bg-white border border-slate-400 shadow-xl z-50 p-2 text-slate-400 italic">No encontrado</div>
                      )}
                   </div>
                </div>
@@ -822,7 +891,7 @@ export const NewSale: React.FC = () => {
                         disabled={isViewMode}
                      />
                      {(() => {
-                        const fullClient = clients.find(c => c.doc_number === clientData.doc_number);
+                        const fullClient = clients.find(c => c.doc_number === clientData.doc_number) || searchedClients.find(c => c.doc_number === clientData.doc_number);
                         if (fullClient && fullClient.branches && fullClient.branches.length > 0 && !isViewMode) {
                            return (
                               <button
@@ -845,7 +914,7 @@ export const NewSale: React.FC = () => {
                            Seleccione Dirección de Entrega
                         </div>
                         {(() => {
-                           const fullClient = clients.find(c => c.doc_number === clientData.doc_number);
+                           const fullClient = clients.find(c => c.doc_number === clientData.doc_number) || searchedClients.find(c => c.doc_number === clientData.doc_number);
                            if (!fullClient) return null;
 
                            const allAddresses = [fullClient.address, ...(fullClient.branches || [])];
@@ -886,6 +955,7 @@ export const NewSale: React.FC = () => {
                </div>
             </div>
          </div>
+         
          {/* === GRID SECTION === */}
          <div className="flex-1 bg-white border border-slate-400 flex flex-col shadow-sm">
             {/* Entry Row (Simulating Grid Input) */}
@@ -897,7 +967,7 @@ export const NewSale: React.FC = () => {
                         <Search className="absolute left-1.5 top-1.5 w-3 h-3 text-blue-400" />
                         <input
                            ref={productInputRef}
-                           className="w-full pl-6 pr-2 py-1 border border-blue-300 rounded text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                           className="w-full pl-6 pr-6 py-1 border border-blue-300 rounded text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none uppercase"
                            placeholder="PISTOLEAR O ESCRIBIR..."
                            value={productSearch}
                            onChange={e => { setProductSearch(e.target.value); setShowProductSuggestions(true); setHighlightedIndex(0); }}
@@ -905,7 +975,8 @@ export const NewSale: React.FC = () => {
                            onFocus={() => setShowProductSuggestions(true)}
                            onBlur={() => setTimeout(() => setShowProductSuggestions(false), 200)}
                         />
-                        {showProductSuggestions && productSearch && (
+                        {isSearchingProd && <Loader2 className="absolute right-1.5 top-1.5 w-4 h-4 text-blue-500 animate-spin" />}
+                        {showProductSuggestions && productSearch && displayProducts.length > 0 && (
                            <div className="absolute top-full left-0 w-full bg-white border border-slate-400 shadow-2xl z-50 max-h-60 overflow-auto">
                               <table className="w-full text-left text-xs">
                                  <thead className="bg-slate-100 font-bold text-slate-600">
@@ -917,26 +988,25 @@ export const NewSale: React.FC = () => {
                                     </tr>
                                  </thead>
                                  <tbody>
-                                    {filteredProducts.map((p, idx) => {
-                                       const stock = getBatchesForProduct(p.id).reduce((sum, b) => sum + b.quantity_current, 0);
+                                    {displayProducts.map((p, idx) => {
                                        return (
                                           <tr
                                              key={p.id}
-                                             onMouseDown={() => selectProduct(p)}
+                                             onMouseDown={() => selectProduct(p as any)}
                                              className={`cursor-pointer ${idx === highlightedIndex ? 'bg-blue-200' : 'hover:bg-blue-50'}`}
                                           >
                                              <td className="p-2 font-mono text-blue-800 font-bold">{p.sku}</td>
                                              <td className="p-2 font-medium">{p.name}</td>
                                              <td className="p-2 text-right">S/ {p.price_unit.toFixed(2)}</td>
-                                             <td className="p-2 text-right font-bold text-slate-700">{stock}</td>
+                                             <td className={`p-2 text-right font-bold ${p.current_stock > 0 ? 'text-green-600' : 'text-red-500'}`}>{p.current_stock}</td>
                                           </tr>
                                        );
                                     })}
                                  </tbody>
                               </table>
-                              {filteredProducts.length === 0 && <div className="p-2 text-center text-slate-400">Sin coincidencias</div>}
                            </div>
                         )}
+                        {showProductSuggestions && productSearch && displayProducts.length === 0 && !isSearchingProd && <div className="absolute top-full left-0 w-full p-2 text-center text-slate-400 bg-white border border-slate-400 shadow-2xl z-50">Sin coincidencias</div>}
                      </div>
                   </div>
 
@@ -1056,7 +1126,7 @@ export const NewSale: React.FC = () => {
                <table className="w-full text-left text-xs">
                   <tbody>
                      {cart.map((item, index) => {
-                        const prod = products.find(p => p.id === item.product_id);
+                        const prod = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : searchedProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
                         const autoPromo = item.auto_promo_id ? autoPromotions.find(ap => ap.id === item.auto_promo_id) : null;
                         return (
                            <tr key={item.id} className={`border-b border-slate-100 ${item.is_bonus ? 'bg-orange-50' : 'hover:bg-slate-50'}`}>
@@ -1081,20 +1151,19 @@ export const NewSale: React.FC = () => {
                                        value={item.quantity_presentation || ''}
                                        onChange={e => {
                                           const val = e.target.value;
-                                          // Update purely visually first to allow typing empty strings before valid numbers
                                           const newCart = [...cart];
                                           newCart[index] = { ...newCart[index], quantity_presentation: val as any };
                                           setCart(newCart);
                                        }}
                                        onBlur={e => {
                                           let val = parseInt(e.target.value, 10);
-                                          if (isNaN(val) || val <= 0) val = 1; // Fallback to 1 if empty or invalid
+                                          if (isNaN(val) || val <= 0) val = 1; 
                                           handleCartItemQtyChange(index, val.toString());
                                        }}
                                        onKeyDown={e => {
                                           if (e.key === 'Enter') {
                                              e.preventDefault();
-                                             (e.target as HTMLInputElement).blur(); // Trigger recalculation
+                                             (e.target as HTMLInputElement).blur(); 
                                           }
                                        }}
                                     />
@@ -1161,89 +1230,88 @@ export const NewSale: React.FC = () => {
          </div>
 
          {/* === SEARCH MODAL === */}
-         {
-            isSearchModalOpen && (
-               <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-                  <div className="bg-white w-full max-w-5xl rounded-lg shadow-2xl flex flex-col max-h-[85vh]">
-                     <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100 rounded-t-lg">
-                        <h3 className="font-bold text-slate-700 flex items-center text-lg"><Search className="w-5 h-5 mr-2" /> Buscar Documento</h3>
-                        <button onClick={() => setIsSearchModalOpen(false)} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
-                     </div>
-                     <div className="p-4 bg-slate-50 border-b border-slate-200">
-                        <input
-                           autoFocus
-                           className="w-full border border-slate-300 rounded p-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                           placeholder="Buscar por Nro Documento, RUC o Nombre Cliente..."
-                           value={saleSearchTerm}
-                           onChange={e => setSaleSearchTerm(e.target.value)}
-                        />
-                     </div>
-                     {/* Table Wrapper to handle sticky header corner cases */}
-                     <div className="flex-1 overflow-auto bg-white rounded-b-lg relative">
-                        <table className="w-full text-left text-sm border-collapse">
-                           <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-200 z-10 shadow-sm">
-                              <tr>
-                                 <th className="p-4">Documento</th>
-                                 <th className="p-4">Fecha</th>
-                                 <th className="p-4">Cliente</th>
-                                 <th className="p-4 text-right">Total</th>
-                                 <th className="p-4 text-center">Estado</th>
-                                 <th className="p-4"></th>
+         {isSearchModalOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+               <div className="bg-white w-full max-w-5xl rounded-lg shadow-2xl flex flex-col max-h-[85vh]">
+                  <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100 rounded-t-lg">
+                     <h3 className="font-bold text-slate-700 flex items-center text-lg"><Search className="w-5 h-5 mr-2" /> Buscar Documento</h3>
+                     <button onClick={() => setIsSearchModalOpen(false)} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
+                  </div>
+                  <div className="p-4 bg-slate-50 border-b border-slate-200 relative">
+                     <input
+                        autoFocus
+                        className="w-full border border-slate-300 rounded p-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="Buscar por Nro Documento, RUC o Nombre Cliente..."
+                        value={saleSearchTerm}
+                        onChange={e => setSaleSearchTerm(e.target.value)}
+                     />
+                     {isSearchingSale && <Loader2 className="absolute right-8 top-7 w-5 h-5 text-blue-500 animate-spin" />}
+                  </div>
+                  <div className="flex-1 overflow-auto bg-white rounded-b-lg relative">
+                     <table className="w-full text-left text-sm border-collapse">
+                        <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-200 z-10 shadow-sm">
+                           <tr>
+                              <th className="p-4">Documento</th>
+                              <th className="p-4">Fecha</th>
+                              <th className="p-4">Cliente</th>
+                              <th className="p-4 text-right">Total</th>
+                              <th className="p-4 text-center">Estado</th>
+                              <th className="p-4"></th>
+                           </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                           {displaySales.map(s => (
+                              <tr key={s.id} className="hover:bg-blue-50 transition-colors">
+                                 <td className="p-4">
+                                    <span className="font-bold text-blue-700 text-[15px]">{s.series}-{s.number}</span>
+                                 </td>
+                                 <td className="p-4">
+                                    <span className="text-slate-600 font-medium text-[15px]">{new Date(s.created_at).toLocaleDateString()}</span>
+                                 </td>
+                                 <td className="p-4">
+                                    <div className="font-bold text-slate-800 text-[15px]">{s.client_name}</div>
+                                    <div className="text-[13px] text-slate-500">{s.client_ruc}</div>
+                                 </td>
+                                 <td className="p-4 text-right">
+                                    <span className="font-black text-slate-900 text-[16px]">S/ {s.total.toFixed(2)}</span>
+                                 </td>
+                                 <td className="p-4 text-center">
+                                    <span className={`px-3 py-1 rounded text-xs font-bold ring-1 ${s.sunat_status === 'ACCEPTED' ? 'bg-green-100 ring-green-300 text-green-800' : s.sunat_status === 'SENT' ? 'bg-blue-100 ring-blue-300 text-blue-800' : 'bg-slate-100 ring-slate-300 text-slate-800'}`}>{s.sunat_status || 'PENDING'}</span>
+                                 </td>
+                                 <td className="p-4 text-right flex gap-2 justify-end">
+                                    <button
+                                       onClick={() => setShowHistoryModal({ isOpen: true, sale: s })}
+                                       className="bg-white border border-slate-300 px-3 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
+                                       title="Ver Historial"
+                                    >
+                                       H.
+                                    </button>
+                                    <button
+                                       onClick={() => loadSale(s, 'VIEW')}
+                                       className="bg-white border border-slate-300 px-4 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
+                                    >
+                                       <Eye className="w-4 h-4 mr-1.5 text-slate-500" /> Ver
+                                    </button>
+                                    <button
+                                       onClick={() => requestAdminAuth(() => loadSale(s, 'EDIT'), 'Modificar Documento')}
+                                       disabled={s.sunat_status === 'SENT' || s.sunat_status === 'ACCEPTED'}
+                                       className="bg-yellow-500 border border-yellow-600 px-4 py-1.5 rounded text-[13px] font-bold text-white hover:bg-yellow-600 shadow-sm flex items-center transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                       title={s.sunat_status === 'SENT' || s.sunat_status === 'ACCEPTED' ? 'No se puede modificar doc enviado a SUNAT' : 'Modificar Doc'}
+                                    >
+                                       Modificar
+                                    </button>
+                                 </td>
                               </tr>
-                           </thead>
-                           <tbody className="divide-y divide-slate-100">
-                              {filteredSales.map(s => (
-                                 <tr key={s.id} className="hover:bg-blue-50 transition-colors">
-                                    <td className="p-4">
-                                       <span className="font-bold text-blue-700 text-[15px]">{s.series}-{s.number}</span>
-                                    </td>
-                                    <td className="p-4">
-                                       <span className="text-slate-600 font-medium text-[15px]">{new Date(s.created_at).toLocaleDateString()}</span>
-                                    </td>
-                                    <td className="p-4">
-                                       <div className="font-bold text-slate-800 text-[15px]">{s.client_name}</div>
-                                       <div className="text-[13px] text-slate-500">{s.client_ruc}</div>
-                                    </td>
-                                    <td className="p-4 text-right">
-                                       <span className="font-black text-slate-900 text-[16px]">S/ {s.total.toFixed(2)}</span>
-                                    </td>
-                                    <td className="p-4 text-center">
-                                       <span className={`px-3 py-1 rounded text-xs font-bold ring-1 ${s.sunat_status === 'ACCEPTED' ? 'bg-green-100 ring-green-300 text-green-800' : s.sunat_status === 'SENT' ? 'bg-blue-100 ring-blue-300 text-blue-800' : 'bg-slate-100 ring-slate-300 text-slate-800'}`}>{s.sunat_status || 'PENDING'}</span>
-                                    </td>
-                                    <td className="p-4 text-right flex gap-2 justify-end">
-                                       <button
-                                          onClick={() => setShowHistoryModal({ isOpen: true, sale: s })}
-                                          className="bg-white border border-slate-300 px-3 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
-                                          title="Ver Historial"
-                                       >
-                                          H.
-                                       </button>
-                                       <button
-                                          onClick={() => loadSale(s, 'VIEW')}
-                                          className="bg-white border border-slate-300 px-4 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
-                                       >
-                                          <Eye className="w-4 h-4 mr-1.5 text-slate-500" /> Ver
-                                       </button>
-                                       <button
-                                          onClick={() => requestAdminAuth(() => loadSale(s, 'EDIT'), 'Modificar Documento')}
-                                          disabled={s.sunat_status === 'SENT' || s.sunat_status === 'ACCEPTED'}
-                                          className="bg-yellow-500 border border-yellow-600 px-4 py-1.5 rounded text-[13px] font-bold text-white hover:bg-yellow-600 shadow-sm flex items-center transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                          title={s.sunat_status === 'SENT' || s.sunat_status === 'ACCEPTED' ? 'No se puede modificar doc enviado a SUNAT' : 'Modificar Doc'}
-                                       >
-                                          Modificar
-                                       </button>
-                                    </td>
-                                 </tr>
-                              ))}
-                              {filteredSales.length === 0 && (
-                                 <tr><td colSpan={6} className="p-8 text-center text-slate-400 text-base">No se encontraron documentos que coincidan con su búsqueda.</td></tr>
-                              )}
-                           </tbody>
-                        </table>
-                     </div>
+                           ))}
+                           {displaySales.length === 0 && (
+                              <tr><td colSpan={6} className="p-8 text-center text-slate-400 text-base">No se encontraron documentos que coincidan con su búsqueda.</td></tr>
+                           )}
+                        </tbody>
+                     </table>
                   </div>
                </div>
-            )}
+            </div>
+         )}
 
          {/* === HISTORY MODAL === */}
          {showHistoryModal.isOpen && showHistoryModal.sale && (
@@ -1296,16 +1364,16 @@ export const NewSale: React.FC = () => {
 
          {/* === ADMIN PASSWORD MODAL === */}
          {showAdminAuthModal.isOpen && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
                <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
                   <h3 className="font-bold text-slate-800 text-lg mb-2">Se requiere autorización</h3>
-                  <p className="text-sm text-slate-600 mb-4">Ingrese la contraseña de administrador para: <strong>{showAdminAuthModal.targetActionName}</strong></p>
+                  <p className="text-sm text-slate-600 mb-4">Ingrese la contraseña de administrador para: <strong className="text-red-600">{showAdminAuthModal.targetActionName}</strong></p>
 
                   <input
                      id="admin-password-input"
                      type="password"
-                     className="w-full border border-slate-300 rounded p-2 mb-4 text-center text-lg tracking-widest focus:ring-2 focus:ring-blue-500 outline-none"
-                     placeholder="Contraseña..."
+                     className="w-full border-2 border-slate-300 rounded p-2 mb-4 text-center text-2xl tracking-widest focus:ring-2 focus:ring-blue-500 outline-none"
+                     placeholder="••••"
                      value={adminPasswordInput}
                      onChange={e => setAdminPasswordInput(e.target.value)}
                      onKeyDown={e => { if (e.key === 'Enter') verifyAdminAndExecute(); else if (e.key === 'Escape') setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' }); }}
