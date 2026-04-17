@@ -607,8 +607,9 @@ export const NewSale: React.FC = () => {
                                <div>Saldo Disponible: <strong className="font-mono">S/ {Math.max(0, clientCreditInfo.limit - clientCreditInfo.debt).toFixed(2)}</strong></div>
                            </div>
                        </div>
-                       <div className="text-right flex flex-col justify-end">
-                           {clientCreditInfo.overdue && <div className="font-black text-xs text-red-600 flex items-center bg-white px-2 py-1 rounded shadow-sm border border-red-200"><AlertTriangle className="w-4 h-4 mr-1"/> BLOQUEO X MOROSIDAD (>7 DÍAS)</div>}
+                       
+                      <div className="text-right flex flex-col justify-end">
+                           {clientCreditInfo.overdue && <div className="font-black text-xs text-red-600 flex items-center bg-white px-2 py-1 rounded shadow-sm border border-red-200"><AlertTriangle className="w-4 h-4 mr-1"/> BLOQUEO X MOROSIDAD (&gt;7 DÍAS)</div>}
                            {(clientCreditInfo.debt + grandTotal > clientCreditInfo.limit) && !clientCreditInfo.overdue && <div className="font-black text-xs text-orange-600 flex items-center bg-white px-2 py-1 rounded shadow-sm border border-orange-200"><AlertTriangle className="w-4 h-4 mr-1"/> PEDIDO EXCEDE LÍMITE</div>}
                        </div>
                    </div>
