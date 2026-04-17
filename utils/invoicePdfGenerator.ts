@@ -236,41 +236,28 @@ export const generateMassiveInvoicePDF = (company: CompanyConfig, sales: Sale[])
         currentY += 22;
 
         // 3. Items AutoTable
-        const itemsBody = sale.items.map(item => [
-            item.product_sku,
-            item.quantity_presentation.toString(),
-            item.selected_unit === 'PKG' ? 'CJA' : 'UND',
-            `${item.product_name.toUpperCase()} ${item.is_bonus ? '- BONIFICACION' : ''}`,
-            item.unit_price.toFixed(2),
-            item.discount_amount > 0 ? item.discount_amount.toFixed(2) : '',
-            item.total_price.toFixed(2)
-        ]);
-
-        let finalTableY = currentY;
-
-        autoTable(doc, {
-            startY: currentY,
-            head: [['Código', 'Cant.', 'U.M.', 'Descripción', 'P.Unit', 'Dscto', 'Total']],
-            body: itemsBody,
-            theme: 'grid',
-            styles: { fontSize: 6, cellPadding: 1, textColor: [0, 0, 0], lineColor: [0, 0, 0], lineWidth: 0.2 },
-            headStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], halign: 'center' },
-            columnStyles: {
-                0: { halign: 'center', cellWidth: 20 },
-                1: { halign: 'center', cellWidth: 10 },
-                2: { halign: 'center', cellWidth: 10 },
-                3: { halign: 'left' }, // auto width
-                4: { halign: 'right', cellWidth: 15 },
-                5: { halign: 'right', cellWidth: 12 },
-                6: { halign: 'right', cellWidth: 18 }
-            },
-            margin: { left: margin, right: margin },
-            didDrawPage: (data) => {
-                // Limits height per half
-                // Usually we wouldn't let autoTable paginate wildly during a Half render, 
-                // so we assume standard sales don't overflow ~10 rows per half.
-                finalTableY = data.cursor ? data.cursor.y : currentY;
+        // 3. Items AutoTable
+        const itemsBody = sale.items.map(item => {
+            // CIRUGÍA: Leer unidad de medida real de los datos del producto
+            // Nota: En la tabla 'sale_items' original no siempre guardamos el nombre del empaque,
+            // por eso la vista previa funciona (porque jala del caché), pero el generador masivo
+            // a veces solo recibe el string 'UND' o 'PKG'. Lo forzamos a leer el objeto si existe.
+            let um = item.selected_unit === 'PKG' ? 'CJA' : 'UND';
+            if (item.selected_unit === 'PKG' && item.product?.package_type) {
+                um = item.product.package_type;
+            } else if (item.selected_unit === 'UND' && item.product?.base_unit) {
+                um = item.product.base_unit;
             }
+
+            return [
+                item.product_sku,
+                item.quantity_presentation.toString(),
+                um.substring(0, 3).toUpperCase(), // Forzamos max 3 letras (BOT, CJA, UND) para que no rompa la tabla
+                `${item.product_name.toUpperCase()} ${item.is_bonus ? '- BONIFICACION' : ''}`,
+                Number(item.unit_price || 0).toFixed(2),
+                item.discount_amount > 0 ? Number(item.discount_amount).toFixed(2) : '',
+                Number(item.total_price || 0).toFixed(2)
+            ];
         });
 
         // 4. Footer
