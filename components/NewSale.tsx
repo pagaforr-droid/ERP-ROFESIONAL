@@ -91,7 +91,7 @@ export const NewSale: React.FC = () => {
                const { data: pData } = await supabase.from('products').select('*').or(`name.ilike.%${productSearch}%,sku.ilike.%${productSearch}%`).eq('is_active', true).limit(15);
                if (pData && pData.length > 0) {
                    const pIds = pData.map(p => p.id);
-                   // Corrección: Ya no filtramos por warehouse_id = 'CENTRAL' para permitir mostrar todo el stock consolidado
+                   // CIRUGÍA APLICADA: Se eliminó el filtro .eq('warehouse_id', 'CENTRAL')
                    const { data: bData } = await supabase.from('batches').select('*').in('product_id', pIds).gt('quantity_current', 0).order('expiration_date', { ascending: true });
                    const batchCache: Record<string, Batch[]> = {};
                    const enriched = pData.map(p => {
