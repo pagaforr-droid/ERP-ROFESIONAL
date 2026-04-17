@@ -91,7 +91,6 @@ export const NewSale: React.FC = () => {
                const { data: pData } = await supabase.from('products').select('*').or(`name.ilike.%${productSearch}%,sku.ilike.%${productSearch}%`).eq('is_active', true).limit(15);
                if (pData && pData.length > 0) {
                    const pIds = pData.map(p => p.id);
-                   // CIRUGÍA APLICADA: Se eliminó el filtro .eq('warehouse_id', 'CENTRAL')
                    const { data: bData } = await supabase.from('batches').select('*').in('product_id', pIds).gt('quantity_current', 0).order('expiration_date', { ascending: true });
                    const batchCache: Record<string, Batch[]> = {};
                    const enriched = pData.map(p => {
@@ -352,7 +351,6 @@ export const NewSale: React.FC = () => {
 
    const handleUpdatePrices = () => {
       if (cart.length === 0) return;
-      if (!clientData.price_list_id) { alert("Seleccione una lista de precios primero."); return; }
       const updatedCart = cart.map(item => {
          const product = products.find(p => p.id === item.product_id);
          if (!product) return item;
@@ -364,7 +362,8 @@ export const NewSale: React.FC = () => {
          const newDiscountAmt = (item.quantity_presentation * newPrice) * (item.discount_percent / 100);
          return { ...item, unit_price: newPrice, total_price: newTotal, discount_amount: newDiscountAmt };
       });
-      setCart(updatedCart); applyAutoPromotions(updatedCart); alert("Precios actualizados según la lista seleccionada.");
+      setCart(updatedCart); applyAutoPromotions(updatedCart); 
+      alert("Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
    };
 
    const handleInputKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<any> | 'ADD' | 'BONUS_TOGGLE') => {
@@ -590,7 +589,7 @@ export const NewSale: React.FC = () => {
             {!series && !isViewMode && !isEditMode && <div className="ml-4 px-3 py-1 bg-red-100 text-red-800 text-[10px] font-bold rounded border border-red-300 w-fit">¡DEBE CONFIGURAR UNA SERIE EN AJUSTES!</div>}
          </div>
 
-         {/* === CLIENT SECTION (CON ALERTA DE CRÉDITO) === */}
+         {/* === CLIENT SECTION (CON ALERTA DE CRÉDITO Y LISTA DE PRECIOS RESTAURADA) === */}
          <div className="flex items-start gap-2 mb-2">
             <div className="flex-1 grid grid-cols-12 gap-1 bg-slate-100 p-1.5 rounded border border-slate-200 relative">
                
@@ -615,13 +614,13 @@ export const NewSale: React.FC = () => {
                    </div>
                )}
 
-               <div className="col-span-3 relative">
-                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Cod Cliente / Buscar</label>
+               <div className="col-span-2 relative">
+                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Cod / Buscar</label>
                   <div className="relative">
                      <Search className="absolute left-1 top-1 w-3 h-3 text-slate-400" />
                      <input
                         className="w-full pl-5 pr-1 py-0.5 border border-slate-300 rounded text-slate-900 font-bold focus:bg-yellow-50 disabled:bg-slate-200"
-                        placeholder="RUC o Razón Social..."
+                        placeholder="RUC o Nombre..."
                         value={clientSearch}
                         onChange={e => { setClientSearch(e.target.value); setShowClientSuggestions(true); }}
                         onFocus={() => setShowClientSuggestions(true)}
@@ -652,13 +651,39 @@ export const NewSale: React.FC = () => {
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">RUC/DNI</label>
                   <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-slate-50 text-slate-800 font-mono disabled:bg-slate-200" value={clientData.doc_number} onChange={e => setClientData({ ...clientData, doc_number: e.target.value })} disabled={isViewMode} />
                </div>
-               <div className="col-span-3">
+
+               {/* RESTAURADO: LISTA DE PRECIOS */}
+               <div className="col-span-2">
+                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Lista Precio</label>
+                  <div className="flex gap-1">
+                     <select
+                        className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200"
+                        value={clientData.price_list_id}
+                        onChange={e => setClientData({ ...clientData, price_list_id: e.target.value })}
+                        disabled={isViewMode}
+                     >
+                        <option value="">-- General --</option>
+                        {priceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+                     </select>
+                     <button
+                        onClick={handleUpdatePrices}
+                        disabled={isViewMode}
+                        className="bg-blue-100 border border-blue-300 text-blue-700 px-1.5 rounded hover:bg-blue-200 disabled:opacity-50 flex items-center justify-center transition-colors"
+                        title="Actualizar Precios y Promociones en el Carrito"
+                     >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                     </button>
+                  </div>
+               </div>
+
+               <div className="col-span-2">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Forma Pago</label>
                   <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200 font-bold" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)} disabled={isViewMode}>
                      <option value="CONTADO">CONTADO</option>
                      <option value="CREDITO">CRÉDITO</option>
                   </select>
                </div>
+
                <div className="col-span-12 relative mt-1">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Dirección de Entrega</label>
                   <div className="flex bg-slate-50 border border-slate-300 rounded">
