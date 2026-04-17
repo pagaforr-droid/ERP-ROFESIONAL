@@ -208,16 +208,17 @@ export const NewSale: React.FC = () => {
       else { setSeries(''); setDocNumber(''); }
    };
 
-   // --- CIRUGÍA: LOAD SALE SEGURO CONTRA PANTALLAS BLANCAS ---
+   // --- CIRUGÍA: LOAD SALE SEGURO CONTRA PANTALLAS BLANCAS Y PÉRDIDA DE CONTEXTO ---
    const loadSale = async (sale: Sale, mode: 'VIEW' | 'EDIT' = 'VIEW') => {
       if (mode === 'EDIT' && (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED')) { alert('No se puede modificar un comprobante enviado o aceptado por SUNAT.'); return; }
       let itemsToLoad = sale.items;
+      let loadedClient: Client | null = null;
       
       if (!USE_MOCK_DB) { 
+          // 1. Cargar detalles
           const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
           if (data) {
               itemsToLoad = data as SaleItem[]; 
-              // Cargar productos al caché para la vista
               const pIds = itemsToLoad.map(i => i.product_id);
               if (pIds.length > 0) {
                   const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
@@ -228,9 +229,14 @@ export const NewSale: React.FC = () => {
                   }
               }
           }
+          // 2. Cargar perfil completo del cliente para recuperar city y price_list_id
+          if (sale.client_id) {
+              const { data: cData } = await supabase.from('clients').select('*').eq('id', sale.client_id).single();
+              if (cData) loadedClient = cData as Client;
+          }
       }
 
-      // VACUNA ANTI-CRASH: Forzar valores matemáticos (Number) ya que Supabase puede mandar textos
+      // VACUNA ANTI-CRASH: Forzar valores matemáticos
       const safeItems = (itemsToLoad || []).map(item => ({
           ...item,
           unit_price: Number(item.unit_price || 0),
@@ -243,22 +249,36 @@ export const NewSale: React.FC = () => {
 
       setIsViewMode(mode === 'VIEW'); 
       setIsEditMode(mode === 'EDIT');
-      
-      // Aseguramos grabar la venta original incluso en modo VIEW para que el botón IMPRIMIR funcione
       setOriginalSale({ ...sale, items: safeItems });
       
       setDocType(sale.document_type as any); 
       setSeries(sale.series); 
       setDocNumber(sale.number);
-      setClientData({ name: sale.client_name, doc_number: sale.client_ruc, address: sale.client_address });
-      setClientSearch(sale.client_name); 
-      setPaymentMethod(sale.payment_method); 
+      
+      // RESTAURACIÓN ACTIVA DEL CONTEXTO
+      setSelectedClientId(sale.client_id || '');
       setSelectedSellerId(sale.seller_id || ''); 
+      setPaymentMethod(sale.payment_method); 
+      setClientSearch(sale.client_name); 
+
+      const finalPriceListId = loadedClient?.price_list_id || '';
+      const finalCity = loadedClient?.city || '';
+
+      setClientData({ 
+          name: sale.client_name, 
+          doc_number: sale.client_ruc, 
+          address: sale.client_address,
+          price_list_id: finalPriceListId,
+          city: finalCity
+      });
+
       setCart(safeItems); 
       setIsSearchModalOpen(false);
 
       if (mode === 'EDIT') {
-          setTimeout(() => applyAutoPromotions(safeItems, true), 500); 
+          // Re-evalúa bonificaciones cuando el Admin entra a editar el documento
+          // Pasamos el contexto explícitamente para asegurar que la re-evaluación no falle por asincronía de estados
+          setTimeout(() => applyAutoPromotionsWithContext(safeItems, finalPriceListId, finalCity, sale.seller_id || '', true), 500); 
       }
    };
 
@@ -544,11 +564,12 @@ export const NewSale: React.FC = () => {
       else handleAddToCart();
    };
 
-   const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => {
+   // --- FUNCION AUXILIAR PARA RE-EVALUAR PROMOS CON CONTEXTO EXPLÍCITO ---
+   const applyAutoPromotionsWithContext = (currentCart: SaleItem[], p_list_id: string, p_city: string, p_seller: string, silent = false) => {
       let newCart = currentCart.filter(item => !item.auto_promo_id);
       const validPromos = activeAutoPromos.filter(ap => {
-         if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
-         if (ap.target_price_list_ids?.length > 0 && clientData.price_list_id && !ap.target_price_list_ids.includes('ALL') && !ap.target_price_list_ids.includes(clientData.price_list_id)) return false;
+         if (!isPromoValidForContext(ap, 'IN_STORE', p_city, p_seller || currentUser?.id, currentUser?.role)) return false;
+         if (ap.target_price_list_ids?.length > 0 && p_list_id && !ap.target_price_list_ids.includes('ALL') && !ap.target_price_list_ids.includes(p_list_id)) return false;
          return true;
       });
 
@@ -602,9 +623,12 @@ export const NewSale: React.FC = () => {
       if (silent !== true) alert("Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
    };
 
+   const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => {
+       applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent);
+   };
+
    // AHORA GUARDAR EVALÚA SI ESTAMOS CREANDO O MODIFICANDO UNA VENTA
    const handleSaveSale = async () => {
-      // SI ESTAMOS EN MODO VISUALIZACIÓN, IMPRIME LA FACTURA DIRECTAMENTE Y TERMINA
       if (isViewMode && !isEditMode) {
          if (originalSale) {
             try { await PdfEngine.openDocument(originalSale, docType, company); } 
@@ -666,7 +690,6 @@ export const NewSale: React.FC = () => {
          try {
             let resultData, resultError;
             
-            // LLAMA AL MOTOR DE REVERSIÓN DE KARDEX EN CASO DE EDICIÓN
             if (isEditMode && originalSale) {
                 const { data, error } = await supabase.rpc('update_sale_transaction', { 
                     p_original_sale_id: originalSale.id, 
@@ -1056,7 +1079,9 @@ export const NewSale: React.FC = () => {
                                     />
                                  ) : item.quantity_presentation}
                               </td>
-                              <td className="p-2 w-20 text-center text-[10px] text-slate-500">{item.selected_unit === 'UND' ? 'UNIDAD' : 'CAJA'}</td>
+                              <td className="p-2 w-20 text-center text-[10px] text-slate-500">
+                                  {item.selected_unit === 'PKG' ? (prod?.package_type || 'CAJA') : (prod?.base_unit || 'UND')}
+                              </td>
                               <td className="p-2 w-20 text-right text-slate-600">S/ {Number(item.unit_price || 0).toFixed(2)}</td>
                               <td className="p-2 w-16 text-right text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</td>
                               <td className="p-2 w-24 text-right font-bold text-slate-900 text-sm">S/ {Number(item.total_price || 0).toFixed(2)}</td>
