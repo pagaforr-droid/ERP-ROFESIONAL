@@ -52,7 +52,6 @@ export const NewSale: React.FC = () => {
                    if (pRes.data) setDbPromos(pRes.data);
                    if (apRes.data) {
                        setDbAutoPromos(apRes.data);
-                       // ¡CIRUGÍA AQUÍ! Descargar productos premio a la caché
                        const rewardIds = apRes.data.map(ap => ap.reward_product_id).filter(Boolean);
                        if (rewardIds.length > 0) {
                            const { data: rpData } = await supabase.from('products').select('*').in('id', rewardIds);
@@ -290,7 +289,6 @@ export const NewSale: React.FC = () => {
          }
       }
       
-      // Inyectar producto a la memoria caché local para que nunca se pierda su data
       setCartProductsCache(prev => ({...prev, [p.id]: p}));
       
       setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitType('UND'); 
@@ -367,7 +365,8 @@ export const NewSale: React.FC = () => {
             discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: selectedBatches
          });
       }
-      applyAutoPromotions(initialNewCart);
+      
+      applyAutoPromotions(initialNewCart, true);
       setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0); setDiscountPercent(0); setIsBonus(false);
       setTimeout(() => productInputRef.current?.focus(), 50);
    };
@@ -401,7 +400,7 @@ export const NewSale: React.FC = () => {
          ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice,
          discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: selectedBatches
       };
-      applyAutoPromotions(updatedCart);
+      applyAutoPromotions(updatedCart, true);
    };
 
    const handleUpdatePrices = (silent = false) => {
@@ -466,7 +465,7 @@ export const NewSale: React.FC = () => {
       else handleAddToCart();
    };
 
-   // --- AUTO PROMOTIONS (CACHÉ INCORPORADO) ---
+   // --- AUTO PROMOTIONS (CORRECCIÓN MATEMÁTICA DEL PREMIO) ---
    const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => {
       let newCart = currentCart.filter(item => !item.auto_promo_id);
       const validPromos = activeAutoPromos.filter(ap => {
@@ -508,9 +507,14 @@ export const NewSale: React.FC = () => {
             const rewardProd = USE_MOCK_DB ? products.find(p => p.id === ap.reward_product_id) : dbRewardProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
             if (rewardProd) {
                const rewardQty = ap.reward_quantity * multiplyFactor;
+               
+               // CIRUGÍA MATEMÁTICA: Revisar si la bonificación se da en Cajas o en Unidades
+               const conversionFactor = ap.reward_unit_type === 'PKG' ? (rewardProd.package_content || 1) : 1;
+
                newCart.push({
                   id: crypto.randomUUID(), sale_id: '', product_id: rewardProd.id, product_sku: rewardProd.sku, product_name: rewardProd.name,
-                  quantity_base: rewardQty * (rewardProd.package_content || 1), batch_allocations: [], quantity: rewardQty, quantity_presentation: rewardQty,
+                  quantity_base: rewardQty * conversionFactor, // Aquí estaba el bug. Ahora calcula exacto.
+                  batch_allocations: [], quantity: rewardQty, quantity_presentation: rewardQty,
                   unit_price: 0, discount_percent: 100, discount_amount: 0, total_price: 0, selected_unit: ap.reward_unit_type as 'UND' | 'PKG',
                   is_bonus: true, auto_promo_id: ap.id 
                } as any);
@@ -522,6 +526,7 @@ export const NewSale: React.FC = () => {
       if (silent !== true) alert("Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
    };
 
+   // --- FINAL SAVE (RPC TITANIUM LOCK) ---
    const handleSaveSale = async () => {
       if (isViewMode && !isEditMode) {
          const currentSale = sales.find(s => s.series === series && s.number === docNumber);
