@@ -4,14 +4,17 @@ import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promot
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase, USE_MOCK_DB } from '../services/supabase';
-// IMPORTANTE: Asegúrate de que esta ruta apunte a donde guardaste tu código de PdfEngine
-import { PdfEngine } from '../utils/PdfEngine'; 
 
+// IMPORTACIÓN DEL MOTOR DE PDF SEGÚN LA RUTA ESPECIFICADA
+import { PdfEngine } from './PdfEngine';
+
+// Utilidad Anti-Mocks
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export const NewSale: React.FC = () => {
    const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions, promotions, sellers, zones } = useStore();
 
+   // --- REFS FOR FOCUS MANAGEMENT ---
    const productInputRef = useRef<HTMLInputElement>(null);
    const qtyInputRef = useRef<HTMLInputElement>(null);
    const unitSelectRef = useRef<HTMLSelectElement>(null);
@@ -19,14 +22,18 @@ export const NewSale: React.FC = () => {
    const discountInputRef = useRef<HTMLInputElement>(null);
    const addButtonRef = useRef<HTMLButtonElement>(null);
 
+   // --- ADMIN LOCK STATE ---
    const [priceLocked, setPriceLocked] = useState(true);
    const [isSaving, setIsSaving] = useState(false);
 
+   // --- MASTER DATA SUPABASE SYNC ---
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
    const [dbPromos, setDbPromos] = useState<Promotion[]>([]);
    const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
+   
+   // Cachés Críticos
    const [dbRewardProducts, setDbRewardProducts] = useState<Product[]>([]);
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
@@ -65,6 +72,7 @@ export const NewSale: React.FC = () => {
    const activePromos = USE_MOCK_DB ? promotions : dbPromos;
    const activeAutoPromos = USE_MOCK_DB ? autoPromotions : dbAutoPromos;
 
+   // --- HEADER STATE ---
    const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
    const [series, setSeries] = useState(company.series.find(s => s.type === 'FACTURA')?.series || 'F001');
    const [docNumber, setDocNumber] = useState(String(company.series.find(s => s.type === 'FACTURA')?.current_number || 1).padStart(8, '0'));
@@ -80,6 +88,7 @@ export const NewSale: React.FC = () => {
    const [paymentMethod, setPaymentMethod] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
    const [currency, setCurrency] = useState('SOLES');
 
+   // --- CLIENT STATE ---
    const [selectedClientId, setSelectedClientId] = useState('');
    const [clientData, setClientData] = useState<Partial<Client>>({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
    const [clientSearch, setClientSearch] = useState('');
@@ -89,6 +98,7 @@ export const NewSale: React.FC = () => {
    const [showBranchSelector, setShowBranchSelector] = useState(false);
    const [selectedSellerId, setSelectedSellerId] = useState('');
 
+   // --- CREDIT RISK STATE ---
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
 
    useEffect(() => {
@@ -102,6 +112,7 @@ export const NewSale: React.FC = () => {
        return () => clearTimeout(timer);
    }, [clientSearch]);
 
+   // --- LINE ENTRY STATE ---
    const [productSearch, setProductSearch] = useState('');
    const [showProductSuggestions, setShowProductSuggestions] = useState(false);
    const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -140,6 +151,7 @@ export const NewSale: React.FC = () => {
    const [isBonus, setIsBonus] = useState(false);
    const [cart, setCart] = useState<SaleItem[]>([]);
 
+   // --- SEARCH SALES MODAL STATE ---
    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
    const [saleSearchTerm, setSaleSearchTerm] = useState('');
    const [searchedSales, setSearchedSales] = useState<Sale[]>([]);
@@ -164,12 +176,14 @@ export const NewSale: React.FC = () => {
    const displayProducts = USE_MOCK_DB ? products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase())).map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
    const displaySales = USE_MOCK_DB ? sales.filter(s => s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm)) : searchedSales;
 
+   // --- CALCULATIONS ---
    const calculateTotal = (qty: number, price: number, discPct: number) => { const gross = qty * price; return gross - (gross * (discPct / 100)); };
    const currentTotal = calculateTotal(quantity, unitPrice, discountPercent);
    const subtotal = cart.reduce((sum, item) => sum + item.total_price, 0) / (1 + (company.igv_percent / 100));
    const igv = cart.reduce((sum, item) => sum + item.total_price, 0) - subtotal;
    const grandTotal = cart.reduce((sum, item) => sum + item.total_price, 0);
 
+   // --- ACTIONS ---
    const handleNewSale = () => {
       setIsViewMode(false); setIsEditMode(false); setOriginalSale(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
@@ -180,10 +194,10 @@ export const NewSale: React.FC = () => {
       else { setSeries(''); setDocNumber(''); }
    };
 
-   // AL CARGAR PARA MODIFICAR, RECALCULA BONIFICACIONES
    const loadSale = async (sale: Sale, mode: 'VIEW' | 'EDIT' = 'VIEW') => {
       if (mode === 'EDIT' && (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED')) { alert('No se puede modificar un comprobante enviado o aceptado por SUNAT.'); return; }
       let itemsToLoad = sale.items;
+      
       if (!USE_MOCK_DB) { 
           const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
           if (data) {
@@ -199,27 +213,66 @@ export const NewSale: React.FC = () => {
               }
           }
       }
+
       setIsViewMode(mode === 'VIEW'); setIsEditMode(mode === 'EDIT');
       if (mode === 'EDIT') setOriginalSale({ ...sale, items: itemsToLoad });
-      setDocType(sale.document_type as any); setSeries(sale.series); setDocNumber(sale.number);
+      
+      setDocType(sale.document_type as any); 
+      setSeries(sale.series); 
+      setDocNumber(sale.number);
       setClientData({ name: sale.client_name, doc_number: sale.client_ruc, address: sale.client_address });
-      setClientSearch(sale.client_name); setPaymentMethod(sale.payment_method); setSelectedSellerId(sale.seller_id || ''); 
+      setClientSearch(sale.client_name); 
+      setPaymentMethod(sale.payment_method); 
+      setSelectedSellerId(sale.seller_id || ''); 
       setCart(itemsToLoad); 
       setIsSearchModalOpen(false);
 
       if (mode === 'EDIT') {
-          setTimeout(() => applyAutoPromotions(itemsToLoad, true), 500); // Re-evalúa bonificaciones al entrar a editar
+          // Re-evalúa bonificaciones cuando el Admin entra a editar el documento
+          setTimeout(() => applyAutoPromotions(itemsToLoad, true), 500); 
       }
    };
 
-   // VISTA PREVIA AHORA USA TU COMPONENTE PDFENGINE
+   // --- ENGINE: VISTA PREVIA PDF ---
    const handlePreview = async () => {
-      const tempSale: Sale = { id: 'preview', document_type: docType, series: series, number: docNumber, payment_method: paymentMethod, client_name: clientData.name || 'CLIENTE MOSTRADOR', client_ruc: clientData.doc_number || '00000000', client_address: clientData.address || '', subtotal, igv, total: grandTotal, status: 'pending', dispatch_status: 'pending', created_at: new Date().toISOString(), items: cart };
+      // Si estamos en MODO VISTA (Visualizando), mandamos la factura real al motor PDF
+      if (isViewMode && !isEditMode && originalSale) {
+         try {
+             await PdfEngine.openDocument(originalSale, docType, company);
+         } catch(e) {
+             console.error(e);
+             alert("Error al cargar el PDF de esta venta.");
+         }
+         return;
+      }
+
+      // Si estamos VENDIENDO o EDITANDO, mandamos una Vista Previa simulada
+      const tempSale: Sale = { 
+         id: isEditMode && originalSale ? originalSale.id : 'preview', 
+         document_type: docType, 
+         series: series, 
+         number: docNumber, 
+         payment_method: paymentMethod, 
+         payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
+         balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
+         client_name: clientData.name || 'CLIENTE MOSTRADOR', 
+         client_ruc: clientData.doc_number || '00000000', 
+         client_address: clientData.address || '', 
+         subtotal, 
+         igv, 
+         total: grandTotal, 
+         status: 'completed', 
+         dispatch_status: 'pending', 
+         created_at: isEditMode && originalSale ? originalSale.created_at : new Date().toISOString(), 
+         items: cart,
+         sunat_status: isEditMode && originalSale ? originalSale.sunat_status : 'PENDING'
+      };
+      
       try {
          await PdfEngine.openDocument(tempSale, docType, company);
-      } catch (error) {
-         console.error(error);
-         alert("Error al generar la vista previa. Verifique su consola.");
+      } catch (err) {
+         console.error(err);
+         alert("Error generando la vista previa. Asegúrese de tener todos los datos llenos.");
       }
    };
 
@@ -522,8 +575,12 @@ export const NewSale: React.FC = () => {
 
    // AHORA GUARDAR EVALÚA SI ESTAMOS CREANDO O MODIFICANDO UNA VENTA
    const handleSaveSale = async () => {
+      // SI ESTAMOS EN MODO VISUALIZACIÓN, IMPRIME LA FACTURA DIRECTAMENTE Y TERMINA
       if (isViewMode && !isEditMode) {
-         // Si solo estamos mirando, no guardar.
+         if (originalSale) {
+            try { await PdfEngine.openDocument(originalSale, docType, company); } 
+            catch(e) { alert("Error abriendo PDF"); }
+         } else { handlePreview(); }
          return;
       }
 
@@ -580,7 +637,7 @@ export const NewSale: React.FC = () => {
          try {
             let resultData, resultError;
             
-            // SI ESTÁ MODIFICANDO LLAMA A update_sale_transaction, SI NO A process_sale_transaction
+            // LLAMA AL MOTOR DE REVERSIÓN DE KARDEX EN CASO DE EDICIÓN
             if (isEditMode && originalSale) {
                 const { data, error } = await supabase.rpc('update_sale_transaction', { 
                     p_original_sale_id: originalSale.id, 
@@ -597,8 +654,7 @@ export const NewSale: React.FC = () => {
             if (resultError) throw resultError;
             if (resultData && resultData.success) {
                alert(`Venta ${isEditMode ? 'modificada' : 'guardada'} exitosamente. Kardex actualizado.`);
-               // Auto-abre PDF al guardar exitosamente
-               PdfEngine.openDocument(newSaleData, docType, company);
+               try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
                handleNewSale();
             }
          } catch (err: any) { alert(`Error crítico: ${err.message}`);
@@ -609,7 +665,7 @@ export const NewSale: React.FC = () => {
             if (!result.success) { alert(result.msg); setIsSaving(false); return; }
             alert(result.msg);
          } else { createSale(newSaleData); }
-         PdfEngine.openDocument(newSaleData, docType, company);
+         try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
          handleNewSale();
          setIsSaving(false);
       }
@@ -821,7 +877,7 @@ export const NewSale: React.FC = () => {
 
          {/* === GRID SECTION === */}
          <div className="flex-1 bg-white border border-slate-400 flex flex-col shadow-sm">
-            {/* Entry Row */}
+            {/* Entry Row (Simulating Grid Input) */}
             {(!isViewMode || isEditMode) && (
                <div className="bg-blue-50 border-b border-blue-200 p-1 flex items-end gap-1">
                   <div className="flex-1 relative">
@@ -864,6 +920,7 @@ export const NewSale: React.FC = () => {
                               </table>
                            </div>
                         )}
+                        {showProductSuggestions && productSearch && displayProducts.length === 0 && !isSearchingProd && <div className="absolute top-full left-0 w-full p-2 text-center text-slate-400 bg-white border border-slate-400 shadow-2xl z-50">Sin coincidencias</div>}
                      </div>
                   </div>
 
@@ -1026,7 +1083,7 @@ export const NewSale: React.FC = () => {
                className={`w-32 bg-green-600 hover:bg-green-700 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${(isViewMode && !saleToPrint) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
                <Save className="w-6 h-6 mb-1" />
-               {isViewMode ? 'NUEVO' : (isEditMode ? 'MODIFICAR' : 'GUARDAR (F10)')}
+               {isViewMode ? 'IMPRIMIR' : (isEditMode ? 'MODIFICAR' : 'GUARDAR (F10)')}
             </button>
          </div>
 
