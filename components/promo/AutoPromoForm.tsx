@@ -18,6 +18,7 @@ export const AutoPromoForm: React.FC<Props> = ({ initialData, onClose, onSave })
     const [dbPriceLists, setDbPriceLists] = useState<PriceList[]>([]);
     const [dbSellers, setDbSellers] = useState<Seller[]>([]);
 
+    // --- SINCRONIZACIÓN CON SUPABASE ---
     useEffect(() => {
         const fetchMasterData = async () => {
             if (!USE_MOCK_DB) {
