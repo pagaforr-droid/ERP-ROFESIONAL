@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../services/store';
-import { Combo, Product, Supplier } from '../../types';
+import { Combo, Product, Supplier, PriceList } from '../../types';
 import { Save, X, Search, Trash2, Image as ImageIcon, Plus, MapPin, Package } from 'lucide-react';
 import { PERU_CITIES } from '../../utils/promoUtils';
 import { supabase, USE_MOCK_DB } from '../../services/supabase';
@@ -16,19 +16,22 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
     const [dbProducts, setDbProducts] = useState<Product[]>([]);
     const [dbSuppliers, setDbSuppliers] = useState<Supplier[]>([]);
     const [dbSellers, setDbSellers] = useState<any[]>([]);
+    const [dbPriceLists, setDbPriceLists] = useState<PriceList[]>([]); // AÑADIDO
 
     useEffect(() => {
         const fetchMasterData = async () => {
             if (!USE_MOCK_DB) {
                 try {
-                    const [pRes, sRes, slRes] = await Promise.all([
+                    const [pRes, sRes, slRes, plRes] = await Promise.all([
                         supabase.from('products').select('*').eq('is_active', true).order('name'),
                         supabase.from('suppliers').select('*').order('name'),
-                        supabase.from('sellers').select('*').order('name')
+                        supabase.from('sellers').select('*').order('name'),
+                        supabase.from('price_lists').select('*').order('name') // AÑADIDO
                     ]);
                     if (pRes.data) setDbProducts(pRes.data as Product[]);
                     if (sRes.data) setDbSuppliers(sRes.data as Supplier[]);
                     if (slRes.data) setDbSellers(slRes.data as any[]);
+                    if (plRes.data) setDbPriceLists(plRes.data as PriceList[]);
                 } catch (error) {
                     console.error("Error fetching data for ComboForm:", error);
                 }
@@ -40,6 +43,7 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
     const products = USE_MOCK_DB ? store.products : dbProducts;
     const suppliers = USE_MOCK_DB ? store.suppliers : dbSuppliers;
     const sellers = USE_MOCK_DB ? store.sellers : dbSellers;
+    const priceLists = USE_MOCK_DB ? store.priceLists : dbPriceLists; // AÑADIDO
 
     const [formData, setFormData] = useState<Partial<Combo>>({
         id: initialData?.id || crypto.randomUUID(),
@@ -49,7 +53,8 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
         is_active: true, image_url: '',
         channels: ['IN_STORE', 'SELLER_APP'],
         allowed_seller_ids: [],
-        target_cities: []
+        target_cities: [],
+        target_price_list_ids: [] // AÑADIDO
     });
 
     const [prodSearch, setProdSearch] = useState('');
@@ -120,7 +125,7 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
 
     const addItem = (productId: string) => {
         const currentItems = formData.items || [];
-        if (currentItems.find(i => i.product_id === productId)) return; // Already added
+        if (currentItems.find(i => i.product_id === productId)) return; 
 
         setFormData({
             ...formData,
@@ -260,6 +265,25 @@ export const ComboForm: React.FC<ComboFormProps> = ({ initialData, onClose, onSa
                                             ))}
                                         </div>
                                     </div>
+                                </div>
+
+                                {/* AÑADIDO: SELECTOR DE LISTAS DE PRECIOS */}
+                                <div>
+                                    <label className="block text-sm font-bold text-purple-900 mb-1">Listas de Precios Permitidas</label>
+                                    <select
+                                        multiple
+                                        className="w-full border border-purple-300 p-2 rounded text-sm bg-white"
+                                        value={formData.target_price_list_ids || []}
+                                        onChange={e => {
+                                            const target = e.target as HTMLSelectElement;
+                                            const values = Array.from(target.selectedOptions, option => option.value);
+                                            setFormData({ ...formData, target_price_list_ids: values });
+                                        }}
+                                    >
+                                        <option value="ALL">-- TODAS LAS LISTAS --</option>
+                                        {priceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+                                    </select>
+                                    <p className="text-xs text-purple-600 mt-1 italic">Si no se selecciona ninguna lista ('TODAS'), aplicará para todos. Mantenga 'Ctrl' presionado para seleccionar varias.</p>
                                 </div>
                             </div>
                         </div>
