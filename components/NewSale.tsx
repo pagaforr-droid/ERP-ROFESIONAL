@@ -161,7 +161,7 @@ export const NewSale: React.FC = () => {
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
    const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
 
-   // --- NUEVO CEREBRO DE BÚSQUEDA DE VENTAS (LIMITADO A 10) ---
+   // --- CEREBRO DE BÚSQUEDA DE VENTAS (LIMITADO A 10) ---
    useEffect(() => {
        if (!isSearchModalOpen) return;
        if (USE_MOCK_DB) return;
@@ -189,16 +189,13 @@ export const NewSale: React.FC = () => {
 
    const displayClients = USE_MOCK_DB ? clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()) || c.doc_number.includes(clientSearch)) : searchedClients;
    const displayProducts = USE_MOCK_DB ? products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase())).map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
-   
-   // APLICADO LÍMITE DE 10 PARA ENTORNO MOCK (DE PRUEBA)
    const displaySales = USE_MOCK_DB ? sales.filter(s => !saleSearchTerm || s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm)).slice(0, 10) : searchedSales;
 
-   // --- CALCULATIONS ---
+   // --- CALCULATIONS (CON PROTECCIÓN NUMÉRICA) ---
    const calculateTotal = (qty: number, price: number, discPct: number) => { const gross = qty * price; return gross - (gross * (discPct / 100)); };
-   const currentTotal = calculateTotal(quantity, unitPrice, discountPercent);
-   const subtotal = cart.reduce((sum, item) => sum + item.total_price, 0) / (1 + (company.igv_percent / 100));
-   const igv = cart.reduce((sum, item) => sum + item.total_price, 0) - subtotal;
-   const grandTotal = cart.reduce((sum, item) => sum + item.total_price, 0);
+   const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (company.igv_percent / 100));
+   const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
+   const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
    // --- ACTIONS ---
    const handleNewSale = () => {
@@ -211,6 +208,7 @@ export const NewSale: React.FC = () => {
       else { setSeries(''); setDocNumber(''); }
    };
 
+   // --- CIRUGÍA: LOAD SALE SEGURO CONTRA PANTALLAS BLANCAS ---
    const loadSale = async (sale: Sale, mode: 'VIEW' | 'EDIT' = 'VIEW') => {
       if (mode === 'EDIT' && (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED')) { alert('No se puede modificar un comprobante enviado o aceptado por SUNAT.'); return; }
       let itemsToLoad = sale.items;
@@ -219,7 +217,7 @@ export const NewSale: React.FC = () => {
           const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
           if (data) {
               itemsToLoad = data as SaleItem[]; 
-              // Cargar productos al caché
+              // Cargar productos al caché para la vista
               const pIds = itemsToLoad.map(i => i.product_id);
               if (pIds.length > 0) {
                   const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
@@ -232,8 +230,22 @@ export const NewSale: React.FC = () => {
           }
       }
 
-      setIsViewMode(mode === 'VIEW'); setIsEditMode(mode === 'EDIT');
-      if (mode === 'EDIT') setOriginalSale({ ...sale, items: itemsToLoad });
+      // VACUNA ANTI-CRASH: Forzar valores matemáticos (Number) ya que Supabase puede mandar textos
+      const safeItems = (itemsToLoad || []).map(item => ({
+          ...item,
+          unit_price: Number(item.unit_price || 0),
+          total_price: Number(item.total_price || 0),
+          discount_percent: Number(item.discount_percent || 0),
+          discount_amount: Number(item.discount_amount || 0),
+          quantity_presentation: Number(item.quantity_presentation || item.quantity || 1),
+          quantity_base: Number(item.quantity_base || item.quantity || 1)
+      }));
+
+      setIsViewMode(mode === 'VIEW'); 
+      setIsEditMode(mode === 'EDIT');
+      
+      // Aseguramos grabar la venta original incluso en modo VIEW para que el botón IMPRIMIR funcione
+      setOriginalSale({ ...sale, items: safeItems });
       
       setDocType(sale.document_type as any); 
       setSeries(sale.series); 
@@ -242,17 +254,17 @@ export const NewSale: React.FC = () => {
       setClientSearch(sale.client_name); 
       setPaymentMethod(sale.payment_method); 
       setSelectedSellerId(sale.seller_id || ''); 
-      setCart(itemsToLoad); 
+      setCart(safeItems); 
       setIsSearchModalOpen(false);
 
       if (mode === 'EDIT') {
-          // Re-evalúa bonificaciones cuando el Admin entra a editar el documento
-          setTimeout(() => applyAutoPromotions(itemsToLoad, true), 500); 
+          setTimeout(() => applyAutoPromotions(safeItems, true), 500); 
       }
    };
 
    // --- ENGINE: VISTA PREVIA PDF ---
    const handlePreview = async () => {
+      // Si estamos en MODO VISTA (Visualizando), mandamos la factura real al motor PDF
       if (isViewMode && !isEditMode && originalSale) {
          try {
              await PdfEngine.openDocument(originalSale, docType, company);
@@ -263,6 +275,7 @@ export const NewSale: React.FC = () => {
          return;
       }
 
+      // Si estamos VENDIENDO o EDITANDO, mandamos una Vista Previa simulada
       const tempSale: Sale = { 
          id: isEditMode && originalSale ? originalSale.id : 'preview', 
          document_type: docType, 
@@ -766,9 +779,9 @@ export const NewSale: React.FC = () => {
                                {clientCreditInfo.isChecking && <Loader2 className="w-3 h-3 animate-spin ml-2" />}
                            </div>
                            <div className="flex gap-6 mt-1 text-xs">
-                               <div>Límite Autorizado: <strong className="font-mono">S/ {clientCreditInfo.limit.toFixed(2)}</strong></div>
-                               <div>Deuda Vigente: <strong className="font-mono">S/ {clientCreditInfo.debt.toFixed(2)}</strong></div>
-                               <div>Saldo Disponible: <strong className="font-mono">S/ {Math.max(0, clientCreditInfo.limit - clientCreditInfo.debt).toFixed(2)}</strong></div>
+                               <div>Límite Autorizado: <strong className="font-mono">S/ {Number(clientCreditInfo.limit || 0).toFixed(2)}</strong></div>
+                               <div>Deuda Vigente: <strong className="font-mono">S/ {Number(clientCreditInfo.debt || 0).toFixed(2)}</strong></div>
+                               <div>Saldo Disponible: <strong className="font-mono">S/ {Math.max(0, Number(clientCreditInfo.limit) - Number(clientCreditInfo.debt)).toFixed(2)}</strong></div>
                            </div>
                        </div>
                        <div className="text-right flex flex-col justify-end">
@@ -928,7 +941,7 @@ export const NewSale: React.FC = () => {
                                        <tr key={p.id} onMouseDown={() => selectProduct(p as any)} className={`cursor-pointer ${idx === highlightedIndex ? 'bg-blue-200' : 'hover:bg-blue-50'}`}>
                                           <td className="p-2 font-mono text-blue-800 font-bold">{p.sku}</td>
                                           <td className="p-2 font-medium">{p.name}</td>
-                                          <td className="p-2 text-right">S/ {p.price_unit.toFixed(2)}</td>
+                                          <td className="p-2 text-right">S/ {Number(p.price_unit || 0).toFixed(2)}</td>
                                           <td className={`p-2 text-right font-black ${p.current_stock > 0 ? 'text-green-600' : 'text-red-500'}`}>{p.current_stock}</td>
                                        </tr>
                                     ))}
@@ -1044,9 +1057,9 @@ export const NewSale: React.FC = () => {
                                  ) : item.quantity_presentation}
                               </td>
                               <td className="p-2 w-20 text-center text-[10px] text-slate-500">{item.selected_unit === 'UND' ? 'UNIDAD' : 'CAJA'}</td>
-                              <td className="p-2 w-20 text-right text-slate-600">S/ {item.unit_price.toFixed(2)}</td>
+                              <td className="p-2 w-20 text-right text-slate-600">S/ {Number(item.unit_price || 0).toFixed(2)}</td>
                               <td className="p-2 w-16 text-right text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</td>
-                              <td className="p-2 w-24 text-right font-bold text-slate-900 text-sm">S/ {item.total_price.toFixed(2)}</td>
+                              <td className="p-2 w-24 text-right font-bold text-slate-900 text-sm">S/ {Number(item.total_price || 0).toFixed(2)}</td>
                               <td className="p-2 w-8 text-right">
                                  <button
                                     onClick={() => removeFromCart(index)}
@@ -1068,7 +1081,7 @@ export const NewSale: React.FC = () => {
          {/* === FOOTER TOTALS === */}
          <div className="h-24 bg-slate-100 border-t border-slate-400 flex p-2 gap-4">
             <div className="flex-1 flex gap-2 items-end">
-               <button onClick={handlePreview} className="bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded flex items-center shadow-sm hover:bg-slate-50 font-bold">
+               <button onClick={handlePreview} disabled={isViewMode && !originalSale} className={`bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded flex items-center shadow-sm font-bold ${(isViewMode && !originalSale) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`}>
                   <Printer className="w-4 h-4 mr-2" /> Vista Previa
                </button>
                <div className="flex-1"></div>
@@ -1095,8 +1108,8 @@ export const NewSale: React.FC = () => {
 
             <button
                onClick={handleSaveSale}
-               disabled={isViewMode && !saleToPrint}
-               className={`w-32 bg-green-600 hover:bg-green-700 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${(isViewMode && !saleToPrint) ? 'opacity-50 cursor-not-allowed' : ''}`}
+               disabled={isViewMode && !originalSale}
+               className={`w-32 bg-green-600 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${(isViewMode && !originalSale) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-700'}`}
             >
                <Save className="w-6 h-6 mb-1" />
                {isViewMode ? 'IMPRIMIR' : (isEditMode ? 'MODIFICAR' : 'GUARDAR (F10)')}
@@ -1150,7 +1163,7 @@ export const NewSale: React.FC = () => {
                                     <div className="text-[13px] text-slate-500">{s.client_ruc}</div>
                                  </td>
                                  <td className="p-4 text-right">
-                                    <span className="font-black text-slate-900 text-[16px]">S/ {s.total.toFixed(2)}</span>
+                                    <span className="font-black text-slate-900 text-[16px]">S/ {Number(s.total || 0).toFixed(2)}</span>
                                  </td>
                                  <td className="p-4 text-center">
                                     <span className={`px-3 py-1 rounded text-xs font-bold ring-1 ${s.sunat_status === 'ACCEPTED' ? 'bg-green-100 ring-green-300 text-green-800' : s.sunat_status === 'SENT' ? 'bg-blue-100 ring-blue-300 text-blue-800' : 'bg-slate-100 ring-slate-300 text-slate-800'}`}>{s.sunat_status || 'PENDING'}</span>
