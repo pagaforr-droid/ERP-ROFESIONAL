@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../../services/store';
-import { Promotion, Product } from '../../types';
+import { Promotion, Product, PriceList } from '../../types';
 import { Save, X, Search, Square, Image as ImageIcon, MapPin } from 'lucide-react';
 import { PERU_CITIES } from '../../utils/promoUtils';
 import { supabase, USE_MOCK_DB } from '../../services/supabase';
@@ -15,17 +15,20 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
     const store = useStore();
     const [dbProducts, setDbProducts] = useState<Product[]>([]);
     const [dbSellers, setDbSellers] = useState<any[]>([]);
+    const [dbPriceLists, setDbPriceLists] = useState<PriceList[]>([]); // AÑADIDO
 
     useEffect(() => {
         const fetchMasterData = async () => {
             if (!USE_MOCK_DB) {
                 try {
-                    const [pRes, slRes] = await Promise.all([
+                    const [pRes, slRes, plRes] = await Promise.all([
                         supabase.from('products').select('*').eq('is_active', true).order('name'),
-                        supabase.from('sellers').select('*').order('name')
+                        supabase.from('sellers').select('*').order('name'),
+                        supabase.from('price_lists').select('*').order('name') // AÑADIDO
                     ]);
                     if (pRes.data) setDbProducts(pRes.data as Product[]);
                     if (slRes.data) setDbSellers(slRes.data as any[]);
+                    if (plRes.data) setDbPriceLists(plRes.data as PriceList[]);
                 } catch (error) {
                     console.error("Error fetching data for PromoForm:", error);
                 }
@@ -36,6 +39,7 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
 
     const products = USE_MOCK_DB ? store.products : dbProducts;
     const sellers = USE_MOCK_DB ? store.sellers : dbSellers;
+    const priceLists = USE_MOCK_DB ? store.priceLists : dbPriceLists; // AÑADIDO
 
     const [formData, setFormData] = useState<Partial<Promotion>>({
         id: initialData?.id || crypto.randomUUID(),
@@ -44,7 +48,8 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
         end_date: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
         is_active: true,
         channels: ['IN_STORE'],
-        allowed_seller_ids: [], // Empty means all
+        allowed_seller_ids: [], 
+        target_price_list_ids: [], // AÑADIDO
         image_url: '',
         min_quantity: 1,
         target_cities: []
@@ -155,7 +160,6 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
                         <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                             <h3 className="font-bold text-slate-700 mb-3 border-b pb-2">Datos Generales</h3>
                             <div className="flex gap-4">
-                                {/* Image Upload Area */}
                                 <div className="w-28 flex-shrink-0">
                                     <label className="block text-xs font-bold text-slate-600 mb-1">Imagen</label>
                                     <div className="w-28 h-28 border-2 border-dashed border-slate-300 rounded-lg flex flex-col items-center justify-center cursor-pointer hover:bg-white relative overflow-hidden group">
@@ -258,6 +262,26 @@ export const PromoForm: React.FC<PromoFormProps> = ({ initialData, onClose, onSa
                                         </div>
                                     </div>
                                 </div>
+                                
+                                {/* AÑADIDO: SELECTOR DE LISTAS DE PRECIOS */}
+                                <div>
+                                    <label className="block text-sm font-bold text-purple-900 mb-1">Listas de Precios Permitidas</label>
+                                    <select
+                                        multiple
+                                        className="w-full border border-purple-300 p-2 rounded text-sm bg-white"
+                                        value={formData.target_price_list_ids || []}
+                                        onChange={e => {
+                                            const target = e.target as HTMLSelectElement;
+                                            const values = Array.from(target.selectedOptions, option => option.value);
+                                            setFormData({ ...formData, target_price_list_ids: values });
+                                        }}
+                                    >
+                                        <option value="ALL">-- TODAS LAS LISTAS --</option>
+                                        {priceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+                                    </select>
+                                    <p className="text-xs text-purple-600 mt-1 italic">Si no se selecciona ninguna lista ('TODAS'), aplicará para todos. Mantenga 'Ctrl' presionado para seleccionar varias.</p>
+                                </div>
+
                             </div>
                         </div>
                     </div>
