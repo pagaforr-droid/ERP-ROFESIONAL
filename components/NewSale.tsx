@@ -24,12 +24,46 @@ export const NewSale: React.FC = () => {
    const [priceLocked, setPriceLocked] = useState(true);
    const [isSaving, setIsSaving] = useState(false);
 
+   // --- MASTER DATA SUPABASE SYNC (NUEVO BLINDAJE) ---
+   const [dbSellers, setDbSellers] = useState<any[]>([]);
+   const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
+   const [dbZones, setDbZones] = useState<any[]>([]);
+   const [dbPromos, setDbPromos] = useState<Promotion[]>([]);
+   const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
+
+   useEffect(() => {
+       const fetchMasters = async () => {
+           if (!USE_MOCK_DB) {
+               try {
+                   const [sellRes, plRes, zRes, pRes, apRes] = await Promise.all([
+                       supabase.from('sellers').select('*').order('name'),
+                       supabase.from('price_lists').select('*').order('name'),
+                       supabase.from('zones').select('*'),
+                       supabase.from('promotions').select('*').eq('is_active', true),
+                       supabase.from('auto_promotions').select('*').eq('is_active', true)
+                   ]);
+                   if (sellRes.data) setDbSellers(sellRes.data);
+                   if (plRes.data) setDbPriceLists(plRes.data);
+                   if (zRes.data) setDbZones(zRes.data);
+                   if (pRes.data) setDbPromos(pRes.data);
+                   if (apRes.data) setDbAutoPromos(apRes.data);
+               } catch (e) { console.error("Error cargando maestros:", e); }
+           }
+       };
+       fetchMasters();
+   }, []);
+
+   const activeSellers = USE_MOCK_DB ? sellers : dbSellers;
+   const activePriceLists = USE_MOCK_DB ? priceLists : dbPriceLists;
+   const activeZones = USE_MOCK_DB ? zones : dbZones;
+   const activePromos = USE_MOCK_DB ? promotions : dbPromos;
+   const activeAutoPromos = USE_MOCK_DB ? autoPromotions : dbAutoPromos;
+
    // --- HEADER STATE ---
    const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
    const [series, setSeries] = useState(company.series.find(s => s.type === 'FACTURA')?.series || 'F001');
    const [docNumber, setDocNumber] = useState(String(company.series.find(s => s.type === 'FACTURA')?.current_number || 1).padStart(8, '0'));
 
-   // Update series when doc type changes
    useEffect(() => {
       const ser = company.series.find(s => s.type === docType);
       if (ser) {
@@ -40,7 +74,6 @@ export const NewSale: React.FC = () => {
 
    const [paymentMethod, setPaymentMethod] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
    const [currency, setCurrency] = useState('SOLES');
-   const [exchangeRate, setExchangeRate] = useState(3.750);
 
    // --- CLIENT STATE ---
    const [selectedClientId, setSelectedClientId] = useState('');
@@ -180,10 +213,7 @@ export const NewSale: React.FC = () => {
       generateMassiveInvoicePDF(company, [tempSale]);
    };
 
-   const removeFromCart = (index: number) => { 
-       const newItems = cart.filter((_, i) => i !== index); 
-       applyAutoPromotions(newItems); 
-   };
+   const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems); };
 
    // --- CHECK CREDIT LIMIT ---
    const checkClientCredit = async (clientId: string, creditLimit: number = 0) => {
@@ -205,8 +235,7 @@ export const NewSale: React.FC = () => {
       } catch(e) { console.error(e); setClientCreditInfo(prev => ({...prev, isChecking: false})); }
    }
 
-   // CIRUGÍA APLICADA: Jala vendedor de base de datos automáticamente
-   const selectClient = async (c: Client) => {
+   const selectClient = (c: Client) => {
       setSelectedClientId(c.id);
       const newDocType: 'FACTURA' | 'BOLETA' = c.doc_number.length === 11 ? 'FACTURA' : 'BOLETA';
       setDocType(newDocType);
@@ -216,15 +245,8 @@ export const NewSale: React.FC = () => {
 
       let autoSellerId = '';
       if (c.zone_id) { 
-         if (!USE_MOCK_DB) {
-             try {
-                 const { data } = await supabase.from('zones').select('assigned_seller_id').eq('id', c.zone_id).single();
-                 if (data && data.assigned_seller_id) autoSellerId = data.assigned_seller_id;
-             } catch (e) { console.error(e); }
-         } else {
-             const zone = zones.find(z => z.id === c.zone_id); 
-             if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } 
-         }
+         const zone = activeZones.find(z => z.id === c.zone_id); 
+         if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } 
       }
       setSelectedSellerId(autoSellerId);
 
@@ -241,7 +263,7 @@ export const NewSale: React.FC = () => {
       checkClientCredit(c.id, c.credit_limit || 0);
    };
 
-   // AUTO-REFRESCAR PRECIOS CUANDO CAMBIA EL CONTEXTO (Lista, Vendedor, etc)
+   // AUTO-REFRESCAR PRECIOS CUANDO CAMBIA EL CONTEXTO
    useEffect(() => {
        if (cart.length > 0 && !isViewMode && !isEditMode) {
            handleUpdatePrices(true); // Silent update
@@ -271,7 +293,7 @@ export const NewSale: React.FC = () => {
       if (clientData.price_list_id === 'pl3') price = price * 1.05;
 
       let defaultDiscount = 0;
-      const activePromo = promotions.find(promo => {
+      const activePromo = activePromos.find(promo => {
           if (!promo.product_ids.includes(p.id)) return false;
           if (!isPromoValidForContext(promo, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
           if (promo.target_price_list_ids?.length > 0 && clientData.price_list_id && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(clientData.price_list_id)) return false;
@@ -339,7 +361,7 @@ export const NewSale: React.FC = () => {
          });
       }
       
-      applyAutoPromotions(initialNewCart, true);
+      applyAutoPromotions(initialNewCart);
       setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0); setDiscountPercent(0); setIsBonus(false);
       setTimeout(() => productInputRef.current?.focus(), 50);
    };
@@ -373,17 +395,15 @@ export const NewSale: React.FC = () => {
          ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice,
          discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: selectedBatches
       };
-      applyAutoPromotions(updatedCart, true);
+      applyAutoPromotions(updatedCart);
    };
 
-   // CIRUGÍA APLICADA: Ahora evalúa TODO al actualizar precios
    const handleUpdatePrices = (silent = false) => {
       if (cart.length === 0) return;
-      // Prevenimos que se presione el botón si no hay lista (y evitamos alertar en el useEffect silencioso)
       if (!clientData.price_list_id && silent !== true) { alert("Seleccione una lista de precios primero."); return; }
 
       const updatedCart = cart.map(item => {
-         if (item.is_bonus) return item; // Las bonificaciones mantienen su precio 0
+         if (item.is_bonus) return item; 
          const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : searchedProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
          if (!product) return item;
          
@@ -392,9 +412,8 @@ export const NewSale: React.FC = () => {
          if (clientData.price_list_id === 'pl1') newPrice = newPrice * 0.92; 
          if (clientData.price_list_id === 'pl3') newPrice = newPrice * 1.05; 
 
-         // Re-Evaluar Promociones Clásicas según nuevo contexto
          let newDisc = 0;
-         const activePromo = promotions.find(promo => {
+         const activePromo = activePromos.find(promo => {
              if (!promo.product_ids.includes(product.id)) return false;
              if (!isPromoValidForContext(promo, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
              if (promo.target_price_list_ids?.length > 0 && clientData.price_list_id && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(clientData.price_list_id)) return false;
@@ -446,7 +465,7 @@ export const NewSale: React.FC = () => {
    // --- AUTO PROMOTIONS ---
    const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => {
       let newCart = currentCart.filter(item => !item.auto_promo_id);
-      const validPromos = autoPromotions.filter(ap => {
+      const validPromos = activeAutoPromos.filter(ap => {
          if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
          if (ap.target_price_list_ids?.length > 0 && clientData.price_list_id && !ap.target_price_list_ids.includes('ALL') && !ap.target_price_list_ids.includes(clientData.price_list_id)) return false;
          return true;
@@ -466,7 +485,7 @@ export const NewSale: React.FC = () => {
             if (totalSpent >= ap.condition_amount) { applies = true; multiplyFactor = Math.floor(totalSpent / ap.condition_amount); }
          } else if (ap.condition_type === 'SPEND_Y_CATEGORY') {
             const catSpent = newCart.reduce((sum, item) => {
-               const p = products.find(prod => prod.id === item.product_id);
+               const p = USE_MOCK_DB ? products.find(prod => prod.id === item.product_id) : searchedProducts.find(prod => prod.id === item.product_id) || products.find(prod => prod.id === item.product_id);
                if (p?.category === ap.condition_category) return sum + item.total_price;
                return sum;
             }, 0);
@@ -474,7 +493,7 @@ export const NewSale: React.FC = () => {
          }
 
          if (applies && multiplyFactor > 0) {
-            const rewardProd = products.find(p => p.id === ap.reward_product_id);
+            const rewardProd = USE_MOCK_DB ? products.find(p => p.id === ap.reward_product_id) : searchedProducts.find(p => p.id === ap.reward_product_id) || products.find(p => p.id === ap.reward_product_id);
             if (rewardProd) {
                const rewardQty = ap.reward_quantity * multiplyFactor;
                newCart.push({
@@ -628,7 +647,7 @@ export const NewSale: React.FC = () => {
                   <label className="font-bold text-slate-700 text-sm">Vendedor</label>
                   <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={selectedSellerId} onChange={e => setSelectedSellerId(e.target.value)} disabled={isViewMode}>
                      <option value="">-- Sin Vendedor --</option>
-                     {sellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                     {activeSellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                </div>
             </div>
@@ -693,7 +712,7 @@ export const NewSale: React.FC = () => {
                      )}
                   </div>
                </div>
-               <div className="col-span-4">
+               <div className="col-span-3">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Razón Social</label>
                   <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200" value={clientData.name} onChange={e => setClientData({ ...clientData, name: e.target.value })} disabled={isViewMode} />
                </div>
@@ -703,7 +722,7 @@ export const NewSale: React.FC = () => {
                </div>
 
                {/* RESTAURADO: LISTA DE PRECIOS */}
-               <div className="col-span-2">
+               <div className="col-span-3">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Lista Precio</label>
                   <div className="flex gap-1">
                      <select
@@ -713,7 +732,7 @@ export const NewSale: React.FC = () => {
                         disabled={isViewMode}
                      >
                         <option value="">-- General --</option>
-                        {priceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+                        {activePriceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
                      </select>
                      <button
                         onClick={() => handleUpdatePrices(false)}
@@ -888,7 +907,7 @@ export const NewSale: React.FC = () => {
                   <tbody>
                      {cart.map((item, index) => {
                         const prod = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : searchedProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
-                        const autoPromo = item.auto_promo_id ? autoPromotions.find(ap => ap.id === item.auto_promo_id) : null;
+                        const autoPromo = item.auto_promo_id ? activeAutoPromos.find(ap => ap.id === item.auto_promo_id) : null;
                         return (
                            <tr key={item.id} className={`border-b border-slate-100 ${item.is_bonus ? 'bg-orange-50' : 'hover:bg-slate-50'}`}>
                               <td className="p-2 w-8 text-center text-xs font-bold text-slate-700">{index + 1}</td>
