@@ -24,12 +24,16 @@ export const NewSale: React.FC = () => {
    const [priceLocked, setPriceLocked] = useState(true);
    const [isSaving, setIsSaving] = useState(false);
 
-   // --- MASTER DATA SUPABASE SYNC (NUEVO BLINDAJE) ---
+   // --- MASTER DATA SUPABASE SYNC (NUEVO BLINDAJE CON CACHÉ DE RECOMPENSAS) ---
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
    const [dbPromos, setDbPromos] = useState<Promotion[]>([]);
    const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
+   
+   // Cachés Críticos
+   const [dbRewardProducts, setDbRewardProducts] = useState<Product[]>([]);
+   const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
    useEffect(() => {
        const fetchMasters = async () => {
@@ -46,7 +50,15 @@ export const NewSale: React.FC = () => {
                    if (plRes.data) setDbPriceLists(plRes.data);
                    if (zRes.data) setDbZones(zRes.data);
                    if (pRes.data) setDbPromos(pRes.data);
-                   if (apRes.data) setDbAutoPromos(apRes.data);
+                   if (apRes.data) {
+                       setDbAutoPromos(apRes.data);
+                       // ¡CIRUGÍA AQUÍ! Descargar productos premio a la caché
+                       const rewardIds = apRes.data.map(ap => ap.reward_product_id).filter(Boolean);
+                       if (rewardIds.length > 0) {
+                           const { data: rpData } = await supabase.from('products').select('*').in('id', rewardIds);
+                           if (rpData) setDbRewardProducts(rpData as Product[]);
+                       }
+                   }
                } catch (e) { console.error("Error cargando maestros:", e); }
            }
        };
@@ -89,16 +101,10 @@ export const NewSale: React.FC = () => {
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
 
    useEffect(() => {
-       if (USE_MOCK_DB || clientSearch.length < 3) {
-           setSearchedClients([]);
-           return;
-       }
+       if (USE_MOCK_DB || clientSearch.length < 3) { setSearchedClients([]); return; }
        const timer = setTimeout(async () => {
            setIsSearchingClient(true);
-           const { data } = await supabase.from('clients')
-               .select('*')
-               .or(`name.ilike.%${clientSearch}%,doc_number.ilike.%${clientSearch}%`)
-               .limit(10);
+           const { data } = await supabase.from('clients').select('*').or(`name.ilike.%${clientSearch}%,doc_number.ilike.%${clientSearch}%`).limit(10);
            if (data) setSearchedClients(data as Client[]);
            setIsSearchingClient(false);
        }, 400); 
@@ -114,10 +120,7 @@ export const NewSale: React.FC = () => {
    const [isSearchingProd, setIsSearchingProd] = useState(false);
 
    useEffect(() => {
-       if (USE_MOCK_DB || productSearch.length < 2) {
-           setSearchedProducts([]);
-           return;
-       }
+       if (USE_MOCK_DB || productSearch.length < 2) { setSearchedProducts([]); return; }
        const timer = setTimeout(async () => {
            setIsSearchingProd(true);
            try {
@@ -129,8 +132,7 @@ export const NewSale: React.FC = () => {
                    const enriched = pData.map(p => {
                        const prodBatches = (bData || []).filter(b => b.product_id === p.id) as Batch[];
                        batchCache[p.id] = prodBatches;
-                       const stock = prodBatches.reduce((sum, b) => sum + b.quantity_current, 0);
-                       return { ...p, current_stock: stock };
+                       return { ...p, current_stock: prodBatches.reduce((sum, b) => sum + b.quantity_current, 0) };
                    });
                    setLoadedBatches(prev => ({ ...prev, ...batchCache }));
                    setSearchedProducts(enriched);
@@ -171,13 +173,9 @@ export const NewSale: React.FC = () => {
 
    const [saleToPrint, setSaleToPrint] = useState<Sale | null>(null);
 
-   const filteredClients = clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()) || c.doc_number.includes(clientSearch) || (c.code && c.code.toLowerCase().includes(clientSearch.toLowerCase())));
-   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase()) || (p.barcode && p.barcode.toLowerCase().includes(productSearch.toLowerCase())));
-   const filteredSales = sales.filter(s => s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm) || s.client_ruc.includes(saleSearchTerm));
-
-   const displayClients = USE_MOCK_DB ? filteredClients : searchedClients;
-   const displayProducts = USE_MOCK_DB ? filteredProducts.map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
-   const displaySales = USE_MOCK_DB ? filteredSales : searchedSales;
+   const displayClients = USE_MOCK_DB ? clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()) || c.doc_number.includes(clientSearch)) : searchedClients;
+   const displayProducts = USE_MOCK_DB ? products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase())).map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
+   const displaySales = USE_MOCK_DB ? sales.filter(s => s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm)) : searchedSales;
 
    // --- CALCULATIONS ---
    const calculateTotal = (qty: number, price: number, discPct: number) => { const gross = qty * price; return gross - (gross * (discPct / 100)); };
@@ -200,7 +198,22 @@ export const NewSale: React.FC = () => {
    const loadSale = async (sale: Sale, mode: 'VIEW' | 'EDIT' = 'VIEW') => {
       if (mode === 'EDIT' && (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED')) { alert('No se puede modificar un comprobante enviado o aceptado por SUNAT.'); return; }
       let itemsToLoad = sale.items;
-      if (!USE_MOCK_DB) { const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); if (data) itemsToLoad = data as SaleItem[]; }
+      if (!USE_MOCK_DB) { 
+          const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
+          if (data) {
+              itemsToLoad = data as SaleItem[]; 
+              // Cargar productos al caché
+              const pIds = itemsToLoad.map(i => i.product_id);
+              if (pIds.length > 0) {
+                  const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
+                  if (pData) {
+                      const cache: Record<string, Product> = {};
+                      pData.forEach(p => cache[p.id] = p);
+                      setCartProductsCache(prev => ({...prev, ...cache}));
+                  }
+              }
+          }
+      }
       setIsViewMode(mode === 'VIEW'); setIsEditMode(mode === 'EDIT');
       if (mode === 'EDIT') setOriginalSale({ ...sale, items: itemsToLoad });
       setDocType(sale.document_type as any); setSeries(sale.series); setDocNumber(sale.number);
@@ -215,7 +228,6 @@ export const NewSale: React.FC = () => {
 
    const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems); };
 
-   // --- CHECK CREDIT LIMIT ---
    const checkClientCredit = async (clientId: string, creditLimit: number = 0) => {
       if (USE_MOCK_DB) { setClientCreditInfo({ limit: creditLimit, debt: 0, overdue: false, isChecking: false }); return; }
       setClientCreditInfo({ limit: creditLimit, debt: 0, overdue: false, isChecking: true });
@@ -223,7 +235,6 @@ export const NewSale: React.FC = () => {
           const { data: unpaidSales } = await supabase.from('sales').select('created_at, total, balance').eq('client_id', clientId).eq('payment_status', 'PENDING').neq('status', 'canceled');
           let debt = 0; let hasOverdue = false;
           const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-          
           if (unpaidSales) {
               unpaidSales.forEach(s => {
                   const amount = s.balance !== undefined && s.balance !== null ? Number(s.balance) : Number(s.total);
@@ -235,7 +246,7 @@ export const NewSale: React.FC = () => {
       } catch(e) { console.error(e); setClientCreditInfo(prev => ({...prev, isChecking: false})); }
    }
 
-   const selectClient = (c: Client) => {
+   const selectClient = async (c: Client) => {
       setSelectedClientId(c.id);
       const newDocType: 'FACTURA' | 'BOLETA' = c.doc_number.length === 11 ? 'FACTURA' : 'BOLETA';
       setDocType(newDocType);
@@ -251,27 +262,19 @@ export const NewSale: React.FC = () => {
       setSelectedSellerId(autoSellerId);
 
       setClientData({ name: c.name, doc_number: c.doc_number, address: c.address, price_list_id: c.price_list_id || '', city: c.city });
-      setClientSearch(c.name);
-      setShowClientSuggestions(false);
+      setClientSearch(c.name); setShowClientSuggestions(false);
       
-      if (c.payment_condition && c.payment_condition.toUpperCase().includes('CREDIT')) {
-         setPaymentMethod('CREDITO');
-      } else {
-         setPaymentMethod('CONTADO');
-      }
-
+      if (c.payment_condition && c.payment_condition.toUpperCase().includes('CREDIT')) { setPaymentMethod('CREDITO'); } else { setPaymentMethod('CONTADO'); }
       checkClientCredit(c.id, c.credit_limit || 0);
    };
 
-   // AUTO-REFRESCAR PRECIOS CUANDO CAMBIA EL CONTEXTO
    useEffect(() => {
        if (cart.length > 0 && !isViewMode && !isEditMode) {
-           handleUpdatePrices(true); // Silent update
+           handleUpdatePrices(true); 
        }
    // eslint-disable-next-line react-hooks/exhaustive-deps
    }, [clientData.price_list_id, selectedSellerId, clientData.city]);
 
-   // --- PRODUCT SEARCH & ADD ---
    const handleProductKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedIndex(prev => (prev + 1) % displayProducts.length);
       } else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedIndex(prev => (prev - 1 + displayProducts.length) % displayProducts.length);
@@ -286,6 +289,10 @@ export const NewSale: React.FC = () => {
             setProductSearch(''); setShowProductSuggestions(false); productInputRef.current?.focus(); return;
          }
       }
+      
+      // Inyectar producto a la memoria caché local para que nunca se pierda su data
+      setCartProductsCache(prev => ({...prev, [p.id]: p}));
+      
       setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitType('UND'); 
 
       let price = p.price_unit;
@@ -360,7 +367,6 @@ export const NewSale: React.FC = () => {
             discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: selectedBatches
          });
       }
-      
       applyAutoPromotions(initialNewCart);
       setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0); setDiscountPercent(0); setIsBonus(false);
       setTimeout(() => productInputRef.current?.focus(), 50);
@@ -370,7 +376,7 @@ export const NewSale: React.FC = () => {
       const newQty = parseInt(newQtyStr, 10);
       if (isNaN(newQty) || newQty <= 0) return;
       const item = cart[index];
-      const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : searchedProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
+      const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : cartProductsCache[item.product_id];
       if (!product) return;
 
       const conversionFactor = item.selected_unit === 'PKG' ? (product.package_content || 1) : 1;
@@ -404,11 +410,10 @@ export const NewSale: React.FC = () => {
 
       const updatedCart = cart.map(item => {
          if (item.is_bonus) return item; 
-         const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : searchedProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
+         const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : cartProductsCache[item.product_id];
          if (!product) return item;
          
          let newPrice = item.selected_unit === 'PKG' ? (product.price_package || product.price_unit) : product.price_unit;
-         
          if (clientData.price_list_id === 'pl1') newPrice = newPrice * 0.92; 
          if (clientData.price_list_id === 'pl3') newPrice = newPrice * 1.05; 
 
@@ -442,7 +447,6 @@ export const NewSale: React.FC = () => {
       } else if (e.key === 'Escape') { setSelectedProduct(null); setProductSearch(''); setTimeout(() => productInputRef.current?.focus(), 50); }
    };
 
-   // --- ADMIN AUTHORIZATION ---
    const [showAdminAuthModal, setShowAdminAuthModal] = useState({ isOpen: false, triggerAction: () => { }, targetActionName: '' });
    const [adminPasswordInput, setAdminPasswordInput] = useState('');
 
@@ -462,7 +466,7 @@ export const NewSale: React.FC = () => {
       else handleAddToCart();
    };
 
-   // --- AUTO PROMOTIONS ---
+   // --- AUTO PROMOTIONS (CACHÉ INCORPORADO) ---
    const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => {
       let newCart = currentCart.filter(item => !item.auto_promo_id);
       const validPromos = activeAutoPromos.filter(ap => {
@@ -474,7 +478,15 @@ export const NewSale: React.FC = () => {
       validPromos.forEach(ap => {
          let applies = false; let multiplyFactor = 0; 
          if (ap.condition_type === 'BUY_X_PRODUCT') {
-            const qtyBought = newCart.filter(item => (!ap.condition_product_ids?.length || ap.condition_product_ids.includes(item.product_id)) && !item.is_bonus).reduce((sum, item) => sum + item.quantity_base, 0);
+            const qtyBought = newCart.filter(item => {
+                if (item.is_bonus) return false;
+                const hasList = ap.condition_product_ids && ap.condition_product_ids.length > 0;
+                const hasSingle = !!ap.condition_product_id;
+                if (hasList) return ap.condition_product_ids.includes(item.product_id);
+                if (hasSingle) return item.product_id === ap.condition_product_id;
+                return true; 
+            }).reduce((sum, item) => sum + item.quantity_base, 0);
+            
             if (qtyBought >= ap.condition_amount) { applies = true; multiplyFactor = Math.floor(qtyBought / ap.condition_amount); }
          } else if (ap.condition_type === 'SPEND_Y_TOTAL') {
             const conditionItemKeys = ap.condition_product_ids || [];
@@ -485,7 +497,7 @@ export const NewSale: React.FC = () => {
             if (totalSpent >= ap.condition_amount) { applies = true; multiplyFactor = Math.floor(totalSpent / ap.condition_amount); }
          } else if (ap.condition_type === 'SPEND_Y_CATEGORY') {
             const catSpent = newCart.reduce((sum, item) => {
-               const p = USE_MOCK_DB ? products.find(prod => prod.id === item.product_id) : searchedProducts.find(prod => prod.id === item.product_id) || products.find(prod => prod.id === item.product_id);
+               const p = USE_MOCK_DB ? products.find(prod => prod.id === item.product_id) : cartProductsCache[item.product_id];
                if (p?.category === ap.condition_category) return sum + item.total_price;
                return sum;
             }, 0);
@@ -493,7 +505,7 @@ export const NewSale: React.FC = () => {
          }
 
          if (applies && multiplyFactor > 0) {
-            const rewardProd = USE_MOCK_DB ? products.find(p => p.id === ap.reward_product_id) : searchedProducts.find(p => p.id === ap.reward_product_id) || products.find(p => p.id === ap.reward_product_id);
+            const rewardProd = USE_MOCK_DB ? products.find(p => p.id === ap.reward_product_id) : dbRewardProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
             if (rewardProd) {
                const rewardQty = ap.reward_quantity * multiplyFactor;
                newCart.push({
@@ -510,7 +522,6 @@ export const NewSale: React.FC = () => {
       if (silent !== true) alert("Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
    };
 
-   // --- FINAL SAVE (RPC TITANIUM LOCK + CREDIT RISK) ---
    const handleSaveSale = async () => {
       if (isViewMode && !isEditMode) {
          const currentSale = sales.find(s => s.series === series && s.number === docNumber);
@@ -522,11 +533,9 @@ export const NewSale: React.FC = () => {
       if (!selectedClientId && !clientData.name) { alert("Ingrese datos del cliente"); return; }
       if (!series) { alert("No hay una serie asignada. Configure una en los Ajustes de Empresa."); return; }
 
-      // Anti-Mock Shield
       if (selectedClientId && !isUUID(selectedClientId) && !USE_MOCK_DB) { alert("Cliente de prueba detectado. Seleccione uno real."); return; }
       if (!USE_MOCK_DB && cart.some(i => !isUUID(i.product_id))) { alert("Hay productos de prueba. Use productos reales."); return; }
 
-      // --- CREDIT RISK BARRIER ---
       if (paymentMethod === 'CREDITO') {
           if (clientCreditInfo.overdue) {
               alert("❌ BLOQUEO DE CRÉDITO ❌\n\nEl cliente mantiene comprobantes vencidos (más de 7 días sin pago). No se le puede emitir más crédito hasta que regularice su deuda.");
@@ -712,7 +721,7 @@ export const NewSale: React.FC = () => {
                      )}
                   </div>
                </div>
-               <div className="col-span-3">
+               <div className="col-span-4">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Razón Social</label>
                   <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200" value={clientData.name} onChange={e => setClientData({ ...clientData, name: e.target.value })} disabled={isViewMode} />
                </div>
@@ -722,7 +731,7 @@ export const NewSale: React.FC = () => {
                </div>
 
                {/* RESTAURADO: LISTA DE PRECIOS */}
-               <div className="col-span-3">
+               <div className="col-span-2">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Lista Precio</label>
                   <div className="flex gap-1">
                      <select
@@ -906,7 +915,7 @@ export const NewSale: React.FC = () => {
                <table className="w-full text-left text-xs">
                   <tbody>
                      {cart.map((item, index) => {
-                        const prod = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : searchedProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
+                        const prod = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : cartProductsCache[item.product_id];
                         const autoPromo = item.auto_promo_id ? activeAutoPromos.find(ap => ap.id === item.auto_promo_id) : null;
                         return (
                            <tr key={item.id} className={`border-b border-slate-100 ${item.is_bonus ? 'bg-orange-50' : 'hover:bg-slate-50'}`}>
