@@ -180,7 +180,10 @@ export const NewSale: React.FC = () => {
       generateMassiveInvoicePDF(company, [tempSale]);
    };
 
-   const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems); };
+   const removeFromCart = (index: number) => { 
+       const newItems = cart.filter((_, i) => i !== index); 
+       applyAutoPromotions(newItems); 
+   };
 
    // --- CHECK CREDIT LIMIT ---
    const checkClientCredit = async (clientId: string, creditLimit: number = 0) => {
@@ -202,7 +205,8 @@ export const NewSale: React.FC = () => {
       } catch(e) { console.error(e); setClientCreditInfo(prev => ({...prev, isChecking: false})); }
    }
 
-   const selectClient = (c: Client) => {
+   // CIRUGÍA APLICADA: Jala vendedor de base de datos automáticamente
+   const selectClient = async (c: Client) => {
       setSelectedClientId(c.id);
       const newDocType: 'FACTURA' | 'BOLETA' = c.doc_number.length === 11 ? 'FACTURA' : 'BOLETA';
       setDocType(newDocType);
@@ -211,23 +215,39 @@ export const NewSale: React.FC = () => {
       if (activeSeries) { setSeries(activeSeries.series); setDocNumber(String(activeSeries.current_number).padStart(8, '0')); }
 
       let autoSellerId = '';
-      if (c.zone_id) { const zone = zones.find(z => z.id === c.zone_id); if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } }
+      if (c.zone_id) { 
+         if (!USE_MOCK_DB) {
+             try {
+                 const { data } = await supabase.from('zones').select('assigned_seller_id').eq('id', c.zone_id).single();
+                 if (data && data.assigned_seller_id) autoSellerId = data.assigned_seller_id;
+             } catch (e) { console.error(e); }
+         } else {
+             const zone = zones.find(z => z.id === c.zone_id); 
+             if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } 
+         }
+      }
       setSelectedSellerId(autoSellerId);
 
       setClientData({ name: c.name, doc_number: c.doc_number, address: c.address, price_list_id: c.price_list_id || '', city: c.city });
       setClientSearch(c.name);
       setShowClientSuggestions(false);
       
-      // Auto-detección de crédito según perfil del cliente
       if (c.payment_condition && c.payment_condition.toUpperCase().includes('CREDIT')) {
          setPaymentMethod('CREDITO');
       } else {
          setPaymentMethod('CONTADO');
       }
 
-      // Trigger Credit Check
       checkClientCredit(c.id, c.credit_limit || 0);
    };
+
+   // AUTO-REFRESCAR PRECIOS CUANDO CAMBIA EL CONTEXTO (Lista, Vendedor, etc)
+   useEffect(() => {
+       if (cart.length > 0 && !isViewMode && !isEditMode) {
+           handleUpdatePrices(true); // Silent update
+       }
+   // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [clientData.price_list_id, selectedSellerId, clientData.city]);
 
    // --- PRODUCT SEARCH & ADD ---
    const handleProductKeyDown = (e: React.KeyboardEvent) => {
@@ -251,7 +271,13 @@ export const NewSale: React.FC = () => {
       if (clientData.price_list_id === 'pl3') price = price * 1.05;
 
       let defaultDiscount = 0;
-      const activePromo = promotions.find(promo => promo.product_ids.includes(p.id) && isPromoValidForContext(promo, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role));
+      const activePromo = promotions.find(promo => {
+          if (!promo.product_ids.includes(p.id)) return false;
+          if (!isPromoValidForContext(promo, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
+          if (promo.target_price_list_ids?.length > 0 && clientData.price_list_id && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(clientData.price_list_id)) return false;
+          return true;
+      });
+
       if (activePromo) {
          if (activePromo.type === 'PERCENTAGE_DISCOUNT') defaultDiscount = activePromo.value;
          else if (activePromo.type === 'FIXED_PRICE') price = activePromo.value;
@@ -312,7 +338,8 @@ export const NewSale: React.FC = () => {
             discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: selectedBatches
          });
       }
-      applyAutoPromotions(initialNewCart);
+      
+      applyAutoPromotions(initialNewCart, true);
       setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0); setDiscountPercent(0); setIsBonus(false);
       setTimeout(() => productInputRef.current?.focus(), 50);
    };
@@ -346,24 +373,45 @@ export const NewSale: React.FC = () => {
          ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice,
          discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: selectedBatches
       };
-      setCart(updatedCart); applyAutoPromotions(updatedCart);
+      applyAutoPromotions(updatedCart, true);
    };
 
-   const handleUpdatePrices = () => {
+   // CIRUGÍA APLICADA: Ahora evalúa TODO al actualizar precios
+   const handleUpdatePrices = (silent = false) => {
       if (cart.length === 0) return;
+      // Prevenimos que se presione el botón si no hay lista (y evitamos alertar en el useEffect silencioso)
+      if (!clientData.price_list_id && silent !== true) { alert("Seleccione una lista de precios primero."); return; }
+
       const updatedCart = cart.map(item => {
-         const product = products.find(p => p.id === item.product_id);
+         if (item.is_bonus) return item; // Las bonificaciones mantienen su precio 0
+         const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : searchedProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
          if (!product) return item;
-         let newPrice = item.selected_unit === 'PKG' ? product.price_package : product.price_unit;
+         
+         let newPrice = item.selected_unit === 'PKG' ? (product.price_package || product.price_unit) : product.price_unit;
+         
          if (clientData.price_list_id === 'pl1') newPrice = newPrice * 0.92; 
          if (clientData.price_list_id === 'pl3') newPrice = newPrice * 1.05; 
-         if (item.is_bonus) newPrice = 0;
-         const newTotal = calculateTotal(item.quantity_presentation, newPrice, item.discount_percent);
-         const newDiscountAmt = (item.quantity_presentation * newPrice) * (item.discount_percent / 100);
-         return { ...item, unit_price: newPrice, total_price: newTotal, discount_amount: newDiscountAmt };
+
+         // Re-Evaluar Promociones Clásicas según nuevo contexto
+         let newDisc = 0;
+         const activePromo = promotions.find(promo => {
+             if (!promo.product_ids.includes(product.id)) return false;
+             if (!isPromoValidForContext(promo, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
+             if (promo.target_price_list_ids?.length > 0 && clientData.price_list_id && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(clientData.price_list_id)) return false;
+             return true;
+         });
+
+         if (activePromo) {
+            if (activePromo.type === 'PERCENTAGE_DISCOUNT') newDisc = activePromo.value;
+            else if (activePromo.type === 'FIXED_PRICE') newPrice = activePromo.value;
+         }
+
+         const newTotal = calculateTotal(item.quantity_presentation, newPrice, newDisc);
+         const newDiscountAmt = (item.quantity_presentation * newPrice) * (newDisc / 100);
+         return { ...item, unit_price: newPrice, total_price: newTotal, discount_percent: newDisc, discount_amount: newDiscountAmt };
       });
-      setCart(updatedCart); applyAutoPromotions(updatedCart); 
-      alert("Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
+      
+      applyAutoPromotions(updatedCart, silent); 
    };
 
    const handleInputKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<any> | 'ADD' | 'BONUS_TOGGLE') => {
@@ -396,7 +444,7 @@ export const NewSale: React.FC = () => {
    };
 
    // --- AUTO PROMOTIONS ---
-   const applyAutoPromotions = (currentCart: SaleItem[]) => {
+   const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => {
       let newCart = currentCart.filter(item => !item.auto_promo_id);
       const validPromos = autoPromotions.filter(ap => {
          if (!isPromoValidForContext(ap, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
@@ -438,7 +486,9 @@ export const NewSale: React.FC = () => {
             }
          }
       });
+      
       setCart(newCart);
+      if (silent !== true) alert("Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
    };
 
    // --- FINAL SAVE (RPC TITANIUM LOCK + CREDIT RISK) ---
@@ -666,7 +716,7 @@ export const NewSale: React.FC = () => {
                         {priceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
                      </select>
                      <button
-                        onClick={handleUpdatePrices}
+                        onClick={() => handleUpdatePrices(false)}
                         disabled={isViewMode}
                         className="bg-blue-100 border border-blue-300 text-blue-700 px-1.5 rounded hover:bg-blue-200 disabled:opacity-50 flex items-center justify-center transition-colors"
                         title="Actualizar Precios y Promociones en el Carrito"
