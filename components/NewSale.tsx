@@ -161,20 +161,37 @@ export const NewSale: React.FC = () => {
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
    const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
 
+   // --- NUEVO CEREBRO DE BÚSQUEDA DE VENTAS (LIMITADO A 10) ---
    useEffect(() => {
-       if (USE_MOCK_DB || saleSearchTerm.length < 3) { setSearchedSales([]); return; }
+       if (!isSearchModalOpen) return;
+       if (USE_MOCK_DB) return;
+
        const timer = setTimeout(async () => {
            setIsSearchingSale(true);
-           const { data } = await supabase.from('sales').select('*').or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`).order('created_at', { ascending: false }).limit(20);
-           if (data) setSearchedSales(data as Sale[]);
-           setIsSearchingSale(false);
-       }, 500);
+           try {
+               let query = supabase.from('sales').select('*').order('created_at', { ascending: false }).limit(10);
+               
+               if (saleSearchTerm.trim().length > 0) {
+                   query = query.or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`);
+               }
+               
+               const { data, error } = await query;
+               if (error) throw error;
+               if (data) setSearchedSales(data as Sale[]);
+           } catch (e) {
+               console.error("Error buscando ventas:", e);
+           } finally {
+               setIsSearchingSale(false);
+           }
+       }, 400);
        return () => clearTimeout(timer);
-   }, [saleSearchTerm]);
+   }, [saleSearchTerm, isSearchModalOpen]);
 
    const displayClients = USE_MOCK_DB ? clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()) || c.doc_number.includes(clientSearch)) : searchedClients;
    const displayProducts = USE_MOCK_DB ? products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase())).map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
-   const displaySales = USE_MOCK_DB ? sales.filter(s => s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm)) : searchedSales;
+   
+   // APLICADO LÍMITE DE 10 PARA ENTORNO MOCK (DE PRUEBA)
+   const displaySales = USE_MOCK_DB ? sales.filter(s => !saleSearchTerm || s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm)).slice(0, 10) : searchedSales;
 
    // --- CALCULATIONS ---
    const calculateTotal = (qty: number, price: number, discPct: number) => { const gross = qty * price; return gross - (gross * (discPct / 100)); };
@@ -202,6 +219,7 @@ export const NewSale: React.FC = () => {
           const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
           if (data) {
               itemsToLoad = data as SaleItem[]; 
+              // Cargar productos al caché
               const pIds = itemsToLoad.map(i => i.product_id);
               if (pIds.length > 0) {
                   const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
@@ -235,7 +253,6 @@ export const NewSale: React.FC = () => {
 
    // --- ENGINE: VISTA PREVIA PDF ---
    const handlePreview = async () => {
-      // Si estamos en MODO VISTA (Visualizando), mandamos la factura real al motor PDF
       if (isViewMode && !isEditMode && originalSale) {
          try {
              await PdfEngine.openDocument(originalSale, docType, company);
@@ -246,7 +263,6 @@ export const NewSale: React.FC = () => {
          return;
       }
 
-      // Si estamos VENDIENDO o EDITANDO, mandamos una Vista Previa simulada
       const tempSale: Sale = { 
          id: isEditMode && originalSale ? originalSale.id : 'preview', 
          document_type: docType, 
@@ -1103,6 +1119,9 @@ export const NewSale: React.FC = () => {
                         value={saleSearchTerm}
                         onChange={e => setSaleSearchTerm(e.target.value)}
                      />
+                     <p className="text-[11px] text-slate-500 mt-2 italic font-medium">
+                        📌 Mostrando los últimos 10 documentos. Escriba nombre, RUC o número de comprobante para buscar en todo el historial.
+                     </p>
                      {isSearchingSale && <Loader2 className="absolute right-8 top-7 w-5 h-5 text-blue-500 animate-spin" />}
                   </div>
                   <div className="flex-1 overflow-auto bg-white rounded-b-lg relative">
