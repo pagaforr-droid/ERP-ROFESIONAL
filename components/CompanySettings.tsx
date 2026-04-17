@@ -5,14 +5,15 @@ import { Building, Settings, FileText, Image, Save, Hash, Upload, RefreshCw, Tra
 import { DocumentSeries } from '../types';
 
 export const CompanySettings: React.FC = () => {
-  const { company: mockCompany, updateCompany: mockUpdateCompany } = useStore();
+  // Extraemos la compañía global y su función de actualización
+  const { company: globalCompany, updateCompany: globalUpdateCompany } = useStore();
   const [activeTab, setActiveTab] = useState<'GENERAL' | 'SERIES' | 'SUNAT'>('GENERAL');
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [companyId, setCompanyId] = useState<string | null>(null);
 
-  // Estados locales para la Nube
+  // Estados locales para edición antes de ir a la Nube
   const [formData, setFormData] = useState({
     ruc: '',
     name: '',
@@ -29,29 +30,29 @@ export const CompanySettings: React.FC = () => {
   const [seriesList, setSeriesList] = useState<DocumentSeries[]>([]);
   const [seriesToDelete, setSeriesToDelete] = useState<string[]>([]);
 
-  // --- SINCRONIZACIÓN INICIAL ---
+  // --- SINCRONIZACIÓN INICIAL (NUBE -> LOCAL) ---
   useEffect(() => {
     const fetchCompanyData = async () => {
       if (USE_MOCK_DB) {
         setFormData({
-          ruc: mockCompany.ruc || '',
-          name: mockCompany.name || '',
-          address: mockCompany.address || '',
-          igv_percent: mockCompany.igv_percent || 18,
-          email: mockCompany.email || '',
-          phone: mockCompany.phone || '',
-          sunat_provider: mockCompany.sunat_provider || '',
-          sunat_api_url: mockCompany.sunat_api_url || '',
-          sunat_api_token: mockCompany.sunat_api_token || '',
-          logo_url: mockCompany.logo_url || ''
+          ruc: globalCompany.ruc || '',
+          name: globalCompany.name || '',
+          address: globalCompany.address || '',
+          igv_percent: globalCompany.igv_percent || 18,
+          email: globalCompany.email || '',
+          phone: globalCompany.phone || '',
+          sunat_provider: globalCompany.sunat_provider || '',
+          sunat_api_url: globalCompany.sunat_api_url || '',
+          sunat_api_token: globalCompany.sunat_api_token || '',
+          logo_url: globalCompany.logo_url || ''
         });
-        setSeriesList(mockCompany.series || []);
+        setSeriesList(globalCompany.series || []);
       } else {
         setIsLoading(true);
         try {
           // 1. Obtener Empresa
-          const { data: compData, error: compErr } = await supabase.from('company_config').select('*').limit(1).single();
-          if (compErr && compErr.code !== 'PGRST116') throw compErr; // PGRST116 es "No rows found"
+          const { data: compData, error: compErr } = await supabase.from('company_config').select('*').limit(1).maybeSingle();
+          if (compErr) throw compErr; 
           
           if (compData) {
             setCompanyId(compData.id);
@@ -71,7 +72,11 @@ export const CompanySettings: React.FC = () => {
             // 2. Obtener Series
             const { data: serData, error: serErr } = await supabase.from('document_series').select('*').eq('company_id', compData.id).order('type');
             if (serErr) throw serErr;
-            if (serData) setSeriesList(serData as DocumentSeries[]);
+            if (serData) {
+               setSeriesList(serData as DocumentSeries[]);
+               // Sincronizamos el Store Global para que "Venta Directa" empiece con datos reales
+               globalUpdateCompany({ ...compData, series: serData as DocumentSeries[] });
+            }
           }
         } catch (error: any) {
           console.error("Error cargando configuración:", error);
@@ -90,19 +95,22 @@ export const CompanySettings: React.FC = () => {
     
     try {
       if (USE_MOCK_DB) {
-        mockUpdateCompany(formData);
+        globalUpdateCompany({ ...globalCompany, ...formData });
         alert('Datos simulados actualizados.');
       } else {
-        if (companyId) {
-          const { error } = await supabase.from('company_config').update(formData).eq('id', companyId);
+        let currentCompId = companyId;
+        if (currentCompId) {
+          const { error } = await supabase.from('company_config').update(formData).eq('id', currentCompId);
           if (error) throw error;
         } else {
           // Si no existe la empresa, la creamos
-          const newId = crypto.randomUUID();
-          const { error } = await supabase.from('company_config').insert([{ ...formData, id: newId }]);
+          currentCompId = crypto.randomUUID();
+          const { error } = await supabase.from('company_config').insert([{ ...formData, id: currentCompId }]);
           if (error) throw error;
-          setCompanyId(newId);
+          setCompanyId(currentCompId);
         }
+        // Puente de Sincronización: Avisar al Store Global
+        globalUpdateCompany({ ...globalCompany, ...formData });
         alert('Configuración guardada exitosamente en la Nube.');
       }
     } catch (error: any) {
@@ -112,15 +120,16 @@ export const CompanySettings: React.FC = () => {
     }
   };
 
-  // --- GUARDADO: SERIES Y CORRELATIVOS (BATCH) ---
+  // --- GUARDADO: SERIES Y CORRELATIVOS ---
   const handleSeriesSave = async () => {
     setIsSaving(true);
     try {
       if (USE_MOCK_DB) {
-        alert("Series simuladas actualizadas (Solo local).");
+        globalUpdateCompany({ ...globalCompany, series: seriesList });
+        alert("Series simuladas actualizadas. Venta Directa ahora usará estas series.");
       } else {
         if (!companyId) {
-           alert("Primero debe guardar los Datos Generales de la empresa.");
+           alert("Primero debe guardar los Datos Generales de la empresa antes de configurar series.");
            return;
         }
 
@@ -144,7 +153,9 @@ export const CompanySettings: React.FC = () => {
         const { error: upsertErr } = await supabase.from('document_series').upsert(seriesPayload, { onConflict: 'id' });
         if (upsertErr) throw upsertErr;
 
-        alert("Series y correlativos sincronizados con la Nube.");
+        // Puente de Sincronización: Conecta las series directo al módulo de Venta Directa
+        globalUpdateCompany({ ...globalCompany, series: seriesList });
+        alert("Series y correlativos sincronizados con la Nube y listos para facturar.");
       }
     } catch (error: any) {
       alert("Error guardando series: " + error.message);
@@ -170,18 +181,18 @@ export const CompanySettings: React.FC = () => {
   };
 
   const handleRemoveSeries = (id: string) => {
-    if (confirm('¿Seguro que desea eliminar esta serie? Podría afectar correlativos.')) {
+    if (window.confirm('¿Seguro que desea eliminar esta serie? Podría afectar correlativos históricos.')) {
       setSeriesList(prev => prev.filter(s => s.id !== id));
       if (!USE_MOCK_DB) setSeriesToDelete(prev => [...prev, id]);
     }
   };
 
-  // --- LOGO UPLOAD (Base64) ---
+  // --- LOGO UPLOAD (Base64 Seguro) ---
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
-         alert("El logo no debe pesar más de 2MB.");
+         alert("El logo es demasiado pesado. El tamaño máximo es 2MB.");
          return;
       }
       const reader = new FileReader();
@@ -193,40 +204,40 @@ export const CompanySettings: React.FC = () => {
   };
 
   if (isLoading) {
-    return <div className="h-full flex items-center justify-center text-slate-500 font-bold"><RefreshCw className="w-6 h-6 animate-spin mr-2" /> Cargando Configuración...</div>;
+    return <div className="h-full flex flex-col items-center justify-center text-slate-500 font-bold"><RefreshCw className="w-10 h-10 animate-spin mb-4 text-blue-600" /> Sincronizando Ajustes Globales...</div>;
   }
 
   return (
     <div className="h-full flex flex-col space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
         <h2 className="text-xl font-black text-slate-800 flex items-center">
-          <Settings className="mr-2 text-blue-600 w-6 h-6" /> Ajustes Globales del Sistema
+          <Settings className="mr-3 text-blue-600 w-6 h-6" /> Ajustes Globales del Sistema
         </h2>
       </div>
 
       {/* NAVEGACIÓN DE TABS */}
-      <div className="flex bg-white rounded-t-xl border-b border-slate-200 shadow-sm overflow-hidden">
+      <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-1">
         <button
           onClick={() => setActiveTab('GENERAL')}
-          className={`flex-1 py-4 font-bold text-sm flex items-center justify-center transition-colors ${activeTab === 'GENERAL' ? 'bg-blue-50 text-blue-700 border-b-4 border-blue-600' : 'text-slate-500 hover:bg-slate-50 border-b-4 border-transparent'}`}
+          className={`flex-1 py-3 font-black text-sm flex items-center justify-center rounded-lg transition-all ${activeTab === 'GENERAL' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
         >
           <Building className="w-4 h-4 mr-2" /> Datos Generales
         </button>
         <button
           onClick={() => setActiveTab('SERIES')}
-          className={`flex-1 py-4 font-bold text-sm flex items-center justify-center transition-colors ${activeTab === 'SERIES' ? 'bg-blue-50 text-blue-700 border-b-4 border-blue-600' : 'text-slate-500 hover:bg-slate-50 border-b-4 border-transparent'}`}
+          className={`flex-1 py-3 font-black text-sm flex items-center justify-center rounded-lg transition-all ${activeTab === 'SERIES' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
         >
           <Hash className="w-4 h-4 mr-2" /> Series y Correlativos
         </button>
         <button
           onClick={() => setActiveTab('SUNAT')}
-          className={`flex-1 py-4 font-bold text-sm flex items-center justify-center transition-colors ${activeTab === 'SUNAT' ? 'bg-blue-50 text-blue-700 border-b-4 border-blue-600' : 'text-slate-500 hover:bg-slate-50 border-b-4 border-transparent'}`}
+          className={`flex-1 py-3 font-black text-sm flex items-center justify-center rounded-lg transition-all ${activeTab === 'SUNAT' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
         >
           <FileText className="w-4 h-4 mr-2" /> Facturación Electrónica (API)
         </button>
       </div>
 
-      <div className="flex-1 bg-white rounded-b-xl shadow-sm border border-slate-200 overflow-auto">
+      <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-auto">
         
         {/* TAB 1: GENERAL */}
         {activeTab === 'GENERAL' && (
@@ -312,7 +323,7 @@ export const CompanySettings: React.FC = () => {
 
         {/* TAB 2: SERIES Y CORRELATIVOS */}
         {activeTab === 'SERIES' && (
-          <div className="p-8 max-w-4xl mx-auto animate-fade-in flex flex-col h-full">
+          <div className="p-8 max-w-5xl mx-auto animate-fade-in flex flex-col h-full">
             <div className="bg-amber-50 p-5 rounded-xl border border-amber-200 mb-6 flex items-start shadow-sm">
               <div className="bg-amber-100 p-2.5 rounded-full mr-4 text-amber-700 shadow-inner">
                 <Hash className="w-6 h-6" />
@@ -325,7 +336,7 @@ export const CompanySettings: React.FC = () => {
                   </button>
                 </div>
                 <p className="text-xs text-amber-800 font-medium">
-                  Configure los correlativos exactos. <strong>Importante:</strong> Modificar el número actual alterará la emisión del próximo comprobante. Asegúrese de que coincidan con su historial de SUNAT.
+                  Configure los correlativos exactos. Al hacer clic en <strong>"Sincronizar Series"</strong>, el módulo de Venta Directa adoptará estos números automáticamente.
                 </p>
               </div>
             </div>
@@ -373,6 +384,7 @@ export const CompanySettings: React.FC = () => {
                        <td className="p-3">
                          <input
                            type="number"
+                           min="1"
                            className="w-full border-2 border-slate-200 p-2 rounded-lg text-center font-mono font-black text-blue-700 focus:border-blue-500 outline-none transition-colors"
                            value={series.current_number}
                            onChange={e => handleSeriesUpdate(series.id, 'current_number', Number(e.target.value))}
@@ -398,7 +410,7 @@ export const CompanySettings: React.FC = () => {
             <div className="flex justify-end mt-6">
                <button onClick={handleSeriesSave} disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold flex items-center shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50">
                  {isSaving ? <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> : <Save className="w-5 h-5 mr-2" />}
-                 {isSaving ? 'Sincronizando...' : 'Guardar Cambios de Series'}
+                 {isSaving ? 'Sincronizando...' : 'Sincronizar Series con Venta Directa'}
                </button>
             </div>
           </div>
