@@ -91,7 +91,8 @@ export const NewSale: React.FC = () => {
                const { data: pData } = await supabase.from('products').select('*').or(`name.ilike.%${productSearch}%,sku.ilike.%${productSearch}%`).eq('is_active', true).limit(15);
                if (pData && pData.length > 0) {
                    const pIds = pData.map(p => p.id);
-                   const { data: bData } = await supabase.from('batches').select('*').in('product_id', pIds).eq('warehouse_id', 'CENTRAL').gt('quantity_current', 0).order('expiration_date', { ascending: true });
+                   // Corrección: Ya no filtramos por warehouse_id = 'CENTRAL' para permitir mostrar todo el stock consolidado
+                   const { data: bData } = await supabase.from('batches').select('*').in('product_id', pIds).gt('quantity_current', 0).order('expiration_date', { ascending: true });
                    const batchCache: Record<string, Batch[]> = {};
                    const enriched = pData.map(p => {
                        const prodBatches = (bData || []).filter(b => b.product_id === p.id) as Batch[];
@@ -115,7 +116,7 @@ export const NewSale: React.FC = () => {
    const [isBonus, setIsBonus] = useState(false);
    const [cart, setCart] = useState<SaleItem[]>([]);
 
-   // --- SEARCH SALES MODAL ---
+   // --- SEARCH SALES MODAL STATE ---
    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
    const [saleSearchTerm, setSaleSearchTerm] = useState('');
    const [searchedSales, setSearchedSales] = useState<Sale[]>([]);
@@ -607,8 +608,7 @@ export const NewSale: React.FC = () => {
                                <div>Saldo Disponible: <strong className="font-mono">S/ {Math.max(0, clientCreditInfo.limit - clientCreditInfo.debt).toFixed(2)}</strong></div>
                            </div>
                        </div>
-                       
-                      <div className="text-right flex flex-col justify-end">
+                       <div className="text-right flex flex-col justify-end">
                            {clientCreditInfo.overdue && <div className="font-black text-xs text-red-600 flex items-center bg-white px-2 py-1 rounded shadow-sm border border-red-200"><AlertTriangle className="w-4 h-4 mr-1"/> BLOQUEO X MOROSIDAD (&gt;7 DÍAS)</div>}
                            {(clientCreditInfo.debt + grandTotal > clientCreditInfo.limit) && !clientCreditInfo.overdue && <div className="font-black text-xs text-orange-600 flex items-center bg-white px-2 py-1 rounded shadow-sm border border-orange-200"><AlertTriangle className="w-4 h-4 mr-1"/> PEDIDO EXCEDE LÍMITE</div>}
                        </div>
@@ -748,6 +748,7 @@ export const NewSale: React.FC = () => {
                               </table>
                            </div>
                         )}
+                        {showProductSuggestions && productSearch && displayProducts.length === 0 && !isSearchingProd && <div className="absolute top-full left-0 w-full p-2 text-center text-slate-400 bg-white border border-slate-400 shadow-2xl z-50">Sin coincidencias</div>}
                      </div>
                   </div>
 
