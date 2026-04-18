@@ -148,7 +148,7 @@ export const NewSale: React.FC = () => {
    }, [productSearch]);
 
    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-   const [unitType, setUnitType] = useState<'UND' | 'PKG'>('UND');
+   const [unitMode, setUnitMode] = useState<'BASE' | 'PKG'>('BASE'); // Control interno del selector
    const [quantity, setQuantity] = useState<number>(1);
    const [unitPrice, setUnitPrice] = useState<number>(0); 
    const [discountPercent, setDiscountPercent] = useState<number>(0);
@@ -163,6 +163,7 @@ export const NewSale: React.FC = () => {
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
    const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
 
+   // --- CEREBRO DE BÚSQUEDA DE VENTAS (LIMITADO A 10) ---
    useEffect(() => {
        if (!isSearchModalOpen) return;
        if (USE_MOCK_DB) return;
@@ -196,6 +197,14 @@ export const NewSale: React.FC = () => {
    const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
+   // --- HELPER: DETECTAR SI UN ITEM DEL CARRITO ES EMPAQUE MAYOR ---
+   const isItemPackage = (item: any, prod: any) => {
+       if (!prod) return false;
+       const unitStr = item.selected_unit?.toUpperCase();
+       const pkgName = prod.package_type?.toUpperCase();
+       return unitStr === pkgName || unitStr === 'PKG' || unitStr === 'CJA';
+   };
+
    // --- ACTIONS ---
    const handleNewSale = () => {
       setIsViewMode(false); setOriginalSale(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
@@ -207,6 +216,7 @@ export const NewSale: React.FC = () => {
       else { setSeries(''); setDocNumber(''); }
    };
 
+   // SOLO CARGA PARA VISUALIZAR, NO MODIFICAR
    const loadSale = async (sale: Sale) => {
       let itemsToLoad = sale.items;
       let loadedClient: Client | null = null;
@@ -361,7 +371,7 @@ export const NewSale: React.FC = () => {
 
    const proceedSelectProduct = (p: Product & { current_stock?: number }) => {
       setCartProductsCache(prev => ({...prev, [p.id]: p}));
-      setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitType('UND'); 
+      setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitMode('BASE'); 
 
       let price = p.price_unit * getMultiplier();
       let defaultDiscount = 0;
@@ -389,10 +399,10 @@ export const NewSale: React.FC = () => {
       }
    };
 
-   const handleUnitChange = (type: 'UND' | 'PKG') => {
-      setUnitType(type);
+   const handleUnitChange = (mode: 'BASE' | 'PKG') => {
+      setUnitMode(mode);
       if (selectedProduct) {
-         let price = type === 'PKG' ? selectedProduct.price_package : selectedProduct.price_unit;
+         let price = mode === 'PKG' ? selectedProduct.price_package : selectedProduct.price_unit;
          price = price * getMultiplier();
          setUnitPrice(price);
       }
@@ -407,9 +417,17 @@ export const NewSale: React.FC = () => {
       if (!selectedProduct) return;
       if (quantity <= 0) { showDialog('warning', 'Aviso', "Cantidad inválida"); return; }
       const prod = selectedProduct as any;
-      const conversionFactor = unitType === 'PKG' ? (prod.package_content || 1) : 1;
+      
+      // --- CIRUGÍA: Extracción de Nombre Real de la Unidad ---
+      const isPkgMode = unitMode === 'PKG';
+      const conversionFactor = isPkgMode ? (prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
       
+      // EL NOMBRE EXACTO DEL MAESTRO DE PRODUCTOS
+      const realUnitName = isPkgMode 
+          ? (prod.package_type || 'CAJA').toUpperCase() 
+          : (prod.base_unit || 'UND').toUpperCase();
+
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(prod.id) : (loadedBatches[prod.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
@@ -428,7 +446,14 @@ export const NewSale: React.FC = () => {
       }
 
       let initialNewCart = [...cart];
-      const existingItemIndex = initialNewCart.findIndex(item => item.product_id === prod.id && item.selected_unit === unitType && !item.is_bonus && !item.auto_promo_id);
+      
+      // Buscar si ya existe la misma unidad en el carrito
+      const existingItemIndex = initialNewCart.findIndex(item => 
+          item.product_id === prod.id && 
+          item.selected_unit === realUnitName && // Compara nombre real
+          !item.is_bonus && 
+          !item.auto_promo_id
+      );
 
       if (existingItemIndex >= 0) {
          showDialog('confirm', 'Sumar Cantidad', `El producto "${prod.name}" ya existe en la lista.\n¿Desea sumar la cantidad?`, () => {
@@ -436,8 +461,13 @@ export const NewSale: React.FC = () => {
             const newQty = existing.quantity_presentation + quantity;
             const newPrice = calculateTotal(newQty, unitPrice, discountPercent);
             initialNewCart[existingItemIndex] = {
-               ...existing, quantity_presentation: newQty, quantity_base: unitType === 'PKG' ? newQty * (prod.package_content || 1) : newQty,
-               total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: [],
+               ...existing, 
+               quantity_presentation: newQty, 
+               quantity_base: isPkgMode ? newQty * (prod.package_content || 1) : newQty,
+               total_price: newPrice, 
+               discount_percent: discountPercent, 
+               discount_amount: (newQty * unitPrice) * (discountPercent / 100), 
+               batch_allocations: [],
                product: prod
             };
             applyAutoPromotions(initialNewCart, true);
@@ -446,10 +476,20 @@ export const NewSale: React.FC = () => {
          return;
       } else {
          initialNewCart.push({
-            id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name,
-            selected_unit: unitType, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice,
-            total_price: calculateTotal(quantity, unitPrice, discountPercent), discount_percent: discountPercent,
-            discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: [],
+            id: crypto.randomUUID(), 
+            sale_id: '', 
+            product_id: prod.id, 
+            product_sku: prod.sku, 
+            product_name: prod.name,
+            selected_unit: realUnitName, // SE GUARDA DIRECTO LA UNIDAD REAL ('BOTELLA', 'CAJA')
+            quantity_presentation: quantity, 
+            quantity_base: requiredBaseUnits, 
+            unit_price: unitPrice,
+            total_price: calculateTotal(quantity, unitPrice, discountPercent), 
+            discount_percent: discountPercent,
+            discount_amount: (quantity * unitPrice) * (discountPercent / 100), 
+            is_bonus: isBonus, 
+            batch_allocations: [],
             product: prod
          });
          applyAutoPromotions(initialNewCart, true);
@@ -469,8 +509,10 @@ export const NewSale: React.FC = () => {
       const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : cartProductsCache[item.product_id];
       if (!product) return;
 
-      const conversionFactor = item.selected_unit === 'PKG' ? (product.package_content || 1) : 1;
+      const isPkg = isItemPackage(item, product);
+      const conversionFactor = isPkg ? (product.package_content || 1) : 1;
       const requiredBaseUnits = newQty * conversionFactor;
+      
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(product.id) : (loadedBatches[product.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
@@ -500,7 +542,8 @@ export const NewSale: React.FC = () => {
          const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : cartProductsCache[item.product_id];
          if (!product) return item;
          
-         let newPrice = item.selected_unit === 'PKG' ? (product.price_package || product.price_unit) : product.price_unit;
+         const isPkg = isItemPackage(item, product);
+         let newPrice = isPkg ? (product.price_package || product.price_unit) : product.price_unit;
          newPrice = newPrice * multiplier;
 
          let newDisc = 0;
@@ -588,15 +631,22 @@ export const NewSale: React.FC = () => {
             const rewardProd = USE_MOCK_DB ? products.find(p => p.id === ap.reward_product_id) : dbRewardProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
             if (rewardProd) {
                const rewardQty = ap.reward_quantity * multiplyFactor;
-               const conversionFactor = ap.reward_unit_type === 'PKG' ? (rewardProd.package_content || 1) : 1;
+               const isPkgMode = ap.reward_unit_type === 'PKG';
+               const conversionFactor = isPkgMode ? (rewardProd.package_content || 1) : 1;
+               
+               // ASIGNACIÓN REAL DE NOMBRE AL PREMIO
+               const realUnitName = isPkgMode 
+                   ? (rewardProd.package_type || 'CAJA').toUpperCase() 
+                   : (rewardProd.base_unit || 'UND').toUpperCase();
 
                newCart.push({
                   id: crypto.randomUUID(), sale_id: '', product_id: rewardProd.id, product_sku: rewardProd.sku, product_name: rewardProd.name,
                   quantity_base: rewardQty * conversionFactor,
                   batch_allocations: [], quantity: rewardQty, quantity_presentation: rewardQty,
-                  unit_price: 0, discount_percent: 100, discount_amount: 0, total_price: 0, selected_unit: ap.reward_unit_type as 'UND' | 'PKG',
+                  unit_price: 0, discount_percent: 100, discount_amount: 0, total_price: 0, 
+                  selected_unit: realUnitName, // SE GUARDA REAL
                   is_bonus: true, auto_promo_id: ap.id,
-                  product: rewardProd
+                  product: rewardProd 
                } as any);
             }
          }
@@ -614,22 +664,8 @@ export const NewSale: React.FC = () => {
       const correlative = getNextDocumentNumber(docType, series);
       if (!correlative) { showDialog('error', 'Error', "Error al obtener la serie."); return; }
 
-      // --- CIRUGÍA DE UNIDADES PARA LA BD ---
-      const itemsForDB = cart.map(item => {
-          const prod = item.product || cartProductsCache[item.product_id];
-          let realUnit = item.selected_unit === 'PKG' ? 'CJA' : 'UND';
-          if (prod) {
-              realUnit = item.selected_unit === 'PKG' ? (prod.package_type || 'CJA') : (prod.base_unit || 'UND');
-          }
-          // Extrae 3 letras, ej. BOTELLA -> BOT
-          let shortUnit = realUnit.substring(0, 3).toUpperCase();
-          if (shortUnit === 'CAJ') shortUnit = 'CJA'; // estandarización visual
-          
-          return { ...item, selected_unit: shortUnit };
-      });
-
       const newSaleData: Sale = {
-         id: crypto.randomUUID(), // SIEMPRE ES UNA NUEVA VENTA DIRECTA
+         id: crypto.randomUUID(), 
          document_type: docType,
          series: correlative!.series,
          number: correlative!.number,
@@ -647,7 +683,7 @@ export const NewSale: React.FC = () => {
          status: 'completed',
          dispatch_status: 'pending',
          created_at: new Date().toISOString(),
-         items: itemsForDB, // ENVIAMOS LA TRADUCCIÓN A SUPABASE
+         items: cart, // El carrito YA TIENE las unidades reales ('BOTELLA', 'CAJA'), va directo a Supabase
          sunat_status: 'PENDING'
       };
 
@@ -993,9 +1029,9 @@ export const NewSale: React.FC = () => {
 
                   <div className="w-20 relative">
                      <label className="block text-[10px] font-bold text-blue-800 mb-0.5">Unidad</label>
-                     <select ref={unitSelectRef} className="w-full border border-blue-300 rounded py-1 px-1 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={unitType} onChange={e => handleUnitChange(e.target.value as any)} onKeyDown={e => handleInputKeyDown(e, addButtonRef as any)} disabled={!selectedProduct}>
-                        <option value="UND">{selectedProduct?.base_unit ? selectedProduct.base_unit.substring(0, 4).toUpperCase() : 'UND'}</option>
-                        {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type.substring(0, 4).toUpperCase()}</option>}
+                     <select ref={unitSelectRef} className="w-full border border-blue-300 rounded py-1 px-1 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={unitMode} onChange={e => handleUnitChange(e.target.value as any)} onKeyDown={e => handleInputKeyDown(e, addButtonRef as any)} disabled={!selectedProduct}>
+                        <option value="BASE">{selectedProduct?.base_unit ? selectedProduct.base_unit.toUpperCase() : 'UND'}</option>
+                        {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type.toUpperCase()}</option>}
                      </select>
                      <ChevronDown className="absolute right-1 top-5 w-3 h-3 text-slate-400 pointer-events-none" />
                   </div>
@@ -1090,10 +1126,8 @@ export const NewSale: React.FC = () => {
                                  ) : item.quantity_presentation}
                               </td>
                               <td className="p-2 w-20 text-center text-[10px] text-slate-500 font-bold">
-                                  {/* Renderiza la unidad traducida o la original si ya vino de la BD */}
-                                  {item.selected_unit === 'PKG' ? (prod?.package_type?.substring(0,3).toUpperCase() || 'CJA') : 
-                                   item.selected_unit === 'UND' ? (prod?.base_unit?.substring(0,3).toUpperCase() || 'UND') : 
-                                   item.selected_unit}
+                                  {/* Renderiza la unidad EXACTA que se guardó en el estado, extraida del Maestro */}
+                                  {item.selected_unit}
                               </td>
                               <td className="p-2 w-20 text-right text-slate-600">S/ {Number(item.unit_price || 0).toFixed(2)}</td>
                               <td className="p-2 w-16 text-right text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</td>
