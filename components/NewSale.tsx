@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion, Batch } from '../types';
-import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase, USE_MOCK_DB } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
@@ -19,9 +19,19 @@ export const NewSale: React.FC = () => {
    const discountInputRef = useRef<HTMLInputElement>(null);
    const addButtonRef = useRef<HTMLButtonElement>(null);
 
-   // --- ADMIN LOCK STATE ---
+   // --- STATE ---
    const [priceLocked, setPriceLocked] = useState(true);
    const [isSaving, setIsSaving] = useState(false);
+
+   // --- CUSTOM PROFESSIONAL DIALOG SYSTEM ---
+   const [dialog, setDialog] = useState<{ isOpen: boolean; type: 'success' | 'error' | 'warning' | 'confirm' | 'info'; title: string; message: string; onConfirm?: () => void }>({
+       isOpen: false, type: 'info', title: '', message: ''
+   });
+
+   const showDialog = (type: 'success' | 'error' | 'warning' | 'confirm' | 'info', title: string, message: string, onConfirm?: () => void) => {
+       setDialog({ isOpen: true, type, title, message, onConfirm });
+   };
+   const closeDialog = () => setDialog(prev => ({ ...prev, isOpen: false }));
 
    // --- MASTER DATA SUPABASE SYNC ---
    const [dbSellers, setDbSellers] = useState<any[]>([]);
@@ -29,8 +39,6 @@ export const NewSale: React.FC = () => {
    const [dbZones, setDbZones] = useState<any[]>([]);
    const [dbPromos, setDbPromos] = useState<Promotion[]>([]);
    const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
-   
-   // Cachés Críticos
    const [dbRewardProducts, setDbRewardProducts] = useState<Product[]>([]);
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
@@ -95,7 +103,6 @@ export const NewSale: React.FC = () => {
    const [showBranchSelector, setShowBranchSelector] = useState(false);
    const [selectedSellerId, setSelectedSellerId] = useState('');
 
-   // --- CREDIT RISK STATE ---
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
 
    useEffect(() => {
@@ -148,7 +155,6 @@ export const NewSale: React.FC = () => {
    const [isBonus, setIsBonus] = useState(false);
    const [cart, setCart] = useState<SaleItem[]>([]);
 
-   // --- SEARCH SALES MODAL STATE ---
    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
    const [saleSearchTerm, setSaleSearchTerm] = useState('');
    const [searchedSales, setSearchedSales] = useState<Sale[]>([]);
@@ -157,7 +163,6 @@ export const NewSale: React.FC = () => {
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
    const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
 
-   // --- CEREBRO DE BÚSQUEDA DE VENTAS (LIMITADO A 10) ---
    useEffect(() => {
        if (!isSearchModalOpen) return;
        if (USE_MOCK_DB) return;
@@ -166,11 +171,9 @@ export const NewSale: React.FC = () => {
            setIsSearchingSale(true);
            try {
                let query = supabase.from('sales').select('*').order('created_at', { ascending: false }).limit(10);
-               
                if (saleSearchTerm.trim().length > 0) {
                    query = query.or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`);
                }
-               
                const { data, error } = await query;
                if (error) throw error;
                if (data) setSearchedSales(data as Sale[]);
@@ -204,7 +207,7 @@ export const NewSale: React.FC = () => {
       else { setSeries(''); setDocNumber(''); }
    };
 
-   // CIRUGÍA: MODO VISTA EXCLUSIVO (Eliminada edición y modificación)
+   // SOLO CARGA PARA VISUALIZAR, NO MODIFICAR
    const loadSale = async (sale: Sale) => {
       let itemsToLoad = sale.items;
       let loadedClient: Client | null = null;
@@ -272,7 +275,8 @@ export const NewSale: React.FC = () => {
 
    const handlePreview = async () => {
       if (isViewMode && originalSale) {
-         try { await PdfEngine.openDocument(originalSale, docType, company); } catch(e) { alert("Error al cargar el PDF de esta venta."); }
+         try { await PdfEngine.openDocument(originalSale, docType, company); } 
+         catch(e) { showDialog('error', 'Error', 'Error al cargar el PDF de esta venta.'); }
          return;
       }
 
@@ -297,10 +301,11 @@ export const NewSale: React.FC = () => {
          sunat_status: 'PENDING'
       };
       
-      try { await PdfEngine.openDocument(tempSale, docType, company); } catch (err) { alert("Error generando la vista previa."); }
+      try { await PdfEngine.openDocument(tempSale, docType, company); } 
+      catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
-   const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems); };
+   const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems, true); };
 
    const checkClientCredit = async (clientId: string, creditLimit: number = 0) => {
       if (USE_MOCK_DB) { setClientCreditInfo({ limit: creditLimit, debt: 0, overdue: false, isChecking: false }); return; }
@@ -342,11 +347,9 @@ export const NewSale: React.FC = () => {
       checkClientCredit(c.id, c.credit_limit || 0);
    };
 
-   // CIRUGÍA DE PRECIOS DINÁMICOS: Función auxiliar para obtener el multiplicador de la lista seleccionada
    const getMultiplier = () => {
       if (!clientData.price_list_id) return 1;
       const list = activePriceLists.find(pl => pl.id === clientData.price_list_id);
-      // Extrae el valor dinámico de la base de datos, asumiendo nombre común de la columna
       return list ? (list.multiplier ?? list.factor_multiplier ?? list.factor ?? list.value ?? 1) : 1;
    };
 
@@ -357,20 +360,11 @@ export const NewSale: React.FC = () => {
       } else if (e.key === 'Escape') { setShowProductSuggestions(false); }
    };
 
-   const selectProduct = (p: Product & { current_stock?: number }) => {
-      const isDuplicate = cart.some(item => item.product_id === p.id);
-      if (isDuplicate) {
-         if (!window.confirm(`¡ADVERTENCIA!\nEl producto "${p.name}" ya se encuentra en el detalle.\n¿Desea continuar agregándolo?`)) {
-            setProductSearch(''); setShowProductSuggestions(false); productInputRef.current?.focus(); return;
-         }
-      }
-      
+   const proceedSelectProduct = (p: Product & { current_stock?: number }) => {
       setCartProductsCache(prev => ({...prev, [p.id]: p}));
       setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitType('UND'); 
 
-      // APLICA LISTA DE PRECIOS DINÁMICAMENTE AL SELECCIONAR
       let price = p.price_unit * getMultiplier();
-
       let defaultDiscount = 0;
       const activePromo = activePromos.find(promo => {
           if (!promo.product_ids.includes(p.id)) return false;
@@ -387,19 +381,32 @@ export const NewSale: React.FC = () => {
       setTimeout(() => { qtyInputRef.current?.focus(); qtyInputRef.current?.select(); }, 50);
    };
 
+   const selectProduct = (p: Product & { current_stock?: number }) => {
+      const isDuplicate = cart.some(item => item.product_id === p.id);
+      if (isDuplicate) {
+         showDialog('confirm', 'Producto Duplicado', `El producto "${p.name}" ya se encuentra en el detalle.\n¿Desea agregar una nueva línea de todas formas?`, () => proceedSelectProduct(p));
+      } else {
+         proceedSelectProduct(p);
+      }
+   };
+
    const handleUnitChange = (type: 'UND' | 'PKG') => {
       setUnitType(type);
       if (selectedProduct) {
-         // APLICA LISTA DE PRECIOS DINÁMICAMENTE AL CAMBIAR UNIDAD
          let price = type === 'PKG' ? selectedProduct.price_package : selectedProduct.price_unit;
          price = price * getMultiplier();
          setUnitPrice(price);
       }
    };
 
-   const handleAddToCart = () => {
+   const resetEntryForm = () => {
+      setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0); setDiscountPercent(0); setIsBonus(false);
+      setTimeout(() => productInputRef.current?.focus(), 50);
+   }
+
+   const executeAddToCart = () => {
       if (!selectedProduct) return;
-      if (quantity <= 0) { alert("Cantidad inválida"); return; }
+      if (quantity <= 0) { showDialog('warning', 'Aviso', "Cantidad inválida"); return; }
       const prod = selectedProduct as any;
       const conversionFactor = unitType === 'PKG' ? (prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
@@ -407,7 +414,10 @@ export const NewSale: React.FC = () => {
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(prod.id) : (loadedBatches[prod.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
-      if (totalStock < requiredBaseUnits) { alert(`Stock insuficiente. Disponible: ${totalStock} unid. Requerido: ${requiredBaseUnits} unid.`); return; }
+      if (totalStock < requiredBaseUnits) { 
+          showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); 
+          return; 
+      }
 
       let remaining = requiredBaseUnits;
       const selectedBatches: BatchAllocation[] = [];
@@ -422,7 +432,7 @@ export const NewSale: React.FC = () => {
       const existingItemIndex = initialNewCart.findIndex(item => item.product_id === prod.id && item.selected_unit === unitType && !item.is_bonus && !item.auto_promo_id);
 
       if (existingItemIndex >= 0) {
-         if (window.confirm(`El producto "${prod.name}" ya existe en la lista. ¿Desea sumar la cantidad?`)) {
+         showDialog('confirm', 'Sumar Cantidad', `El producto "${prod.name}" ya existe en la lista.\n¿Desea sumar la cantidad?`, () => {
             const existing = initialNewCart[existingItemIndex];
             const newQty = existing.quantity_presentation + quantity;
             const newPrice = calculateTotal(newQty, unitPrice, discountPercent);
@@ -431,7 +441,10 @@ export const NewSale: React.FC = () => {
                total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: [],
                product: prod
             };
-         } else { return; }
+            applyAutoPromotions(initialNewCart, true);
+            resetEntryForm();
+         });
+         return;
       } else {
          initialNewCart.push({
             id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name,
@@ -440,11 +453,14 @@ export const NewSale: React.FC = () => {
             discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: [],
             product: prod
          });
+         applyAutoPromotions(initialNewCart, true);
+         resetEntryForm();
       }
-      
-      applyAutoPromotions(initialNewCart);
-      setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0); setDiscountPercent(0); setIsBonus(false);
-      setTimeout(() => productInputRef.current?.focus(), 50);
+   };
+
+   const handleAddToCart = () => {
+      if (isBonus || discountPercent > 0) requestAdminAuth(executeAddToCart, 'Autorizar Descuento / Bonificación');
+      else executeAddToCart();
    };
 
    const handleCartItemQtyChange = (index: number, newQtyStr: string) => {
@@ -459,7 +475,10 @@ export const NewSale: React.FC = () => {
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(product.id) : (loadedBatches[product.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
-      if (totalStock < requiredBaseUnits) { alert(`Stock insuficiente. Disponible: ${totalStock} unid. Requerido: ${requiredBaseUnits} unid.`); return; }
+      if (totalStock < requiredBaseUnits) { 
+          showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); 
+          return; 
+      }
 
       const updatedCart = [...cart];
       const newPrice = calculateTotal(newQty, item.unit_price, item.discount_percent);
@@ -468,15 +487,14 @@ export const NewSale: React.FC = () => {
          discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: [],
          product: product
       };
-      applyAutoPromotions(updatedCart);
+      applyAutoPromotions(updatedCart, true);
    };
 
-   // ACTIALIZAR LISTA DE PRECIOS EN EL DETALLE AL HACER CLIC EN REFRESH
    const handleUpdatePrices = (silent = false) => {
       if (cart.length === 0) return;
-      if (!clientData.price_list_id && silent !== true) { alert("Seleccione una lista de precios primero."); return; }
+      if (!clientData.price_list_id && silent !== true) { showDialog('warning', 'Aviso', "Seleccione una lista de precios primero."); return; }
 
-      const multiplier = getMultiplier(); // EXTRAE EL MULTIPLICADOR DINÁMICO DE LA BD
+      const multiplier = getMultiplier();
 
       const updatedCart = cart.map(item => {
          if (item.is_bonus) return item; 
@@ -484,8 +502,6 @@ export const NewSale: React.FC = () => {
          if (!product) return item;
          
          let newPrice = item.selected_unit === 'PKG' ? (product.price_package || product.price_unit) : product.price_unit;
-         
-         // LÓGICA DE LISTA DE PRECIOS DINÁMICA
          newPrice = newPrice * multiplier;
 
          let newDisc = 0;
@@ -529,12 +545,7 @@ export const NewSale: React.FC = () => {
    const verifyAdminAndExecute = () => {
       const adminUser = users.find(u => u.role === 'ADMIN' && u.password === adminPasswordInput);
       if (adminUser) { showAdminAuthModal.triggerAction(); setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' }); setAdminPasswordInput('');
-      } else { alert("Contraseña incorrecta o usuario no autorizado."); }
-   };
-
-   const tryAddToCart = () => {
-      if (isBonus || discountPercent > 0) requestAdminAuth(handleAddToCart, 'Autorizar Descuento / Bonificación');
-      else handleAddToCart();
+      } else { showDialog('error', 'Autorización Denegada', "Contraseña incorrecta o usuario no autorizado."); }
    };
 
    const applyAutoPromotionsWithContext = (currentCart: SaleItem[], p_list_id: string, p_city: string, p_seller: string, silent = false) => {
@@ -586,56 +597,26 @@ export const NewSale: React.FC = () => {
                   batch_allocations: [], quantity: rewardQty, quantity_presentation: rewardQty,
                   unit_price: 0, discount_percent: 100, discount_amount: 0, total_price: 0, selected_unit: ap.reward_unit_type as 'UND' | 'PKG',
                   is_bonus: true, auto_promo_id: ap.id,
-                  product: rewardProd // INYECTANDO EL PRODUCTO A LA MEMORIA PARA EL PDF
+                  product: rewardProd
                } as any);
             }
          }
       });
       
       setCart(newCart);
-      if (silent !== true) alert("Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
+      if (silent !== true) showDialog('success', 'Precios Actualizados', "Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
    };
 
    const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => {
        applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent);
    };
 
-   const handleSaveSale = async () => {
-      // SI ESTAMOS EN MODO VISUALIZACIÓN, IMPRIME LA FACTURA DIRECTAMENTE Y TERMINA
-      if (isViewMode) {
-         if (originalSale) {
-            try { await PdfEngine.openDocument(originalSale, docType, company); } 
-            catch(e) { alert("Error abriendo PDF"); }
-         } else { handlePreview(); }
-         return;
-      }
-
-      if (cart.length === 0) return;
-      if (!selectedClientId && !clientData.name) { alert("Ingrese datos del cliente"); return; }
-      if (!series) { alert("No hay una serie asignada. Configure una en los Ajustes de Empresa."); return; }
-
-      if (selectedClientId && !isUUID(selectedClientId) && !USE_MOCK_DB) { alert("Cliente de prueba detectado. Seleccione uno real."); return; }
-      if (!USE_MOCK_DB && cart.some(i => !isUUID(i.product_id))) { alert("Hay productos de prueba. Use productos reales."); return; }
-
-      if (paymentMethod === 'CREDITO') {
-          if (clientCreditInfo.overdue) {
-              alert("❌ BLOQUEO DE CRÉDITO ❌\n\nEl cliente mantiene comprobantes vencidos (más de 7 días sin pago). No se le puede emitir más crédito hasta que regularice su deuda.");
-              return;
-          }
-          if ((clientCreditInfo.debt + grandTotal) > clientCreditInfo.limit) {
-              alert(`❌ LÍMITE DE CRÉDITO EXCEDIDO ❌\n\nLímite Aprobado: S/ ${Number(clientCreditInfo.limit || 0).toFixed(2)}\nDeuda Vigente: S/ ${Number(clientCreditInfo.debt || 0).toFixed(2)}\nDisponible Actual: S/ ${Math.max(0, Number(clientCreditInfo.limit) - Number(clientCreditInfo.debt)).toFixed(2)}\n\nEl monto de este pedido (S/ ${grandTotal.toFixed(2)}) supera el saldo disponible. Requiere autorización o pago al contado.`);
-              return;
-          }
-      }
-
-      const confirmSave = window.confirm(`¿Emitir comprobante ${docType} ${series} por S/ ${grandTotal.toFixed(2)}?`);
-      if (!confirmSave) return;
-
+   const executeSaveSale = async () => {
       const correlative = getNextDocumentNumber(docType, series);
-      if (!correlative) { alert("Error al obtener la serie."); return; }
+      if (!correlative) { showDialog('error', 'Error', "Error al obtener la serie."); return; }
 
       const newSaleData: Sale = {
-         id: crypto.randomUUID(), // SIEMPRE CREA UNO NUEVO (DISPARO RÁPIDO)
+         id: crypto.randomUUID(),
          document_type: docType,
          series: correlative!.series,
          number: correlative!.number,
@@ -664,11 +645,11 @@ export const NewSale: React.FC = () => {
             const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
             if (error) throw error;
             if (data && data.success) {
-               alert(`Venta guardada exitosamente. Kardex actualizado.`);
+               showDialog('success', 'Venta Guardada', `Venta guardada exitosamente. Kardex actualizado.`);
                try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
                handleNewSale();
             }
-         } catch (err: any) { alert(`Error crítico: ${err.message}`);
+         } catch (err: any) { showDialog('error', 'Error Crítico', err.message);
          } finally { setIsSaving(false); }
       } else {
          createSale(newSaleData);
@@ -678,8 +659,73 @@ export const NewSale: React.FC = () => {
       }
    };
 
+   const handleSaveSale = async () => {
+      if (isViewMode) {
+         if (originalSale) {
+            try { await PdfEngine.openDocument(originalSale, docType, company); } 
+            catch(e) { showDialog('error', 'Error', "Error abriendo PDF"); }
+         } else { handlePreview(); }
+         return;
+      }
+
+      if (cart.length === 0) return;
+      if (!selectedClientId && !clientData.name) { showDialog('warning', 'Faltan Datos', "Ingrese datos del cliente"); return; }
+      if (!series) { showDialog('error', 'Falta Serie', "No hay una serie asignada. Configure una en los Ajustes de Empresa."); return; }
+
+      if (selectedClientId && !isUUID(selectedClientId) && !USE_MOCK_DB) { showDialog('warning', 'Alerta', "Cliente de prueba detectado. Seleccione uno real."); return; }
+      if (!USE_MOCK_DB && cart.some(i => !isUUID(i.product_id))) { showDialog('warning', 'Alerta', "Hay productos de prueba. Use productos reales."); return; }
+
+      if (paymentMethod === 'CREDITO') {
+          if (clientCreditInfo.overdue) {
+              showDialog('error', 'Bloqueo de Crédito', "❌ BLOQUEO DE CRÉDITO ❌\n\nEl cliente mantiene comprobantes vencidos (más de 7 días sin pago). No se le puede emitir más crédito hasta que regularice su deuda.");
+              return;
+          }
+          if ((clientCreditInfo.debt + grandTotal) > clientCreditInfo.limit) {
+              showDialog('warning', 'Límite Excedido', `❌ LÍMITE DE CRÉDITO EXCEDIDO ❌\n\nLímite Aprobado: S/ ${Number(clientCreditInfo.limit || 0).toFixed(2)}\nDeuda Vigente: S/ ${Number(clientCreditInfo.debt || 0).toFixed(2)}\nDisponible Actual: S/ ${Math.max(0, Number(clientCreditInfo.limit) - Number(clientCreditInfo.debt)).toFixed(2)}\n\nEl monto de este pedido (S/ ${grandTotal.toFixed(2)}) supera el saldo disponible. Requiere autorización o pago al contado.`);
+              return;
+          }
+      }
+
+      showDialog('confirm', 'Confirmar Venta', `¿Está seguro que desea emitir el comprobante ${docType} ${series} por S/ ${grandTotal.toFixed(2)}?`, executeSaveSale);
+   };
+
    return (
       <div className="flex flex-col h-full bg-slate-200 p-2 font-sans text-xs relative">
+
+         {/* --- PROFESSIONAL CUSTOM DIALOG --- */}
+         {dialog.isOpen && (
+             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+                 <div className="bg-white rounded-lg shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                     <div className={`p-4 border-b flex items-center gap-3 ${dialog.type === 'error' ? 'bg-red-50 text-red-700' : dialog.type === 'success' ? 'bg-green-50 text-green-700' : dialog.type === 'confirm' ? 'bg-blue-50 text-blue-700' : dialog.type === 'warning' ? 'bg-orange-50 text-orange-700' : 'bg-slate-50 text-slate-700'}`}>
+                         {dialog.type === 'error' && <AlertTriangle className="w-6 h-6 text-red-500" />}
+                         {dialog.type === 'warning' && <AlertTriangle className="w-6 h-6 text-orange-500" />}
+                         {dialog.type === 'success' && <ShieldCheck className="w-6 h-6 text-green-500" />}
+                         {dialog.type === 'confirm' && <HelpCircle className="w-6 h-6 text-blue-500" />}
+                         {dialog.type === 'info' && <CheckCircle2 className="w-6 h-6 text-slate-500" />}
+                         <h3 className="font-bold text-lg">{dialog.title}</h3>
+                     </div>
+                     <div className="p-6 text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">
+                         {dialog.message}
+                     </div>
+                     <div className="p-4 bg-slate-50 border-t flex justify-end gap-3">
+                         {dialog.type === 'confirm' && (
+                             <button onClick={closeDialog} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded shadow-sm transition-colors">
+                                 Cancelar
+                             </button>
+                         )}
+                         <button
+                             onClick={() => {
+                                 if (dialog.onConfirm) dialog.onConfirm();
+                                 closeDialog();
+                             }}
+                             className={`px-5 py-2.5 font-bold rounded shadow-sm text-white transition-colors ${dialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' : dialog.type === 'success' ? 'bg-green-600 hover:bg-green-700' : dialog.type === 'warning' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}
+                         >
+                             {dialog.type === 'confirm' ? 'Confirmar' : 'Aceptar'}
+                         </button>
+                     </div>
+                 </div>
+             </div>
+         )}
 
          {isSaving && (
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded">
@@ -963,7 +1009,7 @@ export const NewSale: React.FC = () => {
                      </label>
                   </div>
 
-                  <button ref={addButtonRef} onClick={tryAddToCart} disabled={!selectedProduct} className="bg-accent hover:bg-blue-700 text-white p-1.5 rounded shadow-sm disabled:opacity-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                  <button ref={addButtonRef} onClick={handleAddToCart} disabled={!selectedProduct} className="bg-accent hover:bg-blue-700 text-white p-1.5 rounded shadow-sm disabled:opacity-50 focus:ring-2 focus:ring-blue-500 outline-none">
                      <Plus className="w-5 h-5" />
                   </button>
                </div>
@@ -1074,11 +1120,11 @@ export const NewSale: React.FC = () => {
                <div className="text-right text-slate-600 font-bold">IGV (18%):</div>
                <div className="text-right font-mono text-slate-800">{igv.toFixed(2)}</div>
 
-               {/* --- ALERTA DE CUENTA ANTERIOR --- */}
+               {/* --- NUEVA ALERTA DE CUENTA ANTERIOR --- */}
                {clientCreditInfo.debt > 0 && (
                    <>
                        <div className="col-span-2 border-t border-slate-200 my-1"></div>
-                       <div className="text-center text-orange-600 font-bold text-[11px] col-span-2 bg-orange-100 px-2 py-0.5 rounded shadow-sm">
+                       <div className="text-right text-orange-600 font-bold text-[11px] self-center col-span-2 bg-orange-100 px-2 py-0.5 rounded shadow-sm">
                            PAGARÁ CTA. ANTERIOR: S/ {clientCreditInfo.debt.toFixed(2)}
                        </div>
                    </>
@@ -1222,6 +1268,41 @@ export const NewSale: React.FC = () => {
                   <div className="mt-4 flex justify-end">
                      <button onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded">
                         Cerrar
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* === ADMIN PASSWORD MODAL === */}
+         {showAdminAuthModal.isOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
+                  <h3 className="font-bold text-slate-800 text-lg mb-2">Se requiere autorización</h3>
+                  <p className="text-sm text-slate-600 mb-4">Ingrese la contraseña de administrador para: <strong className="text-red-600">{showAdminAuthModal.targetActionName}</strong></p>
+
+                  <input
+                     id="admin-password-input"
+                     type="password"
+                     className="w-full border-2 border-slate-300 rounded p-2 mb-4 text-center text-2xl tracking-widest focus:ring-2 focus:ring-blue-500 outline-none"
+                     placeholder="••••"
+                     value={adminPasswordInput}
+                     onChange={e => setAdminPasswordInput(e.target.value)}
+                     onKeyDown={e => { if (e.key === 'Enter') verifyAdminAndExecute(); else if (e.key === 'Escape') setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' }); }}
+                  />
+
+                  <div className="flex gap-2 justify-end">
+                     <button
+                        onClick={() => setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' })}
+                        className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 font-bold text-sm"
+                     >
+                        Cancelar (ESC)
+                     </button>
+                     <button
+                        onClick={verifyAdminAndExecute}
+                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold text-sm"
+                     >
+                        Autorizar (ENTER)
                      </button>
                   </div>
                </div>
