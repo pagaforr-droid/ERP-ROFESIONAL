@@ -1,19 +1,19 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, SaleItem, Client, Sale, Promotion, Batch } from '../types';
-// 🚨 CORRECCIÓN CRÍTICA: Importamos TODOS los iconos necesarios para que React no colapse
-import { Plus, Trash2, Search, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3, Printer, MapPin, Zap } from 'lucide-react';
+import { Product, SaleItem, Client, Sale, Promotion, Batch, BatchAllocation } from '../types';
+import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3, MapPin, Zap } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
 
-const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-
 export const EditSale: React.FC = () => {
-   const { users, currentUser } = useStore();
+   const { users } = useStore();
 
    const productInputRef = useRef<HTMLInputElement>(null);
    const qtyInputRef = useRef<HTMLInputElement>(null);
    const unitSelectRef = useRef<HTMLSelectElement>(null);
+   const priceInputRef = useRef<HTMLInputElement>(null);
+   const addButtonRef = useRef<HTMLButtonElement>(null);
 
    const [priceLocked, setPriceLocked] = useState(false); 
    const [isSaving, setIsSaving] = useState(false);
@@ -27,7 +27,11 @@ export const EditSale: React.FC = () => {
    };
    const closeDialog = () => setDialog(prev => ({ ...prev, isOpen: false }));
 
-   // --- MASTER DATA SUPABASE SYNC (EDICIÓN PURA) ---
+   // --- ADMIN AUTH STATE ---
+   const [showAdminAuthModal, setShowAdminAuthModal] = useState({ isOpen: false, triggerAction: () => { }, targetActionName: '' });
+   const [adminPasswordInput, setAdminPasswordInput] = useState('');
+
+   // --- MASTER DATA SUPABASE SYNC ---
    const [dbCompany, setDbCompany] = useState<any>(null); 
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
@@ -159,7 +163,6 @@ export const EditSale: React.FC = () => {
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
    const loadSale = async (sale: Sale) => {
-      // Bloqueo SUNAT
       if (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED') {
           showDialog('error', 'Bloqueo SUNAT', 'Este documento ya fue declarado y aceptado por SUNAT. No se puede modificar. Emita una Nota de Crédito.');
           return;
@@ -205,6 +208,22 @@ export const EditSale: React.FC = () => {
       setIsSearchModalOpen(false);
    };
 
+   const requestAdminAuth = (action: () => void, actionName: string) => {
+      setShowAdminAuthModal({ isOpen: true, triggerAction: action, targetActionName: actionName });
+      setTimeout(() => document.getElementById('admin-password-input')?.focus(), 100);
+   };
+
+   const verifyAdminAndExecute = () => {
+      const adminUser = users.find(u => u.role === 'ADMIN' && u.password === adminPasswordInput);
+      if (adminUser) { 
+         showAdminAuthModal.triggerAction(); 
+         setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' }); 
+         setAdminPasswordInput('');
+      } else { 
+         showDialog('error', 'Autorización Denegada', "Contraseña incorrecta o usuario no autorizado."); 
+      }
+   };
+
    const resetEntryForm = () => {
       setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0);
       setTimeout(() => productInputRef.current?.focus(), 50);
@@ -220,6 +239,20 @@ export const EditSale: React.FC = () => {
       const requiredBaseUnits = quantity * conversionFactor;
       const realUnitName = isPkgMode ? (prod.package_type || 'CAJA').toUpperCase() : (prod.unit_type || 'UND').toUpperCase();
       
+      const availableBatches = loadedBatches[prod.id] || [];
+      const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(prod.current_stock || prod.stock || 0);
+
+      if (totalStock < requiredBaseUnits) { showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); return; }
+
+      let remaining = requiredBaseUnits;
+      const selectedBatches: BatchAllocation[] = [];
+      for (const batch of availableBatches) {
+         if (remaining <= 0) break;
+         const take = Math.min(remaining, Number(batch.quantity_current || 0));
+         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
+         remaining -= take;
+      }
+
       const existingItemIndex = cart.findIndex(item => item.product_id === prod.id && item.selected_unit === realUnitName);
 
       if (existingItemIndex >= 0) {
@@ -227,11 +260,11 @@ export const EditSale: React.FC = () => {
          const newQty = Number(existing.quantity_presentation || 0) + quantity;
          const newPrice = calculateTotal(newQty, unitPrice, 0); 
          const newCart = [...cart];
-         newCart[existingItemIndex] = { ...existing, quantity_presentation: newQty, quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty, total_price: newPrice, unit_price: unitPrice, product: prod };
+         newCart[existingItemIndex] = { ...existing, quantity_presentation: newQty, quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty, total_price: newPrice, unit_price: unitPrice, product: prod, batch_allocations: [] };
          setCart(newCart);
          resetEntryForm();
       } else {
-         const newCart = [...cart, { id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name, selected_unit: realUnitName, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice, total_price: calculateTotal(quantity, unitPrice, 0), discount_percent: 0, discount_amount: 0, is_bonus: false, batch_allocations: [], product: prod }];
+         const newCart = [...cart, { id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name, selected_unit: realUnitName, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice, total_price: calculateTotal(quantity, unitPrice, 0), discount_percent: 0, discount_amount: 0, is_bonus: false, batch_allocations: selectedBatches, product: prod }];
          setCart(newCart);
          resetEntryForm();
       }
@@ -300,6 +333,13 @@ export const EditSale: React.FC = () => {
       }
    };
 
+   const handleProductKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedIndex(prev => (prev + 1) % searchedProducts.length);
+      } else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedIndex(prev => (prev - 1 + searchedProducts.length) % searchedProducts.length);
+      } else if (e.key === 'Enter') { e.preventDefault(); if (searchedProducts.length > 0) proceedSelectProduct(searchedProducts[highlightedIndex]);
+      } else if (e.key === 'Escape') { setShowProductSuggestions(false); }
+   };
+
    const handleInputKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<any> | 'ADD') => {
       if (e.key === 'Enter') {
          e.preventDefault();
@@ -314,7 +354,6 @@ export const EditSale: React.FC = () => {
 
       const seller = dbSellers.find(s => s.id === selectedSellerId);
 
-      // El número de factura original SE RESPETA RIGUROSAMENTE
       const updatedSaleData: any = {
          ...originalSale,
          client_name: clientData.name || 'CLIENTE VARIOS',
@@ -356,7 +395,7 @@ export const EditSale: React.FC = () => {
    };
 
    // ===============================================
-   // RENDERIZADO VISUAL (MODO EDICIÓN TÁCTICO)
+   // RENDERIZADO VISUAL
    // ===============================================
 
    if (!originalSale && !isSearchModalOpen) {
@@ -374,6 +413,43 @@ export const EditSale: React.FC = () => {
 
    return (
       <div className="flex flex-col h-full bg-slate-200 p-2 font-sans text-xs relative">
+
+         {/* --- ADMIN PASSWORD MODAL --- */}
+         {showAdminAuthModal.isOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
+               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
+                  <h3 className="font-bold text-slate-800 text-lg mb-2">Se requiere autorización</h3>
+                  <p className="text-sm text-slate-600 mb-4">Ingrese la contraseña de administrador para: <strong className="text-red-600">{showAdminAuthModal.targetActionName}</strong></p>
+
+                  <input
+                     id="admin-password-input"
+                     type="password"
+                     className="w-full border-2 border-slate-300 rounded p-2 mb-4 text-center text-2xl tracking-widest focus:ring-2 focus:ring-blue-500 outline-none"
+                     placeholder="••••"
+                     value={adminPasswordInput}
+                     onChange={e => setAdminPasswordInput(e.target.value)}
+                     onKeyDown={e => { if (e.key === 'Enter') verifyAdminAndExecute(); else if (e.key === 'Escape') setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' }); }}
+                  />
+
+                  <div className="flex gap-2 justify-end">
+                     <button
+                        type="button"
+                        onClick={() => setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' })}
+                        className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 font-bold text-sm"
+                     >
+                        Cancelar (ESC)
+                     </button>
+                     <button
+                        type="button"
+                        onClick={verifyAdminAndExecute}
+                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold text-sm"
+                     >
+                        Autorizar (ENTER)
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
 
          {/* --- PROFESSIONAL CUSTOM DIALOG --- */}
          {dialog.isOpen && (
@@ -548,12 +624,12 @@ export const EditSale: React.FC = () => {
 
                <div className="w-16">
                   <label className="block text-[10px] font-bold text-amber-800 mb-0.5 text-center">Cant.</label>
-                  <input ref={qtyInputRef} type="number" min="1" className="w-full border border-amber-300 rounded py-1 px-1 text-center font-bold text-slate-900 outline-none" value={quantity} onChange={e => setQuantity(Number(e.target.value))} disabled={!selectedProduct} />
+                  <input ref={qtyInputRef} type="number" min="1" className="w-full border border-amber-300 rounded py-1 px-1 text-center font-bold text-slate-900 outline-none" value={quantity} onChange={e => setQuantity(Number(e.target.value))} disabled={!selectedProduct} onKeyDown={e => handleInputKeyDown(e, unitSelectRef)} />
                </div>
 
                <div className="w-24 relative">
                   <label className="block text-[10px] font-bold text-amber-800 mb-0.5">Unidad</label>
-                  <select ref={unitSelectRef} className="w-full border border-amber-300 rounded py-1 px-1 text-xs bg-white outline-none appearance-none" value={unitMode} onChange={e => handleUnitChange(e.target.value as 'BASE' | 'PKG')} disabled={!selectedProduct}>
+                  <select ref={unitSelectRef} className="w-full border border-amber-300 rounded py-1 px-1 text-xs bg-white outline-none appearance-none" value={unitMode} onChange={e => handleUnitChange(e.target.value as 'BASE' | 'PKG')} disabled={!selectedProduct} onKeyDown={e => handleInputKeyDown(e, priceInputRef)}>
                      <option value="BASE">{selectedProduct?.unit_type ? selectedProduct.unit_type.toUpperCase() : 'UND'}</option>
                      {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type.toUpperCase()}</option>}
                   </select>
@@ -561,8 +637,13 @@ export const EditSale: React.FC = () => {
                </div>
 
                <div className="w-20 relative">
-                  <label className="block text-[10px] font-bold text-amber-800 mb-0.5">Prec Libre</label>
-                  <input ref={priceInputRef} type="number" step="0.01" className="w-full border border-amber-300 rounded py-1 px-1 text-right text-slate-900 outline-none" value={unitPrice} onChange={e => setUnitPrice(Number(e.target.value))} disabled={!selectedProduct} />
+                  <div className="flex justify-between items-center mb-0.5">
+                     <label className="block text-[10px] font-bold text-amber-800">Prec Libre</label>
+                     {selectedProduct && (
+                        <button type="button" onClick={() => { if (priceLocked) requestAdminAuth(() => setPriceLocked(false), 'Desbloq Precio'); else setPriceLocked(true); }} className={`text-[8px] px-1 rounded font-bold ${priceLocked ? 'bg-slate-200 text-slate-500' : 'bg-red-500 text-white animate-pulse'}`}>{priceLocked ? 'BLOQ' : 'LIBRE'}</button>
+                     )}
+                  </div>
+                  <input ref={priceInputRef} type="number" step="0.01" className="w-full border border-amber-300 rounded py-1 px-1 text-right text-slate-900 outline-none disabled:bg-slate-200" value={unitPrice} onChange={e => setUnitPrice(Number(e.target.value))} disabled={!selectedProduct || priceLocked} onKeyDown={e => handleInputKeyDown(e, 'ADD')} />
                </div>
 
                <button type="button" ref={addButtonRef} onClick={handleAddToCart} disabled={!selectedProduct} className="bg-amber-600 hover:bg-amber-700 text-white p-1.5 rounded shadow-sm disabled:opacity-50 outline-none mb-0.5">
