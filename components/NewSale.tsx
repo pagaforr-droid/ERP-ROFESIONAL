@@ -264,8 +264,11 @@ export const NewSale: React.FC = () => {
           return { ...item, unit_price: Number(item.unit_price || 0), total_price: Number(item.total_price || 0), discount_percent: Number(item.discount_percent || 0), discount_amount: Number(item.discount_amount || 0), quantity_presentation: Number(item.quantity_presentation || item.quantity || 1), quantity_base: Number(item.quantity_base || item.quantity || 1), product: matchedProd };
       });
 
+      // 🚨 INYECCIÓN DEL NOMBRE DEL VENDEDOR PARA LAS VENTAS ANTIGUAS
+      const sellerObj = dbSellers.find(s => s.id === sale.seller_id);
+
       setIsViewMode(true); 
-      setOriginalSale({ ...sale, items: safeItems });
+      setOriginalSale({ ...sale, items: safeItems, seller_name: sellerObj ? sellerObj.name : '' });
       setDocType(sale.document_type as any); setSeries(sale.series); setDocNumber(sale.number); 
       setSelectedClientId(sale.client_id || ''); setSelectedSellerId(sale.seller_id || ''); setPaymentMethod(sale.payment_method); setClientSearch(sale.client_name); 
 
@@ -279,6 +282,7 @@ export const NewSale: React.FC = () => {
          return;
       }
 
+      // 🚨 INYECCIÓN DEL NOMBRE DEL VENDEDOR PARA LAS VISTAS PREVIAS NUEVAS
       const seller = dbSellers.find(s => s.id === selectedSellerId);
       const tempSale: any = { 
          id: 'preview', document_type: docType, series: series, number: docNumber, payment_method: paymentMethod, payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID', balance: paymentMethod === 'CREDITO' ? grandTotal : 0, client_name: clientData.name || 'CLIENTE MOSTRADOR', client_ruc: clientData.doc_number || '00000000', client_address: clientData.address || '', subtotal, igv, total: grandTotal, status: 'completed', dispatch_status: 'pending', created_at: new Date().toISOString(), items: cart, sunat_status: 'PENDING',
@@ -567,9 +571,9 @@ export const NewSale: React.FC = () => {
    const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => { applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent); };
 
    const executeSaveSale = async () => {
-      // Usamos el número seguro, la DB asignará el real final
       if (!series || !docNumber) { showDialog('error', 'Error', "No hay serie asignada."); return; }
 
+      // 🚨 INYECCIÓN DEL NOMBRE DEL VENDEDOR PARA VENTAS NUEVAS
       const seller = dbSellers.find(s => s.id === selectedSellerId);
 
       const newSaleData: any = {
@@ -593,7 +597,7 @@ export const NewSale: React.FC = () => {
          created_at: new Date().toISOString(),
          items: cart, 
          sunat_status: 'PENDING',
-         // Inject values for PDF
+         // Inyectamos esto para la impresión Inmediata:
          seller_name: seller ? seller.name : '',
          previous_debt: clientCreditInfo.debt
       };
@@ -792,7 +796,6 @@ export const NewSale: React.FC = () => {
                         </div>
                      )}
                   </div>
-                  {/* ADVERTENCIA DE DEUDA EN FORMULARIO */}
                   {clientCreditInfo.debt > 0 && (
                       <div className="mt-1 text-[9px] font-black text-orange-700 bg-orange-100 px-1 py-0.5 rounded text-center border border-orange-300">
                           PAGARÁ CTA. ANTERIOR S/ {clientCreditInfo.debt.toFixed(2)}
