@@ -705,6 +705,7 @@ export const NewSale: React.FC = () => {
    };
 
    const executeSaveSale = async () => {
+      // El correlativo de aquí abajo es un "Borrador Visual", la base de datos lo ignorará y asignará el real.
       const correlative = getNextDocumentNumber(docType, series);
       if (!correlative) { showDialog('error', 'Error', "Error al obtener la serie."); return; }
 
@@ -713,7 +714,7 @@ export const NewSale: React.FC = () => {
          id: crypto.randomUUID(), 
          document_type: docType,
          series: series,
-         number: docNumber, 
+         number: correlative!.number, // Este número es temporal
          payment_method: paymentMethod,
          payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
          balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
@@ -735,16 +736,26 @@ export const NewSale: React.FC = () => {
       setIsSaving(true);
 
       try {
+         // Mandamos la venta a Supabase
          const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
          if (error) throw error;
          
          if (data && data.success) {
+            // 🚨 LA PIEZA CLAVE: Atrapamos el NÚMERO REAL devuelto por el Servidor
             const realNumber = data.real_number;
+            
+            // Reemplazamos el borrador con el oficial antes de mandar al PDF
             newSaleData.number = realNumber;
+
             showDialog('success', 'Venta Guardada', `Venta registrada exitosamente con comprobante: ${series}-${realNumber}`);
             
+            // Refrescamos las series en pantalla
             await fetchLiveSeries();
+
+            // Abrimos el PDF (Ahora sí, con el número legal inquebrantable)
             try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
+            
+            // Limpiamos el formulario
             handleNewSale();
          }
       } catch (err: any) { 
