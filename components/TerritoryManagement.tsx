@@ -1,18 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Seller, Client } from '../types';
-import { supabase, USE_MOCK_DB } from '../services/supabase';
+import { supabase } from '../services/supabase'; // <-- ADIÓS MOCK_DB
 import { Map, Users, User, Search, Save, Plus, ArrowRight, Filter, MapPin, RefreshCw, Briefcase, Map as MapIcon, Edit, Trash2 } from 'lucide-react';
 
 type Tab = 'ZONES' | 'SELLERS' | 'ZONING';
 
 export const TerritoryManagement: React.FC = () => {
-  const store = useStore();
   const [activeTab, setActiveTab] = useState<Tab>('ZONES');
   
-  const [realSellers, setRealSellers] = useState<Seller[]>([]);
-  const [realClients, setRealClients] = useState<Client[]>([]);
-  const [realZones, setRealZones] = useState<any[]>([]);
+  // ESTADOS 100% REALES DESDE SUPABASE
+  const [sellers, setSellers] = useState<Seller[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [zones, setZones] = useState<any[]>([]);
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -23,7 +23,6 @@ export const TerritoryManagement: React.FC = () => {
   }, []);
 
   const fetchTerritoryData = async () => {
-    if (!USE_MOCK_DB) {
       setIsLoading(true);
       try {
          const [sData, cData, zData] = await Promise.all([
@@ -32,20 +31,15 @@ export const TerritoryManagement: React.FC = () => {
             supabase.from('zones').select('*').order('code')
          ]);
          
-         if (sData.data) setRealSellers(sData.data as Seller[]);
-         if (cData.data) setRealClients(cData.data as Client[]);
-         if (zData.data) setRealZones(zData.data);
+         if (sData.data) setSellers(sData.data as Seller[]);
+         if (cData.data) setClients(cData.data as Client[]);
+         if (zData.data) setZones(zData.data);
       } catch (err: any) {
          console.error("Error cargando territorio:", err.message);
       } finally {
          setIsLoading(false);
       }
-    }
   };
-
-  const sellers = USE_MOCK_DB ? store.sellers : realSellers;
-  const clients = USE_MOCK_DB ? store.clients : realClients;
-  const zones = USE_MOCK_DB ? store.zones : realZones;
 
   // States for Modals
   const [editingSeller, setEditingSeller] = useState<Partial<Seller> | null>(null);
@@ -59,7 +53,7 @@ export const TerritoryManagement: React.FC = () => {
   const [targetZone, setTargetZone] = useState('');
 
   // ==========================================
-  // 1. LÓGICA DE ZONAS / RUTAS (¡LO NUEVO!)
+  // 1. LÓGICA DE ZONAS / RUTAS (100% SUPABASE)
   // ==========================================
   const handleSaveZone = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,29 +61,23 @@ export const TerritoryManagement: React.FC = () => {
     setIsSaving(true);
     
     try {
-       if (USE_MOCK_DB) {
-          // Si usas MOCK, tendrías que tener addZone en tu store, lo simulamos:
-          alert("Añadido a memoria local (Mock)");
-          setEditingZone(null);
-       } else {
-          const payload = { ...editingZone };
-          if (editingZone.id) {
-             const { data, error } = await supabase.from('zones').update(payload).eq('id', editingZone.id).select();
-             if (error) throw error;
-             if (data && data.length > 0) setRealZones(prev => prev.map(z => z.id === editingZone.id ? data[0] : z));
-          } else {
-             const newId = crypto.randomUUID();
-             payload.id = newId;
-             const { data, error } = await supabase.from('zones').insert([payload]).select();
-             if (error) throw error;
-             if (data && data.length > 0) setRealZones(prev => [...prev, data[0]]);
-          }
-          setEditingZone(null);
-       }
+        const payload = { ...editingZone };
+        if (editingZone.id) {
+            const { data, error } = await supabase.from('zones').update(payload).eq('id', editingZone.id).select();
+            if (error) throw error;
+            if (data && data.length > 0) setZones(prev => prev.map(z => z.id === editingZone.id ? data[0] : z));
+        } else {
+            const newId = crypto.randomUUID();
+            payload.id = newId;
+            const { data, error } = await supabase.from('zones').insert([payload]).select();
+            if (error) throw error;
+            if (data && data.length > 0) setZones(prev => [...prev, data[0]]);
+        }
+        setEditingZone(null);
     } catch (error: any) {
-       alert("Error guardando Zona: " + error.message);
+        alert("Error guardando Zona: " + error.message);
     } finally {
-       setIsSaving(false);
+        setIsSaving(false);
     }
   };
 
@@ -98,7 +86,7 @@ export const TerritoryManagement: React.FC = () => {
      try {
         const { error } = await supabase.from('zones').delete().eq('id', id);
         if (error) throw error;
-        setRealZones(prev => prev.filter(z => z.id !== id));
+        setZones(prev => prev.filter(z => z.id !== id));
      } catch(e: any) {
         alert("No se puede eliminar la zona. Probablemente aún hay clientes asignados a ella.");
      }
@@ -196,7 +184,7 @@ export const TerritoryManagement: React.FC = () => {
   );
 
   // ==========================================
-  // 2. LÓGICA DE VENDEDORES
+  // 2. LÓGICA DE VENDEDORES (100% SUPABASE)
   // ==========================================
   const handleSaveSeller = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -204,26 +192,20 @@ export const TerritoryManagement: React.FC = () => {
     setIsSaving(true);
     
     try {
-       if (USE_MOCK_DB) {
-         if (editingSeller.id) store.updateSeller(editingSeller as Seller);
-         else store.addSeller({ ...editingSeller, id: crypto.randomUUID(), is_active: true } as Seller);
-         setEditingSeller(null);
-       } else {
-         const payload = { ...editingSeller };
-         if (editingSeller.id) {
+        const payload = { ...editingSeller };
+        if (editingSeller.id) {
             const { data, error } = await supabase.from('sellers').update(payload).eq('id', editingSeller.id).select();
             if (error) throw error;
-            if (data && data.length > 0) setRealSellers(prev => prev.map(s => s.id === editingSeller.id ? data[0] as Seller : s));
-         } else {
+            if (data && data.length > 0) setSellers(prev => prev.map(s => s.id === editingSeller.id ? data[0] as Seller : s));
+        } else {
             const newId = crypto.randomUUID();
             payload.id = newId;
             payload.is_active = true;
             const { data, error } = await supabase.from('sellers').insert([payload]).select();
             if (error) throw error;
-            if (data && data.length > 0) setRealSellers(prev => [...prev, data[0] as Seller]);
-         }
-         setEditingSeller(null);
-       }
+            if (data && data.length > 0) setSellers(prev => [...prev, data[0] as Seller]);
+        }
+        setEditingSeller(null);
     } catch (error: any) {
       alert("Error guardando vendedor: " + error.message);
     } finally {
@@ -325,7 +307,7 @@ export const TerritoryManagement: React.FC = () => {
   );
 
   // ==========================================
-  // 3. LÓGICA DE ASIGNACIÓN MASIVA (ZONING)
+  // 3. LÓGICA DE ASIGNACIÓN MASIVA (ZONING 100% SUPABASE)
   // ==========================================
   const filteredClients = clients.filter(c => {
     const matchesName = c.name.toLowerCase().includes(filterName.toLowerCase()) || (c.code && c.code.toLowerCase().includes(filterName.toLowerCase()));
@@ -348,19 +330,16 @@ export const TerritoryManagement: React.FC = () => {
     setIsAssigning(true);
     
     try {
-       if (USE_MOCK_DB) {
-          alert("Asignado en local");
-       } else {
-          const { data, error } = await supabase.from('clients').update({ zone_id: targetZone }).in('id', selectedClients).select('id, zone_id');
-          if (error) throw error;
-          if (data) setRealClients(prev => prev.map(c => selectedClients.includes(c.id) ? { ...c, zone_id: targetZone } : c));
-       }
-       alert(`✅ Operación Exitosa.\nSe asignaron ${selectedClients.length} clientes a su nueva ruta comercial.`);
-       setSelectedClients([]);
+        const { data, error } = await supabase.from('clients').update({ zone_id: targetZone }).in('id', selectedClients).select('id, zone_id');
+        if (error) throw error;
+        if (data) setClients(prev => prev.map(c => selectedClients.includes(c.id) ? { ...c, zone_id: targetZone } : c));
+        
+        alert(`✅ Operación Exitosa.\nSe asignaron ${selectedClients.length} clientes a su nueva ruta comercial.`);
+        setSelectedClients([]);
     } catch (e: any) {
-       alert('Error asignando zonas en BD: ' + e.message);
+        alert('Error asignando zonas en BD: ' + e.message);
     } finally {
-       setIsAssigning(false);
+        setIsAssigning(false);
     }
   };
 
