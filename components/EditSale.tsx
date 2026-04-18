@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion, Batch } from '../types';
-import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3, MapPin, Zap } from 'lucide-react';
+import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3, MapPin, Zap, RefreshCw } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
 
@@ -55,7 +55,6 @@ export const EditSale: React.FC = () => {
    const [isSearchingClient, setIsSearchingClient] = useState(false);
    const [selectedSellerId, setSelectedSellerId] = useState('');
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
-   const [showBranchSelector, setShowBranchSelector] = useState(false);
 
    useEffect(() => {
        const fetchMasters = async () => {
@@ -163,9 +162,49 @@ export const EditSale: React.FC = () => {
    const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
+   const getMultiplier = () => {
+      if (!clientData.price_list_id) return 1;
+      const list = dbPriceLists.find(pl => pl.id === clientData.price_list_id);
+      const val = list ? (list.multiplier ?? list.factor_multiplier ?? list.factor ?? list.value ?? 1) : 1;
+      return Number(val) || 1;
+   };
+
    // =========================================================================
-   // 🚨 CARGA DE VENTA (SISTEMA DE DOBLE BARRIDO ANTI-ERRORES)
+   // 🚨 BOTÓN MÁGICO: ACTUALIZAR PRECIOS SEGÚN LA LISTA SELECCIONADA
    // =========================================================================
+   const handleUpdatePricesFromList = () => {
+       if (cart.length === 0) return;
+       if (!clientData.price_list_id) {
+           showDialog('warning', 'Aviso', 'Por favor, seleccione una Lista de Precios primero.');
+           return;
+       }
+
+       const multiplier = getMultiplier();
+
+       const newCart = cart.map(item => {
+           // Si el producto fue marcado como gratis (regalo), se respeta esa decisión
+           if (item.is_bonus) return item;
+
+           const product = cartProductsCache[item.product_id] || item.product;
+           if (!product) return item;
+
+           const isPkg = isItemPackage(item.selected_unit, product);
+           const basePrice = isPkg ? Number(product.price_package || product.price_unit || 0) : Number(product.price_unit || 0);
+           
+           const newPrice = basePrice * multiplier;
+           const newTotal = calculateTotal(Number(item.quantity_presentation), newPrice, Number(item.discount_percent || 0));
+
+           return {
+               ...item,
+               unit_price: newPrice,
+               total_price: newTotal
+           };
+       });
+
+       setCart(newCart);
+       showDialog('success', 'Precios Recalculados', 'Se han actualizado los precios de todos los productos en base a la nueva Lista de Precios seleccionada.');
+   };
+
    const loadSale = async (sale: Sale) => {
       if (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED') {
           showDialog('error', 'Bloqueo SUNAT', 'Este documento ya fue declarado a SUNAT. No se puede modificar. Emita una Nota de Crédito.');
@@ -177,18 +216,13 @@ export const EditSale: React.FC = () => {
           let itemsToLoad: any[] = [];
           let finalCache = { ...cartProductsCache };
           
-          // BARRIDO 1: Traemos el detalle de la base de datos limpiamente (SIN JOIN) para evitar el error de ambigüedad
-          const { data: saleItemsData, error: itemsErr } = await supabase
-              .from('sale_items')
-              .select('*')
-              .eq('sale_id', sale.id);
+          const { data: saleItemsData, error: itemsErr } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id);
 
           if (itemsErr) throw itemsErr;
 
           if (saleItemsData && saleItemsData.length > 0) {
               itemsToLoad = saleItemsData;
           } 
-          // BARRIDO 2: Fallback desde la cabecera
           else if (sale.items && Array.isArray(sale.items) && sale.items.length > 0) {
               itemsToLoad = sale.items;
           } else if (typeof sale.items === 'string') {
@@ -199,7 +233,6 @@ export const EditSale: React.FC = () => {
               alert("⚠️ ADVERTENCIA: El documento se cargó, pero el sistema no pudo encontrar el detalle. Deberá armarlo manualmente.");
           }
 
-          // Extraemos los productos cruzándolos manualmente para llenar la caché
           const pIds = itemsToLoad.map((i: any) => i.product_id).filter(Boolean);
           if (pIds.length > 0) {
               const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
@@ -209,7 +242,6 @@ export const EditSale: React.FC = () => {
               }
           }
 
-          // Cargar datos del cliente
           let clientListId = '';
           let clientCity = '';
           if (sale.client_id) {
@@ -221,7 +253,6 @@ export const EditSale: React.FC = () => {
               }
           }
 
-          // Mapeo del carrito cruzando los datos obtenidos
           const safeItems = itemsToLoad.map((item: any) => {
               const matchedProd = finalCache[item.product_id];
               const q_pres = Number(item.quantity_presentation || item.quantity || 1);
@@ -244,7 +275,6 @@ export const EditSale: React.FC = () => {
               };
           });
 
-          // Inyectamos todo al Estado
           setOriginalSale({ ...sale, items: safeItems });
           setDocType(sale.document_type as any); 
           setSeries(sale.series); 
@@ -385,7 +415,7 @@ export const EditSale: React.FC = () => {
       }
    };
 
-   // EDICIÓN DE CANTIDAD Y PRECIO DIRECTO EN EL CARRITO
+   // EDICIÓN LIBRE DE CANTIDAD Y PRECIO DIRECTO EN EL CARRITO
    const handleCartItemChange = (index: number, field: string, value: number) => {
       const updatedCart = [...cart];
       const item = updatedCart[index];
@@ -396,7 +426,7 @@ export const EditSale: React.FC = () => {
       if (isNaN(newQty) || newQty <= 0) newQty = 1;
       if (isNaN(newPu) || newPu < 0) newPu = 0;
 
-      const product = item.product;
+      const product = cartProductsCache[item.product_id] || item.product;
       const isPkg = isItemPackage(item.selected_unit, product);
       const conversionFactor = isPkg ? Number(product?.package_content || 1) : 1;
 
@@ -453,8 +483,9 @@ export const EditSale: React.FC = () => {
    }
 
    const proceedSelectProduct = (p: Product & { current_stock?: number }) => {
+      setCartProductsCache(prev => ({...prev, [p.id]: p}));
       setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitMode('BASE'); 
-      setUnitPrice(Number(p.price_unit || 0)); setQuantity(1);
+      setUnitPrice(Number(p.price_unit || 0) * getMultiplier()); setQuantity(1);
       setTimeout(() => { qtyInputRef.current?.focus(); qtyInputRef.current?.select(); }, 50);
    };
 
@@ -462,7 +493,7 @@ export const EditSale: React.FC = () => {
       setUnitMode(mode);
       if (selectedProduct) {
          let price = mode === 'PKG' ? Number(selectedProduct.price_package || 0) : Number(selectedProduct.price_unit || 0);
-         setUnitPrice(price);
+         setUnitPrice(price * getMultiplier());
       }
    };
 
@@ -623,7 +654,8 @@ export const EditSale: React.FC = () => {
          {isSaving && (
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded">
                <Loader2 className="w-16 h-16 text-amber-500 animate-spin mb-4" />
-               <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO...</h2>
+               <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO AUDITORÍA...</h2>
+               <p className="text-amber-200 font-medium mt-2">Leyendo y sincronizando base de datos...</p>
             </div>
          )}
 
@@ -690,6 +722,8 @@ export const EditSale: React.FC = () => {
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">RUC/DNI</label>
                   <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-slate-50 text-slate-800 font-mono" value={clientData.doc_number} onChange={e => setClientData({ ...clientData, doc_number: e.target.value })} />
                </div>
+               
+               {/* BOTÓN MÁGICO DE ACTUALIZACIÓN DE PRECIOS */}
                <div className="col-span-2">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Lista Precio Sugerida</label>
                   <div className="flex gap-1">
@@ -697,8 +731,17 @@ export const EditSale: React.FC = () => {
                         <option value="">-- General --</option>
                         {dbPriceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
                      </select>
+                     <button
+                        type="button"
+                        onClick={handleUpdatePricesFromList}
+                        className="bg-amber-100 border border-amber-300 text-amber-700 px-1.5 rounded hover:bg-amber-200 transition-colors flex items-center justify-center shadow-sm"
+                        title="Recalcular todos los precios según esta lista"
+                     >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                     </button>
                   </div>
                </div>
+               
                <div className="col-span-2">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Forma Pago</label>
                   <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 font-bold" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)}>
