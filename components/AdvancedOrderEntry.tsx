@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion, Batch } from '../types';
+import { Product, BatchAllocation, SaleItem, Client, Order, AutoPromotion, Promotion, Batch } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
@@ -8,7 +8,7 @@ import { PdfEngine } from './PdfEngine';
 
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
-export const NewSale: React.FC = () => {
+export const AdvancedOrderEntry: React.FC = () => {
    const { users, currentUser } = useStore();
 
    const productInputRef = useRef<HTMLInputElement>(null);
@@ -41,8 +41,8 @@ export const NewSale: React.FC = () => {
    const [dbSeries, setDbSeries] = useState<any[]>([]);
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
-   const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
-   const [series, setSeries] = useState('');
+   const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA'); // Sugerido
+   const [series, setSeries] = useState(''); // Serie del PEDIDO
    const [docNumber, setDocNumber] = useState('');
 
    useEffect(() => {
@@ -65,10 +65,10 @@ export const NewSale: React.FC = () => {
                if (pRes.data) setDbPromos(pRes.data);
                if (serRes.data) {
                    setDbSeries(serRes.data);
-                   const initialFactura = serRes.data.find((s: any) => s.type === 'FACTURA');
-                   if (initialFactura) {
-                       setSeries(initialFactura.series);
-                       setDocNumber(String(initialFactura.current_number + 1).padStart(8, '0'));
+                   const initialPedido = serRes.data.find((s: any) => s.type === 'PEDIDO');
+                   if (initialPedido) {
+                       setSeries(initialPedido.series);
+                       setDocNumber(String(initialPedido.current_number + 1).padStart(8, '0'));
                    }
                }
                if (apRes.data) {
@@ -88,28 +88,11 @@ export const NewSale: React.FC = () => {
        const { data } = await supabase.from('document_series').select('*').eq('is_active', true);
        if (data) {
            setDbSeries(data);
-           const current = data.find(s => s.type === docType && s.series === series);
+           const current = data.find(s => s.type === 'PEDIDO' && s.series === series);
            if (current) {
                setDocNumber(String(current.current_number + 1).padStart(8, '0'));
            }
        }
-   };
-
-   const handleDocTypeChange = (newType: string) => {
-       setDocType(newType as any);
-       const activeForType = dbSeries.filter(s => s.type === newType);
-       if (activeForType.length > 0) {
-           setSeries(activeForType[0].series);
-           setDocNumber(String(activeForType[0].current_number + 1).padStart(8, '0'));
-       } else {
-           setSeries(''); setDocNumber('');
-       }
-   };
-
-   const handleSeriesChange = (newSeries: string) => {
-       setSeries(newSeries);
-       const sObj = dbSeries.find(s => s.type === docType && s.series === newSeries);
-       if (sObj) setDocNumber(String(sObj.current_number + 1).padStart(8, '0'));
    };
 
    const [paymentMethod, setPaymentMethod] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
@@ -177,28 +160,28 @@ export const NewSale: React.FC = () => {
    const [cart, setCart] = useState<SaleItem[]>([]);
 
    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
-   const [saleSearchTerm, setSaleSearchTerm] = useState('');
-   const [searchedSales, setSearchedSales] = useState<Sale[]>([]);
-   const [isSearchingSale, setIsSearchingSale] = useState(false);
-   const [isViewMode, setIsViewMode] = useState(false); 
-   const [originalSale, setOriginalSale] = useState<Sale | null>(null);
-   const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
+   const [orderSearchTerm, setOrderSearchTerm] = useState('');
+   const [searchedOrders, setSearchedOrders] = useState<Order[]>([]);
+   const [isSearchingOrder, setIsSearchingOrder] = useState(false);
+   const [isEditMode, setIsEditMode] = useState(false); 
+   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
+   const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, order: Order | null }>({ isOpen: false, order: null });
 
    useEffect(() => {
        if (!isSearchModalOpen) return;
        const timer = setTimeout(async () => {
-           setIsSearchingSale(true);
+           setIsSearchingOrder(true);
            try {
-               let query = supabase.from('sales').select('*').order('created_at', { ascending: false }).limit(10);
-               if (saleSearchTerm.trim().length > 0) query = query.or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`);
+               let query = supabase.from('orders').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(10);
+               if (orderSearchTerm.trim().length > 0) query = query.or(`code.ilike.%${orderSearchTerm}%,client_name.ilike.%${orderSearchTerm}%,client_doc_number.ilike.%${orderSearchTerm}%`);
                const { data, error } = await query;
                if (error) throw error;
-               if (data) setSearchedSales(data as Sale[]);
-           } catch (e) { console.error("Error buscando ventas:", e);
-           } finally { setIsSearchingSale(false); }
+               if (data) setSearchedOrders(data as Order[]);
+           } catch (e) { console.error("Error buscando pedidos:", e);
+           } finally { setIsSearchingOrder(false); }
        }, 400);
        return () => clearTimeout(timer);
-   }, [saleSearchTerm, isSearchModalOpen]);
+   }, [orderSearchTerm, isSearchModalOpen]);
 
    const isItemPackage = (itemUnitName: string, prod: any) => {
        if (!prod || !itemUnitName) return false;
@@ -221,31 +204,46 @@ export const NewSale: React.FC = () => {
       return Number(val) || 1;
    };
 
-   const handleNewSale = () => {
-      setIsViewMode(false); setOriginalSale(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
+   const handleNewOrder = () => {
+      setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
       setClientCreditInfo({ limit: 0, debt: 0, overdue: false, isChecking: false });
       
-      const initialType = 'FACTURA';
-      setDocType(initialType);
-      const activeFacturaSeries = dbSeries.find(s => s.type === initialType);
-      if (activeFacturaSeries) { 
-         setSeries(activeFacturaSeries.series); 
-         setDocNumber(String(activeFacturaSeries.current_number + 1).padStart(8, '0')); 
+      setDocType('FACTURA');
+      const activePedidoSeries = dbSeries.find(s => s.type === 'PEDIDO');
+      if (activePedidoSeries) { 
+         setSeries(activePedidoSeries.series); 
+         setDocNumber(String(activePedidoSeries.current_number + 1).padStart(8, '0')); 
       } else { 
          setSeries(''); setDocNumber(''); 
       }
    };
 
-   const loadSale = async (sale: Sale) => {
-      let itemsToLoad = sale.items;
-      let loadedClient: Client | null = null;
-      let finalCache = { ...cartProductsCache };
-      
-      const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
-      if (data) {
-          itemsToLoad = data as SaleItem[]; 
-          const pIds = itemsToLoad.map(i => i.product_id);
+   const loadOrder = async (order: Order) => {
+      if (order.status !== 'pending') {
+          showDialog('error', 'Bloqueado', 'Solo se pueden editar pedidos en estado pendiente.');
+          return;
+      }
+
+      setIsSaving(true);
+      try {
+          let itemsToLoad: any[] = [];
+          let finalCache = { ...cartProductsCache };
+          
+          // Barrido 1 relacional puro
+          const { data: orderItemsData, error: itemsErr } = await supabase.from('order_items').select(`*, product:products (*)`).eq('order_id', order.id);
+
+          if (itemsErr) throw itemsErr;
+
+          if (orderItemsData && orderItemsData.length > 0) {
+              itemsToLoad = orderItemsData;
+          } else if (order.items && Array.isArray(order.items) && order.items.length > 0) {
+              itemsToLoad = order.items; // Fallback legacy
+          }
+
+          if (itemsToLoad.length === 0) alert("⚠️ ADVERTENCIA: El pedido se cargó sin detalles.");
+
+          const pIds = itemsToLoad.map((i: any) => i.product_id).filter(Boolean);
           if (pIds.length > 0) {
               const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
               if (pData) {
@@ -253,44 +251,83 @@ export const NewSale: React.FC = () => {
                   setCartProductsCache(prev => ({...prev, ...finalCache}));
               }
           }
+
+          let clientListId = '';
+          let clientCity = '';
+          if (order.client_id) {
+              const { data: cData } = await supabase.from('clients').select('*').eq('id', order.client_id).single();
+              if (cData) {
+                  clientListId = cData.price_list_id || '';
+                  clientCity = cData.city || '';
+                  checkClientCredit(order.client_id, cData.credit_limit || 0);
+              }
+          }
+
+          const safeItems = itemsToLoad.map((item: any) => {
+              const matchedProd = item.product || finalCache[item.product_id];
+              const q_pres = Number(item.quantity_presentation || item.quantity || 1);
+              const q_base = Number(item.quantity_base || item.quantity || 1);
+              const p_unit = Number(item.unit_price || item.price || 0);
+              const p_total = Number(item.total_price || item.amount || (q_pres * p_unit) || 0);
+              
+              return { 
+                  ...item, 
+                  id: item.id || crypto.randomUUID(), 
+                  unit_price: p_unit, 
+                  total_price: p_total, 
+                  discount_percent: Number(item.discount_percent || 0), 
+                  discount_amount: Number(item.discount_amount || 0), 
+                  quantity_presentation: q_pres, 
+                  quantity_base: q_base, 
+                  selected_unit: item.selected_unit || item.unit_type || 'UND',
+                  is_bonus: item.is_bonus === true || item.is_bonus === 'true' || p_unit === 0,
+                  product: matchedProd 
+              };
+          });
+
+          setOriginalOrder(order);
+          setIsEditMode(true);
+          
+          setDocType((order.suggested_document_type as any) || 'FACTURA'); 
+          if (order.code && order.code.includes('-')) {
+             const [s, n] = order.code.split('-');
+             setSeries(s); setDocNumber(n);
+          } else {
+             setDocNumber(order.code);
+          }
+
+          setSelectedClientId(order.client_id || ''); 
+          setSelectedSellerId(order.seller_id || ''); 
+          setPaymentMethod(order.payment_method as any || 'CONTADO'); 
+          setClientSearch(order.client_name); 
+
+          setClientData({ 
+             name: order.client_name, 
+             doc_number: order.client_doc_number, 
+             address: order.delivery_address, 
+             price_list_id: clientListId, 
+             city: clientCity 
+          });
+          
+          setCart(safeItems); 
+          setIsSearchModalOpen(false);
+
+      } catch (err: any) {
+          showDialog('error', 'Error Fatal', 'Falla al cargar detalles del pedido: ' + err.message);
+      } finally {
+          setIsSaving(false);
       }
-      if (sale.client_id) {
-          const { data: cData } = await supabase.from('clients').select('*').eq('id', sale.client_id).single();
-          if (cData) loadedClient = cData as Client;
-      }
-
-      const safeItems = (itemsToLoad || []).map(item => {
-          const matchedProd = finalCache[item.product_id];
-          return { ...item, unit_price: Number(item.unit_price || 0), total_price: Number(item.total_price || 0), discount_percent: Number(item.discount_percent || 0), discount_amount: Number(item.discount_amount || 0), quantity_presentation: Number(item.quantity_presentation || item.quantity || 1), quantity_base: Number(item.quantity_base || item.quantity || 1), product: matchedProd };
-      });
-
-      // 🚨 INYECCIÓN DEL NOMBRE DEL VENDEDOR PARA LAS VENTAS ANTIGUAS
-      const sellerObj = dbSellers.find(s => s.id === sale.seller_id);
-
-      setIsViewMode(true); 
-      setOriginalSale({ ...sale, items: safeItems, seller_name: sellerObj ? sellerObj.name : '' });
-      setDocType(sale.document_type as any); setSeries(sale.series); setDocNumber(sale.number); 
-      setSelectedClientId(sale.client_id || ''); setSelectedSellerId(sale.seller_id || ''); setPaymentMethod(sale.payment_method); setClientSearch(sale.client_name); 
-
-      setClientData({ name: sale.client_name, doc_number: sale.client_ruc, address: sale.client_address, price_list_id: loadedClient?.price_list_id || '', city: loadedClient?.city || '' });
-      setCart(safeItems); setIsSearchModalOpen(false);
    };
 
    const handlePreview = async () => {
-      if (isViewMode && originalSale) {
-         try { await PdfEngine.openDocument(originalSale, docType, dbCompany); } catch(e) { showDialog('error', 'Error', 'Error al cargar el PDF.'); }
-         return;
-      }
-
-      // 🚨 INYECCIÓN DEL NOMBRE DEL VENDEDOR PARA LAS VISTAS PREVIAS NUEVAS
       const seller = dbSellers.find(s => s.id === selectedSellerId);
-      const tempSale: any = { 
+      const tempOrder: any = { 
          id: 'preview', document_type: docType, series: series, number: docNumber, payment_method: paymentMethod, payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID', balance: paymentMethod === 'CREDITO' ? grandTotal : 0, client_name: clientData.name || 'CLIENTE MOSTRADOR', client_ruc: clientData.doc_number || '00000000', client_address: clientData.address || '', subtotal, igv, total: grandTotal, status: 'completed', dispatch_status: 'pending', created_at: new Date().toISOString(), items: cart, sunat_status: 'PENDING',
          seller_name: seller ? seller.name : '',
          previous_debt: clientCreditInfo.debt 
       };
       
-      try { await PdfEngine.openDocument(tempSale as Sale, docType, dbCompany); } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
+      try { await PdfEngine.openDocument(tempOrder as Sale, docType, dbCompany); } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
    const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems, true); };
@@ -315,19 +352,10 @@ export const NewSale: React.FC = () => {
    const selectClient = async (c: Client) => {
       setSelectedClientId(c.id);
       const newDocType: 'FACTURA' | 'BOLETA' = c.doc_number.length === 11 ? 'FACTURA' : 'BOLETA';
-      
-      const activeSeriesObj = dbSeries.find(s => s.type === newDocType && s.is_active);
-      if (activeSeriesObj) { 
-          setDocType(newDocType);
-          setSeries(activeSeriesObj.series); 
-          setDocNumber(String(activeSeriesObj.current_number + 1).padStart(8, '0')); 
-      }
+      setDocType(newDocType); // Sugerimos el comprobante
 
       let autoSellerId = '';
-      if (c.zone_id) { 
-         const zone = dbZones.find(z => z.id === c.zone_id); 
-         if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } 
-      }
+      if (c.zone_id) { const zone = dbZones.find(z => z.id === c.zone_id); if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } }
       setSelectedSellerId(autoSellerId);
 
       setClientData({ name: c.name, doc_number: c.doc_number, address: c.address, price_list_id: c.price_list_id || '', city: c.city });
@@ -401,15 +429,6 @@ export const NewSale: React.FC = () => {
 
       if (totalStock < requiredBaseUnits) { showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); return; }
 
-      let remaining = requiredBaseUnits;
-      const selectedBatches: BatchAllocation[] = [];
-      for (const batch of availableBatches) {
-         if (remaining <= 0) break;
-         const take = Math.min(remaining, Number(batch.quantity_current || 0));
-         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
-         remaining -= take;
-      }
-
       let initialNewCart = [...cart];
       const existingItemIndex = initialNewCart.findIndex(item => item.product_id === prod.id && item.selected_unit === realUnitName && !item.is_bonus && !item.auto_promo_id);
 
@@ -417,7 +436,7 @@ export const NewSale: React.FC = () => {
          showDialog('confirm', 'Sumar Cantidad', `El producto "${prod.name}" ya existe en la lista con la misma presentación.\n¿Desea sumar la cantidad?`, () => {
             const existing = initialNewCart[existingItemIndex];
             const newQty = Number(existing.quantity_presentation || 0) + quantity;
-            const newPrice = calculateTotal(newQty, unitPrice, discountPercent);
+            const newPrice = calculateTotal(newQty, unitPrice, discountPercent); 
             initialNewCart[existingItemIndex] = { ...existing, quantity_presentation: newQty, quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty, total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: [], product: prod };
             applyAutoPromotions(initialNewCart, true);
             resetEntryForm();
@@ -461,8 +480,8 @@ export const NewSale: React.FC = () => {
       const multiplier = getMultiplier();
 
       const updatedCart = cart.map(item => {
-         if (item.is_bonus) return item; 
-         const product = cartProductsCache[item.product_id];
+         if (item.is_bonus || item.auto_promo_id) return item; 
+         const product = cartProductsCache[item.product_id] || item.product;
          if (!product) return item;
          
          const isPkg = isItemPackage(item.selected_unit, product);
@@ -497,20 +516,6 @@ export const NewSale: React.FC = () => {
          else if (nextRef === 'BONUS_TOGGLE') setIsBonus(prev => !prev);
          else if (nextRef.current) { nextRef.current.focus(); if (nextRef.current.select) nextRef.current.select(); }
       } else if (e.key === 'Escape') { setSelectedProduct(null); setProductSearch(''); setTimeout(() => productInputRef.current?.focus(), 50); }
-   };
-
-   const [showAdminAuthModal, setShowAdminAuthModal] = useState({ isOpen: false, triggerAction: () => { }, targetActionName: '' });
-   const [adminPasswordInput, setAdminPasswordInput] = useState('');
-
-   const requestAdminAuth = (action: () => void, actionName: string) => {
-      setShowAdminAuthModal({ isOpen: true, triggerAction: action, targetActionName: actionName });
-      setTimeout(() => document.getElementById('admin-password-input')?.focus(), 100);
-   };
-
-   const verifyAdminAndExecute = () => {
-      const adminUser = users.find(u => u.role === 'ADMIN' && u.password === adminPasswordInput);
-      if (adminUser) { showAdminAuthModal.triggerAction(); setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' }); setAdminPasswordInput('');
-      } else { showDialog('error', 'Autorización Denegada', "Contraseña incorrecta o usuario no autorizado."); }
    };
 
    const applyAutoPromotionsWithContext = (currentCart: SaleItem[], p_list_id: string, p_city: string, p_seller: string, silent = false) => {
@@ -568,55 +573,43 @@ export const NewSale: React.FC = () => {
       if (silent !== true) showDialog('success', 'Precios Actualizados', "Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
    };
 
-   const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => { applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent); };
+   // =========================================================================
+   // 🚨 GUARDAR / ACTUALIZAR PEDIDO (Usa las nuevas funciones SQL)
+   // =========================================================================
+   const executeSaveOrder = async () => {
+      if (!series || (!docNumber && !isEditMode)) { showDialog('error', 'Error', "No hay serie asignada de PEDIDO."); return; }
 
-   const executeSaveSale = async () => {
-      if (!series || !docNumber) { showDialog('error', 'Error', "No hay serie asignada."); return; }
-
-      // 🚨 INYECCIÓN DEL NOMBRE DEL VENDEDOR PARA VENTAS NUEVAS
       const seller = dbSellers.find(s => s.id === selectedSellerId);
 
-      const newSaleData: any = {
-         id: crypto.randomUUID(), 
-         document_type: docType,
-         series: series,
-         number: docNumber, // temporal
-         payment_method: paymentMethod,
-         payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
-         balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
-         client_name: clientData.name || 'CLIENTE VARIOS',
-         client_ruc: clientData.doc_number || '00000000',
-         client_address: clientData.address || '',
+      const orderPayload: any = {
+         id: isEditMode && originalOrder ? originalOrder.id : crypto.randomUUID(), 
+         code: isEditMode && originalOrder ? originalOrder.code : `${series}-${docNumber}`,
          seller_id: selectedSellerId || undefined,
          client_id: selectedClientId || undefined,
-         subtotal,
-         igv,
+         client_name: clientData.name || 'CLIENTE VARIOS',
+         client_doc_type: (clientData.doc_number?.length === 11) ? 'RUC' : 'DNI',
+         client_doc_number: clientData.doc_number || '00000000',
+         suggested_document_type: docType,
+         payment_method: paymentMethod,
          total: grandTotal,
-         status: 'completed',
-         dispatch_status: 'pending',
-         created_at: new Date().toISOString(),
-         items: cart, 
-         sunat_status: 'PENDING',
-         // Inyectamos esto para la impresión Inmediata:
-         seller_name: seller ? seller.name : '',
-         previous_debt: clientCreditInfo.debt
+         delivery_address: clientData.address || '',
+         items: cart
       };
 
       setIsSaving(true);
 
       try {
-         const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
+         const rpcName = isEditMode ? 'update_order_transaction' : 'process_order_transaction';
+         const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
+         
          if (error) throw error;
          
          if (data && data.success) {
-            const realNumber = data.real_number;
-            newSaleData.number = realNumber;
-
-            showDialog('success', 'Venta Guardada', `Venta registrada exitosamente con comprobante: ${series}-${realNumber}`);
+            const finalCode = isEditMode ? orderPayload.code : data.real_code;
+            showDialog('success', isEditMode ? 'Pedido Actualizado' : 'Pedido Creado', `El pedido ${finalCode} se ha guardado exitosamente y el stock ha sido reservado.`);
             
             await fetchLiveSeries();
-            try { await PdfEngine.openDocument(newSaleData as Sale, docType, dbCompany); } catch(e) {}
-            handleNewSale();
+            handleNewOrder();
          }
       } catch (err: any) { 
          showDialog('error', 'Error Crítico', err.message);
@@ -625,18 +618,10 @@ export const NewSale: React.FC = () => {
       }
    };
 
-   const handleSaveSale = async () => {
-      if (isViewMode) {
-         if (originalSale) {
-            try { await PdfEngine.openDocument(originalSale, docType, dbCompany); } 
-            catch(e) { showDialog('error', 'Error', "Error abriendo PDF"); }
-         } else { handlePreview(); }
-         return;
-      }
-
+   const handleSaveOrderClick = async () => {
       if (cart.length === 0) return;
       if (!selectedClientId && !clientData.name) { showDialog('warning', 'Faltan Datos', "Ingrese datos del cliente"); return; }
-      if (!series) { showDialog('error', 'Falta Serie', "No hay una serie asignada en el sistema."); return; }
+      if (!series && !isEditMode) { showDialog('error', 'Falta Serie', "No hay una serie asignada en el sistema para PEDIDOS."); return; }
       if (selectedClientId && !isUUID(selectedClientId)) { showDialog('warning', 'Alerta', "Cliente inválido."); return; }
 
       if (paymentMethod === 'CREDITO') {
@@ -650,7 +635,7 @@ export const NewSale: React.FC = () => {
           }
       }
 
-      showDialog('confirm', 'Confirmar Venta', `¿Está seguro que desea emitir el comprobante ${docType} ${series}-${docNumber} por S/ ${grandTotal.toFixed(2)}?`, executeSaveSale);
+      showDialog('confirm', isEditMode ? 'Modificar Pedido' : 'Confirmar Pedido', `¿Está seguro que desea ${isEditMode ? 'MODIFICAR' : 'CREAR'} el pedido para ${clientData.name}? El stock será reservado en el Kardex.`, executeSaveOrder);
    };
 
    return (
@@ -695,55 +680,54 @@ export const NewSale: React.FC = () => {
          {isSaving && (
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded">
                <Loader2 className="w-16 h-16 text-blue-500 animate-spin mb-4" />
-               <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO TRANSACCIÓN...</h2>
-               <p className="text-blue-200 font-medium mt-2">Asegurando stock y registrando lote por FIFO</p>
+               <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO PEDIDO...</h2>
+               <p className="text-blue-200 font-medium mt-2">Asegurando y reservando stock</p>
             </div>
          )}
 
          {/* === HEADER SECTION === */}
          <div className="bg-white p-2 rounded shadow-sm border border-slate-300 mb-2 space-y-2 relative">
             <div className="absolute top-2 right-2 flex gap-2">
-               <button type="button" onClick={handleNewSale} className="bg-slate-700 text-white px-3 py-1 rounded shadow text-xs font-bold hover:bg-slate-600 flex items-center">
+               <button type="button" onClick={handleNewOrder} className="bg-slate-700 text-white px-3 py-1 rounded shadow text-xs font-bold hover:bg-slate-600 flex items-center">
                   <FilePlus className="w-3.5 h-3.5 mr-1" /> Nuevo (F2)
                </button>
                <button type="button" onClick={() => setIsSearchModalOpen(true)} className="bg-blue-600 text-white px-3 py-1 rounded shadow text-xs font-bold hover:bg-blue-500 flex items-center">
-                  <Search className="w-3.5 h-3.5 mr-1" /> Buscar Doc (F3)
+                  <Search className="w-3.5 h-3.5 mr-1" /> Cargar/Editar Pedido
                </button>
             </div>
 
             <div className="flex items-center gap-3 mt-1 py-1">
                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
-                  <label className="font-bold text-slate-700 text-sm">Tipo</label>
+                  <label className="font-bold text-slate-700 text-sm">Convertir a</label>
                   <select
                      className="border border-slate-300 rounded px-2 py-1 flex-1 bg-white text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
                      value={docType}
-                     onChange={(e: any) => handleDocTypeChange(e.target.value)}
-                     disabled={isViewMode}
+                     onChange={(e: any) => setDocType(e.target.value)}
                   >
                      <option value="FACTURA">FACTURA</option>
                      <option value="BOLETA">BOLETA</option>
                   </select>
                </div>
                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
-                  <label className="font-bold text-slate-700 text-sm">Serie y Correlativo</label>
-                  <select className="w-20 text-center border border-slate-300 rounded px-1 py-1 text-sm font-bold bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={series} onChange={(e) => handleSeriesChange(e.target.value)} disabled={isViewMode}>
-                     {dbSeries.filter(s => s.type === docType).map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
+                  <label className="font-bold text-slate-700 text-sm">Nro. Pedido</label>
+                  <select className="w-20 text-center border border-slate-300 rounded px-1 py-1 text-sm font-bold bg-white text-slate-900 outline-none" disabled>
+                     <option value={series}>{series}</option>
                   </select>
-                  <input className="w-24 text-center border border-transparent px-1 py-1 text-sm font-bold bg-transparent text-slate-800 pointer-events-none" value={docNumber} readOnly />
-               </div>
-               <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
-                  <label className="font-bold text-slate-700 text-sm">Moneda</label>
-                  <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={currency} onChange={e => setCurrency(e.target.value)} disabled={isViewMode}><option value="SOLES">SOLES</option></select>
+                  <input className="w-24 text-center border border-transparent px-1 py-1 text-sm font-bold bg-transparent text-slate-800 pointer-events-none" value={isEditMode ? docNumber : 'AUTOGEN'} readOnly />
                </div>
                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
                   <label className="font-bold text-slate-700 text-sm">Vendedor</label>
-                  <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={selectedSellerId} onChange={e => setSelectedSellerId(e.target.value)} disabled={isViewMode}>
+                  <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={selectedSellerId} onChange={e => setSelectedSellerId(e.target.value)}>
                      <option value="">-- Sin Vendedor --</option>
                      {dbSellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                </div>
             </div>
-            {isViewMode && <div className="ml-4 px-3 py-1 bg-yellow-200 text-yellow-800 font-bold rounded animate-pulse w-fit">MODO VISUALIZACIÓN</div>}
+            
+            {isEditMode && <div className="ml-4 px-3 py-1 bg-red-600 text-white font-bold rounded animate-pulse relative pr-8 w-fit">
+               MODIFICANDO PEDIDO: {originalOrder?.code}
+               <button onClick={handleNewOrder} className="absolute right-1 top-1.5 hover:text-red-200"><X className="w-4 h-4" /></button>
+            </div>}
          </div>
 
          {/* === CLIENT SECTION === */}
@@ -776,13 +760,12 @@ export const NewSale: React.FC = () => {
                   <div className="relative">
                      <Search className="absolute left-1 top-1 w-3 h-3 text-slate-400" />
                      <input
-                        className="w-full pl-5 pr-1 py-0.5 border border-slate-300 rounded text-slate-900 font-bold focus:bg-yellow-50 disabled:bg-slate-200"
+                        className="w-full pl-5 pr-1 py-0.5 border border-slate-300 rounded text-slate-900 font-bold focus:bg-yellow-50"
                         placeholder="RUC o Nombre..."
                         value={clientSearch}
                         onChange={e => { setClientSearch(e.target.value); setShowClientSuggestions(true); }}
                         onFocus={() => setShowClientSuggestions(true)}
                         onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
-                        disabled={isViewMode}
                      />
                      {isSearchingClient && <Loader2 className="absolute right-1 top-1 w-3 h-3 text-blue-500 animate-spin" />}
                      {showClientSuggestions && clientSearch && searchedClients.length > 0 && (
@@ -796,29 +779,23 @@ export const NewSale: React.FC = () => {
                         </div>
                      )}
                   </div>
-                  {clientCreditInfo.debt > 0 && (
-                      <div className="mt-1 text-[9px] font-black text-orange-700 bg-orange-100 px-1 py-0.5 rounded text-center border border-orange-300">
-                          PAGARÁ CTA. ANTERIOR S/ {clientCreditInfo.debt.toFixed(2)}
-                      </div>
-                  )}
                </div>
                <div className="col-span-4">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Razón Social</label>
-                  <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200" value={clientData.name} onChange={e => setClientData({ ...clientData, name: e.target.value })} disabled={isViewMode} />
+                  <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800" value={clientData.name} onChange={e => setClientData({ ...clientData, name: e.target.value })} />
                </div>
                <div className="col-span-2">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">RUC/DNI</label>
-                  <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-slate-50 text-slate-800 font-mono disabled:bg-slate-200" value={clientData.doc_number} onChange={e => setClientData({ ...clientData, doc_number: e.target.value })} disabled={isViewMode} />
+                  <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-slate-50 text-slate-800 font-mono" value={clientData.doc_number} onChange={e => setClientData({ ...clientData, doc_number: e.target.value })} />
                </div>
 
                <div className="col-span-2">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Lista Precio</label>
                   <div className="flex gap-1">
                      <select
-                        className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200"
+                        className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800"
                         value={clientData.price_list_id}
                         onChange={e => setClientData({ ...clientData, price_list_id: e.target.value })}
-                        disabled={isViewMode}
                      >
                         <option value="">-- General --</option>
                         {dbPriceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
@@ -826,8 +803,7 @@ export const NewSale: React.FC = () => {
                      <button
                         type="button"
                         onClick={() => handleUpdatePrices(false)}
-                        disabled={isViewMode}
-                        className="bg-blue-100 border border-blue-300 text-blue-700 px-1.5 rounded hover:bg-blue-200 disabled:opacity-50 flex items-center justify-center transition-colors"
+                        className="bg-blue-100 border border-blue-300 text-blue-700 px-1.5 rounded hover:bg-blue-200 transition-colors"
                         title="Actualizar Precios y Promociones en el Carrito"
                      >
                         <RefreshCw className="w-3.5 h-3.5" />
@@ -837,7 +813,7 @@ export const NewSale: React.FC = () => {
 
                <div className="col-span-2">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Forma Pago</label>
-                  <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 disabled:bg-slate-200 font-bold" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)} disabled={isViewMode}>
+                  <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 font-bold" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)}>
                      <option value="CONTADO">CONTADO</option>
                      <option value="CREDITO">CRÉDITO</option>
                   </select>
@@ -846,12 +822,12 @@ export const NewSale: React.FC = () => {
                <div className="col-span-12 relative mt-1">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Dirección de Entrega</label>
                   <div className="flex bg-slate-50 border border-slate-300 rounded">
-                     <input className="w-full px-2 py-0.5 bg-transparent text-slate-600 disabled:text-slate-500 outline-none" value={clientData.address} onChange={e => setClientData({ ...clientData, address: e.target.value })} disabled={isViewMode} />
+                     <input className="w-full px-2 py-0.5 bg-transparent text-slate-600 outline-none" value={clientData.address} onChange={e => setClientData({ ...clientData, address: e.target.value })} />
                      {(() => {
                         const fullClient = searchedClients.find(c => c.doc_number === clientData.doc_number);
-                        if (fullClient && fullClient.branches && fullClient.branches.length > 0 && !isViewMode) {
+                        if (fullClient && fullClient.branches && fullClient.branches.length > 0) {
                            return (
-                              <button type="button" onClick={() => setShowBranchSelector(!showBranchSelector)} className="px-2 border-l border-slate-300 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition-colors" title="Seleccionar otra sucursal">
+                              <button type="button" onClick={() => setShowBranchSelector(!showBranchSelector)} className="px-2 border-l border-slate-300 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition-colors">
                                  <MapPin className="w-4 h-4" /><ChevronDown className="w-3 h-3 ml-0.5" />
                               </button>
                            );
@@ -889,93 +865,90 @@ export const NewSale: React.FC = () => {
 
          {/* === GRID SECTION === */}
          <div className="flex-1 bg-white border border-slate-400 flex flex-col shadow-sm">
-            {/* Entry Row */}
-            {(!isViewMode) && (
-               <div className="bg-blue-50 border-b border-blue-200 p-1 flex items-end gap-1">
-                  <div className="flex-1 relative">
-                     <label className="block text-[10px] font-bold text-blue-800 mb-0.5 ml-1">Producto (Búsqueda en Nube)</label>
-                     <div className="relative">
-                        <Search className="absolute left-1.5 top-1.5 w-3 h-3 text-blue-400" />
-                        <input
-                           ref={productInputRef}
-                           className="w-full pl-6 pr-6 py-1 border border-blue-300 rounded text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none uppercase"
-                           placeholder="PISTOLEAR O ESCRIBIR..."
-                           value={productSearch}
-                           onChange={e => { setProductSearch(e.target.value); setShowProductSuggestions(true); setHighlightedIndex(0); }}
-                           onKeyDown={handleProductKeyDown}
-                           onFocus={() => setShowProductSuggestions(true)}
-                           onBlur={() => setTimeout(() => setShowProductSuggestions(false), 200)}
-                        />
-                        {isSearchingProd && <Loader2 className="absolute right-1.5 top-1.5 w-4 h-4 text-blue-500 animate-spin" />}
-                        
-                        {showProductSuggestions && searchedProducts.length > 0 && (
-                           <div className="absolute top-full left-0 w-full bg-white border border-slate-400 shadow-2xl z-50 max-h-60 overflow-auto">
-                              <table className="w-full text-left text-xs">
-                                 <thead className="bg-slate-100 font-bold text-slate-600">
-                                    <tr>
-                                       <th className="p-2">Código</th>
-                                       <th className="p-2">Producto</th>
-                                       <th className="p-2 text-right">Precio Und</th>
-                                       <th className="p-2 text-right text-blue-700">Stock Real</th>
+            <div className="bg-blue-50 border-b border-blue-200 p-1 flex items-end gap-1">
+               <div className="flex-1 relative">
+                  <label className="block text-[10px] font-bold text-blue-800 mb-0.5 ml-1">Producto (Búsqueda en Nube)</label>
+                  <div className="relative">
+                     <Search className="absolute left-1.5 top-1.5 w-3 h-3 text-blue-400" />
+                     <input
+                        ref={productInputRef}
+                        className="w-full pl-6 pr-6 py-1 border border-blue-300 rounded text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                        placeholder="PISTOLEAR O ESCRIBIR..."
+                        value={productSearch}
+                        onChange={e => { setProductSearch(e.target.value); setShowProductSuggestions(true); setHighlightedIndex(0); }}
+                        onKeyDown={handleProductKeyDown}
+                        onFocus={() => setShowProductSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowProductSuggestions(false), 200)}
+                     />
+                     {isSearchingProd && <Loader2 className="absolute right-1.5 top-1.5 w-4 h-4 text-blue-500 animate-spin" />}
+                     
+                     {showProductSuggestions && searchedProducts.length > 0 && (
+                        <div className="absolute top-full left-0 w-full bg-white border border-slate-400 shadow-2xl z-50 max-h-60 overflow-auto">
+                           <table className="w-full text-left text-xs">
+                              <thead className="bg-slate-100 font-bold text-slate-600">
+                                 <tr>
+                                    <th className="p-2">Código</th>
+                                    <th className="p-2">Producto</th>
+                                    <th className="p-2 text-right">Precio Und</th>
+                                    <th className="p-2 text-right text-blue-700">Stock Real</th>
+                                 </tr>
+                              </thead>
+                              <tbody>
+                                 {searchedProducts.map((p, idx) => (
+                                    <tr key={p.id} onMouseDown={() => proceedSelectProduct(p as any)} className={`cursor-pointer ${idx === highlightedIndex ? 'bg-blue-200' : 'hover:bg-blue-50'}`}>
+                                       <td className="p-2 font-mono text-blue-800 font-bold">{p.sku}</td>
+                                       <td className="p-2 font-medium">{p.name}</td>
+                                       <td className="p-2 text-right">S/ {Number(p.price_unit || 0).toFixed(2)}</td>
+                                       <td className={`p-2 text-right font-black ${p.current_stock > 0 ? 'text-green-600' : 'text-red-500'}`}>{p.current_stock}</td>
                                     </tr>
-                                 </thead>
-                                 <tbody>
-                                    {searchedProducts.map((p, idx) => (
-                                       <tr key={p.id} onMouseDown={() => selectProduct(p as any)} className={`cursor-pointer ${idx === highlightedIndex ? 'bg-blue-200' : 'hover:bg-blue-50'}`}>
-                                          <td className="p-2 font-mono text-blue-800 font-bold">{p.sku}</td>
-                                          <td className="p-2 font-medium">{p.name}</td>
-                                          <td className="p-2 text-right">S/ {Number(p.price_unit || 0).toFixed(2)}</td>
-                                          <td className={`p-2 text-right font-black ${p.current_stock > 0 ? 'text-green-600' : 'text-red-500'}`}>{p.current_stock}</td>
-                                       </tr>
-                                    ))}
-                                 </tbody>
-                              </table>
-                           </div>
-                        )}
-                     </div>
+                                 ))}
+                              </tbody>
+                           </table>
+                        </div>
+                     )}
                   </div>
-
-                  <div className="w-16">
-                     <label className="block text-[10px] font-bold text-blue-800 mb-0.5 text-center">Cant.</label>
-                     <input ref={qtyInputRef} type="number" min="1" className="w-full border border-blue-300 rounded py-1 px-1 text-center font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={quantity} onChange={e => setQuantity(Number(e.target.value))} onKeyDown={e => handleInputKeyDown(e, unitSelectRef)} disabled={!selectedProduct} />
-                  </div>
-
-                  <div className="w-24 relative">
-                     <label className="block text-[10px] font-bold text-blue-800 mb-0.5">Unidad</label>
-                     <select ref={unitSelectRef} className="w-full border border-blue-300 rounded py-1 px-1 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={unitMode} onChange={e => handleUnitChange(e.target.value as 'BASE' | 'PKG')} onKeyDown={e => handleInputKeyDown(e, addButtonRef as any)} disabled={!selectedProduct}>
-                        <option value="BASE">{selectedProduct?.unit_type ? selectedProduct.unit_type.toUpperCase() : 'UND'}</option>
-                        {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type.toUpperCase()}</option>}
-                     </select>
-                     <ChevronDown className="absolute right-1 top-5 w-3 h-3 text-slate-400 pointer-events-none" />
-                  </div>
-
-                  <div className="w-20 relative">
-                     <div className="flex justify-between items-center mb-0.5">
-                        <label className="block text-[10px] font-bold text-blue-800">Precio</label>
-                        {selectedProduct && (
-                           <button type="button" onClick={() => { if (priceLocked) requestAdminAuth(() => setPriceLocked(false), 'Desbloq Precio'); else setPriceLocked(true); }} className={`text-[8px] px-1 rounded font-bold ${priceLocked ? 'bg-slate-200 text-slate-500' : 'bg-red-500 text-white animate-pulse'}`}>{priceLocked ? 'BLOQ' : 'LIBRE'}</button>
-                        )}
-                     </div>
-                     <input ref={priceInputRef} type="number" className="w-full border border-blue-300 rounded py-1 px-1 text-right text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-200" value={unitPrice} onChange={e => setUnitPrice(Number(e.target.value))} onKeyDown={e => handleInputKeyDown(e, discountInputRef)} disabled={!selectedProduct || isBonus || priceLocked} />
-                  </div>
-
-                  <div className="w-14">
-                     <label className="block text-[10px] font-bold text-blue-800 mb-0.5 text-right">% Dsc</label>
-                     <input ref={discountInputRef} type="number" className="w-full border border-blue-300 rounded py-1 px-1 text-right text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-200" value={discountPercent} onChange={e => setDiscountPercent(Number(e.target.value))} onKeyDown={e => handleInputKeyDown(e, 'ADD')} disabled={!selectedProduct || isBonus || priceLocked} />
-                  </div>
-
-                  <div className="w-16 flex items-center justify-center pb-1">
-                     <label className="flex items-center text-[10px] font-bold text-blue-800 cursor-pointer">
-                        <input type="checkbox" className="mr-1" checked={isBonus} onChange={e => { if (e.target.checked) requestAdminAuth(() => setIsBonus(true), 'Autorizar Bonificación'); else setIsBonus(false); }} onKeyDown={e => handleInputKeyDown(e, 'ADD')} />
-                        Bonif.
-                     </label>
-                  </div>
-
-                  <button type="button" ref={addButtonRef} onClick={handleAddToCart} disabled={!selectedProduct} className="bg-accent hover:bg-blue-700 text-white p-1.5 rounded shadow-sm disabled:opacity-50 focus:ring-2 focus:ring-blue-500 outline-none">
-                     <Plus className="w-5 h-5" />
-                  </button>
                </div>
-            )}
+
+               <div className="w-16">
+                  <label className="block text-[10px] font-bold text-blue-800 mb-0.5 text-center">Cant.</label>
+                  <input ref={qtyInputRef} type="number" min="1" className="w-full border border-blue-300 rounded py-1 px-1 text-center font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={quantity} onChange={e => setQuantity(Number(e.target.value))} onKeyDown={e => handleInputKeyDown(e, unitSelectRef)} disabled={!selectedProduct} />
+               </div>
+
+               <div className="w-24 relative">
+                  <label className="block text-[10px] font-bold text-blue-800 mb-0.5">Unidad</label>
+                  <select ref={unitSelectRef} className="w-full border border-blue-300 rounded py-1 px-1 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={unitMode} onChange={e => handleUnitChange(e.target.value as 'BASE' | 'PKG')} onKeyDown={e => handleInputKeyDown(e, addButtonRef as any)} disabled={!selectedProduct}>
+                     <option value="BASE">{selectedProduct?.unit_type ? selectedProduct.unit_type.toUpperCase() : 'UND'}</option>
+                     {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type.toUpperCase()}</option>}
+                  </select>
+                  <ChevronDown className="absolute right-1 top-5 w-3 h-3 text-slate-400 pointer-events-none" />
+               </div>
+
+               <div className="w-20 relative">
+                  <div className="flex justify-between items-center mb-0.5">
+                     <label className="block text-[10px] font-bold text-blue-800">Precio</label>
+                     {selectedProduct && (
+                        <button type="button" onClick={() => { if (priceLocked) requestAdminAuth(() => setPriceLocked(false), 'Desbloq Precio'); else setPriceLocked(true); }} className={`text-[8px] px-1 rounded font-bold ${priceLocked ? 'bg-slate-200 text-slate-500' : 'bg-red-500 text-white animate-pulse'}`}>{priceLocked ? 'BLOQ' : 'LIBRE'}</button>
+                     )}
+                  </div>
+                  <input ref={priceInputRef} type="number" className="w-full border border-blue-300 rounded py-1 px-1 text-right text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-200" value={unitPrice} onChange={e => setUnitPrice(Number(e.target.value))} onKeyDown={e => handleInputKeyDown(e, discountInputRef)} disabled={!selectedProduct || isBonus || priceLocked} />
+               </div>
+
+               <div className="w-14">
+                  <label className="block text-[10px] font-bold text-blue-800 mb-0.5 text-right">% Dsc</label>
+                  <input ref={discountInputRef} type="number" className="w-full border border-blue-300 rounded py-1 px-1 text-right text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-200" value={discountPercent} onChange={e => setDiscountPercent(Number(e.target.value))} onKeyDown={e => handleInputKeyDown(e, 'ADD')} disabled={!selectedProduct || isBonus || priceLocked} />
+               </div>
+
+               <div className="w-16 flex items-center justify-center pb-1">
+                  <label className="flex items-center text-[10px] font-bold text-blue-800 cursor-pointer">
+                     <input type="checkbox" className="mr-1" checked={isBonus} onChange={e => { if (e.target.checked) requestAdminAuth(() => setIsBonus(true), 'Autorizar Bonificación'); else setIsBonus(false); }} onKeyDown={e => handleInputKeyDown(e, 'ADD')} />
+                     Bonif.
+                  </label>
+               </div>
+
+               <button type="button" ref={addButtonRef} onClick={handleAddToCart} disabled={!selectedProduct} className="bg-accent hover:bg-blue-700 text-white p-1.5 rounded shadow-sm disabled:opacity-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                  <Plus className="w-5 h-5" />
+               </button>
+            </div>
 
             {/* Header of Grid */}
             <div className="bg-slate-200 border-b border-slate-300 text-slate-700 font-bold text-[11px] uppercase flex px-1 py-1.5">
@@ -1012,31 +985,28 @@ export const NewSale: React.FC = () => {
                                  </div>
                               </td>
                               <td className="p-2 w-16 text-right font-bold">
-                                 {(!item.is_bonus && !item.auto_promo_id && !isViewMode) ? (
-                                    <input
-                                       type="number"
-                                       min="1"
-                                       className="w-full text-right bg-blue-50 border border-blue-300 rounded px-1 py-0.5 focus:ring-1 focus:ring-blue-500 outline-none"
-                                       value={item.quantity_presentation || ''}
-                                       onChange={e => {
-                                          const val = e.target.value;
-                                          const newCart = [...cart];
-                                          newCart[index] = { ...newCart[index], quantity_presentation: val as any };
-                                          setCart(newCart);
-                                       }}
-                                       onBlur={e => {
-                                          let val = parseInt(e.target.value, 10);
-                                          if (isNaN(val) || val <= 0) val = 1; 
-                                          handleCartItemQtyChange(index, val.toString());
-                                       }}
-                                       onKeyDown={e => {
-                                          if (e.key === 'Enter') {
-                                             e.preventDefault();
-                                             (e.target as HTMLInputElement).blur(); 
-                                          }
-                                       }}
-                                    />
-                                 ) : item.quantity_presentation}
+                                 <input
+                                    type="number" min="1"
+                                    className="w-full text-right bg-blue-50 border border-blue-300 rounded px-1 py-0.5 focus:ring-1 focus:ring-blue-500 outline-none"
+                                    value={item.quantity_presentation || ''}
+                                    onChange={e => {
+                                       const val = e.target.value;
+                                       const newCart = [...cart];
+                                       newCart[index] = { ...newCart[index], quantity_presentation: val as any };
+                                       setCart(newCart);
+                                    }}
+                                    onBlur={e => {
+                                       let val = parseInt(e.target.value, 10);
+                                       if (isNaN(val) || val <= 0) val = 1; 
+                                       handleCartItemQtyChange(index, val.toString());
+                                    }}
+                                    onKeyDown={e => {
+                                       if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          (e.target as HTMLInputElement).blur(); 
+                                       }
+                                    }}
+                                 />
                               </td>
                               <td className="p-2 w-24 text-center text-[10px] text-slate-500 font-bold uppercase">
                                   {item.selected_unit}
@@ -1045,12 +1015,7 @@ export const NewSale: React.FC = () => {
                               <td className="p-2 w-16 text-right text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</td>
                               <td className="p-2 w-24 text-right font-bold text-slate-900 text-sm">S/ {Number(item.total_price || 0).toFixed(2)}</td>
                               <td className="p-2 w-8 text-right">
-                                 <button
-                                    type="button"
-                                    onClick={() => removeFromCart(index)}
-                                    className={`text-red-400 hover:bg-red-50 p-1 rounded transition-colors ${item.auto_promo_id ? 'opacity-50 cursor-not-allowed hidden' : ''}`}
-                                    disabled={isViewMode || !!item.auto_promo_id}
-                                 >
+                                 <button type="button" onClick={() => removeFromCart(index)} className="text-red-400 hover:bg-red-50 p-1 rounded transition-colors">
                                     <Trash2 className="w-4 h-4" />
                                  </button>
                               </td>
@@ -1059,80 +1024,57 @@ export const NewSale: React.FC = () => {
                      })}
                   </tbody>
                </table>
-               {cart.length === 0 && <div className="p-8 text-center text-slate-400 italic">No hay productos. Use la barra superior para agregar (ENTER para seleccionar).</div>}
+               {cart.length === 0 && <div className="p-8 text-center text-slate-400 italic font-bold">No hay productos en este pedido. Use el buscador de arriba para añadir.</div>}
             </div>
          </div>
 
          {/* === FOOTER TOTALS === */}
          <div className="h-24 bg-slate-100 border-t border-slate-400 flex p-2 gap-4">
-            <div className="flex-1 flex gap-2 items-end">
-               <button type="button" onClick={handlePreview} disabled={isViewMode && !originalSale} className={`bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded flex items-center shadow-sm font-bold ${(isViewMode && !originalSale) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`}>
-                  <Printer className="w-4 h-4 mr-2" /> Vista Previa
-               </button>
+            <div className="flex-1 flex gap-2 items-end pb-2">
                <div className="flex-1"></div>
-               <div className="text-[10px] text-slate-500 italic max-w-xs">
-                  * Precios incluyen IGV según configuración global.
-                  <br />* Stock verificado por FIFO.
+               <div className="text-[11px] text-slate-600 font-medium">
+                  * Este módulo generará un PEDIDO que reservará stock.<br/>
+                  * El sistema re-evaluará las promociones automáticamente si modifica cantidades.
                </div>
             </div>
 
             <div className="w-64 bg-white border border-slate-300 shadow-sm rounded p-2 grid grid-cols-2 gap-y-1">
                <div className="text-right text-slate-600 font-bold">Op. Gravada:</div>
                <div className="text-right font-mono text-slate-800">{subtotal.toFixed(2)}</div>
-
-               <div className="text-right text-slate-600 font-bold">IGV (18%):</div>
+               <div className="text-right text-slate-600 font-bold">IGV ({dbCompany?.igv_percent || 18}%):</div>
                <div className="text-right font-mono text-slate-800">{igv.toFixed(2)}</div>
-
-               {clientCreditInfo.debt > 0 && (
-                   <>
-                       <div className="col-span-2 border-t border-slate-200 my-1"></div>
-                       <div className="text-center text-orange-600 font-bold text-[11px] col-span-2 bg-orange-100 px-2 py-0.5 rounded shadow-sm">
-                           PAGARÁ CTA. ANTERIOR: S/ {clientCreditInfo.debt.toFixed(2)}
-                       </div>
-                   </>
-               )}
-
                <div className="col-span-2 border-t border-slate-200 my-1"></div>
-
                <div className="text-right text-slate-800 font-bold text-sm self-center">TOTAL A PAGAR:</div>
-               <div className="text-right font-bold text-xl bg-slate-800 text-green-400 px-2 rounded font-mono">
+               <div className="text-right font-bold text-xl bg-slate-800 text-blue-400 px-2 rounded font-mono">
                   {grandTotal.toFixed(2)}
                </div>
             </div>
 
-            <button
-               type="button"
-               onClick={handleSaveSale}
-               disabled={isViewMode && !originalSale}
-               className={`w-32 bg-green-600 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${(isViewMode && !originalSale) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-700'}`}
-            >
+            <button type="button" onClick={handleSaveOrderClick} disabled={cart.length === 0 || isSaving} className={`w-32 bg-blue-600 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${cart.length === 0 || isSaving ? 'opacity-50 cursor-not-allowed' : 'hover:bg-blue-700'}`}>
                <Save className="w-6 h-6 mb-1" />
-               {isViewMode ? 'IMPRIMIR' : 'GUARDAR (F10)'}
+               {isEditMode ? 'SOBREESCRIBIR' : 'GUARDAR'}
             </button>
          </div>
 
          {/* === SEARCH MODAL === */}
          {isSearchModalOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-               <div className="bg-white w-full max-w-5xl rounded-lg shadow-2xl flex flex-col max-h-[85vh]">
-                  <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100 rounded-t-lg">
-                     <h3 className="font-bold text-slate-700 flex items-center text-lg"><Search className="w-5 h-5 mr-2" /> Buscar Documento</h3>
-                     <button type="button" onClick={() => setIsSearchModalOpen(false)} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+               <div className="bg-white w-full max-w-5xl rounded-lg shadow-2xl flex flex-col max-h-[85vh] border-4 border-blue-500 overflow-hidden">
+                  <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-900 text-white">
+                     <h3 className="font-black flex items-center text-lg"><Search className="w-5 h-5 mr-2 text-blue-400" /> BÚSQUEDA DE PEDIDOS (PENDIENTES)</h3>
+                     <button type="button" onClick={() => setIsSearchModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-6 h-6" /></button>
                   </div>
                   <div className="p-4 bg-slate-50 border-b border-slate-200 relative">
                      <input
                         autoFocus
-                        className="w-full border border-slate-300 rounded p-3 text-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                        placeholder="Buscar por Nro Documento, RUC o Nombre Cliente..."
-                        value={saleSearchTerm}
-                        onChange={e => setSaleSearchTerm(e.target.value)}
+                        className="w-full border-2 border-slate-300 rounded p-4 text-xl font-bold focus:border-blue-500 outline-none"
+                        placeholder="Escriba Nro Pedido (Ej. PE01), RUC o Cliente..."
+                        value={orderSearchTerm}
+                        onChange={e => setOrderSearchTerm(e.target.value)}
                      />
-                     <p className="text-[11px] text-slate-500 mt-2 italic font-medium">
-                        📌 Mostrando los últimos 10 documentos. Escriba nombre, RUC o número de comprobante para buscar en todo el historial.
-                     </p>
-                     {isSearchingSale && <Loader2 className="absolute right-8 top-7 w-5 h-5 text-blue-500 animate-spin" />}
+                     {isSearchingOrder && <Loader2 className="absolute right-8 top-8 w-6 h-6 text-blue-500 animate-spin" />}
                   </div>
-                  <div className="flex-1 overflow-auto bg-white rounded-b-lg relative">
+                  <div className="flex-1 overflow-auto bg-white relative">
                      <table className="w-full text-left text-sm border-collapse">
                         <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-200 z-10 shadow-sm">
                            <tr>
@@ -1140,50 +1082,28 @@ export const NewSale: React.FC = () => {
                               <th className="p-4">Fecha</th>
                               <th className="p-4">Cliente</th>
                               <th className="p-4 text-right">Total</th>
-                              <th className="p-4 text-center">Estado</th>
-                              <th className="p-4"></th>
+                              <th className="p-4 text-center">Acción</th>
                            </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                           {searchedSales.map(s => (
-                              <tr key={s.id} className="hover:bg-blue-50 transition-colors">
+                           {searchedOrders.map(o => (
+                              <tr key={o.id} className="hover:bg-blue-50 transition-colors">
+                                 <td className="p-4"><span className="font-bold text-slate-800 text-[15px]">{o.code}</span></td>
+                                 <td className="p-4"><span className="text-slate-600 font-medium text-[15px]">{new Date(o.created_at).toLocaleDateString()}</span></td>
                                  <td className="p-4">
-                                    <span className="font-bold text-blue-700 text-[15px]">{s.series}-{s.number}</span>
+                                    <div className="font-bold text-slate-800 text-[15px]">{o.client_name}</div>
+                                    <div className="text-[13px] text-slate-500">{o.client_doc_number}</div>
                                  </td>
-                                 <td className="p-4">
-                                    <span className="text-slate-600 font-medium text-[15px]">{new Date(s.created_at).toLocaleDateString()}</span>
-                                 </td>
-                                 <td className="p-4">
-                                    <div className="font-bold text-slate-800 text-[15px]">{s.client_name}</div>
-                                    <div className="text-[13px] text-slate-500">{s.client_ruc}</div>
-                                 </td>
-                                 <td className="p-4 text-right">
-                                    <span className="font-black text-slate-900 text-[16px]">S/ {Number(s.total || 0).toFixed(2)}</span>
-                                 </td>
-                                 <td className="p-4 text-center">
-                                    <span className={`px-3 py-1 rounded text-xs font-bold ring-1 ${s.sunat_status === 'ACCEPTED' ? 'bg-green-100 ring-green-300 text-green-800' : s.sunat_status === 'SENT' ? 'bg-blue-100 ring-blue-300 text-blue-800' : 'bg-slate-100 ring-slate-300 text-slate-800'}`}>{s.sunat_status || 'PENDING'}</span>
-                                 </td>
-                                 <td className="p-4 text-right flex gap-2 justify-end">
-                                    <button
-                                       type="button"
-                                       onClick={() => setShowHistoryModal({ isOpen: true, sale: s })}
-                                       className="bg-white border border-slate-300 px-3 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
-                                       title="Ver Historial"
-                                    >
-                                       H.
-                                    </button>
-                                    <button
-                                       type="button"
-                                       onClick={() => loadSale(s)}
-                                       className="bg-white border border-slate-300 px-4 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
-                                    >
-                                       <Eye className="w-4 h-4 mr-1.5 text-slate-500" /> Ver
+                                 <td className="p-4 text-right"><span className="font-black text-slate-900 text-[16px]">S/ {Number(o.total || 0).toFixed(2)}</span></td>
+                                 <td className="p-4 text-center flex justify-center">
+                                    <button type="button" onClick={() => loadOrder(o)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow transition-colors flex items-center justify-center w-32">
+                                       <Edit3 className="w-4 h-4 mr-2" /> Editar
                                     </button>
                                  </td>
                               </tr>
                            ))}
-                           {searchedSales.length === 0 && (
-                              <tr><td colSpan={6} className="p-8 text-center text-slate-400 text-base">No se encontraron documentos que coincidan con su búsqueda.</td></tr>
+                           {searchedOrders.length === 0 && (
+                              <tr><td colSpan={5} className="p-8 text-center text-slate-400 text-base font-bold">No hay pedidos pendientes que coincidan.</td></tr>
                            )}
                         </tbody>
                      </table>
@@ -1192,56 +1112,9 @@ export const NewSale: React.FC = () => {
             </div>
          )}
 
-         {/* === HISTORY MODAL === */}
-         {showHistoryModal.isOpen && showHistoryModal.sale && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
-                  <div className="flex justify-between items-center bg-slate-100 rounded-t-lg mb-4">
-                     <h3 className="font-bold text-slate-800 text-lg flex items-center"><Eye className="w-5 h-5 mr-2 text-slate-500" /> Historial de Documento: {showHistoryModal.sale.series}-{showHistoryModal.sale.number}</h3>
-                     <button type="button" onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
-                  </div>
-
-                  <div className="flex-1 overflow-auto border border-slate-200 rounded">
-                     <table className="w-full text-left text-sm border-collapse">
-                        <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0">
-                           <tr>
-                              <th className="p-3 border-b border-slate-200">Fecha</th>
-                              <th className="p-3 border-b border-slate-200">Acción</th>
-                              <th className="p-3 border-b border-slate-200">Usuario</th>
-                              <th className="p-3 border-b border-slate-200">Detalles</th>
-                           </tr>
-                        </thead>
-                        <tbody>
-                           <tr className="hover:bg-slate-50">
-                              <td className="p-3 border-b border-slate-100">{new Date(showHistoryModal.sale.created_at).toLocaleString()}</td>
-                              <td className="p-3 border-b border-slate-100 font-bold text-green-700">CREADO</td>
-                              <td className="p-3 border-b border-slate-100 italic">Sistema</td>
-                              <td className="p-3 border-b border-slate-100 text-slate-500">Documento Inicial</td>
-                           </tr>
-                           {showHistoryModal.sale.history && showHistoryModal.sale.history.map((evt, idx) => (
-                              <tr key={idx} className="hover:bg-slate-50">
-                                 <td className="p-3 border-b border-slate-100">{new Date(evt.date).toLocaleString()}</td>
-                                 <td className="p-3 border-b border-slate-100 font-bold text-blue-700">{evt.action}</td>
-                                 <td className="p-3 border-b border-slate-100 font-medium">{evt.user_id}</td>
-                                 <td className="p-3 border-b border-slate-100 text-slate-600">{evt.details || '-'}</td>
-                              </tr>
-                           ))}
-                        </tbody>
-                     </table>
-                  </div>
-
-                  <div className="mt-4 flex justify-end">
-                     <button type="button" onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded">
-                        Cerrar
-                     </button>
-                  </div>
-               </div>
-            </div>
-         )}
-
-         {/* === ADMIN PASSWORD MODAL === */}
+         {/* --- ADMIN PASSWORD MODAL --- */}
          {showAdminAuthModal.isOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
                <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
                   <h3 className="font-bold text-slate-800 text-lg mb-2">Se requiere autorización</h3>
                   <p className="text-sm text-slate-600 mb-4">Ingrese la contraseña de administrador para: <strong className="text-red-600">{showAdminAuthModal.targetActionName}</strong></p>
@@ -1257,18 +1130,10 @@ export const NewSale: React.FC = () => {
                   />
 
                   <div className="flex gap-2 justify-end">
-                     <button
-                        type="button"
-                        onClick={() => setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' })}
-                        className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 font-bold text-sm"
-                     >
+                     <button type="button" onClick={() => setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' })} className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 font-bold text-sm">
                         Cancelar (ESC)
                      </button>
-                     <button
-                        type="button"
-                        onClick={verifyAdminAndExecute}
-                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold text-sm"
-                     >
+                     <button type="button" onClick={verifyAdminAndExecute} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold text-sm">
                         Autorizar (ENTER)
                      </button>
                   </div>
