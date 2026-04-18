@@ -1,13 +1,14 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, SaleItem, Client, Sale, Promotion, Batch, BatchAllocation } from '../types';
+import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion, Batch } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3, MapPin, Zap } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
 
+const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
 export const EditSale: React.FC = () => {
-   const { users } = useStore();
+   const { users, currentUser } = useStore();
 
    const productInputRef = useRef<HTMLInputElement>(null);
    const qtyInputRef = useRef<HTMLInputElement>(null);
@@ -206,6 +207,32 @@ export const EditSale: React.FC = () => {
       setClientData({ name: sale.client_name, doc_number: sale.client_ruc, address: sale.client_address, price_list_id: loadedClient?.price_list_id || '', city: loadedClient?.city || '' });
       setCart(safeItems); 
       setIsSearchModalOpen(false);
+   };
+
+   // 🚨 CORRECCIÓN: Función handlePreview restaurada para que no falle el JSX
+   const handlePreview = async () => {
+      if (!originalSale) return;
+      const seller = dbSellers.find(s => s.id === selectedSellerId);
+      const tempSale: any = { 
+         ...originalSale,
+         client_name: clientData.name || 'CLIENTE VARIOS',
+         client_ruc: clientData.doc_number || '00000000',
+         client_address: clientData.address || '',
+         seller_id: selectedSellerId || undefined,
+         client_id: selectedClientId || undefined,
+         payment_method: paymentMethod,
+         payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
+         balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
+         subtotal,
+         igv,
+         total: grandTotal,
+         items: cart, 
+         seller_name: seller ? seller.name : '',
+         previous_debt: clientCreditInfo.debt
+      };
+      
+      try { await PdfEngine.openDocument(tempSale as Sale, docType, dbCompany); } 
+      catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
    const requestAdminAuth = (action: () => void, actionName: string) => {
@@ -719,6 +746,10 @@ export const EditSale: React.FC = () => {
          {/* === FOOTER TOTALS === */}
          <div className="h-24 bg-slate-100 border-t border-slate-400 flex p-2 gap-4">
             <div className="flex-1 flex gap-2 items-end pb-2">
+               <button type="button" onClick={handlePreview} className={`bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded flex items-center shadow-sm font-bold ${cart.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`} disabled={cart.length === 0}>
+                  <Printer className="w-4 h-4 mr-2" /> Vista Previa
+               </button>
+               <div className="flex-1"></div>
                <div className="text-[11px] text-slate-600 font-medium">
                   Modo Edición Avanzada activado. Ajuste unidades y precios de manera libre.
                </div>
