@@ -1,20 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product } from '../types';
-import { supabase, USE_MOCK_DB } from '../services/supabase';
+import { supabase } from '../services/supabase'; // <-- ADIÓS MOCK_DB
 import { Search, Save, Plus, ArrowLeft, Barcode, DollarSign, Upload, Download, Truck, RefreshCw, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export const ProductManagement: React.FC = () => {
   const {
-    products: mockProducts, suppliers: mockSuppliers, 
-    addProduct: mockAddProduct, updateProduct: mockUpdateProduct,
     categories, subcategories, brands, unitTypes, packageTypes,
     addCategory, addSubcategory, addBrand, addUnitType, addPackageType
   } = useStore();
   
-  const [realProducts, setRealProducts] = useState<Product[]>([]);
-  const [realSuppliers, setRealSuppliers] = useState<any[]>([]);
+  // ESTADOS 100% REALES DE SUPABASE
+  const [products, setProducts] = useState<Product[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -29,19 +28,19 @@ export const ProductManagement: React.FC = () => {
   }, []);
 
   const fetchCatalog = async () => {
-    if (!USE_MOCK_DB) {
-      setIsLoading(true);
+    setIsLoading(true);
+    try {
       const { data: pData } = await supabase.from('products').select('*').order('name');
-      if (pData) setRealProducts(pData as Product[]);
+      if (pData) setProducts(pData as Product[]);
       
       const { data: sData } = await supabase.from('suppliers').select('*').order('name');
-      if (sData) setRealSuppliers(sData);
+      if (sData) setSuppliers(sData);
+    } catch (e) {
+      console.error(e);
+    } finally {
       setIsLoading(false);
     }
   };
-
-  const products = USE_MOCK_DB ? mockProducts : realProducts;
-  const suppliers = USE_MOCK_DB ? mockSuppliers : realSuppliers;
 
   const [viewMode, setViewMode] = useState<'LIST' | 'DETAIL'>('LIST');
   const [activeTab, setActiveTab] = useState<'DETALLE' | 'PRECIOS'>('DETALLE');
@@ -50,7 +49,7 @@ export const ProductManagement: React.FC = () => {
 
   const initialFormState: Partial<Product> = {
     sku: '', barcode: '', name: '',
-    unit_type: 'BOTELLA', package_type: 'CAJA', package_content: 12,
+    unit_type: 'BOT', package_type: 'CJA', package_content: 12, // Valores por defecto abreviados
     line: '', category: '', subcategory: '', brand: '',
     supplier_id: '',
     weight: 0, volume: 0, tax_igv: 18, tax_isc: 0,
@@ -78,7 +77,7 @@ export const ProductManagement: React.FC = () => {
     setViewMode('DETAIL');
   };
 
- // --- GUARDADO ESTRICTO DE PRODUCTO ---
+ // --- GUARDADO ESTRICTO DE PRODUCTO (100% NUBE) ---
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.sku || formData.sku.trim() === '') {
@@ -95,44 +94,36 @@ export const ProductManagement: React.FC = () => {
     setIsSaving(true);
 
     try {
-      if (USE_MOCK_DB) {
-        if (formData.id) mockUpdateProduct(formData as Product);
-        else mockAddProduct({ ...formData, id: crypto.randomUUID() } as Product);
-        setViewMode('LIST');
-      } else {
-        // Clonamos los datos para limpiarlos antes de enviarlos
-        const payload: any = { ...formData };
-        
-        // BLINDAJE UUID: Si no hay proveedor, debe ser estrictamente null, no un texto vacío ""
-        if (!payload.supplier_id || payload.supplier_id === '') {
-           payload.supplier_id = null;
-        }
-
-        if (formData.id) {
-          const { data, error } = await supabase.from('products').update(payload).eq('id', formData.id).select();
-          if (error) throw error;
-          if (data && data.length > 0) {
-             setRealProducts(prev => prev.map(p => p.id === formData.id ? data[0] as Product : p));
-             mockUpdateProduct(data[0] as Product); 
-          }
-        } else {
-          const newId = crypto.randomUUID();
-          payload.id = newId;
-          const { data, error } = await supabase.from('products').insert([payload]).select();
-          if (error) throw error;
-          if (data && data.length > 0) {
-             setRealProducts(prev => [...prev, data[0] as Product]);
-             mockAddProduct(data[0] as Product);
-          }
-        }
-        setViewMode('LIST');
+      const payload: any = { ...formData };
+      
+      // BLINDAJE UUID: Si no hay proveedor, debe ser estrictamente null
+      if (!payload.supplier_id || payload.supplier_id === '') {
+         payload.supplier_id = null;
       }
+
+      if (formData.id) {
+        const { data, error } = await supabase.from('products').update(payload).eq('id', formData.id).select();
+        if (error) throw error;
+        if (data && data.length > 0) {
+           setProducts(prev => prev.map(p => p.id === formData.id ? data[0] as Product : p));
+        }
+      } else {
+        const newId = crypto.randomUUID();
+        payload.id = newId;
+        const { data, error } = await supabase.from('products').insert([payload]).select();
+        if (error) throw error;
+        if (data && data.length > 0) {
+           setProducts(prev => [...prev, data[0] as Product]);
+        }
+      }
+      setViewMode('LIST');
     } catch (err: any) {
       alert("Error de Base de Datos: " + err.message);
     } finally {
       setIsSaving(false);
     }
   };
+
  // --- ALTA RÁPIDA DE PROVEEDOR ---
   const handleQuickSupplierSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,10 +142,8 @@ export const ProductManagement: React.FC = () => {
 
        if (data && data.length > 0) {
           const createdSupplier = data[0];
-          // Añadimos el proveedor a la lista y lo seleccionamos automáticamente
-          setRealSuppliers(prev => [...prev, createdSupplier]);
+          setSuppliers(prev => [...prev, createdSupplier]);
           setFormData(prev => ({ ...prev, supplier_id: createdSupplier.id }));
-          
           setIsSupplierModalOpen(false);
           setNewSupplier({ ruc: '', name: '' });
        }
@@ -187,7 +176,6 @@ export const ProductManagement: React.FC = () => {
           const skuStr = String(row.sku || row.SKU || row.codigo || row.Codigo || '').trim();
           if (!skuStr) { skippedCount++; return; }
 
-          // Evitar duplicados contra el estado actual
           if (products.find(p => p.sku === skuStr)) { skippedCount++; return; }
 
           let foundSupplierId = null;
@@ -214,8 +202,8 @@ export const ProductManagement: React.FC = () => {
             sku: skuStr,
             barcode: String(row.barcode || row.Barcode || row.codigo_barras || skuStr),
             name: String(row.name || row.Name || row.nombre || row.Nombre || 'Sin Nombre').toUpperCase(),
-            unit_type: String(row.unit_type || row.unidad || 'BOTELLA').toUpperCase(),
-            package_type: String(row.package_type || row.empaque || 'CAJA').toUpperCase(),
+            unit_type: String(row.unit_type || row.unidad || 'BOT').toUpperCase(),
+            package_type: String(row.package_type || row.empaque || 'CJA').toUpperCase(),
             package_content: factor,
             line: String(row.line || row.linea || '').toUpperCase(),
             category: String(row.category || row.categoria || '').toUpperCase(),
@@ -237,13 +225,9 @@ export const ProductManagement: React.FC = () => {
         });
 
         if (newProductsToInsert.length > 0) {
-           if (USE_MOCK_DB) {
-              newProductsToInsert.forEach(p => mockAddProduct(p as Product));
-           } else {
-              const { error } = await supabase.from('products').insert(newProductsToInsert);
-              if (error) throw error;
-           }
-           await fetchCatalog(); // Recargar todo para asegurar consistencia
+           const { error } = await supabase.from('products').insert(newProductsToInsert);
+           if (error) throw error;
+           await fetchCatalog(); 
         }
 
         alert(`Importación Masiva Exitosa.\n✅ Agregados: ${newProductsToInsert.length}\n⚠️ Omitidos (Duplicados/Sin Código): ${skippedCount}`);
@@ -272,7 +256,7 @@ export const ProductManagement: React.FC = () => {
 
     if (exportData.length === 0) {
       exportData = [{
-        codigo: 'EX-001', codigo_barras: 'EX-001', nombre: 'PRODUCTO EJEMPLO', unidad: 'BOTELLA', empaque: 'CAJA', factor: 12,
+        codigo: 'EX-001', codigo_barras: 'EX-001', nombre: 'PRODUCTO EJEMPLO', unidad: 'BOT', empaque: 'CJA', factor: 12,
         linea: 'LICORES', categoria: 'WHISKY', subcategoria: 'ESCOCES', marca: 'EJEMPLO', proveedor: 'PROVEEDOR SAC', peso: 1, volumen: 0.75,
         igv: 18, isc: 0, stock_minimo: 5, costo: 100, margen: 30, precio_unidad: 130, precio_caja: 1482
       } as any];
@@ -284,7 +268,6 @@ export const ProductManagement: React.FC = () => {
     XLSX.writeFile(wb, "Modelo_Productos_Maestro.xlsx");
   };
 
-  // Pricing Calculation Helper (Mantiene lógica original)
   const calculatePrices = () => {
     const cost = Number(formData.last_cost) || 0;
     const margin = Number(formData.profit_margin) || 0;
@@ -364,20 +347,19 @@ export const ProductManagement: React.FC = () => {
                   <h3 className="text-sm font-bold text-slate-800 mb-4 border-b pb-2">Estructura Base y Peso (Kardex)</h3>
                   <div className="grid grid-cols-12 gap-6 items-end">
                     <div className="col-span-3">
-                      <label className="block text-xs font-bold text-slate-600 mb-1">UND Mínima de Venta</label>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">UND Mínima (Ej. BOT, UND)</label>
                       <div className="flex">
                         <select className="w-full border border-slate-300 p-2 rounded-l text-sm font-bold text-slate-900 bg-blue-50 focus:ring-2 focus:ring-blue-500 outline-none" value={formData.unit_type} onChange={e => setFormData({ ...formData, unit_type: e.target.value })}>
                           <option value="">Sel...</option>
                           {unitTypes.map(u => <option key={u} value={u}>{u}</option>)}
                         </select>
                         <button type="button" onClick={() => {
-                          const val = prompt('Nueva Unidad Base:');
-                          if (val) { addUnitType(val.toUpperCase()); setFormData({ ...formData, unit_type: val.toUpperCase() }) }
+                          const val = prompt('Nueva Abreviatura Unidad Base (Ej. BOT, PAQ):');
+                          if (val) { addUnitType(val.substring(0,4).toUpperCase()); setFormData({ ...formData, unit_type: val.substring(0,4).toUpperCase() }) }
                         }} className="bg-slate-800 text-white px-2 rounded-r hover:bg-slate-700"><Plus className="w-4 h-4" /></button>
                       </div>
                     </div>
                     
-                    {/* ENLACE DIRECTO DE PESO A LA UNIDAD BASE */}
                     <div className="col-span-3 relative">
                       <div className="absolute -top-3 left-0 text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">Atado a {formData.unit_type || 'UND'}</div>
                       <label className="block text-xs font-bold text-slate-600 mb-1 mt-2">Peso Unitario (Kg)</label>
@@ -385,15 +367,15 @@ export const ProductManagement: React.FC = () => {
                     </div>
 
                     <div className="col-span-3">
-                      <label className="block text-xs font-bold text-slate-600 mb-1">Empaque Mayor</label>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Empaque Mayor (Ej. CJA, DIS)</label>
                       <div className="flex">
                         <select className="w-full border border-slate-300 p-2 rounded-l text-sm font-bold text-slate-900 bg-purple-50 focus:ring-2 focus:ring-purple-500 outline-none" value={formData.package_type} onChange={e => setFormData({ ...formData, package_type: e.target.value })}>
                           <option value="">Sel...</option>
                           {packageTypes.map(p => <option key={p} value={p}>{p}</option>)}
                         </select>
                         <button type="button" onClick={() => {
-                          const val = prompt('Nuevo Empaque:');
-                          if (val) { addPackageType(val.toUpperCase()); setFormData({ ...formData, package_type: val.toUpperCase() }) }
+                          const val = prompt('Nueva Abreviatura Empaque (Ej. CJA, DIS):');
+                          if (val) { addPackageType(val.substring(0,4).toUpperCase()); setFormData({ ...formData, package_type: val.substring(0,4).toUpperCase() }) }
                         }} className="bg-slate-800 text-white px-2 rounded-r hover:bg-slate-700"><Plus className="w-4 h-4" /></button>
                       </div>
                     </div>
@@ -462,7 +444,6 @@ export const ProductManagement: React.FC = () => {
                              <option value="">Seleccione Proveedor...</option>
                              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                            </select>
-                           {/* BOTÓN ALTA RÁPIDA PROVEEDOR */}
                            <button type="button" onClick={() => setIsSupplierModalOpen(true)} className="bg-amber-600 text-white px-3 rounded-r hover:bg-amber-700 flex items-center justify-center font-bold text-xs shadow-inner" title="Alta Rápida de Proveedor">
                               <Truck className="w-4 h-4 mr-1" /> NUEVO
                            </button>
@@ -675,11 +656,11 @@ export const ProductManagement: React.FC = () => {
                        <div className="text-xs text-slate-400">{p.category || 'SIN CATEGORÍA'}</div>
                     </td>
                     <td className="p-4 text-right">
-                       <div className="font-black text-slate-800">S/ {p.price_unit.toFixed(2)}</div>
+                       <div className="font-black text-slate-800">S/ {Number(p.price_unit).toFixed(2)}</div>
                        <div className="text-[10px] text-slate-400 font-bold">x {p.unit_type}</div>
                     </td>
                     <td className="p-4 text-right">
-                       <div className="font-black text-emerald-700">S/ {p.price_package.toFixed(2)}</div>
+                       <div className="font-black text-emerald-700">S/ {Number(p.price_package).toFixed(2)}</div>
                        <div className="text-[10px] text-emerald-600/60 font-bold">x {p.package_type}</div>
                     </td>
                     <td className="p-4 text-center">
