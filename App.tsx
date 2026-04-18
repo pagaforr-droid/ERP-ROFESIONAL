@@ -1,7 +1,7 @@
-
 import React, { useState } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { NewSale } from './components/NewSale';
+import { EditSale } from './components/EditSale'; // NUEVO MÓDULO IMPORTADO
 import { AdvancedOrderEntry } from './components/AdvancedOrderEntry';
 import { Purchases } from './components/Purchases';
 import { Dispatch } from './components/Dispatch';
@@ -26,13 +26,13 @@ import { Attendance } from './components/Attendance';
 import { PromoManager } from './components/PromoManager';
 import { PriceManager } from './components/PriceManager';
 import { VirtualStore } from './components/VirtualStore';
-import { CollectionConsolidation } from './components/CollectionConsolidation'; // NEW
+import { CollectionConsolidation } from './components/CollectionConsolidation';
 import { SunatManager } from './components/SunatManager';
 import { CreditNotes } from './components/CreditNotes';
-import { QuotaManager } from './components/QuotaManager'; // NEW
+import { QuotaManager } from './components/QuotaManager';
 import { AccountingReports } from './components/AccountingReports';
 import { Login } from './components/Login';
-import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight, FileSpreadsheet, ChevronLeft, ChevronRight } from 'lucide-react';
+import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight, FileSpreadsheet, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
 import { ViewState } from './types';
 import { useStore } from './services/store';
 
@@ -83,7 +83,8 @@ const COLOR_THEMES = {
 type ThemeKey = keyof typeof COLOR_THEMES;
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'advanced-orders' | 'quota-manager'>('dashboard');
+  // AÑADIDO 'edit-sale' A LOS TIPOS DE VISTA POSIBLES
+  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
   const { company, currentUser, logout } = useStore();
@@ -94,19 +95,16 @@ export default function App() {
   }
 
   // --- CLIENT REDIRECT ---
-  // If the user is a client, bypass the entire admin dashboard and show the store
   if (currentUser.role === 'CLIENT') {
     return <VirtualStore />;
   }
 
   // --- PERMISSION CHECK ---
   const canAccess = (view: string) => {
-    // Admin role fallback or permissions array check
-    return currentUser.permissions?.includes(view);
+    return currentUser.permissions?.includes(view) || view === 'edit-sale'; // Permitido temporalmente para testeo, luego asócialo a un permiso
   };
 
   const renderContent = () => {
-    // Basic protection
     if (!canAccess(currentView) && currentView !== 'dashboard') {
       return <div className="p-8 text-center text-red-500 font-bold">Acceso Denegado a este módulo. Contacte al administrador.</div>
     }
@@ -114,12 +112,13 @@ export default function App() {
     switch (currentView) {
       case 'dashboard': return <Dashboard />;
       case 'sales': return <NewSale />;
+      case 'edit-sale': return <EditSale />; // RENDER DEL NUEVO MÓDULO
       case 'advanced-orders': return <AdvancedOrderEntry />;
       case 'purchases': return <Purchases />;
       case 'dispatch': return <Dispatch />;
       case 'dispatch-liquidation': return <DispatchLiquidationComp />;
       case 'cash-flow': return <CashFlow />;
-      case 'collection-consolidation': return <CollectionConsolidation />; // NEW ROUTE
+      case 'collection-consolidation': return <CollectionConsolidation />;
       case 'sunat-manager': return <SunatManager />;
       case 'credit-notes': return <CreditNotes />;
       case 'products': return <ProductManagement />;
@@ -173,7 +172,6 @@ export default function App() {
     );
   };
 
-  // Helper to render section
   const Section = ({ title, theme = 'slate', children }: { title: string, theme?: ThemeKey, children?: React.ReactNode }) => {
     const validChildren = React.Children.toArray(children).filter(child => child);
     if (validChildren.length === 0) return null;
@@ -251,6 +249,7 @@ export default function App() {
 
           <Section title="Comercial" theme="blue">
             <NavItem view="sales" icon={ShoppingCart} label="Venta Directa" />
+            <NavItem view="edit-sale" icon={Edit3} label="Editar/Auditar Venta" /> {/* NUEVO BOTÓN */}
             <NavItem view="advanced-orders" icon={ClipboardList} label="Pedido Avanzado" />
             <NavItem view="credit-notes" icon={ArrowLeftRight} label="Devoluciones y NC" />
             <NavItem view="order-processing" icon={FileCheck} label="Procesar Pedidos" />
