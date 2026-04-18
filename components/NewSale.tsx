@@ -191,7 +191,7 @@ export const NewSale: React.FC = () => {
    const displayProducts = USE_MOCK_DB ? products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase())).map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
    const displaySales = USE_MOCK_DB ? sales.filter(s => !saleSearchTerm || s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm)).slice(0, 10) : searchedSales;
 
-   // --- CALCULATIONS (CON PROTECCIÓN NUMÉRICA) ---
+   // --- CALCULATIONS ---
    const calculateTotal = (qty: number, price: number, discPct: number) => { const gross = qty * price; return gross - (gross * (discPct / 100)); };
    const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (company.igv_percent / 100));
    const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
@@ -208,14 +208,12 @@ export const NewSale: React.FC = () => {
       else { setSeries(''); setDocNumber(''); }
    };
 
-   // --- CIRUGÍA: LOAD SALE SEGURO CONTRA PANTALLAS BLANCAS Y PÉRDIDA DE CONTEXTO ---
    const loadSale = async (sale: Sale, mode: 'VIEW' | 'EDIT' = 'VIEW') => {
       if (mode === 'EDIT' && (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED')) { alert('No se puede modificar un comprobante enviado o aceptado por SUNAT.'); return; }
       let itemsToLoad = sale.items;
       let loadedClient: Client | null = null;
       
       if (!USE_MOCK_DB) { 
-          // 1. Cargar detalles
           const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
           if (data) {
               itemsToLoad = data as SaleItem[]; 
@@ -229,14 +227,12 @@ export const NewSale: React.FC = () => {
                   }
               }
           }
-          // 2. Cargar perfil completo del cliente para recuperar city y price_list_id
           if (sale.client_id) {
               const { data: cData } = await supabase.from('clients').select('*').eq('id', sale.client_id).single();
               if (cData) loadedClient = cData as Client;
           }
       }
 
-      // VACUNA ANTI-CRASH: Forzar valores matemáticos
       const safeItems = (itemsToLoad || []).map(item => ({
           ...item,
           unit_price: Number(item.unit_price || 0),
@@ -255,7 +251,6 @@ export const NewSale: React.FC = () => {
       setSeries(sale.series); 
       setDocNumber(sale.number);
       
-      // RESTAURACIÓN ACTIVA DEL CONTEXTO
       setSelectedClientId(sale.client_id || '');
       setSelectedSellerId(sale.seller_id || ''); 
       setPaymentMethod(sale.payment_method); 
@@ -276,26 +271,16 @@ export const NewSale: React.FC = () => {
       setIsSearchModalOpen(false);
 
       if (mode === 'EDIT') {
-          // Re-evalúa bonificaciones cuando el Admin entra a editar el documento
-          // Pasamos el contexto explícitamente para asegurar que la re-evaluación no falle por asincronía de estados
           setTimeout(() => applyAutoPromotionsWithContext(safeItems, finalPriceListId, finalCity, sale.seller_id || '', true), 500); 
       }
    };
 
-   // --- ENGINE: VISTA PREVIA PDF ---
    const handlePreview = async () => {
-      // Si estamos en MODO VISTA (Visualizando), mandamos la factura real al motor PDF
       if (isViewMode && !isEditMode && originalSale) {
-         try {
-             await PdfEngine.openDocument(originalSale, docType, company);
-         } catch(e) {
-             console.error(e);
-             alert("Error al cargar el PDF de esta venta.");
-         }
+         try { await PdfEngine.openDocument(originalSale, docType, company); } catch(e) { alert("Error al cargar el PDF de esta venta."); }
          return;
       }
 
-      // Si estamos VENDIENDO o EDITANDO, mandamos una Vista Previa simulada
       const tempSale: Sale = { 
          id: isEditMode && originalSale ? originalSale.id : 'preview', 
          document_type: docType, 
@@ -317,12 +302,7 @@ export const NewSale: React.FC = () => {
          sunat_status: isEditMode && originalSale ? originalSale.sunat_status : 'PENDING'
       };
       
-      try {
-         await PdfEngine.openDocument(tempSale, docType, company);
-      } catch (err) {
-         console.error(err);
-         alert("Error generando la vista previa. Asegúrese de tener todos los datos llenos.");
-      }
+      try { await PdfEngine.openDocument(tempSale, docType, company); } catch (err) { alert("Error generando la vista previa."); }
    };
 
    const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems); };
@@ -432,16 +412,16 @@ export const NewSale: React.FC = () => {
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(prod.id) : (loadedBatches[prod.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
-      if (totalStock < requiredBaseUnits) { alert(`Stock insuficiente. Disponible: ${totalStock} unid. Requerido: ${requiredBaseUnits} unid.`); return; }
-
-      let remaining = requiredBaseUnits;
-      const selectedBatches: BatchAllocation[] = [];
-      for (const batch of availableBatches) {
-         if (remaining <= 0) break;
-         const take = Math.min(remaining, batch.quantity_current);
-         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
-         remaining -= take;
+      // --- CIRUGÍA: DEVOLUCIÓN VIRTUAL DE STOCK DURANTE EDICIÓN ---
+      let adjustedStock = totalStock;
+      if (isEditMode && originalSale) {
+          const origQty = originalSale.items
+              .filter(i => i.product_id === prod.id && !i.is_bonus)
+              .reduce((sum, i) => sum + i.quantity_base, 0);
+          adjustedStock += origQty;
       }
+
+      if (adjustedStock < requiredBaseUnits) { alert(`Stock insuficiente. Disponible: ${adjustedStock} unid. Requerido: ${requiredBaseUnits} unid.`); return; }
 
       let initialNewCart = [...cart];
       const existingItemIndex = initialNewCart.findIndex(item => item.product_id === prod.id && item.selected_unit === unitType && !item.is_bonus && !item.auto_promo_id);
@@ -453,7 +433,7 @@ export const NewSale: React.FC = () => {
             const newPrice = calculateTotal(newQty, unitPrice, discountPercent);
             initialNewCart[existingItemIndex] = {
                ...existing, quantity_presentation: newQty, quantity_base: unitType === 'PKG' ? newQty * (prod.package_content || 1) : newQty,
-               total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: selectedBatches
+               total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: []
             };
          } else { return; }
       } else {
@@ -461,7 +441,7 @@ export const NewSale: React.FC = () => {
             id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name,
             selected_unit: unitType, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice,
             total_price: calculateTotal(quantity, unitPrice, discountPercent), discount_percent: discountPercent,
-            discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: selectedBatches
+            discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: []
          });
       }
       
@@ -482,22 +462,22 @@ export const NewSale: React.FC = () => {
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(product.id) : (loadedBatches[product.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
-      if (totalStock < requiredBaseUnits) { alert(`Stock insuficiente. Disponible: ${totalStock} unid. Requerido: ${requiredBaseUnits} unid.`); return; }
-
-      let remaining = requiredBaseUnits;
-      const selectedBatches: BatchAllocation[] = [];
-      for (const batch of availableBatches) {
-         if (remaining <= 0) break;
-         const take = Math.min(remaining, batch.quantity_current);
-         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
-         remaining -= take;
+      // --- CIRUGÍA: DEVOLUCIÓN VIRTUAL DE STOCK DURANTE EDICIÓN ---
+      let adjustedStock = totalStock;
+      if (isEditMode && originalSale) {
+          const origQty = originalSale.items
+              .filter(i => i.product_id === product.id && !i.is_bonus)
+              .reduce((sum, i) => sum + i.quantity_base, 0);
+          adjustedStock += origQty;
       }
+
+      if (adjustedStock < requiredBaseUnits) { alert(`Stock insuficiente. Disponible: ${adjustedStock} unid. Requerido: ${requiredBaseUnits} unid.`); return; }
 
       const updatedCart = [...cart];
       const newPrice = calculateTotal(newQty, item.unit_price, item.discount_percent);
       updatedCart[index] = {
          ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice,
-         discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: selectedBatches
+         discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: []
       };
       applyAutoPromotions(updatedCart);
    };
@@ -564,7 +544,6 @@ export const NewSale: React.FC = () => {
       else handleAddToCart();
    };
 
-   // --- FUNCION AUXILIAR PARA RE-EVALUAR PROMOS CON CONTEXTO EXPLÍCITO ---
    const applyAutoPromotionsWithContext = (currentCart: SaleItem[], p_list_id: string, p_city: string, p_seller: string, silent = false) => {
       let newCart = currentCart.filter(item => !item.auto_promo_id);
       const validPromos = activeAutoPromos.filter(ap => {
@@ -627,7 +606,6 @@ export const NewSale: React.FC = () => {
        applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent);
    };
 
-   // AHORA GUARDAR EVALÚA SI ESTAMOS CREANDO O MODIFICANDO UNA VENTA
    const handleSaveSale = async () => {
       if (isViewMode && !isEditMode) {
          if (originalSale) {
@@ -650,7 +628,7 @@ export const NewSale: React.FC = () => {
               return;
           }
           if ((clientCreditInfo.debt + grandTotal) > clientCreditInfo.limit) {
-              alert(`❌ LÍMITE DE CRÉDITO EXCEDIDO ❌\n\nLímite Aprobado: S/ ${clientCreditInfo.limit.toFixed(2)}\nDeuda Vigente: S/ ${clientCreditInfo.debt.toFixed(2)}\nDisponible Actual: S/ ${Math.max(0, clientCreditInfo.limit - clientCreditInfo.debt).toFixed(2)}\n\nEl monto de este pedido (S/ ${grandTotal.toFixed(2)}) supera el saldo disponible. Requiere autorización o pago al contado.`);
+              alert(`❌ LÍMITE DE CRÉDITO EXCEDIDO ❌\n\nLímite Aprobado: S/ ${Number(clientCreditInfo.limit || 0).toFixed(2)}\nDeuda Vigente: S/ ${Number(clientCreditInfo.debt || 0).toFixed(2)}\nDisponible Actual: S/ ${Math.max(0, Number(clientCreditInfo.limit) - Number(clientCreditInfo.debt)).toFixed(2)}\n\nEl monto de este pedido (S/ ${grandTotal.toFixed(2)}) supera el saldo disponible. Requiere autorización o pago al contado.`);
               return;
           }
       }
@@ -929,7 +907,7 @@ export const NewSale: React.FC = () => {
 
          {/* === GRID SECTION === */}
          <div className="flex-1 bg-white border border-slate-400 flex flex-col shadow-sm">
-            {/* Entry Row (Simulating Grid Input) */}
+            {/* Entry Row */}
             {(!isViewMode || isEditMode) && (
                <div className="bg-blue-50 border-b border-blue-200 p-1 flex items-end gap-1">
                   <div className="flex-1 relative">
@@ -972,7 +950,6 @@ export const NewSale: React.FC = () => {
                               </table>
                            </div>
                         )}
-                        {showProductSuggestions && productSearch && displayProducts.length === 0 && !isSearchingProd && <div className="absolute top-full left-0 w-full p-2 text-center text-slate-400 bg-white border border-slate-400 shadow-2xl z-50">Sin coincidencias</div>}
                      </div>
                   </div>
 
