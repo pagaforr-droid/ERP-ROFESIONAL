@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
 
   legalText: { fontSize: 6, textAlign: 'center', marginTop: 10 },
 
-  // GUIA STYLES
+  // GUIA STYLES (Retained from original)
   guiaInfoSection: { flexDirection: 'column', marginBottom: 5 },
   guiaInfoRow: { flexDirection: 'row', marginBottom: 3 },
   guiaInfoLabel: { fontSize: 8, fontWeight: 'bold', width: '18%' },
