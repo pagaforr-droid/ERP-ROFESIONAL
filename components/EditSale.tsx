@@ -37,7 +37,6 @@ export const EditSale: React.FC = () => {
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
-   const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
    // --- SALE STATE ---
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
@@ -164,81 +163,92 @@ export const EditSale: React.FC = () => {
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
    // =========================================================================
-   // 🚨 CARGA BLINDADA DEL DOCUMENTO (DOBLE BARRIDO DE DATOS)
+   // 🚨 CARGA EXACTA DEL DOCUMENTO (LÓGICA PURA RELACIONAL) 🚨
    // =========================================================================
    const loadSale = async (sale: Sale) => {
       if (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED') {
-          showDialog('error', 'Bloqueo SUNAT', 'Este documento ya fue declarado a SUNAT. No se puede modificar. Emita una Nota de Crédito.');
+          showDialog('error', 'Bloqueo SUNAT', 'Este documento ya fue declarado y aceptado por SUNAT. No se puede modificar. Emita una Nota de Crédito.');
           return;
       }
 
       setIsSaving(true);
       try {
-          let itemsToLoad: any[] = [];
-          
-          // BARRIDO 1: Intentamos traer los detalles de la tabla relacional
-          const { data: saleItemsData, error: itemsErr } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id);
-          
-          if (saleItemsData && saleItemsData.length > 0) {
-              itemsToLoad = saleItemsData;
-          } 
-          // BARRIDO 2: Si la tabla relacional está vacía, extraemos los datos del JSONB de la cabecera original de la venta
-          else if (sale.items && Array.isArray(sale.items) && sale.items.length > 0) {
-              itemsToLoad = sale.items;
-          } else if (typeof sale.items === 'string') {
-              try { itemsToLoad = JSON.parse(sale.items); } catch(e) {}
-          }
+          // Lógica pura: JOIN directo entre sale_items y products usando Supabase
+          const { data: fetchedItems, error: itemsErr } = await supabase
+              .from('sale_items')
+              .select(`
+                  *,
+                  product:products (*)
+              `)
+              .eq('sale_id', sale.id);
 
-          if (itemsToLoad.length === 0) {
-              alert("⚠️ ADVERTENCIA: El documento se cargó, pero el sistema no pudo extraer el detalle de los productos. Añada los productos manualmente.");
-          }
+          if (itemsErr) throw itemsErr;
 
-          let loadedClient: Client | null = null;
-          let finalCache = { ...cartProductsCache };
-          
-          // Cacheamos los productos para que no de error el mapa
-          const pIds = itemsToLoad.map((i: any) => i.product_id).filter(Boolean);
-          if (pIds.length > 0) {
-              const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
-              if (pData) {
-                  pData.forEach(p => finalCache[p.id] = p as Product);
-                  setCartProductsCache(prev => ({...prev, ...finalCache}));
+          let finalCartItems: SaleItem[] = [];
+
+          if (fetchedItems && fetchedItems.length > 0) {
+              finalCartItems = fetchedItems.map((item: any) => ({
+                  id: item.id || crypto.randomUUID(),
+                  sale_id: sale.id,
+                  product_id: item.product_id,
+                  product_sku: item.product_sku || item.product?.sku || '',
+                  product_name: item.product_name || item.product?.name || '',
+                  selected_unit: item.selected_unit || 'UND',
+                  quantity_presentation: Number(item.quantity_presentation || item.quantity || 1),
+                  quantity_base: Number(item.quantity_base || item.quantity || 1),
+                  unit_price: Number(item.unit_price || 0),
+                  discount_percent: Number(item.discount_percent || 0),
+                  discount_amount: Number(item.discount_amount || 0),
+                  total_price: Number(item.total_price || 0),
+                  is_bonus: item.is_bonus || false,
+                  auto_promo_id: item.auto_promo_id,
+                  batch_allocations: [], // Se recalcula seguro en BD al guardar
+                  product: item.product // Ya viene anidado gracias al JOIN
+              }));
+          } else {
+              // Si falla la tabla relacional, leemos del JSON (Legacy mode)
+              let fallbackItems = [];
+              if (typeof sale.items === 'string') {
+                  try { fallbackItems = JSON.parse(sale.items); } catch(e) {}
+              } else if (Array.isArray(sale.items)) {
+                  fallbackItems = sale.items;
+              }
+
+              if (fallbackItems.length > 0) {
+                  const pIds = fallbackItems.map((i:any) => i.product_id).filter(Boolean);
+                  const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
+                  
+                  finalCartItems = fallbackItems.map((item:any) => {
+                      const prod = pData?.find(p => p.id === item.product_id);
+                      return {
+                          ...item,
+                          id: item.id || crypto.randomUUID(),
+                          product: prod,
+                          quantity_presentation: Number(item.quantity_presentation || item.quantity || 1),
+                          quantity_base: Number(item.quantity_base || item.quantity || 1),
+                          unit_price: Number(item.unit_price || item.price || 0),
+                          total_price: Number(item.total_price || item.amount || 0)
+                      };
+                  });
+              } else {
+                  alert("⚠️ ADVERTENCIA: La venta se abrió, pero los detalles no se encontraron en la base de datos.");
               }
           }
 
+          // Cargar datos del cliente
+          let clientListId = '';
+          let clientCity = '';
           if (sale.client_id) {
               const { data: cData } = await supabase.from('clients').select('*').eq('id', sale.client_id).single();
               if (cData) {
-                  loadedClient = cData as Client;
-                  checkClientCredit(sale.client_id, loadedClient.credit_limit || 0);
+                  clientListId = cData.price_list_id || '';
+                  clientCity = cData.city || '';
+                  checkClientCredit(sale.client_id, cData.credit_limit || 0);
               }
           }
 
-          // Mapeo riguroso de cada celda del carrito para evitar vacíos
-          const safeItems = itemsToLoad.map((item: any) => {
-              const matchedProd = finalCache[item.product_id];
-              const q_pres = Number(item.quantity_presentation || item.quantity || 1);
-              const q_base = Number(item.quantity_base || item.quantity || 1);
-              const p_unit = Number(item.unit_price || item.price || 0);
-              const p_total = Number(item.total_price || item.amount || (q_pres * p_unit) || 0);
-              
-              return { 
-                  ...item, 
-                  id: item.id || crypto.randomUUID(), 
-                  unit_price: p_unit, 
-                  total_price: p_total, 
-                  discount_percent: Number(item.discount_percent || 0), 
-                  discount_amount: Number(item.discount_amount || 0), 
-                  quantity_presentation: q_pres, 
-                  quantity_base: q_base, 
-                  selected_unit: item.selected_unit || item.unit_type || 'UND',
-                  is_bonus: item.is_bonus === true || item.is_bonus === 'true' || p_unit === 0,
-                  product: matchedProd 
-              };
-          });
-
-          // Asignación de todos los estados visuales
-          setOriginalSale({ ...sale, items: safeItems });
+          // Inyectar en el Front
+          setOriginalSale({ ...sale, items: finalCartItems });
           setDocType(sale.document_type as any); 
           setSeries(sale.series); 
           setDocNumber(sale.number); 
@@ -251,17 +261,43 @@ export const EditSale: React.FC = () => {
              name: sale.client_name, 
              doc_number: sale.client_ruc, 
              address: sale.client_address, 
-             price_list_id: loadedClient?.price_list_id || '', 
-             city: loadedClient?.city || '' 
+             price_list_id: clientListId, 
+             city: clientCity 
           });
           
-          setCart(safeItems); 
+          setCart(finalCartItems); 
           setIsSearchModalOpen(false);
+
       } catch (err: any) {
           showDialog('error', 'Error Fatal', 'No se pudo cargar el detalle del documento: ' + err.message);
       } finally {
           setIsSaving(false);
       }
+   };
+
+   const handlePreview = async () => {
+      if (!originalSale) return;
+      const seller = dbSellers.find(s => s.id === selectedSellerId);
+      const tempSale: any = { 
+         ...originalSale,
+         client_name: clientData.name || 'CLIENTE VARIOS',
+         client_ruc: clientData.doc_number || '00000000',
+         client_address: clientData.address || '',
+         seller_id: selectedSellerId || undefined,
+         client_id: selectedClientId || undefined,
+         payment_method: paymentMethod,
+         payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
+         balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
+         subtotal,
+         igv,
+         total: grandTotal,
+         items: cart, 
+         seller_name: seller ? seller.name : '',
+         previous_debt: clientCreditInfo.debt 
+      };
+      
+      try { await PdfEngine.openDocument(tempSale as Sale, docType, dbCompany); } 
+      catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
    const requestAdminAuth = (action: () => void, actionName: string) => {
@@ -294,23 +330,6 @@ export const EditSale: React.FC = () => {
       const conversionFactor = isPkgMode ? Number(prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
       const realUnitName = isPkgMode ? (prod.package_type || 'CAJA').toUpperCase() : (prod.unit_type || 'UND').toUpperCase();
-      
-      const availableBatches = loadedBatches[prod.id] || [];
-      const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(prod.current_stock || prod.stock || 0);
-
-      // Alerta suave (Auditoría)
-      if (totalStock < requiredBaseUnits) { 
-         alert(`Atención: Estás forzando stock negativo para este producto. Disponible: ${totalStock}. Continuará en modo auditoría.`); 
-      }
-
-      let remaining = requiredBaseUnits;
-      const selectedBatches: BatchAllocation[] = [];
-      for (const batch of availableBatches) {
-         if (remaining <= 0) break;
-         const take = Math.min(remaining, Number(batch.quantity_current || 0));
-         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
-         remaining -= take;
-      }
 
       const existingItemIndex = cart.findIndex(item => item.product_id === prod.id && item.selected_unit === realUnitName);
 
@@ -345,7 +364,7 @@ export const EditSale: React.FC = () => {
             discount_percent: 0, 
             discount_amount: 0, 
             is_bonus: false, 
-            batch_allocations: selectedBatches, 
+            batch_allocations: [], 
             product: prod 
          }];
          setCart(newCart);
@@ -364,7 +383,7 @@ export const EditSale: React.FC = () => {
       if (isNaN(newQty) || newQty <= 0) newQty = 1;
       if (isNaN(newPu) || newPu < 0) newPu = 0;
 
-      const product = cartProductsCache[item.product_id] || item.product;
+      const product = item.product;
       const isPkg = isItemPackage(item.selected_unit, product);
       const conversionFactor = isPkg ? Number(product?.package_content || 1) : 1;
 
@@ -421,7 +440,6 @@ export const EditSale: React.FC = () => {
    }
 
    const proceedSelectProduct = (p: Product & { current_stock?: number }) => {
-      setCartProductsCache(prev => ({...prev, [p.id]: p}));
       setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitMode('BASE'); 
       setUnitPrice(Number(p.price_unit || 0)); setQuantity(1);
       setTimeout(() => { qtyInputRef.current?.focus(); qtyInputRef.current?.select(); }, 50);
@@ -592,8 +610,8 @@ export const EditSale: React.FC = () => {
          {isSaving && (
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded">
                <Loader2 className="w-16 h-16 text-amber-500 animate-spin mb-4" />
-               <h2 className="text-2xl font-black text-white tracking-widest">SOBREESCRIBIENDO DOCUMENTO...</h2>
-               <p className="text-amber-200 font-medium mt-2">Re-estructurando Kardex. Por favor no cierre la ventana.</p>
+               <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO AUDITORÍA...</h2>
+               <p className="text-amber-200 font-medium mt-2">Leyendo y sincronizando base de datos...</p>
             </div>
          )}
 
@@ -822,6 +840,10 @@ export const EditSale: React.FC = () => {
          {/* === FOOTER TOTALS === */}
          <div className="h-24 bg-slate-100 border-t border-slate-400 flex p-2 gap-4">
             <div className="flex-1 flex gap-2 items-end pb-2">
+               <button type="button" onClick={handlePreview} className={`bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded flex items-center shadow-sm font-bold ${cart.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`} disabled={cart.length === 0}>
+                  <Printer className="w-4 h-4 mr-2" /> Vista Previa
+               </button>
+               <div className="flex-1"></div>
                <div className="text-[11px] text-slate-600 font-medium">
                   Modo Edición Avanzada activado. Ajuste unidades y precios de manera libre.
                </div>
