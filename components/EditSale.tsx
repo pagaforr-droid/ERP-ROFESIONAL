@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, SaleItem, Client, Sale, Promotion, Batch, BatchAllocation, AutoPromotion } from '../types';
+import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion, Batch } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3, MapPin, Zap } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
@@ -8,7 +8,7 @@ import { PdfEngine } from './PdfEngine';
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export const EditSale: React.FC = () => {
-   const { users } = useStore();
+   const { users, currentUser } = useStore();
 
    const productInputRef = useRef<HTMLInputElement>(null);
    const qtyInputRef = useRef<HTMLInputElement>(null);
@@ -164,27 +164,41 @@ export const EditSale: React.FC = () => {
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
    // =========================================================================
-   // 🚨 CARGA EXACTA DEL DOCUMENTO DESDE SUPABASE AL CARRITO
+   // 🚨 CARGA BLINDADA DEL DOCUMENTO (DOBLE BARRIDO DE DATOS)
    // =========================================================================
    const loadSale = async (sale: Sale) => {
       if (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED') {
-          showDialog('error', 'Bloqueo SUNAT', 'Este documento ya fue declarado y aceptado por SUNAT. No se puede modificar. Emita una Nota de Crédito.');
+          showDialog('error', 'Bloqueo SUNAT', 'Este documento ya fue declarado a SUNAT. No se puede modificar. Emita una Nota de Crédito.');
           return;
       }
 
-      setIsSaving(true); // Usamos el spinner mientras traemos los datos exactos
+      setIsSaving(true);
       try {
-          let itemsToLoad = sale.items || [];
+          let itemsToLoad: any[] = [];
+          
+          // BARRIDO 1: Intentamos traer los detalles de la tabla relacional
+          const { data: saleItemsData, error: itemsErr } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id);
+          
+          if (saleItemsData && saleItemsData.length > 0) {
+              itemsToLoad = saleItemsData;
+          } 
+          // BARRIDO 2: Si la tabla relacional está vacía, extraemos los datos del JSONB de la cabecera original de la venta
+          else if (sale.items && Array.isArray(sale.items) && sale.items.length > 0) {
+              itemsToLoad = sale.items;
+          } else if (typeof sale.items === 'string') {
+              try { itemsToLoad = JSON.parse(sale.items); } catch(e) {}
+          }
+
+          if (itemsToLoad.length === 0) {
+              alert("⚠️ ADVERTENCIA: El documento se cargó, pero el sistema no pudo extraer el detalle de los productos. Añada los productos manualmente.");
+          }
+
           let loadedClient: Client | null = null;
           let finalCache = { ...cartProductsCache };
           
-          // Traemos los detalles EXACTOS de la base de datos
-          const { data: saleItemsData } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
-          if (saleItemsData && saleItemsData.length > 0) {
-              itemsToLoad = saleItemsData as SaleItem[]; 
-              
-              // Traemos los productos de esos detalles para la memoria caché del formulario
-              const pIds = itemsToLoad.map(i => i.product_id);
+          // Cacheamos los productos para que no de error el mapa
+          const pIds = itemsToLoad.map((i: any) => i.product_id).filter(Boolean);
+          if (pIds.length > 0) {
               const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
               if (pData) {
                   pData.forEach(p => finalCache[p.id] = p as Product);
@@ -200,21 +214,30 @@ export const EditSale: React.FC = () => {
               }
           }
 
-          // Mapeo exacto reconstruyendo el carrito tal cual se grabó
-          const safeItems = itemsToLoad.map(item => {
+          // Mapeo riguroso de cada celda del carrito para evitar vacíos
+          const safeItems = itemsToLoad.map((item: any) => {
               const matchedProd = finalCache[item.product_id];
+              const q_pres = Number(item.quantity_presentation || item.quantity || 1);
+              const q_base = Number(item.quantity_base || item.quantity || 1);
+              const p_unit = Number(item.unit_price || item.price || 0);
+              const p_total = Number(item.total_price || item.amount || (q_pres * p_unit) || 0);
+              
               return { 
-                 ...item, 
-                 unit_price: Number(item.unit_price || 0), 
-                 total_price: Number(item.total_price || 0), 
-                 discount_percent: Number(item.discount_percent || 0), 
-                 discount_amount: Number(item.discount_amount || 0), 
-                 quantity_presentation: Number(item.quantity_presentation || item.quantity || 1), 
-                 quantity_base: Number(item.quantity_base || item.quantity || 1), 
-                 product: matchedProd 
+                  ...item, 
+                  id: item.id || crypto.randomUUID(), 
+                  unit_price: p_unit, 
+                  total_price: p_total, 
+                  discount_percent: Number(item.discount_percent || 0), 
+                  discount_amount: Number(item.discount_amount || 0), 
+                  quantity_presentation: q_pres, 
+                  quantity_base: q_base, 
+                  selected_unit: item.selected_unit || item.unit_type || 'UND',
+                  is_bonus: item.is_bonus === true || item.is_bonus === 'true' || p_unit === 0,
+                  product: matchedProd 
               };
           });
 
+          // Asignación de todos los estados visuales
           setOriginalSale({ ...sale, items: safeItems });
           setDocType(sale.document_type as any); 
           setSeries(sale.series); 
@@ -235,35 +258,10 @@ export const EditSale: React.FC = () => {
           setCart(safeItems); 
           setIsSearchModalOpen(false);
       } catch (err: any) {
-          showDialog('error', 'Error', 'No se pudo cargar el detalle del documento.');
+          showDialog('error', 'Error Fatal', 'No se pudo cargar el detalle del documento: ' + err.message);
       } finally {
           setIsSaving(false);
       }
-   };
-
-   const handlePreview = async () => {
-      if (!originalSale) return;
-      const seller = dbSellers.find(s => s.id === selectedSellerId);
-      const tempSale: any = { 
-         ...originalSale,
-         client_name: clientData.name || 'CLIENTE VARIOS',
-         client_ruc: clientData.doc_number || '00000000',
-         client_address: clientData.address || '',
-         seller_id: selectedSellerId || undefined,
-         client_id: selectedClientId || undefined,
-         payment_method: paymentMethod,
-         payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
-         balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
-         subtotal,
-         igv,
-         total: grandTotal,
-         items: cart, 
-         seller_name: seller ? seller.name : '',
-         previous_debt: clientCreditInfo.debt 
-      };
-      
-      try { await PdfEngine.openDocument(tempSale as Sale, docType, dbCompany); } 
-      catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
    const requestAdminAuth = (action: () => void, actionName: string) => {
@@ -300,9 +298,9 @@ export const EditSale: React.FC = () => {
       const availableBatches = loadedBatches[prod.id] || [];
       const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(prod.current_stock || prod.stock || 0);
 
-      // En MODO EDICIÓN confiamos que el auditor sabe lo que hace, pero igual lanzamos alerta visual de stock
+      // Alerta suave (Auditoría)
       if (totalStock < requiredBaseUnits) { 
-         alert(`Atención: Estás forzando stock negativo o sin inventario físico suficiente para este producto. Disponible: ${totalStock}. Continuará de todos modos en modo auditoría.`); 
+         alert(`Atención: Estás forzando stock negativo para este producto. Disponible: ${totalStock}. Continuará en modo auditoría.`); 
       }
 
       let remaining = requiredBaseUnits;
@@ -328,7 +326,7 @@ export const EditSale: React.FC = () => {
             total_price: newPrice, 
             unit_price: unitPrice, 
             product: prod, 
-            batch_allocations: [] // Se recalcula en Supabase
+            batch_allocations: [] 
          };
          setCart(newCart);
          resetEntryForm();
@@ -355,7 +353,7 @@ export const EditSale: React.FC = () => {
       }
    };
 
-   // EDICIÓN LIBRE DE CANTIDAD Y PRECIO DIRECTO EN EL CARRITO
+   // EDICIÓN DE CANTIDAD Y PRECIO DIRECTO EN EL CARRITO
    const handleCartItemChange = (index: number, field: string, value: number) => {
       const updatedCart = [...cart];
       const item = updatedCart[index];
@@ -458,7 +456,6 @@ export const EditSale: React.FC = () => {
 
       const seller = dbSellers.find(s => s.id === selectedSellerId);
 
-      // 🚨 El número de factura original SE RESPETA RIGUROSAMENTE
       const updatedSaleData: any = {
          ...originalSale,
          client_name: clientData.name || 'CLIENTE VARIOS',
@@ -480,7 +477,6 @@ export const EditSale: React.FC = () => {
       setIsSaving(true);
 
       try {
-         // Llamada a Supabase para Reestructurar Kardex y Sobreescribir Venta
          const { data, error } = await supabase.rpc('update_sale_transaction', { p_sale_data: updatedSaleData });
          if (error) throw error;
          
@@ -776,7 +772,7 @@ export const EditSale: React.FC = () => {
                   <tbody>
                      {cart.map((item, index) => {
                         return (
-                           <tr key={item.id} className={`border-b border-slate-100 ${item.is_bonus ? 'bg-orange-50' : 'hover:bg-slate-50'}`}>
+                           <tr key={item.id || index} className={`border-b border-slate-100 ${item.is_bonus ? 'bg-orange-50' : 'hover:bg-slate-50'}`}>
                               <td className="p-2 w-8 text-center text-xs font-bold text-slate-700">{index + 1}</td>
                               <td className="p-2 w-24 font-mono text-slate-600">{item.product_sku}</td>
                               <td className="p-2 flex-1 font-bold text-xs text-slate-800">
@@ -819,16 +815,13 @@ export const EditSale: React.FC = () => {
                      })}
                   </tbody>
                </table>
+               {cart.length === 0 && <div className="p-8 text-center text-slate-400 italic font-bold">No hay productos en esta venta. Use el buscador de arriba para añadir.</div>}
             </div>
          </div>
 
          {/* === FOOTER TOTALS === */}
          <div className="h-24 bg-slate-100 border-t border-slate-400 flex p-2 gap-4">
             <div className="flex-1 flex gap-2 items-end pb-2">
-               <button type="button" onClick={handlePreview} className={`bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded flex items-center shadow-sm font-bold ${cart.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`} disabled={cart.length === 0}>
-                  <Printer className="w-4 h-4 mr-2" /> Vista Previa
-               </button>
-               <div className="flex-1"></div>
                <div className="text-[11px] text-slate-600 font-medium">
                   Modo Edición Avanzada activado. Ajuste unidades y precios de manera libre.
                </div>
@@ -846,7 +839,7 @@ export const EditSale: React.FC = () => {
                </div>
             </div>
 
-            <button type="button" onClick={() => showDialog('confirm', 'Confirmar Sobreescritura', `¿Está seguro de modificar el documento ${series}-${docNumber}? Esta acción alterará permanentemente el Kardex y los reportes.`, executeSaveEdit)} disabled={cart.length === 0} className={`w-32 bg-amber-600 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${cart.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-amber-700'}`}>
+            <button type="button" onClick={() => showDialog('confirm', 'Confirmar Sobreescritura', `¿Está seguro de modificar el documento ${series}-${docNumber}? Esta acción alterará permanentemente el Kardex y los reportes.`, executeSaveEdit)} disabled={cart.length === 0 || isSaving} className={`w-32 bg-amber-600 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${cart.length === 0 || isSaving ? 'opacity-50 cursor-not-allowed' : 'hover:bg-amber-700'}`}>
                <Save className="w-6 h-6 mb-1" />
                SOBREESCRIBIR
             </button>
