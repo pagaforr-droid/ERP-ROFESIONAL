@@ -4,17 +4,13 @@ import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promot
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase, USE_MOCK_DB } from '../services/supabase';
-
-// IMPORTACIÓN DEL MOTOR DE PDF SEGÚN LA RUTA ESPECIFICADA
 import { PdfEngine } from './PdfEngine';
 
-// Utilidad Anti-Mocks
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export const NewSale: React.FC = () => {
    const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions, promotions, sellers, zones } = useStore();
 
-   // --- REFS FOR FOCUS MANAGEMENT ---
    const productInputRef = useRef<HTMLInputElement>(null);
    const qtyInputRef = useRef<HTMLInputElement>(null);
    const unitSelectRef = useRef<HTMLSelectElement>(null);
@@ -22,18 +18,14 @@ export const NewSale: React.FC = () => {
    const discountInputRef = useRef<HTMLInputElement>(null);
    const addButtonRef = useRef<HTMLButtonElement>(null);
 
-   // --- ADMIN LOCK STATE ---
    const [priceLocked, setPriceLocked] = useState(true);
    const [isSaving, setIsSaving] = useState(false);
 
-   // --- MASTER DATA SUPABASE SYNC ---
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
    const [dbPromos, setDbPromos] = useState<Promotion[]>([]);
    const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
-   
-   // Cachés Críticos
    const [dbRewardProducts, setDbRewardProducts] = useState<Product[]>([]);
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
@@ -72,7 +64,6 @@ export const NewSale: React.FC = () => {
    const activePromos = USE_MOCK_DB ? promotions : dbPromos;
    const activeAutoPromos = USE_MOCK_DB ? autoPromotions : dbAutoPromos;
 
-   // --- HEADER STATE ---
    const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
    const [series, setSeries] = useState(company.series.find(s => s.type === 'FACTURA')?.series || 'F001');
    const [docNumber, setDocNumber] = useState(String(company.series.find(s => s.type === 'FACTURA')?.current_number || 1).padStart(8, '0'));
@@ -88,7 +79,6 @@ export const NewSale: React.FC = () => {
    const [paymentMethod, setPaymentMethod] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
    const [currency, setCurrency] = useState('SOLES');
 
-   // --- CLIENT STATE ---
    const [selectedClientId, setSelectedClientId] = useState('');
    const [clientData, setClientData] = useState<Partial<Client>>({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
    const [clientSearch, setClientSearch] = useState('');
@@ -98,7 +88,6 @@ export const NewSale: React.FC = () => {
    const [showBranchSelector, setShowBranchSelector] = useState(false);
    const [selectedSellerId, setSelectedSellerId] = useState('');
 
-   // --- CREDIT RISK STATE ---
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
 
    useEffect(() => {
@@ -112,7 +101,6 @@ export const NewSale: React.FC = () => {
        return () => clearTimeout(timer);
    }, [clientSearch]);
 
-   // --- LINE ENTRY STATE ---
    const [productSearch, setProductSearch] = useState('');
    const [showProductSuggestions, setShowProductSuggestions] = useState(false);
    const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -151,7 +139,6 @@ export const NewSale: React.FC = () => {
    const [isBonus, setIsBonus] = useState(false);
    const [cart, setCart] = useState<SaleItem[]>([]);
 
-   // --- SEARCH SALES MODAL STATE ---
    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
    const [saleSearchTerm, setSaleSearchTerm] = useState('');
    const [searchedSales, setSearchedSales] = useState<Sale[]>([]);
@@ -161,7 +148,6 @@ export const NewSale: React.FC = () => {
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
    const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
 
-   // --- CEREBRO DE BÚSQUEDA DE VENTAS (LIMITADO A 10) ---
    useEffect(() => {
        if (!isSearchModalOpen) return;
        if (USE_MOCK_DB) return;
@@ -170,11 +156,9 @@ export const NewSale: React.FC = () => {
            setIsSearchingSale(true);
            try {
                let query = supabase.from('sales').select('*').order('created_at', { ascending: false }).limit(10);
-               
                if (saleSearchTerm.trim().length > 0) {
                    query = query.or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`);
                }
-               
                const { data, error } = await query;
                if (error) throw error;
                if (data) setSearchedSales(data as Sale[]);
@@ -191,13 +175,11 @@ export const NewSale: React.FC = () => {
    const displayProducts = USE_MOCK_DB ? products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase())).map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
    const displaySales = USE_MOCK_DB ? sales.filter(s => !saleSearchTerm || s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm)).slice(0, 10) : searchedSales;
 
-   // --- CALCULATIONS ---
    const calculateTotal = (qty: number, price: number, discPct: number) => { const gross = qty * price; return gross - (gross * (discPct / 100)); };
    const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (company.igv_percent / 100));
    const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
-   // --- ACTIONS ---
    const handleNewSale = () => {
       setIsViewMode(false); setIsEditMode(false); setOriginalSale(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
@@ -208,10 +190,12 @@ export const NewSale: React.FC = () => {
       else { setSeries(''); setDocNumber(''); }
    };
 
+   // CIRUGÍA: LOAD SALE SEGURO CONTRA PANTALLAS BLANCAS E INYECCIÓN DE PRODUCTO PARA EL PDF
    const loadSale = async (sale: Sale, mode: 'VIEW' | 'EDIT' = 'VIEW') => {
       if (mode === 'EDIT' && (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED')) { alert('No se puede modificar un comprobante enviado o aceptado por SUNAT.'); return; }
       let itemsToLoad = sale.items;
       let loadedClient: Client | null = null;
+      let finalCache = { ...cartProductsCache };
       
       if (!USE_MOCK_DB) { 
           const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
@@ -221,9 +205,8 @@ export const NewSale: React.FC = () => {
               if (pIds.length > 0) {
                   const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
                   if (pData) {
-                      const cache: Record<string, Product> = {};
-                      pData.forEach(p => cache[p.id] = p);
-                      setCartProductsCache(prev => ({...prev, ...cache}));
+                      pData.forEach(p => finalCache[p.id] = p as Product);
+                      setCartProductsCache(prev => ({...prev, ...finalCache}));
                   }
               }
           }
@@ -233,15 +216,20 @@ export const NewSale: React.FC = () => {
           }
       }
 
-      const safeItems = (itemsToLoad || []).map(item => ({
-          ...item,
-          unit_price: Number(item.unit_price || 0),
-          total_price: Number(item.total_price || 0),
-          discount_percent: Number(item.discount_percent || 0),
-          discount_amount: Number(item.discount_amount || 0),
-          quantity_presentation: Number(item.quantity_presentation || item.quantity || 1),
-          quantity_base: Number(item.quantity_base || item.quantity || 1)
-      }));
+      // Vacuna Anti-Crash e Inyección del producto (Vital para que el PDF sepa si es BOT, CJA, etc.)
+      const safeItems = (itemsToLoad || []).map(item => {
+          const matchedProd = finalCache[item.product_id] || (USE_MOCK_DB ? products.find(p => p.id === item.product_id) : undefined);
+          return {
+              ...item,
+              unit_price: Number(item.unit_price || 0),
+              total_price: Number(item.total_price || 0),
+              discount_percent: Number(item.discount_percent || 0),
+              discount_amount: Number(item.discount_amount || 0),
+              quantity_presentation: Number(item.quantity_presentation || item.quantity || 1),
+              quantity_base: Number(item.quantity_base || item.quantity || 1),
+              product: matchedProd 
+          };
+      });
 
       setIsViewMode(mode === 'VIEW'); 
       setIsEditMode(mode === 'EDIT');
@@ -256,6 +244,7 @@ export const NewSale: React.FC = () => {
       setPaymentMethod(sale.payment_method); 
       setClientSearch(sale.client_name); 
 
+      // RESTAURAR CONTEXTO DEL CLIENTE (LISTA DE PRECIO Y CIUDAD)
       const finalPriceListId = loadedClient?.price_list_id || '';
       const finalCity = loadedClient?.city || '';
 
@@ -412,7 +401,6 @@ export const NewSale: React.FC = () => {
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(prod.id) : (loadedBatches[prod.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
-      // --- CIRUGÍA: DEVOLUCIÓN VIRTUAL DE STOCK DURANTE EDICIÓN ---
       let adjustedStock = totalStock;
       if (isEditMode && originalSale) {
           const origQty = originalSale.items
@@ -433,7 +421,8 @@ export const NewSale: React.FC = () => {
             const newPrice = calculateTotal(newQty, unitPrice, discountPercent);
             initialNewCart[existingItemIndex] = {
                ...existing, quantity_presentation: newQty, quantity_base: unitType === 'PKG' ? newQty * (prod.package_content || 1) : newQty,
-               total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: []
+               total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: [],
+               product: prod // INYECTANDO EL PRODUCTO A LA MEMORIA PARA EL PDF
             };
          } else { return; }
       } else {
@@ -441,7 +430,8 @@ export const NewSale: React.FC = () => {
             id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name,
             selected_unit: unitType, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice,
             total_price: calculateTotal(quantity, unitPrice, discountPercent), discount_percent: discountPercent,
-            discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: []
+            discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: [],
+            product: prod // INYECTANDO EL PRODUCTO A LA MEMORIA PARA EL PDF
          });
       }
       
@@ -462,7 +452,6 @@ export const NewSale: React.FC = () => {
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(product.id) : (loadedBatches[product.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
-      // --- CIRUGÍA: DEVOLUCIÓN VIRTUAL DE STOCK DURANTE EDICIÓN ---
       let adjustedStock = totalStock;
       if (isEditMode && originalSale) {
           const origQty = originalSale.items
@@ -477,7 +466,8 @@ export const NewSale: React.FC = () => {
       const newPrice = calculateTotal(newQty, item.unit_price, item.discount_percent);
       updatedCart[index] = {
          ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice,
-         discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: []
+         discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: [],
+         product: product // INYECTANDO EL PRODUCTO A LA MEMORIA PARA EL PDF
       };
       applyAutoPromotions(updatedCart);
    };
@@ -510,7 +500,7 @@ export const NewSale: React.FC = () => {
 
          const newTotal = calculateTotal(item.quantity_presentation, newPrice, newDisc);
          const newDiscountAmt = (item.quantity_presentation * newPrice) * (newDisc / 100);
-         return { ...item, unit_price: newPrice, total_price: newTotal, discount_percent: newDisc, discount_amount: newDiscountAmt };
+         return { ...item, unit_price: newPrice, total_price: newTotal, discount_percent: newDisc, discount_amount: newDiscountAmt, product: product };
       });
       
       applyAutoPromotions(updatedCart, silent); 
@@ -592,7 +582,8 @@ export const NewSale: React.FC = () => {
                   quantity_base: rewardQty * conversionFactor,
                   batch_allocations: [], quantity: rewardQty, quantity_presentation: rewardQty,
                   unit_price: 0, discount_percent: 100, discount_amount: 0, total_price: 0, selected_unit: ap.reward_unit_type as 'UND' | 'PKG',
-                  is_bonus: true, auto_promo_id: ap.id 
+                  is_bonus: true, auto_promo_id: ap.id,
+                  product: rewardProd // INYECTANDO EL PRODUCTO A LA MEMORIA PARA EL PDF
                } as any);
             }
          }
