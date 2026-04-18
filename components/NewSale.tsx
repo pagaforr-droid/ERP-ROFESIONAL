@@ -9,7 +9,6 @@ import { PdfEngine } from './PdfEngine';
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export const NewSale: React.FC = () => {
-   // Solo traemos del store datos inmutables de sesión
    const { company, users, currentUser } = useStore();
 
    // --- REFS FOR FOCUS MANAGEMENT ---
@@ -98,7 +97,6 @@ export const NewSale: React.FC = () => {
        }
    };
 
-   // Cambio dinámico de Documento
    const handleDocTypeChange = (newType: string) => {
        setDocType(newType as any);
        const activeForType = dbSeries.filter(s => s.type === newType);
@@ -110,7 +108,6 @@ export const NewSale: React.FC = () => {
        }
    };
 
-   // Cambio dinámico de Serie
    const handleSeriesChange = (newSeries: string) => {
        setSeries(newSeries);
        const sObj = dbSeries.find(s => s.type === docType && s.series === newSeries);
@@ -195,7 +192,6 @@ export const NewSale: React.FC = () => {
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
    const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
 
-   // --- CEREBRO DE BÚSQUEDA DE VENTAS ---
    useEffect(() => {
        if (!isSearchModalOpen) return;
        const timer = setTimeout(async () => {
@@ -217,7 +213,6 @@ export const NewSale: React.FC = () => {
        return () => clearTimeout(timer);
    }, [saleSearchTerm, isSearchModalOpen]);
 
-   // --- HELPERS BÁSICOS ---
    const isItemPackage = (itemUnitName: string, prod: any) => {
        if (!prod || !itemUnitName) return false;
        return itemUnitName.toUpperCase() === (prod.package_type || '').toUpperCase() || itemUnitName.toUpperCase() === 'PKG' || itemUnitName.toUpperCase() === 'CJA';
@@ -239,7 +234,6 @@ export const NewSale: React.FC = () => {
       return Number(val) || 1;
    };
 
-   // --- ACTIONS ---
    const handleNewSale = () => {
       setIsViewMode(false); setOriginalSale(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
@@ -704,17 +698,15 @@ export const NewSale: React.FC = () => {
        applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent);
    };
 
+   // CIRUGÍA: Función corregida. Se eliminó la dependencia local de la serie (getNextDocumentNumber)
    const executeSaveSale = async () => {
-      // El correlativo de aquí abajo es un "Borrador Visual", la base de datos lo ignorará y asignará el real.
-      const correlative = getNextDocumentNumber(docType, series);
-      if (!correlative) { showDialog('error', 'Error', "Error al obtener la serie."); return; }
-
-      // Las unidades van reales desde el carrito a Supabase ("BOTELLA", "CAJA")
+      // Configuramos el borrador visual de la venta. 
+      // NOTA: El docNumber viaja como borrador (placeholder), el backend inyectará el real
       const newSaleData: Sale = {
          id: crypto.randomUUID(), 
          document_type: docType,
          series: series,
-         number: correlative!.number, // Este número es temporal
+         number: docNumber, 
          payment_method: paymentMethod,
          payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
          balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
@@ -736,26 +728,24 @@ export const NewSale: React.FC = () => {
       setIsSaving(true);
 
       try {
-         // Mandamos la venta a Supabase
+         // Disparo hacia Supabase
          const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
          if (error) throw error;
          
          if (data && data.success) {
-            // 🚨 LA PIEZA CLAVE: Atrapamos el NÚMERO REAL devuelto por el Servidor
+            // Atrapamos el NÚMERO REAL BLINDADO devuelto por el Servidor
             const realNumber = data.real_number;
             
-            // Reemplazamos el borrador con el oficial antes de mandar al PDF
+            // Inyectamos el oficial al PDF en memoria
             newSaleData.number = realNumber;
 
-            showDialog('success', 'Venta Guardada', `Venta registrada exitosamente con comprobante: ${series}-${realNumber}`);
+            showDialog('success', 'Venta Guardada', `Venta registrada exitosamente con comprobante:\n${series}-${realNumber}`);
             
-            // Refrescamos las series en pantalla
+            // Actualizamos la interfaz inmediatamente
             await fetchLiveSeries();
-
-            // Abrimos el PDF (Ahora sí, con el número legal inquebrantable)
             try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
             
-            // Limpiamos el formulario
+            // Limpiamos todo el formulario
             handleNewSale();
          }
       } catch (err: any) { 
@@ -791,7 +781,8 @@ export const NewSale: React.FC = () => {
           }
       }
 
-      showDialog('confirm', 'Confirmar Venta', `¿Está seguro que desea emitir el comprobante ${docType} ${series} por S/ ${grandTotal.toFixed(2)}?`, executeSaveSale);
+      // CIRUGÍA: Mensaje arreglado para mostrar el número de la serie + correlativo en pantalla
+      showDialog('confirm', 'Confirmar Venta', `¿Está seguro que desea emitir el comprobante ${docType} ${series}-${docNumber} por S/ ${grandTotal.toFixed(2)}?`, executeSaveSale);
    };
 
    return (
