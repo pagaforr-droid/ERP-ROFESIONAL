@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
-import { supabase, USE_MOCK_DB } from '../services/supabase';
+import { supabase } from '../services/supabase'; // <-- ADIÓS MOCK_DB
 import { Building, Settings, FileText, Image, Save, Hash, Upload, RefreshCw, Trash2, Plus } from 'lucide-react';
 import { DocumentSeries } from '../types';
 
@@ -30,24 +30,9 @@ export const CompanySettings: React.FC = () => {
   const [seriesList, setSeriesList] = useState<DocumentSeries[]>([]);
   const [seriesToDelete, setSeriesToDelete] = useState<string[]>([]);
 
-  // --- SINCRONIZACIÓN INICIAL (NUBE -> LOCAL) ---
+  // --- SINCRONIZACIÓN INICIAL (NUBE -> LOCAL) 100% REAL ---
   useEffect(() => {
     const fetchCompanyData = async () => {
-      if (USE_MOCK_DB) {
-        setFormData({
-          ruc: globalCompany.ruc || '',
-          name: globalCompany.name || '',
-          address: globalCompany.address || '',
-          igv_percent: globalCompany.igv_percent || 18,
-          email: globalCompany.email || '',
-          phone: globalCompany.phone || '',
-          sunat_provider: globalCompany.sunat_provider || '',
-          sunat_api_url: globalCompany.sunat_api_url || '',
-          sunat_api_token: globalCompany.sunat_api_token || '',
-          logo_url: globalCompany.logo_url || ''
-        });
-        setSeriesList(globalCompany.series || []);
-      } else {
         setIsLoading(true);
         try {
           // 1. Obtener Empresa
@@ -69,12 +54,12 @@ export const CompanySettings: React.FC = () => {
               logo_url: compData.logo_url || ''
             });
 
-            // 2. Obtener Series
+            // 2. Obtener Series Reales
             const { data: serData, error: serErr } = await supabase.from('document_series').select('*').eq('company_id', compData.id).order('type');
             if (serErr) throw serErr;
             if (serData) {
                setSeriesList(serData as DocumentSeries[]);
-               // Sincronizamos el Store Global para que "Venta Directa" empiece con datos reales
+               // Sincronizamos el Store Global para que "Venta Directa" empiece con datos reales de inmediato
                globalUpdateCompany({ ...compData, series: serData as DocumentSeries[] });
             }
           }
@@ -83,64 +68,56 @@ export const CompanySettings: React.FC = () => {
         } finally {
           setIsLoading(false);
         }
-      }
     };
     fetchCompanyData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- GUARDADO: GENERAL & SUNAT ---
+  // --- GUARDADO: GENERAL & SUNAT (100% SUPABASE) ---
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
     
     try {
-      if (USE_MOCK_DB) {
-        globalUpdateCompany({ ...globalCompany, ...formData });
-        alert('Datos simulados actualizados.');
-      } else {
         let currentCompId = companyId;
         if (currentCompId) {
           const { error } = await supabase.from('company_config').update(formData).eq('id', currentCompId);
           if (error) throw error;
         } else {
-          // Si no existe la empresa, la creamos
+          // Si no existe la empresa (primera vez que se usa el sistema), la creamos
           currentCompId = crypto.randomUUID();
           const { error } = await supabase.from('company_config').insert([{ ...formData, id: currentCompId }]);
           if (error) throw error;
           setCompanyId(currentCompId);
         }
-        // Puente de Sincronización: Avisar al Store Global
+        
+        // Puente de Sincronización Inmediata
         globalUpdateCompany({ ...globalCompany, ...formData });
-        alert('Configuración guardada exitosamente en la Nube.');
-      }
+        alert('Configuración de la Empresa guardada exitosamente en la Base de Datos.');
     } catch (error: any) {
-      alert("Error al guardar: " + error.message);
+      alert("Error al guardar en la base de datos: " + error.message);
     } finally {
       setIsSaving(false);
     }
   };
 
-  // --- GUARDADO: SERIES Y CORRELATIVOS ---
+  // --- GUARDADO: SERIES Y CORRELATIVOS (100% SUPABASE) ---
   const handleSeriesSave = async () => {
     setIsSaving(true);
     try {
-      if (USE_MOCK_DB) {
-        globalUpdateCompany({ ...globalCompany, series: seriesList });
-        alert("Series simuladas actualizadas. Venta Directa ahora usará estas series.");
-      } else {
         if (!companyId) {
            alert("Primero debe guardar los Datos Generales de la empresa antes de configurar series.");
            return;
         }
 
-        // 1. Eliminar series borradas por el usuario
+        // 1. Eliminar series borradas por el usuario en la BD
         if (seriesToDelete.length > 0) {
            const { error: delErr } = await supabase.from('document_series').delete().in('id', seriesToDelete);
            if (delErr) throw delErr;
            setSeriesToDelete([]);
         }
 
-        // 2. Upsert (Insertar o Actualizar) las series actuales
+        // 2. Upsert (Insertar o Actualizar) las series actuales a Supabase
         const seriesPayload = seriesList.map(s => ({
            id: s.id,
            company_id: companyId,
@@ -153,10 +130,9 @@ export const CompanySettings: React.FC = () => {
         const { error: upsertErr } = await supabase.from('document_series').upsert(seriesPayload, { onConflict: 'id' });
         if (upsertErr) throw upsertErr;
 
-        // Puente de Sincronización: Conecta las series directo al módulo de Venta Directa
+        // Puente de Sincronización Inmediata
         globalUpdateCompany({ ...globalCompany, series: seriesList });
-        alert("Series y correlativos sincronizados con la Nube y listos para facturar.");
-      }
+        alert("Series y correlativos sincronizados con la Base de Datos y listos para facturar.");
     } catch (error: any) {
       alert("Error guardando series: " + error.message);
     } finally {
@@ -183,7 +159,7 @@ export const CompanySettings: React.FC = () => {
   const handleRemoveSeries = (id: string) => {
     if (window.confirm('¿Seguro que desea eliminar esta serie? Podría afectar correlativos históricos.')) {
       setSeriesList(prev => prev.filter(s => s.id !== id));
-      if (!USE_MOCK_DB) setSeriesToDelete(prev => [...prev, id]);
+      setSeriesToDelete(prev => [...prev, id]); // Marca para borrado real en Supabase
     }
   };
 
@@ -204,7 +180,7 @@ export const CompanySettings: React.FC = () => {
   };
 
   if (isLoading) {
-    return <div className="h-full flex flex-col items-center justify-center text-slate-500 font-bold"><RefreshCw className="w-10 h-10 animate-spin mb-4 text-blue-600" /> Sincronizando Ajustes Globales...</div>;
+    return <div className="h-full flex flex-col items-center justify-center text-slate-500 font-bold"><RefreshCw className="w-10 h-10 animate-spin mb-4 text-blue-600" /> Sincronizando Ajustes Globales desde el Servidor...</div>;
   }
 
   return (
@@ -336,7 +312,7 @@ export const CompanySettings: React.FC = () => {
                   </button>
                 </div>
                 <p className="text-xs text-amber-800 font-medium">
-                  Configure los correlativos exactos. Al hacer clic en <strong>"Sincronizar Series"</strong>, el módulo de Venta Directa adoptará estos números automáticamente.
+                  Configure los correlativos exactos. Al hacer clic en <strong>"Sincronizar Series"</strong>, el módulo de Venta Directa adoptará estos números automáticamente desde el servidor.
                 </p>
               </div>
             </div>
@@ -384,7 +360,7 @@ export const CompanySettings: React.FC = () => {
                        <td className="p-3">
                          <input
                            type="number"
-                           min="1"
+                           min="0"
                            className="w-full border-2 border-slate-200 p-2 rounded-lg text-center font-mono font-black text-blue-700 focus:border-blue-500 outline-none transition-colors"
                            value={series.current_number}
                            onChange={e => handleSeriesUpdate(series.id, 'current_number', Number(e.target.value))}
