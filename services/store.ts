@@ -13,236 +13,17 @@ const generateUUID = () => {
    });
 };
 
-const extractUniqueValues = (products: Product[], key: keyof Product): string[] => {
-   return Array.from(new Set(products.map(p => String(p[key] || '')).filter(Boolean))).sort();
-};
-
-const MOCK_PRODUCTS: Product[] = [
-   {
-      id: 'p1', sku: 'WH-001', barcode: '7750001001', name: 'WHISKY JOHNNIE WALKER RED LABEL * 750 ML',
-      unit_type: 'BOTELLA', package_type: 'CAJA', package_content: 12,
-      line: 'LICORES', category: 'WHISKY', subcategory: 'JOHNNIE WALKER', brand: 'DIAGEO',
-      weight: 1.25, volume: 0.75, tax_igv: 18, tax_isc: 0, min_stock: 24,
-      last_cost: 53.69, profit_margin: 30, price_unit: 69.80, price_package: 795.00,
-      is_active: true, allow_sell: true, image_url: 'https://images.unsplash.com/photo-1527281400683-1abc777219f8?auto=format&fit=crop&w=300&q=80'
-   },
-   {
-      id: 'p2', sku: 'RO-002', barcode: '7750001002', name: 'RON CARTAVIO BLACK * 750 ML',
-      unit_type: 'BOTELLA', package_type: 'CAJA', package_content: 12,
-      line: 'LICORES', category: 'RON', subcategory: 'CARTAVIO', brand: 'CARTAVIO',
-      weight: 1.16, volume: 0.75, tax_igv: 18, tax_isc: 0, min_stock: 50,
-      last_cost: 21.50, profit_margin: 30, price_unit: 27.95, price_package: 310.00,
-      is_active: true, allow_sell: true, image_url: 'https://images.unsplash.com/photo-1614313511387-1436a4480ebb?auto=format&fit=crop&w=300&q=80'
-   },
-   {
-      id: 'p3', sku: 'VO-003', barcode: '7750001003', name: 'VODKA RUSSKAYA * 750 ML',
-      unit_type: 'BOTELLA', package_type: 'CAJA', package_content: 12,
-      line: 'LICORES', category: 'VODKA', subcategory: 'RUSSKAYA', brand: 'BACKUS',
-      weight: 1.20, volume: 0.75, tax_igv: 18, tax_isc: 0, min_stock: 30,
-      last_cost: 17.70, profit_margin: 35, price_unit: 23.00, price_package: 260.00,
-      is_active: true, allow_sell: true
-   },
-   {
-      id: 'p4', sku: 'CE-004', barcode: '7750001004', name: 'CERVEZA CUSQUEÑA TRIGO * 330 ML',
-      unit_type: 'BOTELLA', package_type: 'CAJA', package_content: 24,
-      line: 'BEBIDAS', category: 'CERVEZA', subcategory: 'PREMIUM', brand: 'BACKUS',
-      weight: 0.60, volume: 0.33, tax_igv: 18, tax_isc: 0, min_stock: 100,
-      last_cost: 4.13, profit_margin: 25, price_unit: 5.37, price_package: 120.00,
-      is_active: true, allow_sell: true, image_url: 'https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=300&q=80'
-   },
-   {
-      id: 'p5', sku: 'PI-005', barcode: '7750001005', name: 'PISCO QUEIROLO QUEBRANTA * 750 ML',
-      unit_type: 'BOTELLA', package_type: 'CAJA', package_content: 12,
-      line: 'LICORES', category: 'PISCO', subcategory: 'QUEIROLO', brand: 'SANTIAGO QUEIROLO',
-      weight: 1.30, volume: 0.75, tax_igv: 18, tax_isc: 0, min_stock: 20,
-      last_cost: 33.00, profit_margin: 30, price_unit: 42.90, price_package: 490.00,
-      is_active: true, allow_sell: true
-   },
-];
-
-const MOCK_BATCHES: Batch[] = [
-   { id: 'b1', product_id: 'p1', code: 'L-JW23', quantity_initial: 200, quantity_current: 150, cost: 53.69, expiration_date: '2028-01-01', created_at: '2024-01-01' },
-   { id: 'b2', product_id: 'p2', code: 'L-CAR24', quantity_initial: 500, quantity_current: 420, cost: 21.50, expiration_date: '2026-06-01', created_at: '2024-02-01' },
-   { id: 'b3', product_id: 'p3', code: 'L-RUS24', quantity_initial: 300, quantity_current: 280, cost: 17.70, expiration_date: '2025-12-31', created_at: '2024-01-15' },
-   { id: 'b4', product_id: 'p4', code: 'L-CUSQ1', quantity_initial: 1000, quantity_current: 850, cost: 4.13, expiration_date: '2024-12-01', created_at: '2024-03-01' },
-   { id: 'b5', product_id: 'p5', code: 'L-QUE23', quantity_initial: 150, quantity_current: 120, cost: 33.00, expiration_date: '2030-01-01', created_at: '2023-11-01' },
-];
-
-const MOCK_CLIENTS: Client[] = [
-   { id: 'c1', code: 'CL-001', doc_type: 'RUC', doc_number: '20601234567', name: 'DISTRIBUIDORA SANTA ROSA SAC', is_person: false, address: 'AV. LA CULTURA 200', city: 'Cusco', branches: ['SUCURSAL SAN SEBASTIAN', 'ALMACEN PRINCIPAL'], ubigeo: '080101', channel: 'MAYORISTA', business_type: 'DISTRIBUIDORA', zone_id: 'z1', price_list_id: 'pl1', payment_condition: 'CREDITO', credit_limit: 5000, is_active: true, is_agent_retention: false, is_agent_perception: true, apply_igv: true },
-   { id: 'c2', code: 'CL-002', doc_type: 'RUC', doc_number: '20459876543', name: 'MINIMARKET EL TIO SAC', is_person: false, address: 'JR. LOS ANDES 450', city: 'Cusco', ubigeo: '080102', channel: 'MINORISTA', business_type: 'MINIMARKET', zone_id: 'z2', price_list_id: 'pl2', payment_condition: 'CONTADO', credit_limit: 0, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
-   { id: 'c3', code: 'CL-003', doc_type: 'DNI', doc_number: '44556677', name: 'JUAN CARLOS MAMANI', is_person: true, address: 'AV. SOL 888', ubigeo: '080101', channel: 'MINORISTA', business_type: 'BODEGA', zone_id: 'z1', price_list_id: 'pl2', payment_condition: 'CONTADO', credit_limit: 0, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
-   { id: 'c4', code: 'CL-004', doc_type: 'RUC', doc_number: '20501234123', name: 'LICORERIA EL PUNTO', is_person: false, address: 'CALLE MARURI 320', ubigeo: '080101', channel: 'MINORISTA', business_type: 'LICORERIA', zone_id: 'z1', price_list_id: 'pl2', payment_condition: 'CREDITO', credit_limit: 2000, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
-   { id: 'c5', code: 'CL-005', doc_type: 'DNI', doc_number: '23984567', name: 'MARIA LOPEZ TIENDA', is_person: true, address: 'AV. PARDO 567', ubigeo: '080101', channel: 'MINORISTA', business_type: 'BODEGA', zone_id: 'z1', price_list_id: 'pl2', payment_condition: 'CREDITO', credit_limit: 500, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
-   { id: 'c6', code: 'CL-006', doc_type: 'RUC', doc_number: '20609876123', name: 'REST. TURISTICO EL INKA', is_person: false, address: 'PLAZA DE ARMAS 100', ubigeo: '080101', channel: 'HORECA', business_type: 'RESTAURANTE', zone_id: 'z1', price_list_id: 'pl3', payment_condition: 'CREDITO', credit_limit: 3000, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
-   { id: 'c7', code: 'CL-007', doc_type: 'RUC', doc_number: '20405678901', name: 'SUPERMERCADO ORIION', is_person: false, address: 'AV. GARCILASO 900', ubigeo: '080102', channel: 'MAYORISTA', business_type: 'SUPERMERCADO', zone_id: 'z2', price_list_id: 'pl1', payment_condition: 'CREDITO', credit_limit: 10000, is_active: true, is_agent_retention: true, is_agent_perception: false, apply_igv: true },
-   { id: 'c8', code: 'CL-008', doc_type: 'DNI', doc_number: '40506070', name: 'PEDRO CASTILLO BODEGA', is_person: true, address: 'JR. HUASCAR 222', ubigeo: '080102', channel: 'MINORISTA', business_type: 'BODEGA', zone_id: 'z2', price_list_id: 'pl2', payment_condition: 'CONTADO', credit_limit: 0, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
-   { id: 'c9', code: 'CL-009', doc_type: 'RUC', doc_number: '20102030405', name: 'DISCOTECA MYTHOLOGY', is_person: false, address: 'CALLE SUECIA 300', ubigeo: '080101', channel: 'HORECA', business_type: 'DISCOTECA', zone_id: 'z2', price_list_id: 'pl3', payment_condition: 'CREDITO', credit_limit: 5000, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
-   { id: 'c10', code: 'CL-010', doc_type: 'RUC', doc_number: '20556677889', name: 'HOTEL MONASTERIO', is_person: false, address: 'CALLE PALACIO 136', ubigeo: '080101', channel: 'HORECA', business_type: 'HOTEL', zone_id: 'z3', price_list_id: 'pl3', payment_condition: 'CREDITO', credit_limit: 15000, is_active: true, is_agent_retention: true, is_agent_perception: false, apply_igv: true },
-   { id: 'c11', code: 'CL-011', doc_type: 'DNI', doc_number: '70809010', name: 'KIOSKO ESCUELA CLORINDA', is_person: true, address: 'AV. CULTURA 500', ubigeo: '080103', channel: 'MINORISTA', business_type: 'KIOSKO', zone_id: 'z3', price_list_id: 'pl2', payment_condition: 'CONTADO', credit_limit: 0, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
-   { id: 'c12', code: 'CL-012', doc_type: 'RUC', doc_number: '20601122334', name: 'EVENTOS CUSCO SAC', is_person: false, address: 'URB. MAGISTERIAL G-5', ubigeo: '080103', channel: 'MAYORISTA', business_type: 'EVENTOS', zone_id: 'z3', price_list_id: 'pl1', payment_condition: 'CREDITO', credit_limit: 8000, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
-   { id: 'c13', code: 'CL-013', doc_type: 'DNI', doc_number: '23456789', name: 'JUANA ARCO', is_person: true, address: 'APV. ENACE M-4', ubigeo: '080104', channel: 'MINORISTA', business_type: 'BODEGA', zone_id: 'z3', price_list_id: 'pl2', payment_condition: 'CREDITO', credit_limit: 200, is_active: true, is_agent_retention: false, is_agent_perception: false, apply_igv: true },
-];
-
-const MOCK_PRICE_LISTS: PriceList[] = [
-   { id: 'pl1', name: 'MAYORISTA', type: 'VARIATION', factor: 0.92 },
-   { id: 'pl2', name: 'COBERTURA (BODEGAS)', type: 'BASE', factor: 1.0 },
-   { id: 'pl3', name: 'HORECA (HOTELES/REST)', type: 'VARIATION', factor: 1.05 },
-];
-
-const MOCK_SELLERS: Seller[] = [
-   { id: 'sel1', dni: '44556677', name: 'TOMAS LINARES', address: 'AV. SOL 123', phone: '987654321', is_active: true, price_list_id: 'pl2' },
-   { id: 'sel2', dni: '77665544', name: 'JUAN PEREZ', address: 'JR. UNION 444', phone: '912345678', is_active: true, price_list_id: 'pl2' },
-   { id: 'sel3', dni: '11223344', name: 'MARIA GOMEZ', address: 'URB. MAGISTERIAL', phone: '998877665', is_active: true, price_list_id: 'pl3' },
-];
-
-const MOCK_ZONES: Zone[] = [
-   { id: 'z1', code: '0004', name: 'ZONA 4 - CUSCO CENTRO', assigned_seller_id: 'sel1' },
-   { id: 'z2', code: '0005', name: 'ZONA 5 - WANCHAQ', assigned_seller_id: 'sel2' },
-   { id: 'z3', code: '0006', name: 'ZONA 6 - SAN SEBASTIAN', assigned_seller_id: 'sel3' },
-];
-
-const MOCK_SALES: Sale[] = [
-   { id: 's101', document_type: 'FACTURA', series: 'F001', number: '000101', payment_method: 'CREDITO', payment_status: 'PENDING', collection_status: 'NONE', client_id: 'c4', client_name: 'LICORERIA EL PUNTO', client_ruc: '20501234123', client_address: 'CALLE MARURI 320', subtotal: 423.73, igv: 76.27, total: 500.00, balance: 500.00, status: 'completed', dispatch_status: 'delivered', created_at: '2024-03-01T10:00:00Z', items: [] },
-   { id: 's102', document_type: 'BOLETA', series: 'B001', number: '000205', payment_method: 'CREDITO', payment_status: 'PENDING', collection_status: 'NONE', client_id: 'c5', client_name: 'MARIA LOPEZ TIENDA', client_ruc: '23984567', client_address: 'AV. PARDO 567', subtotal: 127.12, igv: 22.88, total: 150.00, balance: 150.00, status: 'completed', dispatch_status: 'delivered', created_at: '2024-03-05T11:30:00Z', items: [] },
-   { id: 's103', document_type: 'FACTURA', series: 'F001', number: '000112', payment_method: 'CREDITO', payment_status: 'PENDING', collection_status: 'NONE', client_id: 'c6', client_name: 'REST. TURISTICO EL INKA', client_ruc: '20609876123', client_address: 'PLAZA DE ARMAS 100', subtotal: 1016.95, igv: 183.05, total: 1200.00, balance: 1200.00, status: 'completed', dispatch_status: 'delivered', created_at: '2024-03-10T14:00:00Z', items: [] },
-   { id: 's104', document_type: 'FACTURA', series: 'F001', number: '000120', payment_method: 'CREDITO', payment_status: 'PENDING', collection_status: 'NONE', client_id: 'c7', client_name: 'SUPERMERCADO ORIION', client_ruc: '20405678901', client_address: 'AV. GARCILASO 900', subtotal: 2542.37, igv: 457.63, total: 3000.00, balance: 3000.00, status: 'completed', dispatch_status: 'delivered', created_at: '2024-03-12T09:00:00Z', items: [] },
-   { id: 's105', document_type: 'FACTURA', series: 'F001', number: '000125', payment_method: 'CREDITO', payment_status: 'PENDING', collection_status: 'NONE', client_id: 'c9', client_name: 'DISCOTECA MYTHOLOGY', client_ruc: '20102030405', client_address: 'CALLE SUECIA 300', subtotal: 847.46, igv: 152.54, total: 1000.00, balance: 1000.00, status: 'completed', dispatch_status: 'delivered', created_at: '2024-03-15T22:00:00Z', items: [] },
-   { id: 's106', document_type: 'FACTURA', series: 'F001', number: '000130', payment_method: 'CREDITO', payment_status: 'PENDING', collection_status: 'NONE', client_id: 'c10', client_name: 'HOTEL MONASTERIO', client_ruc: '20556677889', client_address: 'CALLE PALACIO 136', subtotal: 4237.29, igv: 762.71, total: 5000.00, balance: 5000.00, status: 'completed', dispatch_status: 'delivered', created_at: '2024-03-18T08:00:00Z', items: [] },
-   { id: 's107', document_type: 'FACTURA', series: 'F001', number: '000132', payment_method: 'CREDITO', payment_status: 'PENDING', collection_status: 'NONE', client_id: 'c12', client_name: 'EVENTOS CUSCO SAC', client_ruc: '20601122334', client_address: 'URB. MAGISTERIAL G-5', subtotal: 1694.92, igv: 305.08, total: 2000.00, balance: 2000.00, status: 'completed', dispatch_status: 'delivered', created_at: '2024-03-20T16:00:00Z', items: [] },
-   { id: 's108', document_type: 'BOLETA', series: 'B001', number: '000210', payment_method: 'CREDITO', payment_status: 'PENDING', collection_status: 'NONE', client_id: 'c13', client_name: 'JUANA ARCO', client_ruc: '23456789', client_address: 'APV. ENACE M-4', subtotal: 67.80, igv: 12.20, total: 80.00, balance: 80.00, status: 'completed', dispatch_status: 'delivered', created_at: '2024-03-22T10:00:00Z', items: [] },
-];
-
-const MOCK_USERS: User[] = [
-   {
-      id: 'u1', username: 'admin', password: '123456', name: 'Admin General', role: 'ADMIN', requires_attendance: false, is_active: true,
-      permissions: ['dashboard', 'advanced-orders', 'reports', 'kardex', 'sales', 'credit-notes', 'document-manager', 'print-batch', 'mobile-orders', 'mobile-delivery', 'order-processing', 'collection-consolidation', 'dispatch', 'dispatch-liquidation', 'cash-flow', 'users', 'attendance', 'purchases', 'products', 'clients', 'territory', 'suppliers', 'warehouses', 'logistics', 'company-settings', 'promo-manager', 'price-manager', 'virtual-store', 'sunat-manager', 'accounting-reports', 'quota-manager', 'personnel-management']
-   },
-   {
-      id: 'u2', username: 'vendedor1', password: '123', name: 'Tomas Linares', role: 'SELLER', requires_attendance: true, is_active: true,
-      permissions: ['sales', 'advanced-orders', 'mobile-orders', 'clients', 'products', 'inventory']
-   },
-   {
-      id: 'u3', username: 'almacen', password: '123', name: 'Jefe Almacén', role: 'WAREHOUSE', requires_attendance: true, is_active: true,
-      permissions: ['products', 'inventory', 'dispatch', 'kardex', 'warehouses']
-   },
-   {
-      id: 'u4', username: 'cliente', password: '123', name: 'JUAN CARLOS MAMANI', role: 'CLIENT', client_id: 'c3', requires_attendance: false, is_active: true, permissions: ['virtual-store']
-   }
-];
-
-const MOCK_PROMOTIONS: Promotion[] = [
-   { id: 'promo1', name: 'DESCUENTO RON CARTAVIO', type: 'PERCENTAGE_DISCOUNT', value: 10, product_ids: ['p2'], start_date: '2024-01-01', end_date: '2024-12-31', is_active: true, channels: ['IN_STORE'], allowed_seller_ids: [] },
-];
-
-const MOCK_COMBOS: Combo[] = [
-   {
-      id: 'combo1', name: 'PACK FIESTA', description: '1 Ron Cartavio + 2 Coca Cola (Simulada)', price: 40.00, is_active: true, start_date: '2024-01-01', end_date: '2024-12-31',
-      items: [{ product_id: 'p2', quantity: 1, unit_type: 'UND' }],
-      channels: ['IN_STORE', 'SELLER_APP'], allowed_seller_ids: [],
-      target_client_categories: [], target_price_list_ids: []
-   }
-];
-
-const MOCK_AUTO_PROMOTIONS: AutoPromotion[] = [
-   {
-      id: 'apromo1', name: 'BONIF. CUSQUEÑA', description: 'Por la compra de 24 und, llévate 2 und gratis.',
-      is_active: true, start_date: '2024-01-01', end_date: '2024-12-31',
-      condition_type: 'BUY_X_PRODUCT', condition_product_id: 'p4', condition_amount: 24,
-      reward_product_id: 'p4', reward_quantity: 2, reward_unit_type: 'UND',
-      channels: ['IN_STORE', 'SELLER_APP'], target_client_categories: [], target_price_list_ids: []
-   }
-];
-
-const MOCK_ORDERS: Order[] = [
-   {
-      id: generateUUID(),
-      code: 'PED-1001',
-      client_id: 'c1',
-      client_name: 'BODEGA LAS PALMERAS',
-      client_doc_number: '20123456780', // RUC -> FACTURA
-      client_doc_type: 'RUC',
-      seller_id: 'u2',
-      payment_method: 'CONTADO',
-      status: 'pending',
-      total: 240.00,
-      suggested_document_type: 'FACTURA',
-      created_at: new Date(Date.now() - 100000).toISOString(),
-      delivery_date: new Date(Date.now() + 86400000).toISOString(),
-      items: [
-         { product_id: 'p4', product_name: 'CERVEZA CUSQUEÑA TRIGO * 330 ML', unit_price: 5.00, quantity: 48, total_price: 240.00, unit_type: 'UND', is_bonus: false, batch_allocations: [] },
-         { product_id: 'p4', product_name: 'CERVEZA CUSQUEÑA TRIGO * 330 ML', unit_price: 0, quantity: 4, total_price: 0, unit_type: 'UND', is_bonus: true, batch_allocations: [] }
-      ]
-   },
-   {
-      id: generateUUID(),
-      code: 'PED-1002',
-      client_id: 'c2',
-      client_name: 'MINIMARKET EL SOL',
-      client_doc_number: '70123456', // DNI -> BOLETA
-      client_doc_type: 'DNI',
-      seller_id: 'u2',
-      payment_method: 'CREDITO',
-      status: 'pending',
-      total: 69.80,
-      suggested_document_type: 'BOLETA',
-      created_at: new Date(Date.now() - 50000).toISOString(),
-      delivery_date: new Date(Date.now() + 86400000).toISOString(),
-      items: [
-         { product_id: 'p1', product_name: 'WHISKY JOHNNIE WALKER RED LABEL * 750 ML', unit_price: 69.80, quantity: 1, total_price: 69.80, unit_type: 'UND', is_bonus: false, batch_allocations: [] }
-      ]
-   },
-   {
-      id: generateUUID(), code: 'PED-1003', client_id: 'c3', client_name: 'COMERCIAL ROSITA', client_doc_number: '20555555551', client_doc_type: 'RUC', seller_id: 'u3', payment_method: 'CONTADO', status: 'pending', total: 53.00, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 40000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
-      items: [{ product_id: 'p3', product_name: 'VODKA RUSSKAYA * 750 ML', unit_price: 23.00, quantity: 2, total_price: 46.00, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
-   },
-   {
-      id: generateUUID(), code: 'PED-1004', client_id: 'c1', client_name: 'BODEGA LAS PALMERAS', client_doc_number: '20123456780', client_doc_type: 'RUC', seller_id: 'u3', payment_method: 'CREDITO', status: 'pending', total: 107.40, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 35000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
-      items: [{ product_id: 'p4', product_name: 'CERVEZA CUSQUEÑA TRIGO * 330 ML', unit_price: 5.37, quantity: 20, total_price: 107.40, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
-   },
-   {
-      id: generateUUID(), code: 'PED-1005', client_id: 'c2', client_name: 'MINIMARKET EL SOL', client_doc_number: '70123456', client_doc_type: 'DNI', seller_id: 'u1', payment_method: 'CONTADO', status: 'pending', total: 27.95, suggested_document_type: 'BOLETA', created_at: new Date(Date.now() - 30000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
-      items: [{ product_id: 'p2', product_name: 'RON CARTAVIO BLACK * 750 ML', unit_price: 27.95, quantity: 1, total_price: 27.95, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
-   },
-   {
-      id: generateUUID(), code: 'PED-1006', client_id: 'c3', client_name: 'COMERCIAL ROSITA', client_doc_number: '20555555551', client_doc_type: 'RUC', seller_id: 'u1', payment_method: 'CREDITO', status: 'pending', total: 69.80, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 25000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
-      items: [{ product_id: 'p1', product_name: 'WHISKY JOHNNIE WALKER RED LABEL * 750 ML', unit_price: 69.80, quantity: 1, total_price: 69.80, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
-   },
-   {
-      id: generateUUID(), code: 'PED-1007', client_id: 'c1', client_name: 'BODEGA LAS PALMERAS', client_doc_number: '20123456780', client_doc_type: 'RUC', seller_id: 'u2', payment_method: 'CONTADO', status: 'pending', total: 23.00, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 20000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
-      items: [{ product_id: 'p3', product_name: 'VODKA RUSSKAYA * 750 ML', unit_price: 23.00, quantity: 1, total_price: 23.00, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
-   },
-   {
-      id: generateUUID(), code: 'PED-1008', client_id: 'c2', client_name: 'MINIMARKET EL SOL', client_doc_number: '70123456', client_doc_type: 'DNI', seller_id: 'u2', payment_method: 'CREDITO', status: 'pending', total: 53.70, suggested_document_type: 'BOLETA', created_at: new Date(Date.now() - 15000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
-      items: [{ product_id: 'p4', product_name: 'CERVEZA CUSQUEÑA TRIGO * 330 ML', unit_price: 5.37, quantity: 10, total_price: 53.70, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
-   },
-   {
-      id: generateUUID(), code: 'PED-1009', client_id: 'c3', client_name: 'COMERCIAL ROSITA', client_doc_number: '20555555551', client_doc_type: 'RUC', seller_id: 'u3', payment_method: 'CONTADO', status: 'pending', total: 69.80, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 10000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
-      items: [{ product_id: 'p1', product_name: 'WHISKY JOHNNIE WALKER RED LABEL * 750 ML', unit_price: 69.80, quantity: 1, total_price: 69.80, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
-   },
-   {
-      id: generateUUID(), code: 'PED-1010', client_id: 'c1', client_name: 'BODEGA LAS PALMERAS', client_doc_number: '20123456780', client_doc_type: 'RUC', seller_id: 'u1', payment_method: 'CREDITO', status: 'pending', total: 27.95, suggested_document_type: 'FACTURA', created_at: new Date(Date.now() - 5000).toISOString(), delivery_date: new Date(Date.now() + 86400000).toISOString(),
-      items: [{ product_id: 'p2', product_name: 'RON CARTAVIO BLACK * 750 ML', unit_price: 27.95, quantity: 1, total_price: 27.95, unit_type: 'UND', is_bonus: false, batch_allocations: [] }]
-   }
-];
-
-const MOCK_COMPANY: CompanyConfig = {
-   ruc: '20601234567',
-   name: 'DISTRIBUIDORA DEMO S.A.C.',
-   address: 'AV. DE LA CULTURA 1000, CUSCO',
-   logo_url: '', // Empty or a placeholder
+// ESTADO INICIAL EN BLANCO (CERO MOCK_DB)
+const INITIAL_COMPANY: CompanyConfig = {
+   ruc: '',
+   name: '',
+   address: '',
+   logo_url: '',
    igv_percent: 18,
    currency_symbol: 'S/',
-   email: 'contacto@distribuidora.com',
-   phone: '084-234567',
-   series: [
-      { id: 's1', type: 'FACTURA', series: 'F001', current_number: 1520, is_active: true },
-      { id: 's2', type: 'BOLETA', series: 'B001', current_number: 3450, is_active: true },
-      { id: 's3', type: 'GUIA', series: 'T001', current_number: 120, is_active: true },
-      { id: 's4', type: 'NOTA_CREDITO', series: 'NC01', current_number: 45, is_active: true },
-      { id: 's5', type: 'PEDIDO', series: 'PE01', current_number: 1, is_active: true },
-      { id: 's6', type: 'PEDIDO', series: 'PE04', current_number: 1, is_active: true },
-   ]
+   email: '',
+   phone: '',
+   series: []
 };
 
 interface AppState {
@@ -286,7 +67,7 @@ interface AppState {
 
    // Auth State
    currentUser: User | null;
-   deliveryMode: 'REGULAR' | 'EXPRESS_MISMO_DIA'; // Added for order type context
+   deliveryMode: 'REGULAR' | 'EXPRESS_MISMO_DIA';
 
    // Cash Flow State
    cashMovements: CashMovement[];
@@ -300,9 +81,9 @@ interface AppState {
    // Actions
    updateCompany: (config: Partial<CompanyConfig>) => void;
    updateSeries: (series: DocumentSeries) => void;
-   addSeries: (series: DocumentSeries) => void;    // NEW
-   removeSeries: (seriesId: string) => void;       // NEW
-   getNextDocumentNumber: (type: DocumentSeries['type'], seriesStr?: string) => { series: string, number: string } | null; // NEW
+   addSeries: (series: DocumentSeries) => void;    
+   removeSeries: (seriesId: string) => void;       
+   getNextDocumentNumber: (type: DocumentSeries['type'], seriesStr?: string) => { series: string, number: string } | null;
 
    // Classification Actions
    addCategory: (category: string) => void;
@@ -350,78 +131,76 @@ interface AppState {
    revertDispatchLiquidation: (liquidationId: string, userId: string) => { success: boolean, msg: string };
 
    // Master Data Actions
-   addClient: (Client) => void;
-   updateClient: (Client) => void;
+   addClient: (Client: Client) => void;
+   updateClient: (Client: Client) => void;
    batchUpdateClientZone: (clientIds: string[], zoneId: string) => void;
-   addSupplier: (Supplier) => void;
-   addWarehouse: (Warehouse) => void;
+   addSupplier: (Supplier: Supplier) => void;
+   addWarehouse: (Warehouse: Warehouse) => void;
 
    // Logistics Actions
-   addDriver: (Driver) => void;
-   addTransporter: (Transporter) => void;
-   addVehicle: (Vehicle) => void;
-   updateVehicle: (Vehicle) => void;
+   addDriver: (Driver: Driver) => void;
+   addTransporter: (Transporter: Transporter) => void;
+   addVehicle: (Vehicle: Vehicle) => void;
+   updateVehicle: (Vehicle: Vehicle) => void;
 
    // Territory Actions
-   addSeller: (Seller) => void;
-   updateSeller: (Seller) => void;
-   addZone: (Zone) => void;
+   addSeller: (Seller: Seller) => void;
+   updateSeller: (Seller: Seller) => void;
+   addZone: (Zone: Zone) => void;
 
    // Pricing Actions
-   addPriceList: (PriceList) => void;
-   updatePriceList: (PriceList) => void;
+   addPriceList: (PriceList: PriceList) => void;
+   updatePriceList: (PriceList: PriceList) => void;
 
    // Cash Flow Actions
-   addCashMovement: (CashMovement) => void;
-   updateCashMovement: (CashMovement) => void;
+   addCashMovement: (CashMovement: CashMovement) => void;
+   updateCashMovement: (CashMovement: CashMovement) => void;
    deleteCashMovement: (id: string) => void;
-   addExpenseCategory: (ExpenseCategory) => void;
-   updateExpenseCategory: (ExpenseCategory) => void;
+   addExpenseCategory: (ExpenseCategory: ExpenseCategory) => void;
+   updateExpenseCategory: (ExpenseCategory: ExpenseCategory) => void;
    deleteExpenseCategory: (id: string) => void;
-   addScheduledTransaction: (ScheduledTransaction) => void;
-   updateScheduledTransaction: (ScheduledTransaction) => void;
+   addScheduledTransaction: (ScheduledTransaction: ScheduledTransaction) => void;
+   updateScheduledTransaction: (ScheduledTransaction: ScheduledTransaction) => void;
    deleteScheduledTransaction: (id: string) => void;
    processScheduledTransaction: (txId: string, userId: string) => void;
    openCashSession: (amount: number, userId: string) => void;
    closeCashSession: (sessionId: string, details: Omit<import('../types').CashRegisterSession, 'id' | 'open_time' | 'opened_by' | 'status' | 'system_opening_amount' | 'system_income' | 'system_expense' | 'system_expected_close' | 'difference'>, userId: string) => void;
 
    // User Actions
-   addUser: (User) => void;
-   updateUser: (User) => void;
+   addUser: (User: User) => void;
+   updateUser: (User: User) => void;
    clockIn: (userId: string, photo?: string, location?: { lat: number, lng: number }) => void;
    clockOut: (userId: string, photo?: string, location?: { lat: number, lng: number }) => void;
-   updateAttendanceRecord: (AttendanceRecord) => void;
+   updateAttendanceRecord: (AttendanceRecord: AttendanceRecord) => void;
 
    // Personnel Actions
-   addEmployee: (Employee) => void;
-   updateEmployee: (Employee) => void;
-   addSalaryAdvance: (SalaryAdvance) => void;
-   updateSalaryAdvance: (SalaryAdvance) => void;
+   addEmployee: (Employee: Employee) => void;
+   updateEmployee: (Employee: Employee) => void;
+   addSalaryAdvance: (SalaryAdvance: SalaryAdvance) => void;
+   updateSalaryAdvance: (SalaryAdvance: SalaryAdvance) => void;
    deleteSalaryAdvance: (id: string) => void;
-   addPayrollRecord: (PayrollRecord) => void;
+   addPayrollRecord: (PayrollRecord: PayrollRecord) => void;
    processPayroll: (employeeId: string, userId: string) => void;
 
    // Promo Actions
-   addPromotion: (Promotion) => void;
-   updatePromotion: (Promotion) => void;
-   addCombo: (Combo) => void;
-   updateCombo: (Combo) => void;
-   addAutoPromotion: (AutoPromotion) => void;
-   updateAutoPromotion: (AutoPromotion) => void;
+   addPromotion: (Promotion: Promotion) => void;
+   updatePromotion: (Promotion: Promotion) => void;
+   addCombo: (Combo: Combo) => void;
+   updateCombo: (Combo: Combo) => void;
+   addAutoPromotion: (AutoPromotion: AutoPromotion) => void;
+   updateAutoPromotion: (AutoPromotion: AutoPromotion) => void;
 
    // Quota Actions
-   addQuota: (Quota) => void;
-   updateQuota: (Quota) => void;
+   addQuota: (Quota: Quota) => void;
+   updateQuota: (Quota: Quota) => void;
    deleteQuota: (id: string) => void;
    batchUpdateQuotas: (quotas: Quota[]) => void;
 
-
-
    // Auth Actions
    setCurrentUser: (userId: string) => void;
-   setSupabaseSessionUser: (user: import('../types').User) => void; // Bridge for DB Login
+   setSupabaseSessionUser: (user: import('../types').User) => void;
    logout: () => void;
-   setDeliveryMode: (mode: 'REGULAR' | 'EXPRESS_MISMO_DIA') => void; // Added for order type
+   setDeliveryMode: (mode: 'REGULAR' | 'EXPRESS_MISMO_DIA') => void;
 
    // Selectors/Helpers
    getBatchesForProduct: (productId: string) => Batch[];
@@ -429,54 +208,43 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set, get) => ({
-   company: MOCK_COMPANY,
-   products: MOCK_PRODUCTS,
-   batches: MOCK_BATCHES,
-   sales: MOCK_SALES,
-   orders: MOCK_ORDERS,
-   vehicles: [
-      { id: 'v1', plate: 'X2A-987', brand: 'HINO', model: '300', capacity_kg: 5000, transporter_id: 't1', driver_id: 'd1' }
-   ],
+   company: INITIAL_COMPANY,
+   products: [],
+   batches: [],
+   sales: [],
+   orders: [],
+   vehicles: [],
    dispatchSheets: [],
    dispatchLiquidations: [],
-   clients: MOCK_CLIENTS,
-   suppliers: [
-      { id: 'sup1', name: 'DIAGEO PERU', ruc: '20123456789', address: 'LIMA' },
-      { id: 'sup2', name: 'BACKUS Y JOHNSTON', ruc: '20100099999', address: 'LIMA' },
-      { id: 'sup3', name: 'SANTIAGO QUEIROLO', ruc: '20555566666', address: 'LIMA' }
-   ],
-   warehouses: [{ id: 'wh1', name: 'ALMACEN PRINCIPAL', address: 'AV. CULTURA' }],
-   drivers: [
-      { id: 'd1', dni: '45678912', license: 'A-IIIc', name: 'JUAN CHOFER', address: 'AV. CULTURA 123', phone: '987654321' }
-   ],
-   transporters: [
-      { id: 't1', ruc: '20601234568', name: 'LOGISTICA CUSCO EIRL', address: 'CUSCO' }
-   ],
-   sellers: MOCK_SELLERS,
+   clients: [],
+   suppliers: [],
+   warehouses: [],
+   drivers: [],
+   transporters: [],
+   sellers: [],
    purchases: [],
-   zones: MOCK_ZONES,
-   priceLists: MOCK_PRICE_LISTS,
+   zones: [],
+   priceLists: [],
    cashMovements: [],
    expenseCategories: [],
    scheduledTransactions: [],
-   users: MOCK_USERS,
+   users: [],
    attendanceRecords: [],
    employees: [],
    salaryAdvances: [],
    payrollRecords: [],
-   promotions: MOCK_PROMOTIONS,
+   promotions: [],
    quotas: [],
 
-   // Classifications initial state
-   categories: extractUniqueValues(MOCK_PRODUCTS, 'category'),
-   subcategories: extractUniqueValues(MOCK_PRODUCTS, 'subcategory'),
-   brands: extractUniqueValues(MOCK_PRODUCTS, 'brand'),
-   unitTypes: extractUniqueValues(MOCK_PRODUCTS, 'unit_type'),
-   packageTypes: extractUniqueValues(MOCK_PRODUCTS, 'package_type'),
-   combos: MOCK_COMBOS,
-   autoPromotions: MOCK_AUTO_PROMOTIONS,
+   categories: [],
+   subcategories: [],
+   brands: [],
+   unitTypes: [],
+   packageTypes: [],
+   combos: [],
+   autoPromotions: [],
    currentUser: null,
-   deliveryMode: 'REGULAR', // Default to REGULAR
+   deliveryMode: 'REGULAR',
    collectionRecords: [],
    collectionPlanillas: [],
    cashSessions: [],
@@ -507,17 +275,14 @@ export const useStore = create<AppState>((set, get) => ({
 
    getNextDocumentNumber: (type, seriesStr) => {
       const state = get();
-      // Find the specific series, or the first active one of that type
       const seriesObj = seriesStr
          ? state.company.series.find(s => s.type === type && s.series === seriesStr)
          : state.company.series.find(s => s.type === type && s.is_active);
 
       if (!seriesObj) return null;
 
-      // Increment in state
       const nextNum = seriesObj.current_number + 1;
 
-      // Update state synchronously without replacing the whole object tree immediately (Zustand will handle it)
       set(s => ({
          company: {
             ...s.company,
@@ -531,13 +296,13 @@ export const useStore = create<AppState>((set, get) => ({
          series: seriesObj.series,
          number: String(nextNum).padStart(8, '0')
       };
-   },   // Classification Actions
+   },
+   
    addCategory: (category: string) => set((state) => ({ categories: Array.from(new Set([...state.categories, category])).sort() })),
    addSubcategory: (subcategory: string) => set((state) => ({ subcategories: Array.from(new Set([...state.subcategories, subcategory])).sort() })),
    addBrand: (brand: string) => set((state) => ({ brands: Array.from(new Set([...state.brands, brand])).sort() })),
    addUnitType: (unitType: string) => set((state) => ({ unitTypes: Array.from(new Set([...state.unitTypes, unitType])).sort() })),
    addPackageType: (packageType: string) => set((state) => ({ packageTypes: Array.from(new Set([...state.packageTypes, packageType])).filter(Boolean).sort() })),
-
 
    addProduct: (product) => set((state) => ({
       products: [...state.products, product],
@@ -570,11 +335,8 @@ export const useStore = create<AppState>((set, get) => ({
    addBatch: (batch) => set((state) => ({ batches: [...state.batches, batch] })),
 
    createSale: (sale) => set((state) => {
-      // Basic implementation for direct sales
       const newBatches = [...state.batches];
 
-      // 1. Confiar en la exactitud del UI respectando su validación guiada de vendedor y ciudad
-      // 2. Auto-asignar lotes a bonificaciones (que tienen batch_allocations vacío)
       sale.items = sale.items.map(item => {
          let allocations = item.batch_allocations || [];
          
@@ -609,7 +371,6 @@ export const useStore = create<AppState>((set, get) => ({
             }
             allocations = newAllocations;
          } else if (allocations.length > 0) {
-             // Deducir del stock para items regulares ya asignados en el UI
              allocations.forEach(alloc => {
                  const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
                  if (batchIndex >= 0) {
@@ -628,7 +389,6 @@ export const useStore = create<AppState>((set, get) => ({
          return { ...item, batch_allocations: allocations };
       });
 
-      // Recalcular totales en base a la lista consolidada
       sale.subtotal = sale.items.reduce((acc, item) => acc + item.total_price, 0) / 1.18;
       sale.igv = sale.items.reduce((acc, item) => acc + item.total_price, 0) - sale.subtotal;
       sale.total = sale.items.reduce((acc, item) => acc + item.total_price, 0);
@@ -655,16 +415,14 @@ export const useStore = create<AppState>((set, get) => ({
          return { success: false, msg: 'Cantidad insuficiente en el lote' };
       }
       
-      // Withdraw from origin
       batches[sourceBatchIndex] = {
          ...sourceBatch,
          quantity_current: sourceBatch.quantity_current - quantity
       };
       
-      // Inject to Mermas warehouse
       batches.push({
          ...sourceBatch,
-         id: crypto.randomUUID(), // New distinct batch instance for mermas
+         id: crypto.randomUUID(), 
          warehouse_id: 'MERMAS',
          quantity_initial: quantity,
          quantity_current: quantity,
@@ -676,14 +434,12 @@ export const useStore = create<AppState>((set, get) => ({
    },
 
    createCreditNote: (creditNote, originalSaleId, returnedItems) => set((state) => {
-      // 1. Revert Items to Kardex (Add stock back or route to Mermas)
       const newBatches = [...state.batches];
       returnedItems.forEach(item => {
          item.batch_allocations?.forEach(alloc => {
             const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
             if (batchIndex >= 0) {
                if (item.warehouse_id === 'MERMAS') {
-                  // Route to Mermas (Defective/Void)
                   newBatches.push({
                      ...newBatches[batchIndex],
                      id: crypto.randomUUID(),
@@ -693,7 +449,6 @@ export const useStore = create<AppState>((set, get) => ({
                      created_at: new Date().toISOString()
                   });
                } else {
-                  // Return cleanly to Central
                   newBatches[batchIndex] = {
                      ...newBatches[batchIndex],
                      quantity_current: newBatches[batchIndex].quantity_current + alloc.quantity
@@ -703,10 +458,9 @@ export const useStore = create<AppState>((set, get) => ({
          });
       });
 
-      // 2. Add Credit Note to Sales
       const finalizedCN = {
          ...creditNote,
-         payment_status: 'PAID', // credit notes are technically 'paid' outwards
+         payment_status: 'PAID', 
          collection_status: 'NONE',
          balance: 0,
          sunat_status: 'PENDING'
@@ -714,7 +468,6 @@ export const useStore = create<AppState>((set, get) => ({
 
       let allSales = [finalizedCN, ...state.sales];
 
-      // 3. Apply to original Sale balance if needed
       allSales = allSales.map(s => {
          if (s.id === originalSaleId) {
             const currentBalance = s.balance !== undefined ? s.balance : s.total;
@@ -731,20 +484,17 @@ export const useStore = create<AppState>((set, get) => ({
       return { batches: newBatches, sales: allSales };
    }),
 
-   // Updated createOrder with FIFO Allocation and Delivery Mode
    createOrder: (order) => set((state) => {
       const orderWithMode = {
          ...order,
-         delivery_mode: order.delivery_mode || state.deliveryMode // Inherit session mode if not provided
+         delivery_mode: order.delivery_mode || state.deliveryMode 
       };
 
       const newBatches = [...state.batches];
 
-      // Auto-recalculate promos to ensure data integrity
       const validatedItems = calculatePromotions(orderWithMode.items, state.autoPromotions, state.products);
       orderWithMode.total = validatedItems.reduce((acc, item) => acc + item.total_price, 0);
 
-      // 1. Process allocations for each item in the order
       const processedItems: OrderItem[] = validatedItems.map(item => {
          let allocations: BatchAllocation[] = [];
          let comboSnapshot: any[] | undefined = undefined;
@@ -753,20 +503,15 @@ export const useStore = create<AppState>((set, get) => ({
             const combo = state.combos.find(c => c.id === item.product_id);
             if (!combo) return item;
 
-            // Snapshot the current combo definition
             comboSnapshot = combo.items;
 
-            // Iterate over combo components to allocate stock
             combo.items.forEach(comboItem => {
                const product = state.products.find(p => p.id === comboItem.product_id);
                if (!product) return;
 
-               // Calculate total base units needed for this component
-               // (Order Qty * Item Qty per Combo * Package Conversion if necessary)
                const itemFactor = comboItem.unit_type === 'PKG' ? (product.package_content || 1) : 1;
                const totalRequiredForComponent = item.quantity * comboItem.quantity * itemFactor;
 
-               // Find batches for this component
                const availableBatches = newBatches
                   .filter(b => b.product_id === comboItem.product_id && b.quantity_current > 0 && b.warehouse_id !== 'MERMAS')
                   .sort((a, b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
@@ -794,7 +539,6 @@ export const useStore = create<AppState>((set, get) => ({
             });
 
          } else {
-            // Normal Product Logic
             const product = state.products.find(p => p.id === item.product_id);
             if (!product) return item;
 
@@ -831,7 +575,6 @@ export const useStore = create<AppState>((set, get) => ({
          return { ...item, batch_allocations: allocations, combo_snapshot: comboSnapshot };
       });
 
-      // 2. Return new state with updated batches and the order containing allocations
       return {
          orders: [...state.orders, { ...orderWithMode, items: processedItems }],
          batches: newBatches
@@ -841,16 +584,13 @@ export const useStore = create<AppState>((set, get) => ({
    updateOrder: (order) => set(s => ({ orders: s.orders.map(o => o.id === order.id ? order : o) })),
 
    processOrderToSale: (orderId, series, number) => {
-      // Single process fallback - better use batchProcessOrders
       return { success: true, msg: 'Use procesamiento masivo' };
    },
 
-   // === UPDATED: BATCH PROCESS ORDERS (ROBUST VERSION) ===
    batchProcessOrders: (orderIds, targetSeries) => set(s => {
       const selectedOrders = s.orders.filter(o => orderIds.includes(o.id));
       if (selectedOrders.length === 0) return s;
 
-      // Sort by seller_id first (to group by seller), then by creation date to assign series in order
       selectedOrders.sort((a, b) => {
          if (a.seller_id < b.seller_id) return -1;
          if (a.seller_id > b.seller_id) return 1;
@@ -859,15 +599,12 @@ export const useStore = create<AppState>((set, get) => ({
 
       const newSales: Sale[] = [];
       const updatedOrders = [...s.orders];
-      // Clone series to increment them correctly
       const currentSeriesState = s.company.series.map(ser => ({ ...ser }));
 
       selectedOrders.forEach(order => {
-         // Robust Doc Type determination from Order Snapshot
          const ruc = order.client_doc_number || '';
          const docType = ruc.length === 11 ? 'FACTURA' : 'BOLETA';
 
-         // Find series config
          let seriesObj;
          if (targetSeries && targetSeries[docType as 'FACTURA' | 'BOLETA']) {
             seriesObj = currentSeriesState.find(ser => ser.type === docType && ser.series === targetSeries[docType as 'FACTURA' | 'BOLETA']);
@@ -876,28 +613,22 @@ export const useStore = create<AppState>((set, get) => ({
          }
          const seriesStr = seriesObj ? seriesObj.series : (docType === 'FACTURA' ? 'F001' : 'B001');
 
-         // Increment Number
          const nextNum = seriesObj ? seriesObj.current_number + 1 : 1;
          const numberStr = String(nextNum).padStart(8, '0');
 
-         // Update local series state for next iteration
          if (seriesObj) seriesObj.current_number = nextNum;
 
-         // Try to enrich client address if missing from order snapshot
          let address = (order as any).client_address || '';
          if (!address) {
             const client = s.clients.find(c => c.id === order.client_id || c.doc_number === order.client_doc_number);
             address = client?.address || '';
          }
 
-         // Map Order Items to Sale Items (Transferring Allocations)
          const saleItems: SaleItem[] = order.items.map(item => {
             const product = s.products.find(p => p.id === item.product_id);
             const factor = item.unit_type === 'PKG' ? (product?.package_content || 1) : 1;
             const requiredBase = item.quantity * factor;
 
-            // Calculate values
-            const itemSubtotal = item.total_price / 1.18;
             const saleItem: SaleItem = {
                id: generateUUID(),
                product_id: item.product_id,
@@ -938,7 +669,7 @@ export const useStore = create<AppState>((set, get) => ({
             balance: order.total,
             status: 'completed',
             dispatch_status: 'pending',
-            delivery_mode: order.delivery_mode, // Inherit order type from original order
+            delivery_mode: order.delivery_mode, 
             created_at: new Date().toISOString(),
             sunat_status: 'PENDING',
             items: saleItems,
@@ -946,7 +677,6 @@ export const useStore = create<AppState>((set, get) => ({
          };
          newSales.push(newSale);
 
-         // Mark order processed
          const orderIndex = updatedOrders.findIndex(o => o.id === order.id);
          if (orderIndex >= 0) {
             updatedOrders[orderIndex] = { ...updatedOrders[orderIndex], status: 'processed' };
@@ -963,7 +693,6 @@ export const useStore = create<AppState>((set, get) => ({
       };
    }),
 
-   // ... (Rest of actions unchanged)
    reportCollection: (saleId, sellerId, amount) => set(s => {
       const sale = s.sales.find(x => x.id === saleId);
       if (!sale) return s;
@@ -1007,7 +736,6 @@ export const useStore = create<AppState>((set, get) => ({
       const sellerNamesSet = new Set<string>();
       let totalTotal = 0;
 
-      // Autogenerate Planilla Code or reuse existing
       const maxPlanillaNum = s.collectionPlanillas.reduce((max, p) => {
          const num = parseInt(p.code.replace('PLAN-', ''), 10);
          return isNaN(num) ? max : Math.max(max, num);
@@ -1129,12 +857,12 @@ export const useStore = create<AppState>((set, get) => ({
             newRecords.push({
                id: recordId,
                sale_id: sale.id,
-               seller_id: 'MANUAL', // Indicator that it didn't come from a seller app
+               seller_id: 'MANUAL', 
                client_name: sale.client_name,
                document_ref: `${sale.series}-${sale.number}`,
                amount_reported: payment.amount,
                date_reported: dateNow,
-               status: 'VALIDATED', // Automatically validated
+               status: 'VALIDATED', 
                payment_method: 'CASH',
                planilla_id: planillaId
             });
@@ -1190,7 +918,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (planillaIndex === -1) return s;
 
       const planilla = s.collectionPlanillas[planillaIndex];
-      if (planilla.status === 'ANNULLED') return s; // already annulled
+      if (planilla.status === 'ANNULLED') return s; 
 
       const updatedPlanillas = [...s.collectionPlanillas];
       updatedPlanillas[planillaIndex] = { ...planilla, status: 'ANNULLED' };
@@ -1198,26 +926,23 @@ export const useStore = create<AppState>((set, get) => ({
       const updatedRecords = [...s.collectionRecords];
       const updatedSales = [...s.sales];
 
-      // Revert Records and Sales
       planilla.records.forEach(recordId => {
          const recIndex = updatedRecords.findIndex(r => r.id === recordId);
          if (recIndex > -1) {
             const rec = updatedRecords[recIndex];
             if (rec.seller_id === 'MANUAL') {
-               // Soft delete by omitting it from updatedRecords happens later via filter
+               // Soft delete
             } else {
                updatedRecords[recIndex] = { ...rec, status: 'PENDING_VALIDATION', planilla_id: undefined };
             }
 
-            // Revert Sale balance
             const saleIndex = updatedSales.findIndex(sale => sale.id === rec.sale_id);
             if (saleIndex > -1) {
                const sale = updatedSales[saleIndex];
                const currentBalance = sale.balance !== undefined ? sale.balance : 0;
                const newBalance = currentBalance + rec.amount_reported;
 
-               // Reverse status
-               const isFullyUnpaid = newBalance >= sale.total - 0.1; // adding tolerance
+               const isFullyUnpaid = newBalance >= sale.total - 0.1; 
                updatedSales[saleIndex] = {
                   ...sale,
                   balance: newBalance,
@@ -1228,10 +953,7 @@ export const useStore = create<AppState>((set, get) => ({
          }
       });
 
-      // Handle CashMovement
       const updatedCashMovements = s.cashMovements.filter(cm => cm.id !== planilla.cash_movement_id);
-
-      // Clean out MANUAL dummy records
       const cleanedRecords = updatedRecords.filter(r => !(planilla.records.includes(r.id) && r.seller_id === 'MANUAL'));
 
       return {
@@ -1247,13 +969,10 @@ export const useStore = create<AppState>((set, get) => ({
       if (planillaIndex === -1) return s;
 
       const planilla = s.collectionPlanillas[planillaIndex];
-      // Allow editing if ACTIVE or even if ANNULLED (but usually ACTIVE)
-
       const updatedPlanillas = [...s.collectionPlanillas];
-      // Mark as EDITING and unlink cash movement and records (they will be regenerated on next process)
+      
       updatedPlanillas[planillaIndex] = { ...planilla, status: 'EDITING', cash_movement_id: undefined, records: [] };
 
-      // Revert records
       let updatedRecords = [...s.collectionRecords];
       const updatedSales = [...s.sales];
 
@@ -1261,12 +980,10 @@ export const useStore = create<AppState>((set, get) => ({
          const recIndex = updatedRecords.findIndex(r => r.id === recordId);
          if (recIndex > -1) {
             const rec = updatedRecords[recIndex];
-            // If it's manual, we simply let it be filtered out. Otherwise, reset status.
             if (rec.seller_id !== 'MANUAL') {
                updatedRecords[recIndex] = { ...rec, status: 'PENDING_VALIDATION', planilla_id: undefined };
             }
 
-            // Revert Sale balance
             const saleIndex = updatedSales.findIndex(sale => sale.id === rec.sale_id);
             if (saleIndex > -1) {
                const sale = updatedSales[saleIndex];
@@ -1284,9 +1001,7 @@ export const useStore = create<AppState>((set, get) => ({
          }
       });
 
-      // Erase MANUAL dummy records created for this planilla
       updatedRecords = updatedRecords.filter(r => !(planilla.records.includes(r.id) && r.seller_id === 'MANUAL'));
-
       const updatedCashMovements = s.cashMovements.filter(cm => cm.id !== planilla.cash_movement_id);
 
       return {
@@ -1302,7 +1017,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (planillaIndex === -1) return s;
 
       const planilla = s.collectionPlanillas[planillaIndex];
-      if (planilla.status === 'ANNULLED') return s; // Should not edit annulled
+      if (planilla.status === 'ANNULLED') return s; 
 
       const recordIndex = s.collectionRecords.findIndex(r => r.id === recordId);
       if (recordIndex === -1) return s;
@@ -1310,14 +1025,10 @@ export const useStore = create<AppState>((set, get) => ({
       const record = s.collectionRecords[recordIndex];
       if (record.planilla_id !== planillaId) return s;
 
-      // 1. Update Planilla
       const updatedPlanillas = [...s.collectionPlanillas];
       const updatedRecordIds = planilla.records.filter(id => id !== recordId);
 
-      // If we remove the last record, annul the planilla
       if (updatedRecordIds.length === 0) {
-         // Fallback to full annul
-         // We will just let the next steps happen but set the planilla to annulled
          updatedPlanillas[planillaIndex] = { ...planilla, records: [], total_amount: 0, record_count: 0, status: 'ANNULLED' };
       } else {
          updatedPlanillas[planillaIndex] = {
@@ -1328,11 +1039,9 @@ export const useStore = create<AppState>((set, get) => ({
          };
       }
 
-      // 2. Revert Record
       const updatedRecords = [...s.collectionRecords];
       updatedRecords[recordIndex] = { ...record, status: 'PENDING_VALIDATION', planilla_id: undefined };
 
-      // 3. Revert Sale
       const updatedSales = [...s.sales];
       const saleIndex = updatedSales.findIndex(sale => sale.id === record.sale_id);
       if (saleIndex > -1) {
@@ -1349,7 +1058,6 @@ export const useStore = create<AppState>((set, get) => ({
          };
       }
 
-      // 4. Update Cash Movement
       let updatedCashMovements = [...s.cashMovements];
       if (updatedPlanillas[planillaIndex].status === 'ANNULLED') {
          updatedCashMovements = updatedCashMovements.filter(cm => cm.id !== planilla.cash_movement_id);
@@ -1389,7 +1097,7 @@ export const useStore = create<AppState>((set, get) => ({
             id: crypto.randomUUID(),
             product_id: item.product_id,
             purchase_id: finalizedPurchase.id,
-            warehouse_id: 'CENTRAL', // NEW: Segregación Multialmacén
+            warehouse_id: 'CENTRAL', 
             code: item.batch_code,
             quantity_initial: item.quantity_base,
             quantity_current: item.quantity_base,
@@ -1418,7 +1126,6 @@ export const useStore = create<AppState>((set, get) => ({
       const oldPurchase = state.purchases.find(p => p.id === updatedPurchase.id);
       if (!oldPurchase) return { success: false, msg: 'Compra no encontrada.' };
 
-      // 1. Check if batches can be reverted
       const oldBatches = state.batches.filter(b => b.purchase_id === oldPurchase.id);
       const isConsumed = oldBatches.some(b => b.quantity_current < b.quantity_initial);
       
@@ -1426,12 +1133,9 @@ export const useStore = create<AppState>((set, get) => ({
          return { success: false, msg: 'No se puede editar: Los lotes de esta compra ya han sido vendidos o ajustados.' };
       }
 
-      // 2. Safe to revert. Filter out old batches
       let newBatches = state.batches.filter(b => b.purchase_id !== oldPurchase.id);
       let newProducts = [...state.products];
 
-      // Preserve financial state (do not overwrite payments if just editing items)
-      // Recalculate balance based on new total and existing paid_amount
       const currentPaid = oldPurchase.paid_amount || 0;
       const newTotal = updatedPurchase.total;
       const newBalance = Math.max(0, newTotal - currentPaid);
@@ -1446,7 +1150,6 @@ export const useStore = create<AppState>((set, get) => ({
          payments: oldPurchase.payments || []
       } as Purchase;
 
-      // 3. Create New Batches
       finalizedPurchase.items.forEach(item => {
          newBatches.push({
             id: crypto.randomUUID(),
@@ -1514,7 +1217,6 @@ export const useStore = create<AppState>((set, get) => ({
       const updatedPurchases = [...s.purchases];
       updatedPurchases[purchaseIndex] = updatedPurchase;
 
-      // Register Expense in CashFlow
       const newMovement: import('../types').CashMovement = {
          id: cashMovementId,
          type: 'EXPENSE',
@@ -1535,14 +1237,8 @@ export const useStore = create<AppState>((set, get) => ({
    createDispatch: (dispatch) => set((state) => {
       let finalCode = dispatch.code;
       if (!finalCode || finalCode === 'TBD') {
-         // Attempt to auto-generate GUIA series
-         const nextCorrelative = state.getNextDocumentNumber('GUIA');
-         if (nextCorrelative) {
-            finalCode = `${nextCorrelative.series}-${nextCorrelative.number}`;
-         } else {
-            // Fallback
-            finalCode = `HR-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
-         }
+         // Generar fallback si no encuentra correlativo (ahora no usamos el de la tienda falsa)
+         finalCode = `HR-${Math.floor(Math.random() * 1000000).toString().padStart(6, '0')}`;
       }
       return { dispatchSheets: [{ ...dispatch, code: finalCode, sunat_status: 'PENDING' }, ...state.dispatchSheets] };
    }),
@@ -1553,23 +1249,19 @@ export const useStore = create<AppState>((set, get) => ({
 
    updateDispatch: (dispatchId, updates) => set(s => {
       const dispatch = s.dispatchSheets.find(d => d.id === dispatchId);
-      if (!dispatch) return s; // Dispatch not found
+      if (!dispatch) return s; 
 
       const newSalesList = updates.sale_ids !== undefined ? updates.sale_ids : dispatch.sale_ids;
       
-      // Calculate which sales are removed or added based on the previous list
       const removedSaleIds = dispatch.sale_ids.filter(id => !newSalesList.includes(id));
       const addedSaleIds = newSalesList.filter(id => !dispatch.sale_ids.includes(id));
 
       return {
-         // Update the physical dispatch sheet
          dispatchSheets: s.dispatchSheets.map(d => 
             d.id === dispatchId ? { ...d, ...updates } : d
          ),
-         // Update the sales dispatch status
          sales: s.sales.map(sale => {
             if (removedSaleIds.includes(sale.id)) {
-               // Revert safely back to pending
                return { ...sale, dispatch_status: 'pending' };
             }
             if (addedSaleIds.includes(sale.id)) {
@@ -1619,9 +1311,8 @@ export const useStore = create<AppState>((set, get) => ({
       let currentSeriesState = [...s.company.series];
       let currentSales = [...s.sales];
 
-      // Auto-generate Correlative code for this Liquidation
       const maxLiqNum = s.dispatchLiquidations.reduce((max, l) => {
-         const num = parseInt(l.id.replace('LIQ-', ''), 10); // Or use a code field if we add one, assuming id/code duality here
+         const num = parseInt(l.id.replace('LIQ-', ''), 10); 
          return isNaN(num) ? max : Math.max(max, num);
       }, 0);
       const liqCode = `LIQ-${String(maxLiqNum + 1).padStart(4, '0')}`;
@@ -1645,7 +1336,6 @@ export const useStore = create<AppState>((set, get) => ({
             }
             const fullSeries = `${seriesStr}-${nextNumStr}`;
 
-            // Create ACTUAL Credit Note Sale Record in the system
             const originalSale = currentSales.find(s => s.id === doc.sale_id);
             if (originalSale && doc.returned_items && doc.returned_items.length > 0) {
                const creditNoteId = generateUUID();
@@ -1674,7 +1364,7 @@ export const useStore = create<AppState>((set, get) => ({
                   created_at: new Date().toISOString(),
                   sunat_status: 'PENDING',
                   printed: false,
-                  origin_order_id: originalSale.id, // Linking back to the original text
+                  origin_order_id: originalSale.id, 
                   items: doc.returned_items.map((ri: any) => ({
                      id: generateUUID(),
                      sale_id: creditNoteId,
@@ -1700,7 +1390,6 @@ export const useStore = create<AppState>((set, get) => ({
          return doc;
       });
 
-      // Update Sales Statuses
       updatedDocs.forEach(doc => {
          const saleIndex = currentSales.findIndex(sale => sale.id === doc.sale_id);
          if (saleIndex > -1) {
@@ -1723,7 +1412,7 @@ export const useStore = create<AppState>((set, get) => ({
                finalDispatchStatus = 'liquidated';
             } else if (doc.action === 'VOID') {
                newBalance = 0;
-               newPaymentStatus = 'PAID'; // Treat void as closed
+               newPaymentStatus = 'PAID'; 
                newCollectionStatus = 'NONE';
                finalDispatchStatus = 'liquidated';
             } else if (doc.action === 'PARTIAL_RETURN') {
@@ -1755,7 +1444,6 @@ export const useStore = create<AppState>((set, get) => ({
          documents: updatedDocs
       };
 
-      // Generate Cash movement if there is cash collected
       const newCashMovements = [...s.cashMovements];
       if (finalLiquidation.total_cash_collected > 0) {
          newCashMovements.unshift({
@@ -1770,7 +1458,6 @@ export const useStore = create<AppState>((set, get) => ({
          });
       }
 
-      // Update Dispatch Sheet Status
       const updatedDispatchSheets = s.dispatchSheets.map(ds =>
          ds.id === finalLiquidation.dispatch_sheet_id ? { ...ds, status: 'completed' as const } : ds
       );
@@ -1877,7 +1564,6 @@ export const useStore = create<AppState>((set, get) => ({
             return s;
          }
 
-         // 1. Revert original items
          let nextBatches = [...s.batches];
          originalSale.items.forEach(item => {
             item.batch_allocations?.forEach(alloc => {
@@ -1891,12 +1577,10 @@ export const useStore = create<AppState>((set, get) => ({
             });
          });
 
-         // 2. Apply new items (they already have batch allocations from NewSale before saving)
          updatedSale.items.forEach(item => {
             item.batch_allocations?.forEach(alloc => {
                const bIndex = nextBatches.findIndex(b => b.id === alloc.batch_id);
                if (bIndex >= 0) {
-                  // We could check if it goes negative, but we trust NewSale checks it first
                   nextBatches[bIndex] = {
                      ...nextBatches[bIndex],
                      quantity_current: nextBatches[bIndex].quantity_current - alloc.quantity
@@ -1905,7 +1589,6 @@ export const useStore = create<AppState>((set, get) => ({
             });
          });
 
-         // 3. Add to history
          const event: import('../types').SaleHistoryEvent = {
             date: new Date().toISOString(),
             action: 'MODIFIED',
@@ -1952,7 +1635,6 @@ export const useStore = create<AppState>((set, get) => ({
             return s;
          }
 
-         // Fetch new series and correlative
          let currentSeriesState = [...s.company.series];
          const seriesObj = currentSeriesState.find(ser => ser.type === newType && ser.is_active);
          if (!seriesObj) {
@@ -2014,17 +1696,10 @@ export const useStore = create<AppState>((set, get) => ({
          const liquidation = s.dispatchLiquidations[liquidationIndex];
          const updatedSales = [...s.sales];
 
-         // 1. Revert Sales Collections Statuses ONLY
-         // Note: We DO NOT revert the actual stock returns/NCs. 
-         // We only revert the financial/collection part so they can re-liquidate.
          liquidation.documents.forEach(doc => {
             const saleIndex = updatedSales.findIndex(sale => sale.id === doc.sale_id);
             if (saleIndex > -1) {
                const sale = updatedSales[saleIndex];
-
-               // Restore to PENDING strictly for collection purposes, except VOID docs which stay as is financially (balance 0, paid).
-               // But actually, if they want to re-do the liquidation, it's safer to just set everything except VOID to PENDING final state to allow a fresh liquidation.
-               // For Partial Return, it's tricky since the Partial NC persists. So its balance is still (Sale.Total - NC Amount).
 
                let newBalance = sale.balance !== undefined ? sale.balance : sale.total;
                let collectionStatus = sale.collection_status;
@@ -2035,7 +1710,6 @@ export const useStore = create<AppState>((set, get) => ({
                   paymentStatus = 'PENDING';
                   collectionStatus = 'NONE';
                } else if (doc.action === 'PARTIAL_RETURN') {
-                  // Keep the partial balance intact, just reset collection
                   const remainder = (sale.total - doc.amount_credit_note);
                   newBalance = remainder;
                   paymentStatus = 'PENDING';
@@ -2047,21 +1721,17 @@ export const useStore = create<AppState>((set, get) => ({
                   balance: newBalance,
                   payment_status: paymentStatus as any,
                   collection_status: collectionStatus as any,
-                  dispatch_status: 'delivered' // Back to waiting for liquidation
+                  dispatch_status: 'delivered' 
                };
             }
          });
 
-         // 2. Remove Cash Movement
-         // Find cash movements related to this liquidation
          const updatedCashMovements = s.cashMovements.filter(cm => cm.reference_id !== liquidationId);
 
-         // 3. Re-activate Dispatch Sheet
          const updatedDispatchSheets = s.dispatchSheets.map(ds =>
             ds.id === liquidation.dispatch_sheet_id ? { ...ds, status: 'in_transit' as const } : ds
          );
 
-         // 4. Remove Liquidation Record
          const updatedLiquidations = s.dispatchLiquidations.filter(l => l.id !== liquidationId);
 
          return {
@@ -2118,7 +1788,6 @@ export const useStore = create<AppState>((set, get) => ({
 
       const cat = s.expenseCategories.find(c => c.id === tx.category_id);
 
-      // 1. Create the Expense Movement
       const newMovement: import('../types').CashMovement = {
          id: crypto.randomUUID(),
          type: 'EXPENSE',
@@ -2131,7 +1800,6 @@ export const useStore = create<AppState>((set, get) => ({
          user_id: userId
       };
 
-      // 2. Adjust Next Due Date or Mark Inactive
       let newNextDate = new Date(tx.next_due_date);
       let newIsActive = true;
 
@@ -2158,7 +1826,7 @@ export const useStore = create<AppState>((set, get) => ({
    }),
 
    openCashSession: (amount, userId) => set(s => {
-      if (s.currentCashSession) return s; // Already open
+      if (s.currentCashSession) return s; 
 
       const newSession: import('../types').CashRegisterSession = {
          id: crypto.randomUUID(),
@@ -2176,7 +1844,6 @@ export const useStore = create<AppState>((set, get) => ({
          difference: 0
       };
 
-      // Create an initial cash movement for traceability if needed (optional, but good practice)
       const openMovement: import('../types').CashMovement = {
          id: crypto.randomUUID(),
          type: 'INCOME',
@@ -2201,16 +1868,12 @@ export const useStore = create<AppState>((set, get) => ({
 
       const closeTime = new Date().toISOString();
 
-      // 1. Calculate real SYSTEM totals during this timeframe
-      // Only get movements that happened between open_time and right now.
-      // Exclude the 'APERTURA CAJA' movement itself because it's already in system_opening_amount
       const sessionMovements = s.cashMovements.filter(m =>
          new Date(m.date) >= new Date(session.open_time) &&
          new Date(m.date) <= new Date(closeTime) &&
-         m.reference_id !== session.id // exclude the opener
+         m.reference_id !== session.id 
       );
 
-      // Add Sales built-in incomes (CONTADO) during this session timeframe
       const sessionSales = s.sales.filter(sale =>
          sale.payment_method === 'CONTADO' &&
          !sale.document_type.includes('NOTA') &&
@@ -2218,7 +1881,6 @@ export const useStore = create<AppState>((set, get) => ({
          new Date(sale.created_at) <= new Date(closeTime)
       );
 
-      // Summarize
       const manualIncome = sessionMovements.filter(m => m.type === 'INCOME').reduce((acc, m) => acc + m.amount, 0);
       const manualExpense = sessionMovements.filter(m => m.type === 'EXPENSE').reduce((acc, m) => acc + m.amount, 0);
 
@@ -2229,7 +1891,6 @@ export const useStore = create<AppState>((set, get) => ({
 
       const expectedClose = session.system_opening_amount + totalIncome - totalExpense;
 
-      // 2. Finalize Difference & Session
       const diff = details.declared_total - expectedClose;
 
       const closedSession: import('../types').CashRegisterSession = {
@@ -2246,7 +1907,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       return {
          cashSessions: s.cashSessions.map(c => c.id === sessionId ? closedSession : c),
-         currentCashSession: null // Clear active session
+         currentCashSession: null 
       };
    }),
 
@@ -2299,7 +1960,6 @@ export const useStore = create<AppState>((set, get) => ({
 
    updateAttendanceRecord: (record) => set((s) => ({ attendanceRecords: s.attendanceRecords.map(r => r.id === record.id ? record : r) })),
 
-   // Personnel Handling Actions
    addEmployee: (employee) => set((s) => ({ employees: [...s.employees, employee] })),
    updateEmployee: (employee) => set((s) => ({ employees: s.employees.map(e => e.id === employee.id ? employee : e) })),
    
@@ -2331,7 +1991,6 @@ export const useStore = create<AppState>((set, get) => ({
          issue_date: new Date().toISOString()
       };
 
-      // Create cash movement
       const cashMovement: import('../types').CashMovement = {
          id: 'CM-' + Math.random().toString(36).substr(2, 9).toUpperCase(),
          type: 'EXPENSE',
@@ -2343,7 +2002,6 @@ export const useStore = create<AppState>((set, get) => ({
          user_id: userId
       };
 
-      // Automatic calculation of next due date
       let newNextDate = new Date(employee.next_due_date);
       if (employee.payment_frequency === 'MONTHLY') {
          newNextDate.setUTCMonth(newNextDate.getUTCMonth() + 1);
@@ -2365,11 +2023,9 @@ export const useStore = create<AppState>((set, get) => ({
             (a.employee_id === employeeId && a.status === 'PENDING') ? { ...a, status: 'PAID' } : a
          ),
          cashMovements: [...s.cashMovements, cashMovement],
-         // Optional: update currentCashSession if desired, omitted for brevity and handled directly in CashFlow component if strict binding is needed.
       };
    }),
 
-   // Promos & Quotas
    addPromotion: (promo) => set((s) => ({ promotions: [...s.promotions, promo] })),
    updatePromotion: (promo) => set((state) => ({
       promotions: state.promotions.map(p => p.id === promo.id ? promo : p)
@@ -2383,7 +2039,6 @@ export const useStore = create<AppState>((set, get) => ({
       autoPromotions: state.autoPromotions.map(a => a.id === ap.id ? ap : a)
    })),
 
-   // Quota Actions
    addQuota: (quota) => set((state) => ({ quotas: [...state.quotas, quota] })),
    updateQuota: (quota) => set((state) => ({ quotas: state.quotas.map(q => q.id === quota.id ? quota : q) })),
    deleteQuota: (id) => set((state) => ({ quotas: state.quotas.filter(q => q.id !== id) })),
