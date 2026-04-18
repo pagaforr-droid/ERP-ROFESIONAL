@@ -55,8 +55,12 @@ const styles = StyleSheet.create({
 
   // Factura Totals Grid
   facturaTotalsContainer: { flexDirection: 'row', borderWidth: 1, borderColor: '#000', marginTop: 4, height: 45 },
-  qrBox: { width: 40, height: 43, margin: 1, borderWidth: 1, borderColor: '#ccc', justifyContent: 'center', alignItems: 'center' },
+  
+  // Modificado: Ahora el contenedor del QR usa flex column para permitir la alerta debajo
+  qrSection: { width: 50, borderRightWidth: 1, borderRightColor: '#000', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
+  qrBox: { width: 35, height: 35, margin: 1, borderWidth: 1, borderColor: '#ccc', justifyContent: 'center', alignItems: 'center' },
   qrText: { fontSize: 4, color: '#999', textAlign: 'center' },
+  
   totalsGrid: { flex: 1, flexDirection: 'row' },
   totCol: { flex: 1, borderLeftWidth: 1, borderLeftColor: '#000', flexDirection: 'column' },
   totHeader: { fontSize: 6, fontWeight: 'bold', textAlign: 'center', backgroundColor: '#e0e0e0', borderBottomWidth: 1, borderBottomColor: '#000', paddingVertical: 1 },
@@ -101,11 +105,6 @@ interface PdfDocumentProps {
   companyInfo?: { name: string; ruc: string; address: string; logo_url?: string };
 }
 
-// ---------------------------------------------------------------------------------
-// Sub-components for clean factoring
-// ---------------------------------------------------------------------------------
-
-// Nuevo componente para el Logo Dinámico
 const LogoComponent = ({ url, defaultName }: { url?: string, defaultName: string }) => (
     <View style={styles.logoBox}>
         {url ? (
@@ -129,7 +128,6 @@ const ClientSection = ({ data }: { data: any }) => (
       </View>
       <View style={styles.clientRowInfo}>
         <Text style={styles.clientLabel}>RUC/DNI:</Text>
-        {/* CORRECCIÓN: Extrae client_ruc, no el client_id */}
         <Text style={styles.clientValue}>{data.client_ruc || '00000000'}</Text>
       </View>
       <View style={styles.clientRowInfo}>
@@ -152,7 +150,6 @@ const ClientSection = ({ data }: { data: any }) => (
       </View>
       <View style={styles.clientRowInfo}>
         <Text style={styles.clientLabel}>Vendedor:</Text>
-        {/* CORRECCIÓN: Muestra el nombre del vendedor */}
         <Text style={styles.clientValue}>{data.seller_name || 'VENDEDOR ASIGNADO'}</Text>
       </View>
     </View>
@@ -178,15 +175,18 @@ const ItemsTable = ({ data, isFactura }: { data: any, isFactura: boolean }) => (
         const pu = item.unit_price ?? item.price ?? 0;
         const total = item.total_price !== undefined ? Number(item.total_price).toFixed(2) : (qty * pu).toFixed(2);
         
-        // CORRECCIÓN: Imprime EXACTAMENTE lo que se guardó en la tabla de detalles, sin adivinanzas.
-        // Si por error está vacío, le pone un fallback, pero jamás sobreescribe la realidad del Kardex.
-        const um = (item.selected_unit || 'UND').substring(0, 4).toUpperCase();
+        // CORRECCIÓN MAGISTRAL: "CAJAx12", "BOTx1"
+        // Determina si se vendió en Empaque o Unidad Base
+        const isPkg = item.selected_unit === item.product?.package_type || item.selected_unit === 'CJA' || item.selected_unit === 'PKG';
+        const content = isPkg ? (item.product?.package_content || 1) : 1;
+        const shortUnit = (item.selected_unit || 'UND').substring(0, 4).toUpperCase();
+        const formattedUm = `${shortUnit}x${content}`;
 
         return (
           <View key={i} style={styles.tableRowItem}>
             <Text style={[styles.td, styles.colCod]}>{sku}</Text>
             <Text style={[styles.td, styles.colCant]}>{qty}</Text>
-            <Text style={[styles.td, styles.colUm]}>{um}</Text>
+            <Text style={[styles.td, styles.colUm]}>{formattedUm}</Text>
             <Text style={[styles.td, styles.colDesc]}>{name}</Text>
             <Text style={[styles.td, styles.colPu]}>{Number(pu).toFixed(2)}</Text>
             {!isFactura && <Text style={[styles.td, styles.colDscto]}>0.00</Text>}
@@ -213,12 +213,11 @@ const FacturaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: a
   const total = Number(data.total || 0);
   const igv = total - (total / 1.18);
   const base = total / 1.18;
-  const balanceDue = Number(data.balance_due || 0);
+  const balanceDue = Number(data.previous_debt || 0);
 
   return (
     <View style={styles.halfPage}>
       <View style={styles.headerRow}>
-        {/* CORRECCIÓN: Inyección Dinámica del Logo */}
         <LogoComponent url={companyInfo.logo_url} defaultName={companyInfo.name} />
         
         <View style={styles.companyCenter}>
@@ -237,7 +236,17 @@ const FacturaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: a
       <ItemsTable data={data} isFactura={true} />
 
       <View style={styles.facturaTotalsContainer}>
-        <View style={styles.qrBox}><Text style={styles.qrText}>QR</Text></View>
+        
+        {/* CORRECCIÓN: ALERTA DE DEUDA EN LA CAJA DEL QR */}
+        <View style={styles.qrSection}>
+           <View style={styles.qrBox}><Text style={styles.qrText}>QR</Text></View>
+           {balanceDue > 0 && (
+             <Text style={{ fontSize: 4, fontWeight: 'bold', color: '#000', textAlign: 'center', marginTop: 1 }}>
+               CTA. ANT.{'\n'}S/ {balanceDue.toFixed(2)}
+             </Text>
+           )}
+        </View>
+
         <View style={styles.totalsGrid}>
           <View style={styles.totCol}>
              <View style={styles.totRowInner}>
@@ -266,14 +275,6 @@ const FacturaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: a
         </View>
       </View>
 
-      {balanceDue > 0 && (
-          <View style={{ marginTop: 2, padding: 2, backgroundColor: '#fef3c7', borderBottomWidth: 1, borderColor: '#f59e0b' }}>
-              <Text style={{ fontSize: 7, fontWeight: 'bold', color: '#92400e', textAlign: 'right' }}>
-                  * PAGARÁ CUENTA ANTERIOR: S/ {balanceDue.toFixed(2)}
-              </Text>
-          </View>
-      )}
-
       <Text style={styles.legalText}>Representación impresa del comprobante de pago electrónico. Tandao ERP®</Text>
     </View>
   );
@@ -281,10 +282,11 @@ const FacturaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: a
 
 const BoletaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: any, companyInfo: any, isNotaCredito?: boolean }) => {
   const code = data.code || `${data.series || 'B001'}-${data.number || '00000000'}`;
+  const balanceDue = Number(data.previous_debt || 0);
+
   return (
     <View style={{ flex: 1, flexDirection: 'column', height: '48%', justifyContent: 'space-between' }}>
       <View style={[styles.headerRow, { marginBottom: 10 }]}>
-        {/* CORRECCIÓN: Inyección Dinámica del Logo */}
         <LogoComponent url={companyInfo.logo_url} defaultName={companyInfo.name} />
         
         <View style={styles.companyCenter}>
@@ -300,8 +302,17 @@ const BoletaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: an
       </View>
       <ClientSection data={data} />
       <ItemsTable data={data} isFactura={false} />
+      
       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 5 }}>
-        <View style={[styles.qrBox, { width: 40, height: 35 }]}><Text style={styles.qrText}>QR CODE</Text></View>
+        <View style={{ flexDirection: 'column', alignItems: 'center' }}>
+           <View style={[styles.qrBox, { width: 40, height: 35 }]}><Text style={styles.qrText}>QR CODE</Text></View>
+           {/* CORRECCIÓN: ALERTA DE DEUDA EN BOLETA */}
+           {balanceDue > 0 && (
+             <Text style={{ fontSize: 5, fontWeight: 'bold', color: '#000', textAlign: 'center', marginTop: 1 }}>
+               CTA. ANT. S/ {balanceDue.toFixed(2)}
+             </Text>
+           )}
+        </View>
         <View style={{ flex: 1, alignItems: 'center' }}><Text style={[styles.legalText, { marginTop: 0 }]}>Representación impresa del comprobante de pago electrónico.</Text></View>
       </View>
     </View>
@@ -312,7 +323,7 @@ const BoletaPagoTemplate = ({ data, companyInfo }: { data: any, companyInfo: any
   const emp = data.employee || {};
   return (
     <View style={{ flex: 1, flexDirection: 'column', height: '48%', justifyContent: 'space-between', padding: 5 }}>
-      {/* ... (Estructura Boleta Pago omitida por brevedad) */}
+      {/* ... (Boleta Pago) */}
     </View>
   );
 };
@@ -379,14 +390,17 @@ const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any
            const name = item.product?.name || item.name || item.product_name || 'Producto';
            const qty = item.quantity_presentation ?? item.quantity ?? item.quantity_base ?? 0;
            
-           // CORRECCIÓN: Usar unidad exacta guardada
-           const um = (item.selected_unit || 'UND').substring(0, 3).toUpperCase();
+           // Formato dinámico para la guía
+           const isPkg = item.selected_unit === item.product?.package_type || item.selected_unit === 'CJA' || item.selected_unit === 'PKG';
+           const content = isPkg ? (item.product?.package_content || 1) : 1;
+           const shortUnit = (item.selected_unit || 'UND').substring(0, 4).toUpperCase();
+           const formattedUm = `${shortUnit}x${content}`;
 
            return (
               <View key={i} style={styles.tableRowItem}>
                 <Text style={[styles.td, styles.tableColCodeGuia]}>{sku}</Text>
                 <Text style={[styles.td, styles.tableColQtyGuia]}>{qty}</Text>
-                <Text style={[styles.td, styles.tableColUndGuia]}>{um}</Text>
+                <Text style={[styles.td, styles.tableColUndGuia]}>{formattedUm}</Text>
                 <Text style={[styles.td, styles.tableColDescGuia]}>{name}</Text>
                 <Text style={[styles.td, styles.tableColWeight]}>{(qty * 0.5).toFixed(2)}</Text>
               </View>
@@ -402,7 +416,6 @@ const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any
 };
 
 export const PdfDocument: React.FC<PdfDocumentProps> = ({ data, type, companyInfo }) => {
-  // Ahora la información fluirá limpiamente desde el componente padre que le pase "company"
   const cInfo = companyInfo || {
     name: 'EMPRESA DEMO S.A.C.',
     ruc: '20000000001',
