@@ -656,12 +656,25 @@ export const NewSale: React.FC = () => {
       const correlative = getNextDocumentNumber(docType, series);
       if (!correlative) { showDialog('error', 'Error', "Error al obtener la serie."); return; }
 
-      // ENVIAMOS EL CARRITO TAL CUAL (Sus unidades ya dicen "BOTELLA", "CAJA", etc.)
+      // Traducción de unidades para la BD
+      const itemsForDB = cart.map(item => {
+          const prod = item.product || cartProductsCache[item.product_id];
+          let realUnit = item.selected_unit === 'PKG' ? 'CJA' : 'UND';
+          if (prod) {
+              realUnit = item.selected_unit === 'PKG' ? (prod.package_type || 'CJA') : (prod.base_unit || 'UND');
+          }
+          let shortUnit = realUnit.substring(0, 3).toUpperCase();
+          if (shortUnit === 'CAJ') shortUnit = 'CJA'; 
+          return { ...item, selected_unit: shortUnit };
+      });
+
+      // El número "correlative!.number" aquí es solo un borrador temporal,
+      // La base de datos asignará el final
       const newSaleData: Sale = {
          id: crypto.randomUUID(), 
          document_type: docType,
          series: correlative!.series,
-         number: correlative!.number,
+         number: correlative!.number, 
          payment_method: paymentMethod,
          payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
          balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
@@ -676,7 +689,7 @@ export const NewSale: React.FC = () => {
          status: 'completed',
          dispatch_status: 'pending',
          created_at: new Date().toISOString(),
-         items: cart, 
+         items: itemsForDB, 
          sunat_status: 'PENDING'
       };
 
@@ -686,8 +699,17 @@ export const NewSale: React.FC = () => {
          try {
             const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
             if (error) throw error;
+            
             if (data && data.success) {
-               showDialog('success', 'Venta Guardada', `Venta registrada exitosamente. Kardex actualizado.`);
+               // EXTRACCIÓN DEL NÚMERO REAL GENERADO POR LA BASE DE DATOS
+               const realNumber = data.real_number;
+               
+               // Actualizamos nuestro objeto en memoria antes de mandarlo a imprimir
+               newSaleData.number = realNumber;
+
+               showDialog('success', 'Venta Guardada', `Venta registrada exitosamente con comprobante: ${series}-${realNumber}`);
+               
+               // Imprimimos el PDF con el número legal y real
                try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
                handleNewSale();
             }
