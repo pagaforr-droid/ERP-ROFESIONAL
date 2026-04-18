@@ -37,6 +37,7 @@ export const EditSale: React.FC = () => {
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
+   const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
    // --- SALE STATE ---
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
@@ -163,75 +164,48 @@ export const EditSale: React.FC = () => {
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
    // =========================================================================
-   // 🚨 CARGA EXACTA DEL DOCUMENTO (LÓGICA PURA RELACIONAL) 🚨
+   // 🚨 CARGA DE VENTA (SISTEMA DE DOBLE BARRIDO ANTI-ERRORES)
    // =========================================================================
    const loadSale = async (sale: Sale) => {
       if (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED') {
-          showDialog('error', 'Bloqueo SUNAT', 'Este documento ya fue declarado y aceptado por SUNAT. No se puede modificar. Emita una Nota de Crédito.');
+          showDialog('error', 'Bloqueo SUNAT', 'Este documento ya fue declarado a SUNAT. No se puede modificar. Emita una Nota de Crédito.');
           return;
       }
 
       setIsSaving(true);
       try {
-          // Lógica pura: JOIN directo entre sale_items y products usando Supabase
-          const { data: fetchedItems, error: itemsErr } = await supabase
+          let itemsToLoad: any[] = [];
+          let finalCache = { ...cartProductsCache };
+          
+          // BARRIDO 1: Traemos el detalle de la base de datos limpiamente (SIN JOIN) para evitar el error de ambigüedad
+          const { data: saleItemsData, error: itemsErr } = await supabase
               .from('sale_items')
-              .select(`
-                  *,
-                  product:products (*)
-              `)
+              .select('*')
               .eq('sale_id', sale.id);
 
           if (itemsErr) throw itemsErr;
 
-          let finalCartItems: SaleItem[] = [];
+          if (saleItemsData && saleItemsData.length > 0) {
+              itemsToLoad = saleItemsData;
+          } 
+          // BARRIDO 2: Fallback desde la cabecera
+          else if (sale.items && Array.isArray(sale.items) && sale.items.length > 0) {
+              itemsToLoad = sale.items;
+          } else if (typeof sale.items === 'string') {
+              try { itemsToLoad = JSON.parse(sale.items); } catch(e) {}
+          }
 
-          if (fetchedItems && fetchedItems.length > 0) {
-              finalCartItems = fetchedItems.map((item: any) => ({
-                  id: item.id || crypto.randomUUID(),
-                  sale_id: sale.id,
-                  product_id: item.product_id,
-                  product_sku: item.product_sku || item.product?.sku || '',
-                  product_name: item.product_name || item.product?.name || '',
-                  selected_unit: item.selected_unit || 'UND',
-                  quantity_presentation: Number(item.quantity_presentation || item.quantity || 1),
-                  quantity_base: Number(item.quantity_base || item.quantity || 1),
-                  unit_price: Number(item.unit_price || 0),
-                  discount_percent: Number(item.discount_percent || 0),
-                  discount_amount: Number(item.discount_amount || 0),
-                  total_price: Number(item.total_price || 0),
-                  is_bonus: item.is_bonus || false,
-                  auto_promo_id: item.auto_promo_id,
-                  batch_allocations: [], // Se recalcula seguro en BD al guardar
-                  product: item.product // Ya viene anidado gracias al JOIN
-              }));
-          } else {
-              // Si falla la tabla relacional, leemos del JSON (Legacy mode)
-              let fallbackItems = [];
-              if (typeof sale.items === 'string') {
-                  try { fallbackItems = JSON.parse(sale.items); } catch(e) {}
-              } else if (Array.isArray(sale.items)) {
-                  fallbackItems = sale.items;
-              }
+          if (itemsToLoad.length === 0) {
+              alert("⚠️ ADVERTENCIA: El documento se cargó, pero el sistema no pudo encontrar el detalle. Deberá armarlo manualmente.");
+          }
 
-              if (fallbackItems.length > 0) {
-                  const pIds = fallbackItems.map((i:any) => i.product_id).filter(Boolean);
-                  const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
-                  
-                  finalCartItems = fallbackItems.map((item:any) => {
-                      const prod = pData?.find(p => p.id === item.product_id);
-                      return {
-                          ...item,
-                          id: item.id || crypto.randomUUID(),
-                          product: prod,
-                          quantity_presentation: Number(item.quantity_presentation || item.quantity || 1),
-                          quantity_base: Number(item.quantity_base || item.quantity || 1),
-                          unit_price: Number(item.unit_price || item.price || 0),
-                          total_price: Number(item.total_price || item.amount || 0)
-                      };
-                  });
-              } else {
-                  alert("⚠️ ADVERTENCIA: La venta se abrió, pero los detalles no se encontraron en la base de datos.");
+          // Extraemos los productos cruzándolos manualmente para llenar la caché
+          const pIds = itemsToLoad.map((i: any) => i.product_id).filter(Boolean);
+          if (pIds.length > 0) {
+              const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
+              if (pData) {
+                  pData.forEach(p => finalCache[p.id] = p as Product);
+                  setCartProductsCache(prev => ({...prev, ...finalCache}));
               }
           }
 
@@ -247,8 +221,31 @@ export const EditSale: React.FC = () => {
               }
           }
 
-          // Inyectar en el Front
-          setOriginalSale({ ...sale, items: finalCartItems });
+          // Mapeo del carrito cruzando los datos obtenidos
+          const safeItems = itemsToLoad.map((item: any) => {
+              const matchedProd = finalCache[item.product_id];
+              const q_pres = Number(item.quantity_presentation || item.quantity || 1);
+              const q_base = Number(item.quantity_base || item.quantity || 1);
+              const p_unit = Number(item.unit_price || item.price || 0);
+              const p_total = Number(item.total_price || item.amount || (q_pres * p_unit) || 0);
+              
+              return { 
+                  ...item, 
+                  id: item.id || crypto.randomUUID(), 
+                  unit_price: p_unit, 
+                  total_price: p_total, 
+                  discount_percent: Number(item.discount_percent || 0), 
+                  discount_amount: Number(item.discount_amount || 0), 
+                  quantity_presentation: q_pres, 
+                  quantity_base: q_base, 
+                  selected_unit: item.selected_unit || item.unit_type || 'UND',
+                  is_bonus: item.is_bonus === true || item.is_bonus === 'true' || p_unit === 0,
+                  product: matchedProd 
+              };
+          });
+
+          // Inyectamos todo al Estado
+          setOriginalSale({ ...sale, items: safeItems });
           setDocType(sale.document_type as any); 
           setSeries(sale.series); 
           setDocNumber(sale.number); 
@@ -265,11 +262,11 @@ export const EditSale: React.FC = () => {
              city: clientCity 
           });
           
-          setCart(finalCartItems); 
+          setCart(safeItems); 
           setIsSearchModalOpen(false);
 
       } catch (err: any) {
-          showDialog('error', 'Error Fatal', 'No se pudo cargar el detalle del documento: ' + err.message);
+          showDialog('error', 'Error Fatal', 'Falla al cargar detalles del documento: ' + err.message);
       } finally {
           setIsSaving(false);
       }
@@ -330,6 +327,22 @@ export const EditSale: React.FC = () => {
       const conversionFactor = isPkgMode ? Number(prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
       const realUnitName = isPkgMode ? (prod.package_type || 'CAJA').toUpperCase() : (prod.unit_type || 'UND').toUpperCase();
+      
+      const availableBatches = loadedBatches[prod.id] || [];
+      const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(prod.current_stock || prod.stock || 0);
+
+      if (totalStock < requiredBaseUnits) { 
+         alert(`Atención: Estás forzando stock negativo. Disponible: ${totalStock}. Continuará en modo auditoría.`); 
+      }
+
+      let remaining = requiredBaseUnits;
+      const selectedBatches: BatchAllocation[] = [];
+      for (const batch of availableBatches) {
+         if (remaining <= 0) break;
+         const take = Math.min(remaining, Number(batch.quantity_current || 0));
+         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
+         remaining -= take;
+      }
 
       const existingItemIndex = cart.findIndex(item => item.product_id === prod.id && item.selected_unit === realUnitName);
 
@@ -364,7 +377,7 @@ export const EditSale: React.FC = () => {
             discount_percent: 0, 
             discount_amount: 0, 
             is_bonus: false, 
-            batch_allocations: [], 
+            batch_allocations: selectedBatches, 
             product: prod 
          }];
          setCart(newCart);
@@ -610,8 +623,7 @@ export const EditSale: React.FC = () => {
          {isSaving && (
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded">
                <Loader2 className="w-16 h-16 text-amber-500 animate-spin mb-4" />
-               <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO AUDITORÍA...</h2>
-               <p className="text-amber-200 font-medium mt-2">Leyendo y sincronizando base de datos...</p>
+               <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO...</h2>
             </div>
          )}
 
