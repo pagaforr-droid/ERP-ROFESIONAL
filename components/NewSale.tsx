@@ -9,9 +9,8 @@ import { PdfEngine } from './PdfEngine';
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export const NewSale: React.FC = () => {
-   const { company, users, currentUser } = useStore();
+   const { users, currentUser } = useStore();
 
-   // --- REFS FOR FOCUS MANAGEMENT ---
    const productInputRef = useRef<HTMLInputElement>(null);
    const qtyInputRef = useRef<HTMLInputElement>(null);
    const unitSelectRef = useRef<HTMLSelectElement>(null);
@@ -19,11 +18,9 @@ export const NewSale: React.FC = () => {
    const discountInputRef = useRef<HTMLInputElement>(null);
    const addButtonRef = useRef<HTMLButtonElement>(null);
 
-   // --- STATE ---
    const [priceLocked, setPriceLocked] = useState(true);
    const [isSaving, setIsSaving] = useState(false);
 
-   // --- CUSTOM PROFESSIONAL DIALOG SYSTEM ---
    const [dialog, setDialog] = useState<{ isOpen: boolean; type: 'success' | 'error' | 'warning' | 'confirm' | 'info'; title: string; message: string; onConfirm?: () => void }>({
        isOpen: false, type: 'info', title: '', message: ''
    });
@@ -34,6 +31,7 @@ export const NewSale: React.FC = () => {
    const closeDialog = () => setDialog(prev => ({ ...prev, isOpen: false }));
 
    // --- MASTER DATA SUPABASE SYNC (100% CLOUD) ---
+   const [dbCompany, setDbCompany] = useState<any>(null); 
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
@@ -43,7 +41,6 @@ export const NewSale: React.FC = () => {
    const [dbSeries, setDbSeries] = useState<any[]>([]);
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
-   // --- HEADER STATE ---
    const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
    const [series, setSeries] = useState('');
    const [docNumber, setDocNumber] = useState('');
@@ -51,7 +48,8 @@ export const NewSale: React.FC = () => {
    useEffect(() => {
        const fetchMasters = async () => {
            try {
-               const [sellRes, plRes, zRes, pRes, apRes, serRes] = await Promise.all([
+               const [compRes, sellRes, plRes, zRes, pRes, apRes, serRes] = await Promise.all([
+                   supabase.from('company_config').select('*').limit(1).maybeSingle(),
                    supabase.from('sellers').select('*').order('name'),
                    supabase.from('price_lists').select('*').order('name'),
                    supabase.from('zones').select('*'),
@@ -60,6 +58,7 @@ export const NewSale: React.FC = () => {
                    supabase.from('document_series').select('*').eq('is_active', true).order('series')
                ]);
                
+               if (compRes.data) setDbCompany(compRes.data);
                if (sellRes.data) setDbSellers(sellRes.data);
                if (plRes.data) setDbPriceLists(plRes.data);
                if (zRes.data) setDbZones(zRes.data);
@@ -85,7 +84,6 @@ export const NewSale: React.FC = () => {
        fetchMasters();
    }, []);
 
-   // Actualizador de series en vivo
    const fetchLiveSeries = async () => {
        const { data } = await supabase.from('document_series').select('*').eq('is_active', true);
        if (data) {
@@ -111,15 +109,12 @@ export const NewSale: React.FC = () => {
    const handleSeriesChange = (newSeries: string) => {
        setSeries(newSeries);
        const sObj = dbSeries.find(s => s.type === docType && s.series === newSeries);
-       if (sObj) {
-           setDocNumber(String(sObj.current_number + 1).padStart(8, '0'));
-       }
+       if (sObj) setDocNumber(String(sObj.current_number + 1).padStart(8, '0'));
    };
 
    const [paymentMethod, setPaymentMethod] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
    const [currency, setCurrency] = useState('SOLES');
 
-   // --- CLIENT STATE ---
    const [selectedClientId, setSelectedClientId] = useState('');
    const [clientData, setClientData] = useState<Partial<Client>>({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
    const [clientSearch, setClientSearch] = useState('');
@@ -142,7 +137,6 @@ export const NewSale: React.FC = () => {
        return () => clearTimeout(timer);
    }, [clientSearch]);
 
-   // --- LINE ENTRY STATE ---
    const [productSearch, setProductSearch] = useState('');
    const [showProductSuggestions, setShowProductSuggestions] = useState(false);
    const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -163,9 +157,7 @@ export const NewSale: React.FC = () => {
                    const enriched = pData.map(p => {
                        const prodBatches = (bData || []).filter(b => b.product_id === p.id) as Batch[];
                        batchCache[p.id] = prodBatches;
-                       const stock = prodBatches.length > 0 
-                           ? prodBatches.reduce((sum, b) => sum + Number(b.quantity_current || 0), 0)
-                           : Number(p.current_stock || p.stock || 0);
+                       const stock = prodBatches.length > 0 ? prodBatches.reduce((sum, b) => sum + Number(b.quantity_current || 0), 0) : Number(p.current_stock || p.stock || 0);
                        return { ...p, current_stock: stock };
                    });
                    setLoadedBatches(prev => ({ ...prev, ...batchCache }));
@@ -198,17 +190,12 @@ export const NewSale: React.FC = () => {
            setIsSearchingSale(true);
            try {
                let query = supabase.from('sales').select('*').order('created_at', { ascending: false }).limit(10);
-               if (saleSearchTerm.trim().length > 0) {
-                   query = query.or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`);
-               }
+               if (saleSearchTerm.trim().length > 0) query = query.or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`);
                const { data, error } = await query;
                if (error) throw error;
                if (data) setSearchedSales(data as Sale[]);
-           } catch (e) {
-               console.error("Error buscando ventas:", e);
-           } finally {
-               setIsSearchingSale(false);
-           }
+           } catch (e) { console.error("Error buscando ventas:", e);
+           } finally { setIsSearchingSale(false); }
        }, 400);
        return () => clearTimeout(timer);
    }, [saleSearchTerm, isSearchModalOpen]);
@@ -223,7 +210,7 @@ export const NewSale: React.FC = () => {
        return gross - (gross * (Number(discPct) / 100)); 
    };
    
-   const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (Number(company.igv_percent) / 100));
+   const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (Number(dbCompany?.igv_percent || 18) / 100));
    const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
@@ -274,79 +261,35 @@ export const NewSale: React.FC = () => {
 
       const safeItems = (itemsToLoad || []).map(item => {
           const matchedProd = finalCache[item.product_id];
-          return {
-              ...item,
-              unit_price: Number(item.unit_price || 0),
-              total_price: Number(item.total_price || 0),
-              discount_percent: Number(item.discount_percent || 0),
-              discount_amount: Number(item.discount_amount || 0),
-              quantity_presentation: Number(item.quantity_presentation || item.quantity || 1),
-              quantity_base: Number(item.quantity_base || item.quantity || 1),
-              product: matchedProd 
-          };
+          return { ...item, unit_price: Number(item.unit_price || 0), total_price: Number(item.total_price || 0), discount_percent: Number(item.discount_percent || 0), discount_amount: Number(item.discount_amount || 0), quantity_presentation: Number(item.quantity_presentation || item.quantity || 1), quantity_base: Number(item.quantity_base || item.quantity || 1), product: matchedProd };
       });
 
       setIsViewMode(true); 
       setOriginalSale({ ...sale, items: safeItems });
-      setDocType(sale.document_type as any); 
-      setSeries(sale.series); 
-      setDocNumber(sale.number); 
-      setSelectedClientId(sale.client_id || '');
-      setSelectedSellerId(sale.seller_id || ''); 
-      setPaymentMethod(sale.payment_method); 
-      setClientSearch(sale.client_name); 
+      setDocType(sale.document_type as any); setSeries(sale.series); setDocNumber(sale.number); 
+      setSelectedClientId(sale.client_id || ''); setSelectedSellerId(sale.seller_id || ''); setPaymentMethod(sale.payment_method); setClientSearch(sale.client_name); 
 
-      const finalPriceListId = loadedClient?.price_list_id || '';
-      const finalCity = loadedClient?.city || '';
-
-      setClientData({ 
-          name: sale.client_name, 
-          doc_number: sale.client_ruc, 
-          address: sale.client_address,
-          price_list_id: finalPriceListId,
-          city: finalCity
-      });
-
-      setCart(safeItems); 
-      setIsSearchModalOpen(false);
+      setClientData({ name: sale.client_name, doc_number: sale.client_ruc, address: sale.client_address, price_list_id: loadedClient?.price_list_id || '', city: loadedClient?.city || '' });
+      setCart(safeItems); setIsSearchModalOpen(false);
    };
 
    const handlePreview = async () => {
       if (isViewMode && originalSale) {
-         try { await PdfEngine.openDocument(originalSale, docType, company); } 
-         catch(e) { showDialog('error', 'Error', 'Error al cargar el PDF de esta venta.'); }
+         try { await PdfEngine.openDocument(originalSale, docType, dbCompany); } catch(e) { showDialog('error', 'Error', 'Error al cargar el PDF.'); }
          return;
       }
 
-      const tempSale: Sale = { 
-         id: 'preview', 
-         document_type: docType, 
-         series: series, 
-         number: docNumber, 
-         payment_method: paymentMethod, 
-         payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
-         balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
-         client_name: clientData.name || 'CLIENTE MOSTRADOR', 
-         client_ruc: clientData.doc_number || '00000000', 
-         client_address: clientData.address || '', 
-         subtotal, 
-         igv, 
-         total: grandTotal, 
-         status: 'completed', 
-         dispatch_status: 'pending', 
-         created_at: new Date().toISOString(), 
-         items: cart,
-         sunat_status: 'PENDING'
+      const seller = dbSellers.find(s => s.id === selectedSellerId);
+      const tempSale: any = { 
+         id: 'preview', document_type: docType, series: series, number: docNumber, payment_method: paymentMethod, payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID', balance: paymentMethod === 'CREDITO' ? grandTotal : 0, client_name: clientData.name || 'CLIENTE MOSTRADOR', client_ruc: clientData.doc_number || '00000000', client_address: clientData.address || '', subtotal, igv, total: grandTotal, status: 'completed', dispatch_status: 'pending', created_at: new Date().toISOString(), items: cart, sunat_status: 'PENDING',
+         seller_name: seller ? seller.name : '',
+         previous_debt: clientCreditInfo.debt 
       };
       
-      try { await PdfEngine.openDocument(tempSale, docType, company); } 
-      catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
+      try { await PdfEngine.openDocument(tempSale as Sale, docType, dbCompany); } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
-   const removeFromCart = (index: number) => { 
-      const newItems = cart.filter((_, i) => i !== index); 
-      applyAutoPromotions(newItems, true); 
-   };
+   const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems, true); };
 
    const checkClientCredit = async (clientId: string, creditLimit: number = 0) => {
       setClientCreditInfo({ limit: creditLimit, debt: 0, overdue: false, isChecking: true });
@@ -420,11 +363,8 @@ export const NewSale: React.FC = () => {
 
    const selectProduct = (p: Product & { current_stock?: number }) => {
       const isDuplicate = cart.some(item => item.product_id === p.id);
-      if (isDuplicate) {
-         showDialog('confirm', 'Producto Duplicado', `El producto "${p.name}" ya se encuentra en el detalle.\n¿Desea agregar una nueva línea de todas formas?`, () => proceedSelectProduct(p));
-      } else {
-         proceedSelectProduct(p);
-      }
+      if (isDuplicate) { showDialog('confirm', 'Producto Duplicado', `El producto "${p.name}" ya se encuentra en el detalle.\n¿Desea agregar una nueva línea de todas formas?`, () => proceedSelectProduct(p));
+      } else { proceedSelectProduct(p); }
    };
 
    const handleUnitChange = (mode: 'BASE' | 'PKG') => {
@@ -442,10 +382,7 @@ export const NewSale: React.FC = () => {
    }
 
    const executeAddToCart = () => {
-      if (!selectedProduct) {
-          showDialog('error', 'Error', 'Por favor, busque y seleccione un producto primero.');
-          return;
-      }
+      if (!selectedProduct) { showDialog('error', 'Error', 'Por favor, busque y seleccione un producto primero.'); return; }
       if (quantity <= 0) { showDialog('warning', 'Aviso', "Cantidad inválida"); return; }
       
       const prod = selectedProduct as any;
@@ -453,19 +390,12 @@ export const NewSale: React.FC = () => {
       const conversionFactor = isPkgMode ? Number(prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
       
-      const realUnitName = isPkgMode 
-          ? (prod.package_type || 'CAJA').toUpperCase() 
-          : (prod.unit_type || 'UND').toUpperCase();
+      const realUnitName = isPkgMode ? (prod.package_type || 'CAJA').toUpperCase() : (prod.unit_type || 'UND').toUpperCase();
       
       const availableBatches = loadedBatches[prod.id] || [];
-      const totalStock = availableBatches.length > 0 
-          ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0)
-          : Number(prod.current_stock || prod.stock || 0);
+      const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(prod.current_stock || prod.stock || 0);
 
-      if (totalStock < requiredBaseUnits) { 
-          showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); 
-          return; 
-      }
+      if (totalStock < requiredBaseUnits) { showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); return; }
 
       let remaining = requiredBaseUnits;
       const selectedBatches: BatchAllocation[] = [];
@@ -477,59 +407,26 @@ export const NewSale: React.FC = () => {
       }
 
       let initialNewCart = [...cart];
-      const existingItemIndex = initialNewCart.findIndex(item => 
-          item.product_id === prod.id && 
-          item.selected_unit === realUnitName && 
-          !item.is_bonus && 
-          !item.auto_promo_id
-      );
+      const existingItemIndex = initialNewCart.findIndex(item => item.product_id === prod.id && item.selected_unit === realUnitName && !item.is_bonus && !item.auto_promo_id);
 
       if (existingItemIndex >= 0) {
          showDialog('confirm', 'Sumar Cantidad', `El producto "${prod.name}" ya existe en la lista con la misma presentación.\n¿Desea sumar la cantidad?`, () => {
             const existing = initialNewCart[existingItemIndex];
             const newQty = Number(existing.quantity_presentation || 0) + quantity;
             const newPrice = calculateTotal(newQty, unitPrice, discountPercent);
-            initialNewCart[existingItemIndex] = {
-               ...existing, 
-               quantity_presentation: newQty, 
-               quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty,
-               total_price: newPrice, 
-               discount_percent: discountPercent, 
-               discount_amount: (newQty * unitPrice) * (discountPercent / 100), 
-               batch_allocations: [],
-               product: prod
-            };
+            initialNewCart[existingItemIndex] = { ...existing, quantity_presentation: newQty, quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty, total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: [], product: prod };
             applyAutoPromotions(initialNewCart, true);
             resetEntryForm();
          });
          return;
       } else {
-         initialNewCart.push({
-            id: crypto.randomUUID(), 
-            sale_id: '', 
-            product_id: prod.id, 
-            product_sku: prod.sku, 
-            product_name: prod.name,
-            selected_unit: realUnitName, 
-            quantity_presentation: quantity, 
-            quantity_base: requiredBaseUnits, 
-            unit_price: unitPrice,
-            total_price: calculateTotal(quantity, unitPrice, discountPercent), 
-            discount_percent: discountPercent,
-            discount_amount: (quantity * unitPrice) * (discountPercent / 100), 
-            is_bonus: isBonus, 
-            batch_allocations: [],
-            product: prod
-         });
+         initialNewCart.push({ id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name, selected_unit: realUnitName, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice, total_price: calculateTotal(quantity, unitPrice, discountPercent), discount_percent: discountPercent, discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: [], product: prod });
          applyAutoPromotions(initialNewCart, true);
          resetEntryForm();
       }
    };
 
-   const handleAddToCart = () => {
-      if (isBonus || discountPercent > 0) requestAdminAuth(executeAddToCart, 'Autorizar Descuento / Bonificación');
-      else executeAddToCart();
-   };
+   const handleAddToCart = () => { if (isBonus || discountPercent > 0) requestAdminAuth(executeAddToCart, 'Autorizar Descuento / Bonificación'); else executeAddToCart(); };
 
    const handleCartItemQtyChange = (index: number, newQtyStr: string) => {
       const newQty = parseInt(newQtyStr, 10);
@@ -543,22 +440,13 @@ export const NewSale: React.FC = () => {
       const requiredBaseUnits = newQty * conversionFactor;
       
       const availableBatches = loadedBatches[product.id] || [];
-      const totalStock = availableBatches.length > 0 
-          ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0)
-          : Number(product.current_stock || product.stock || 0);
+      const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(product.current_stock || product.stock || 0);
 
-      if (totalStock < requiredBaseUnits) { 
-          showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); 
-          return; 
-      }
+      if (totalStock < requiredBaseUnits) { showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); return; }
 
       const updatedCart = [...cart];
       const newPrice = calculateTotal(newQty, Number(item.unit_price || 0), Number(item.discount_percent || 0));
-      updatedCart[index] = {
-         ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice,
-         discount_amount: (newQty * Number(item.unit_price || 0)) * (Number(item.discount_percent || 0) / 100), batch_allocations: [],
-         product: product
-      };
+      updatedCart[index] = { ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice, discount_amount: (newQty * Number(item.unit_price || 0)) * (Number(item.discount_percent || 0) / 100), batch_allocations: [], product: product };
       applyAutoPromotions(updatedCart, true);
    };
 
@@ -593,16 +481,8 @@ export const NewSale: React.FC = () => {
          const newTotal = calculateTotal(Number(item.quantity_presentation || 0), newPrice, newDisc);
          const newDiscountAmt = (Number(item.quantity_presentation || 0) * newPrice) * (newDisc / 100);
          
-         return { 
-             ...item, 
-             unit_price: newPrice, 
-             total_price: newTotal, 
-             discount_percent: newDisc, 
-             discount_amount: newDiscountAmt, 
-             product: product 
-         };
+         return { ...item, unit_price: newPrice, total_price: newTotal, discount_percent: newDisc, discount_amount: newDiscountAmt, product: product };
       });
-      
       applyAutoPromotions(updatedCart, silent); 
    };
 
@@ -673,19 +553,9 @@ export const NewSale: React.FC = () => {
                const isPkgMode = ap.reward_unit_type === 'PKG';
                const conversionFactor = isPkgMode ? Number(rewardProd.package_content || 1) : 1;
                
-               const realUnitName = isPkgMode 
-                   ? (rewardProd.package_type || 'CAJA').toUpperCase() 
-                   : (rewardProd.unit_type || 'UND').toUpperCase();
+               const realUnitName = isPkgMode ? (rewardProd.package_type || 'CAJA').toUpperCase() : (rewardProd.unit_type || 'UND').toUpperCase();
 
-               newCart.push({
-                  id: crypto.randomUUID(), sale_id: '', product_id: rewardProd.id, product_sku: rewardProd.sku, product_name: rewardProd.name,
-                  quantity_base: rewardQty * conversionFactor,
-                  batch_allocations: [], quantity: rewardQty, quantity_presentation: rewardQty,
-                  unit_price: 0, discount_percent: 100, discount_amount: 0, total_price: 0, 
-                  selected_unit: realUnitName, 
-                  is_bonus: true, auto_promo_id: ap.id,
-                  product: rewardProd
-               } as any);
+               newCart.push({ id: crypto.randomUUID(), sale_id: '', product_id: rewardProd.id, product_sku: rewardProd.sku, product_name: rewardProd.name, quantity_base: rewardQty * conversionFactor, batch_allocations: [], quantity: rewardQty, quantity_presentation: rewardQty, unit_price: 0, discount_percent: 100, discount_amount: 0, total_price: 0, selected_unit: realUnitName, is_bonus: true, auto_promo_id: ap.id, product: rewardProd } as any);
             }
          }
       });
@@ -694,19 +564,19 @@ export const NewSale: React.FC = () => {
       if (silent !== true) showDialog('success', 'Precios Actualizados', "Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
    };
 
-   const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => {
-       applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent);
-   };
+   const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => { applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent); };
 
-   // CIRUGÍA: Función corregida. Se eliminó la dependencia local de la serie (getNextDocumentNumber)
    const executeSaveSale = async () => {
-      // Configuramos el borrador visual de la venta. 
-      // NOTA: El docNumber viaja como borrador (placeholder), el backend inyectará el real
-      const newSaleData: Sale = {
+      // Usamos el número seguro, la DB asignará el real final
+      if (!series || !docNumber) { showDialog('error', 'Error', "No hay serie asignada."); return; }
+
+      const seller = dbSellers.find(s => s.id === selectedSellerId);
+
+      const newSaleData: any = {
          id: crypto.randomUUID(), 
          document_type: docType,
          series: series,
-         number: docNumber, 
+         number: docNumber, // temporal
          payment_method: paymentMethod,
          payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
          balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
@@ -722,30 +592,26 @@ export const NewSale: React.FC = () => {
          dispatch_status: 'pending',
          created_at: new Date().toISOString(),
          items: cart, 
-         sunat_status: 'PENDING'
+         sunat_status: 'PENDING',
+         // Inject values for PDF
+         seller_name: seller ? seller.name : '',
+         previous_debt: clientCreditInfo.debt
       };
 
       setIsSaving(true);
 
       try {
-         // Disparo hacia Supabase
          const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
          if (error) throw error;
          
          if (data && data.success) {
-            // Atrapamos el NÚMERO REAL BLINDADO devuelto por el Servidor
             const realNumber = data.real_number;
-            
-            // Inyectamos el oficial al PDF en memoria
             newSaleData.number = realNumber;
 
-            showDialog('success', 'Venta Guardada', `Venta registrada exitosamente con comprobante:\n${series}-${realNumber}`);
+            showDialog('success', 'Venta Guardada', `Venta registrada exitosamente con comprobante: ${series}-${realNumber}`);
             
-            // Actualizamos la interfaz inmediatamente
             await fetchLiveSeries();
-            try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
-            
-            // Limpiamos todo el formulario
+            try { await PdfEngine.openDocument(newSaleData as Sale, docType, dbCompany); } catch(e) {}
             handleNewSale();
          }
       } catch (err: any) { 
@@ -758,7 +624,7 @@ export const NewSale: React.FC = () => {
    const handleSaveSale = async () => {
       if (isViewMode) {
          if (originalSale) {
-            try { await PdfEngine.openDocument(originalSale, docType, company); } 
+            try { await PdfEngine.openDocument(originalSale, docType, dbCompany); } 
             catch(e) { showDialog('error', 'Error', "Error abriendo PDF"); }
          } else { handlePreview(); }
          return;
@@ -768,7 +634,6 @@ export const NewSale: React.FC = () => {
       if (!selectedClientId && !clientData.name) { showDialog('warning', 'Faltan Datos', "Ingrese datos del cliente"); return; }
       if (!series) { showDialog('error', 'Falta Serie', "No hay una serie asignada en el sistema."); return; }
       if (selectedClientId && !isUUID(selectedClientId)) { showDialog('warning', 'Alerta', "Cliente inválido."); return; }
-      if (cart.some(i => !isUUID(i.product_id))) { showDialog('warning', 'Alerta', "Hay productos de prueba en el carrito."); return; }
 
       if (paymentMethod === 'CREDITO') {
           if (clientCreditInfo.overdue) {
@@ -781,7 +646,6 @@ export const NewSale: React.FC = () => {
           }
       }
 
-      // CIRUGÍA: Mensaje arreglado para mostrar el número de la serie + correlativo en pantalla
       showDialog('confirm', 'Confirmar Venta', `¿Está seguro que desea emitir el comprobante ${docType} ${series}-${docNumber} por S/ ${grandTotal.toFixed(2)}?`, executeSaveSale);
    };
 
@@ -928,6 +792,12 @@ export const NewSale: React.FC = () => {
                         </div>
                      )}
                   </div>
+                  {/* ADVERTENCIA DE DEUDA EN FORMULARIO */}
+                  {clientCreditInfo.debt > 0 && (
+                      <div className="mt-1 text-[9px] font-black text-orange-700 bg-orange-100 px-1 py-0.5 rounded text-center border border-orange-300">
+                          PAGARÁ CTA. ANTERIOR S/ {clientCreditInfo.debt.toFixed(2)}
+                      </div>
+                  )}
                </div>
                <div className="col-span-4">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Razón Social</label>
