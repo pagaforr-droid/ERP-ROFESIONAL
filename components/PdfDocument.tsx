@@ -67,7 +67,7 @@ const styles = StyleSheet.create({
 
   legalText: { fontSize: 6, textAlign: 'center', marginTop: 10 },
 
-  // GUIA STYLES (Retained from original)
+  // GUIA STYLES
   guiaInfoSection: { flexDirection: 'column', marginBottom: 5 },
   guiaInfoRow: { flexDirection: 'row', marginBottom: 3 },
   guiaInfoLabel: { fontSize: 8, fontWeight: 'bold', width: '18%' },
@@ -163,12 +163,19 @@ const ItemsTable = ({ data, isFactura }: { data: any, isFactura: boolean }) => (
     <View style={{ flex: 1 }}>
       {(data.items || []).map((item: any, i: number) => {
         const sku = item.product?.sku || item.product_id?.substring(0, 8) || item.sku || '001';
-        // The data source often has just `name` from the joined cart object or `product.name`
         const name = item.product?.name || item.name || item.product_name || 'Producto';
         const qty = item.quantity_presentation ?? item.quantity ?? item.quantity_base ?? 0;
         const pu = item.unit_price ?? item.price ?? 0;
         const total = item.total_price !== undefined ? Number(item.total_price).toFixed(2) : (qty * pu).toFixed(2);
-        const um = item.selected_unit === 'PKG' ? 'CJA' : 'NIU';
+        
+        // CIRUGÍA DE UNIDADES: Extracción automática desde el producto
+        let rawUm = 'UND';
+        if (item.selected_unit === 'PKG') {
+            rawUm = item.product?.package_type || 'CJA';
+        } else {
+            rawUm = item.product?.base_unit || 'UND';
+        }
+        const um = rawUm.substring(0, 3).toUpperCase(); // Asegura 3 letras (BOT, CJA, UND, PAQ)
 
         return (
           <View key={i} style={styles.tableRowItem}>
@@ -503,7 +510,16 @@ const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any
            const sku = item.product?.sku || item.product_id?.substring(0,8) || item.sku || '001';
            const name = item.product?.name || item.name || item.product_name || 'Producto';
            const qty = item.quantity_presentation ?? item.quantity ?? item.quantity_base ?? 0;
-           const um = item.selected_unit === 'PKG' ? 'CJA' : 'NIU';
+           
+           // CIRUGÍA DE UNIDADES: Extracción automática desde el producto
+           let rawUm = 'UND';
+           if (item.selected_unit === 'PKG') {
+               rawUm = item.product?.package_type || 'CJA';
+           } else {
+               rawUm = item.product?.base_unit || 'UND';
+           }
+           const um = rawUm.substring(0, 3).toUpperCase();
+
            return (
               <View key={i} style={styles.tableRowItem}>
                 <Text style={[styles.td, styles.tableColCodeGuia]}>{sku}</Text>
