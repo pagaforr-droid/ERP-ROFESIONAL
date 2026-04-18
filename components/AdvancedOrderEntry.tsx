@@ -41,8 +41,8 @@ export const AdvancedOrderEntry: React.FC = () => {
    const [dbSeries, setDbSeries] = useState<any[]>([]);
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
-   const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA'); // Sugerido
-   const [series, setSeries] = useState(''); // Serie del PEDIDO
+   const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
+   const [series, setSeries] = useState('');
    const [docNumber, setDocNumber] = useState('');
 
    useEffect(() => {
@@ -205,7 +205,13 @@ export const AdvancedOrderEntry: React.FC = () => {
    };
 
    const handleNewOrder = () => {
-      setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
+      setIsEditMode(false); 
+      setOriginalOrder(null); 
+      setCart([]); 
+      setSelectedClientId(''); 
+      setClientSearch(''); 
+      setProductSearch(''); 
+      setSelectedSellerId('');
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
       setClientCreditInfo({ limit: 0, debt: 0, overdue: false, isChecking: false });
       
@@ -256,6 +262,7 @@ export const AdvancedOrderEntry: React.FC = () => {
           if (order.client_id) {
               const { data: cData } = await supabase.from('clients').select('*').eq('id', order.client_id).single();
               if (cData) {
+                  setSelectedClientId(cData.id);
                   clientListId = cData.price_list_id || '';
                   clientCity = cData.city || '';
                   checkClientCredit(order.client_id, cData.credit_limit || 0);
@@ -295,7 +302,6 @@ export const AdvancedOrderEntry: React.FC = () => {
              setDocNumber(order.code);
           }
 
-          setSelectedClientId(order.client_id || ''); 
           setSelectedSellerId(order.seller_id || ''); 
           setPaymentMethod(order.payment_method as any || 'CONTADO'); 
           setClientSearch(order.client_name); 
@@ -326,7 +332,7 @@ export const AdvancedOrderEntry: React.FC = () => {
          previous_debt: clientCreditInfo.debt 
       };
       
-      try { await PdfEngine.openDocument(tempOrder as Sale, docType, dbCompany); } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
+      try { await PdfEngine.openDocument(tempOrder, docType, dbCompany); } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
    const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems, true); };
@@ -701,7 +707,6 @@ export const AdvancedOrderEntry: React.FC = () => {
                      className="border border-slate-300 rounded px-2 py-1 flex-1 bg-white text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
                      value={docType}
                      onChange={(e: any) => setDocType(e.target.value)}
-                     disabled={isEditMode}
                   >
                      <option value="FACTURA">FACTURA</option>
                      <option value="BOLETA">BOLETA</option>
