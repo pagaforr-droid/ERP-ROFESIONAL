@@ -148,7 +148,7 @@ export const NewSale: React.FC = () => {
    }, [productSearch]);
 
    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-   const [unitMode, setUnitMode] = useState<'BASE' | 'PKG'>('BASE'); // Control lógico interno
+   const [unitMode, setUnitMode] = useState<'BASE' | 'PKG'>('BASE'); 
    const [quantity, setQuantity] = useState<number>(1);
    const [unitPrice, setUnitPrice] = useState<number>(0); 
    const [discountPercent, setDiscountPercent] = useState<number>(0);
@@ -417,10 +417,10 @@ export const NewSale: React.FC = () => {
       const conversionFactor = isPkgMode ? (prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
       
-      // CIRUGÍA PRINCIPAL: EXTRAE EL NOMBRE REAL DE LA UNIDAD DEL PRODUCTO
+      // CIRUGÍA: LEE EL NOMBRE DE LA COLUMNA CORRECTA (unit_type) PARA LA UNIDAD BASE
       const realUnitName = isPkgMode 
           ? (prod.package_type || 'CAJA').toUpperCase() 
-          : (prod.base_unit || 'UND').toUpperCase();
+          : (prod.unit_type || 'UND').toUpperCase();
       
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(prod.id) : (loadedBatches[prod.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
@@ -442,13 +442,13 @@ export const NewSale: React.FC = () => {
       let initialNewCart = [...cart];
       const existingItemIndex = initialNewCart.findIndex(item => 
           item.product_id === prod.id && 
-          item.selected_unit === realUnitName && // Compara por el nombre real
+          item.selected_unit === realUnitName && 
           !item.is_bonus && 
           !item.auto_promo_id
       );
 
       if (existingItemIndex >= 0) {
-         showDialog('confirm', 'Sumar Cantidad', `El producto "${prod.name}" ya existe en la lista.\n¿Desea sumar la cantidad?`, () => {
+         showDialog('confirm', 'Sumar Cantidad', `El producto "${prod.name}" ya existe en la lista con la misma presentación.\n¿Desea sumar la cantidad?`, () => {
             const existing = initialNewCart[existingItemIndex];
             const newQty = existing.quantity_presentation + quantity;
             const newPrice = calculateTotal(newQty, unitPrice, discountPercent);
@@ -473,7 +473,7 @@ export const NewSale: React.FC = () => {
             product_id: prod.id, 
             product_sku: prod.sku, 
             product_name: prod.name,
-            selected_unit: realUnitName, // GUARDA EL NOMBRE REAL EN EL KARDEX
+            selected_unit: realUnitName, // GUARDA EL NOMBRE REAL ("BOTELLA", "CAJA")
             quantity_presentation: quantity, 
             quantity_base: requiredBaseUnits, 
             unit_price: unitPrice,
@@ -626,10 +626,10 @@ export const NewSale: React.FC = () => {
                const isPkgMode = ap.reward_unit_type === 'PKG';
                const conversionFactor = isPkgMode ? (rewardProd.package_content || 1) : 1;
                
-               // ASIGNACIÓN REAL DE NOMBRE AL PREMIO EN EL KARDEX
+               // CIRUGÍA: LEE EL NOMBRE DE LA COLUMNA CORRECTA (unit_type) PARA LA UNIDAD DE BONIFICACIÓN
                const realUnitName = isPkgMode 
                    ? (rewardProd.package_type || 'CAJA').toUpperCase() 
-                   : (rewardProd.base_unit || 'UND').toUpperCase();
+                   : (rewardProd.unit_type || 'UND').toUpperCase();
 
                newCart.push({
                   id: crypto.randomUUID(), sale_id: '', product_id: rewardProd.id, product_sku: rewardProd.sku, product_name: rewardProd.name,
@@ -656,6 +656,7 @@ export const NewSale: React.FC = () => {
       const correlative = getNextDocumentNumber(docType, series);
       if (!correlative) { showDialog('error', 'Error', "Error al obtener la serie."); return; }
 
+      // ENVIAMOS EL CARRITO TAL CUAL (Sus unidades ya dicen "BOTELLA", "CAJA", etc.)
       const newSaleData: Sale = {
          id: crypto.randomUUID(), 
          document_type: docType,
@@ -675,7 +676,7 @@ export const NewSale: React.FC = () => {
          status: 'completed',
          dispatch_status: 'pending',
          created_at: new Date().toISOString(),
-         items: cart, // El carrito YA TIENE las unidades reales desde el formulario
+         items: cart, 
          sunat_status: 'PENDING'
       };
 
@@ -1021,9 +1022,9 @@ export const NewSale: React.FC = () => {
 
                   <div className="w-24 relative">
                      <label className="block text-[10px] font-bold text-blue-800 mb-0.5">Unidad</label>
-                     {/* CIRUGÍA DE FORMULARIO: SELECCIONA EL MODO Y LEE DEL PRODUCTO REAL */}
+                     {/* CIRUGÍA DE FORMULARIO: LEEMOS EL CAMPO REAL "unit_type" DE LA BD */}
                      <select ref={unitSelectRef} className="w-full border border-blue-300 rounded py-1 px-1 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={unitMode} onChange={e => handleUnitChange(e.target.value as 'BASE' | 'PKG')} onKeyDown={e => handleInputKeyDown(e, addButtonRef as any)} disabled={!selectedProduct}>
-                        <option value="BASE">{selectedProduct?.base_unit ? selectedProduct.base_unit.toUpperCase() : 'UND'}</option>
+                        <option value="BASE">{selectedProduct?.unit_type ? selectedProduct.unit_type.toUpperCase() : 'UND'}</option>
                         {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type.toUpperCase()}</option>}
                      </select>
                      <ChevronDown className="absolute right-1 top-5 w-3 h-3 text-slate-400 pointer-events-none" />
@@ -1119,7 +1120,7 @@ export const NewSale: React.FC = () => {
                                  ) : item.quantity_presentation}
                               </td>
                               <td className="p-2 w-24 text-center text-[10px] text-slate-500 font-bold uppercase">
-                                  {/* Renderiza el String EXACTO que se guardó en base de datos ("BOTELLA", "CAJA", etc.) */}
+                                  {/* MUESTRA EXACTAMENTE LA PALABRA GUARDADA EN EL KARDEX ("BOTELLA" O "CAJA") */}
                                   {item.selected_unit}
                               </td>
                               <td className="p-2 w-20 text-right text-slate-600">S/ {Number(item.unit_price || 0).toFixed(2)}</td>
@@ -1311,6 +1312,41 @@ export const NewSale: React.FC = () => {
                   <div className="mt-4 flex justify-end">
                      <button onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded">
                         Cerrar
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* === ADMIN PASSWORD MODAL === */}
+         {showAdminAuthModal.isOpen && (
+            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
+                  <h3 className="font-bold text-slate-800 text-lg mb-2">Se requiere autorización</h3>
+                  <p className="text-sm text-slate-600 mb-4">Ingrese la contraseña de administrador para: <strong className="text-red-600">{showAdminAuthModal.targetActionName}</strong></p>
+
+                  <input
+                     id="admin-password-input"
+                     type="password"
+                     className="w-full border-2 border-slate-300 rounded p-2 mb-4 text-center text-2xl tracking-widest focus:ring-2 focus:ring-blue-500 outline-none"
+                     placeholder="••••"
+                     value={adminPasswordInput}
+                     onChange={e => setAdminPasswordInput(e.target.value)}
+                     onKeyDown={e => { if (e.key === 'Enter') verifyAdminAndExecute(); else if (e.key === 'Escape') setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' }); }}
+                  />
+
+                  <div className="flex gap-2 justify-end">
+                     <button
+                        onClick={() => setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' })}
+                        className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 font-bold text-sm"
+                     >
+                        Cancelar (ESC)
+                     </button>
+                     <button
+                        onClick={verifyAdminAndExecute}
+                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold text-sm"
+                     >
+                        Autorizar (ENTER)
                      </button>
                   </div>
                </div>
