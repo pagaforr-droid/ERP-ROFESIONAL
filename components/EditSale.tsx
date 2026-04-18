@@ -55,6 +55,7 @@ export const EditSale: React.FC = () => {
    const [isSearchingClient, setIsSearchingClient] = useState(false);
    const [selectedSellerId, setSelectedSellerId] = useState('');
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
+   const [showBranchSelector, setShowBranchSelector] = useState(false);
 
    useEffect(() => {
        const fetchMasters = async () => {
@@ -182,7 +183,6 @@ export const EditSale: React.FC = () => {
        const multiplier = getMultiplier();
 
        const newCart = cart.map(item => {
-           // Si el producto fue marcado como gratis (regalo), se respeta esa decisión
            if (item.is_bonus) return item;
 
            const product = cartProductsCache[item.product_id] || item.product;
@@ -415,7 +415,7 @@ export const EditSale: React.FC = () => {
       }
    };
 
-   // EDICIÓN LIBRE DE CANTIDAD Y PRECIO DIRECTO EN EL CARRITO
+   // EDICIÓN DE CANTIDAD Y PRECIO DIRECTO EN EL CARRITO
    const handleCartItemChange = (index: number, field: string, value: number) => {
       const updatedCart = [...cart];
       const item = updatedCart[index];
@@ -426,7 +426,7 @@ export const EditSale: React.FC = () => {
       if (isNaN(newQty) || newQty <= 0) newQty = 1;
       if (isNaN(newPu) || newPu < 0) newPu = 0;
 
-      const product = cartProductsCache[item.product_id] || item.product;
+      const product = item.product;
       const isPkg = isItemPackage(item.selected_unit, product);
       const conversionFactor = isPkg ? Number(product?.package_content || 1) : 1;
 
@@ -654,8 +654,8 @@ export const EditSale: React.FC = () => {
          {isSaving && (
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex flex-col items-center justify-center rounded">
                <Loader2 className="w-16 h-16 text-amber-500 animate-spin mb-4" />
-               <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO AUDITORÍA...</h2>
-               <p className="text-amber-200 font-medium mt-2">Leyendo y sincronizando base de datos...</p>
+               <h2 className="text-2xl font-black text-white tracking-widest">SOBREESCRIBIENDO DOCUMENTO...</h2>
+               <p className="text-amber-200 font-medium mt-2">Re-estructurando Kardex. Por favor no cierre la ventana.</p>
             </div>
          )}
 
@@ -741,7 +741,7 @@ export const EditSale: React.FC = () => {
                      </button>
                   </div>
                </div>
-               
+
                <div className="col-span-2">
                   <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Forma Pago</label>
                   <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 font-bold" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)}>
@@ -928,7 +928,7 @@ export const EditSale: React.FC = () => {
                <div className="bg-white w-full max-w-5xl rounded-lg shadow-2xl flex flex-col max-h-[85vh] border-4 border-amber-500 overflow-hidden">
                   <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-900 text-white">
                      <h3 className="font-black flex items-center text-lg"><Search className="w-5 h-5 mr-2 text-amber-500" /> BÚSQUEDA DE COMPROBANTE PARA EDICIÓN</h3>
-                     {originalSale && <button type="button" onClick={() => setIsSearchModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-6 h-6" /></button>}
+                     <button type="button" onClick={() => setIsSearchModalOpen(false)} className="text-slate-400 hover:text-white" title="Cerrar Búsqueda"><X className="w-6 h-6" /></button>
                   </div>
                   <div className="p-4 bg-slate-50 border-b border-slate-200 relative">
                      <input
