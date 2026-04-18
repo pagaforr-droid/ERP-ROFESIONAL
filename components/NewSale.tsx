@@ -148,7 +148,7 @@ export const NewSale: React.FC = () => {
    }, [productSearch]);
 
    const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-   const [unitMode, setUnitMode] = useState<'BASE' | 'PKG'>('BASE'); // Control interno del selector
+   const [unitMode, setUnitMode] = useState<'BASE' | 'PKG'>('BASE'); // Control lógico interno
    const [quantity, setQuantity] = useState<number>(1);
    const [unitPrice, setUnitPrice] = useState<number>(0); 
    const [discountPercent, setDiscountPercent] = useState<number>(0);
@@ -163,7 +163,7 @@ export const NewSale: React.FC = () => {
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
    const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
 
-   // --- CEREBRO DE BÚSQUEDA DE VENTAS (LIMITADO A 10) ---
+   // --- CEREBRO DE BÚSQUEDA DE VENTAS ---
    useEffect(() => {
        if (!isSearchModalOpen) return;
        if (USE_MOCK_DB) return;
@@ -191,19 +191,17 @@ export const NewSale: React.FC = () => {
    const displayProducts = USE_MOCK_DB ? products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase())).map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
    const displaySales = USE_MOCK_DB ? sales.filter(s => !saleSearchTerm || s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm)).slice(0, 10) : searchedSales;
 
+   // --- HELPER: DETECTAR SI UN ITEM DEL CARRITO ES EMPAQUE MAYOR ---
+   const isItemPackage = (itemUnitName: string, prod: any) => {
+       if (!prod) return false;
+       return itemUnitName === prod.package_type?.toUpperCase() || itemUnitName === 'PKG';
+   };
+
    // --- CALCULATIONS ---
    const calculateTotal = (qty: number, price: number, discPct: number) => { const gross = qty * price; return gross - (gross * (discPct / 100)); };
    const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (company.igv_percent / 100));
    const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
-
-   // --- HELPER: DETECTAR SI UN ITEM DEL CARRITO ES EMPAQUE MAYOR ---
-   const isItemPackage = (item: any, prod: any) => {
-       if (!prod) return false;
-       const unitStr = item.selected_unit?.toUpperCase();
-       const pkgName = prod.package_type?.toUpperCase();
-       return unitStr === pkgName || unitStr === 'PKG' || unitStr === 'CJA';
-   };
 
    // --- ACTIONS ---
    const handleNewSale = () => {
@@ -216,7 +214,6 @@ export const NewSale: React.FC = () => {
       else { setSeries(''); setDocNumber(''); }
    };
 
-   // SOLO CARGA PARA VISUALIZAR, NO MODIFICAR
    const loadSale = async (sale: Sale) => {
       let itemsToLoad = sale.items;
       let loadedClient: Client | null = null;
@@ -257,11 +254,9 @@ export const NewSale: React.FC = () => {
 
       setIsViewMode(true); 
       setOriginalSale({ ...sale, items: safeItems });
-      
       setDocType(sale.document_type as any); 
       setSeries(sale.series); 
       setDocNumber(sale.number);
-      
       setSelectedClientId(sale.client_id || '');
       setSelectedSellerId(sale.seller_id || ''); 
       setPaymentMethod(sale.payment_method); 
@@ -418,16 +413,15 @@ export const NewSale: React.FC = () => {
       if (quantity <= 0) { showDialog('warning', 'Aviso', "Cantidad inválida"); return; }
       const prod = selectedProduct as any;
       
-      // --- CIRUGÍA: Extracción de Nombre Real de la Unidad ---
       const isPkgMode = unitMode === 'PKG';
       const conversionFactor = isPkgMode ? (prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
       
-      // EL NOMBRE EXACTO DEL MAESTRO DE PRODUCTOS
+      // CIRUGÍA PRINCIPAL: EXTRAE EL NOMBRE REAL DE LA UNIDAD DEL PRODUCTO
       const realUnitName = isPkgMode 
           ? (prod.package_type || 'CAJA').toUpperCase() 
           : (prod.base_unit || 'UND').toUpperCase();
-
+      
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(prod.id) : (loadedBatches[prod.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
@@ -446,11 +440,9 @@ export const NewSale: React.FC = () => {
       }
 
       let initialNewCart = [...cart];
-      
-      // Buscar si ya existe la misma unidad en el carrito
       const existingItemIndex = initialNewCart.findIndex(item => 
           item.product_id === prod.id && 
-          item.selected_unit === realUnitName && // Compara nombre real
+          item.selected_unit === realUnitName && // Compara por el nombre real
           !item.is_bonus && 
           !item.auto_promo_id
       );
@@ -481,7 +473,7 @@ export const NewSale: React.FC = () => {
             product_id: prod.id, 
             product_sku: prod.sku, 
             product_name: prod.name,
-            selected_unit: realUnitName, // SE GUARDA DIRECTO LA UNIDAD REAL ('BOTELLA', 'CAJA')
+            selected_unit: realUnitName, // GUARDA EL NOMBRE REAL EN EL KARDEX
             quantity_presentation: quantity, 
             quantity_base: requiredBaseUnits, 
             unit_price: unitPrice,
@@ -509,7 +501,7 @@ export const NewSale: React.FC = () => {
       const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : cartProductsCache[item.product_id];
       if (!product) return;
 
-      const isPkg = isItemPackage(item, product);
+      const isPkg = isItemPackage(item.selected_unit, product);
       const conversionFactor = isPkg ? (product.package_content || 1) : 1;
       const requiredBaseUnits = newQty * conversionFactor;
       
@@ -542,7 +534,7 @@ export const NewSale: React.FC = () => {
          const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : cartProductsCache[item.product_id];
          if (!product) return item;
          
-         const isPkg = isItemPackage(item, product);
+         const isPkg = isItemPackage(item.selected_unit, product);
          let newPrice = isPkg ? (product.price_package || product.price_unit) : product.price_unit;
          newPrice = newPrice * multiplier;
 
@@ -634,7 +626,7 @@ export const NewSale: React.FC = () => {
                const isPkgMode = ap.reward_unit_type === 'PKG';
                const conversionFactor = isPkgMode ? (rewardProd.package_content || 1) : 1;
                
-               // ASIGNACIÓN REAL DE NOMBRE AL PREMIO
+               // ASIGNACIÓN REAL DE NOMBRE AL PREMIO EN EL KARDEX
                const realUnitName = isPkgMode 
                    ? (rewardProd.package_type || 'CAJA').toUpperCase() 
                    : (rewardProd.base_unit || 'UND').toUpperCase();
@@ -644,9 +636,9 @@ export const NewSale: React.FC = () => {
                   quantity_base: rewardQty * conversionFactor,
                   batch_allocations: [], quantity: rewardQty, quantity_presentation: rewardQty,
                   unit_price: 0, discount_percent: 100, discount_amount: 0, total_price: 0, 
-                  selected_unit: realUnitName, // SE GUARDA REAL
+                  selected_unit: realUnitName, 
                   is_bonus: true, auto_promo_id: ap.id,
-                  product: rewardProd 
+                  product: rewardProd
                } as any);
             }
          }
@@ -683,7 +675,7 @@ export const NewSale: React.FC = () => {
          status: 'completed',
          dispatch_status: 'pending',
          created_at: new Date().toISOString(),
-         items: cart, // El carrito YA TIENE las unidades reales ('BOTELLA', 'CAJA'), va directo a Supabase
+         items: cart, // El carrito YA TIENE las unidades reales desde el formulario
          sunat_status: 'PENDING'
       };
 
@@ -836,7 +828,7 @@ export const NewSale: React.FC = () => {
             {!series && !isViewMode && <div className="ml-4 px-3 py-1 bg-red-100 text-red-800 text-[10px] font-bold rounded border border-red-300 w-fit">¡DEBE CONFIGURAR UNA SERIE EN AJUSTES!</div>}
          </div>
 
-         {/* === CLIENT SECTION (CON ALERTA DE CRÉDITO) === */}
+         {/* === CLIENT SECTION === */}
          <div className="flex items-start gap-2 mb-2">
             <div className="flex-1 grid grid-cols-12 gap-1 bg-slate-100 p-1.5 rounded border border-slate-200 relative">
                
@@ -1027,9 +1019,10 @@ export const NewSale: React.FC = () => {
                      <input ref={qtyInputRef} type="number" min="1" className="w-full border border-blue-300 rounded py-1 px-1 text-center font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={quantity} onChange={e => setQuantity(Number(e.target.value))} onKeyDown={e => handleInputKeyDown(e, unitSelectRef)} disabled={!selectedProduct} />
                   </div>
 
-                  <div className="w-20 relative">
+                  <div className="w-24 relative">
                      <label className="block text-[10px] font-bold text-blue-800 mb-0.5">Unidad</label>
-                     <select ref={unitSelectRef} className="w-full border border-blue-300 rounded py-1 px-1 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={unitMode} onChange={e => handleUnitChange(e.target.value as any)} onKeyDown={e => handleInputKeyDown(e, addButtonRef as any)} disabled={!selectedProduct}>
+                     {/* CIRUGÍA DE FORMULARIO: SELECCIONA EL MODO Y LEE DEL PRODUCTO REAL */}
+                     <select ref={unitSelectRef} className="w-full border border-blue-300 rounded py-1 px-1 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={unitMode} onChange={e => handleUnitChange(e.target.value as 'BASE' | 'PKG')} onKeyDown={e => handleInputKeyDown(e, addButtonRef as any)} disabled={!selectedProduct}>
                         <option value="BASE">{selectedProduct?.base_unit ? selectedProduct.base_unit.toUpperCase() : 'UND'}</option>
                         {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type.toUpperCase()}</option>}
                      </select>
@@ -1070,7 +1063,7 @@ export const NewSale: React.FC = () => {
                <div className="w-24 px-2">Código</div>
                <div className="flex-1 px-2">Descripción Producto</div>
                <div className="w-16 text-right px-2">Cant</div>
-               <div className="w-20 text-center px-2">Unidad</div>
+               <div className="w-24 text-center px-2">Unidad</div>
                <div className="w-20 text-right px-2">Precio</div>
                <div className="w-16 text-right px-2">Dsc %</div>
                <div className="w-24 text-right px-2">Importe</div>
@@ -1125,8 +1118,8 @@ export const NewSale: React.FC = () => {
                                     />
                                  ) : item.quantity_presentation}
                               </td>
-                              <td className="p-2 w-20 text-center text-[10px] text-slate-500 font-bold">
-                                  {/* Renderiza la unidad EXACTA que se guardó en el estado, extraida del Maestro */}
+                              <td className="p-2 w-24 text-center text-[10px] text-slate-500 font-bold uppercase">
+                                  {/* Renderiza el String EXACTO que se guardó en base de datos ("BOTELLA", "CAJA", etc.) */}
                                   {item.selected_unit}
                               </td>
                               <td className="p-2 w-20 text-right text-slate-600">S/ {Number(item.unit_price || 0).toFixed(2)}</td>
@@ -1318,41 +1311,6 @@ export const NewSale: React.FC = () => {
                   <div className="mt-4 flex justify-end">
                      <button onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded">
                         Cerrar
-                     </button>
-                  </div>
-               </div>
-            </div>
-         )}
-
-         {/* === ADMIN PASSWORD MODAL === */}
-         {showAdminAuthModal.isOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
-                  <h3 className="font-bold text-slate-800 text-lg mb-2">Se requiere autorización</h3>
-                  <p className="text-sm text-slate-600 mb-4">Ingrese la contraseña de administrador para: <strong className="text-red-600">{showAdminAuthModal.targetActionName}</strong></p>
-
-                  <input
-                     id="admin-password-input"
-                     type="password"
-                     className="w-full border-2 border-slate-300 rounded p-2 mb-4 text-center text-2xl tracking-widest focus:ring-2 focus:ring-blue-500 outline-none"
-                     placeholder="••••"
-                     value={adminPasswordInput}
-                     onChange={e => setAdminPasswordInput(e.target.value)}
-                     onKeyDown={e => { if (e.key === 'Enter') verifyAdminAndExecute(); else if (e.key === 'Escape') setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' }); }}
-                  />
-
-                  <div className="flex gap-2 justify-end">
-                     <button
-                        onClick={() => setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' })}
-                        className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 font-bold text-sm"
-                     >
-                        Cancelar (ESC)
-                     </button>
-                     <button
-                        onClick={verifyAdminAndExecute}
-                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold text-sm"
-                     >
-                        Autorizar (ENTER)
                      </button>
                   </div>
                </div>
