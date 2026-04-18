@@ -40,7 +40,7 @@ const styles = StyleSheet.create({
   // Columns dimensions
   colCod: { width: '12%' },
   colCant: { width: '8%', textAlign: 'center' },
-  colUm: { width: '10%', textAlign: 'center' },
+  colUm: { width: '12%', textAlign: 'center' }, // Ampliado ligeramente para "CJAx12"
   colDesc: { flex: 1 },
   colPu: { width: '12%', textAlign: 'right' },
   colDscto: { width: '10%', textAlign: 'right' },
@@ -55,12 +55,9 @@ const styles = StyleSheet.create({
 
   // Factura Totals Grid
   facturaTotalsContainer: { flexDirection: 'row', borderWidth: 1, borderColor: '#000', marginTop: 4, height: 45 },
-  
-  // Modificado: Ahora el contenedor del QR usa flex column para permitir la alerta debajo
   qrSection: { width: 50, borderRightWidth: 1, borderRightColor: '#000', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' },
   qrBox: { width: 35, height: 35, margin: 1, borderWidth: 1, borderColor: '#ccc', justifyContent: 'center', alignItems: 'center' },
   qrText: { fontSize: 4, color: '#999', textAlign: 'center' },
-  
   totalsGrid: { flex: 1, flexDirection: 'row' },
   totCol: { flex: 1, borderLeftWidth: 1, borderLeftColor: '#000', flexDirection: 'column' },
   totHeader: { fontSize: 6, fontWeight: 'bold', textAlign: 'center', backgroundColor: '#e0e0e0', borderBottomWidth: 1, borderBottomColor: '#000', paddingVertical: 1 },
@@ -175,8 +172,7 @@ const ItemsTable = ({ data, isFactura }: { data: any, isFactura: boolean }) => (
         const pu = item.unit_price ?? item.price ?? 0;
         const total = item.total_price !== undefined ? Number(item.total_price).toFixed(2) : (qty * pu).toFixed(2);
         
-        // CORRECCIÓN MAGISTRAL: "CAJAx12", "BOTx1"
-        // Determina si se vendió en Empaque o Unidad Base
+        // CORRECCIÓN: Determinamos dinámicamente si es empaque o unidad base y formamos CJAx12 / BOTx1
         const isPkg = item.selected_unit === item.product?.package_type || item.selected_unit === 'CJA' || item.selected_unit === 'PKG';
         const content = isPkg ? (item.product?.package_content || 1) : 1;
         const shortUnit = (item.selected_unit || 'UND').substring(0, 4).toUpperCase();
@@ -235,16 +231,10 @@ const FacturaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: a
       <ClientSection data={data} />
       <ItemsTable data={data} isFactura={true} />
 
+      {/* Contenedor de Totales */}
       <View style={styles.facturaTotalsContainer}>
-        
-        {/* CORRECCIÓN: ALERTA DE DEUDA EN LA CAJA DEL QR */}
         <View style={styles.qrSection}>
            <View style={styles.qrBox}><Text style={styles.qrText}>QR</Text></View>
-           {balanceDue > 0 && (
-             <Text style={{ fontSize: 4, fontWeight: 'bold', color: '#000', textAlign: 'center', marginTop: 1 }}>
-               CTA. ANT.{'\n'}S/ {balanceDue.toFixed(2)}
-             </Text>
-           )}
         </View>
 
         <View style={styles.totalsGrid}>
@@ -274,6 +264,15 @@ const FacturaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: a
           </View>
         </View>
       </View>
+      
+      {/* CORRECCIÓN: ALERTA DE DEUDA FUERA DEL CUADRO, PARA MAYOR VISIBILIDAD (Factura) */}
+      {balanceDue > 0 && (
+         <View style={{ marginTop: 2, padding: 2, borderBottomWidth: 1, borderColor: '#000' }}>
+            <Text style={{ fontSize: 7, fontWeight: 'bold', color: '#000', textAlign: 'right' }}>
+               * PAGARÁ CUENTA ANTERIOR: S/ {balanceDue.toFixed(2)}
+            </Text>
+         </View>
+      )}
 
       <Text style={styles.legalText}>Representación impresa del comprobante de pago electrónico. Tandao ERP®</Text>
     </View>
@@ -303,15 +302,18 @@ const BoletaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: an
       <ClientSection data={data} />
       <ItemsTable data={data} isFactura={false} />
       
+      {/* CORRECCIÓN: ALERTA DE DEUDA FUERA DEL CUADRO, PARA MAYOR VISIBILIDAD (Boleta) */}
+      {balanceDue > 0 && (
+         <View style={{ marginTop: 2, padding: 2, borderBottomWidth: 1, borderColor: '#000' }}>
+            <Text style={{ fontSize: 7, fontWeight: 'bold', color: '#000', textAlign: 'right' }}>
+               * PAGARÁ CUENTA ANTERIOR: S/ {balanceDue.toFixed(2)}
+            </Text>
+         </View>
+      )}
+
       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 5 }}>
         <View style={{ flexDirection: 'column', alignItems: 'center' }}>
            <View style={[styles.qrBox, { width: 40, height: 35 }]}><Text style={styles.qrText}>QR CODE</Text></View>
-           {/* CORRECCIÓN: ALERTA DE DEUDA EN BOLETA */}
-           {balanceDue > 0 && (
-             <Text style={{ fontSize: 5, fontWeight: 'bold', color: '#000', textAlign: 'center', marginTop: 1 }}>
-               CTA. ANT. S/ {balanceDue.toFixed(2)}
-             </Text>
-           )}
         </View>
         <View style={{ flex: 1, alignItems: 'center' }}><Text style={[styles.legalText, { marginTop: 0 }]}>Representación impresa del comprobante de pago electrónico.</Text></View>
       </View>
