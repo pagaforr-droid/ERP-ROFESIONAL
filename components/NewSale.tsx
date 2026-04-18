@@ -3,13 +3,13 @@ import { useStore } from '../services/store';
 import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion, Batch } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
-import { supabase } from '../services/supabase'; // <-- ADIÓS MOCK_DB
+import { supabase, USE_MOCK_DB } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
 
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export const NewSale: React.FC = () => {
-   const { company, currentUser, users } = useStore(); // Solo mantenemos del store lo que no cambia (empresa, usuario)
+   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, currentUser, autoPromotions, promotions, sellers, zones } = useStore();
 
    // --- REFS FOR FOCUS MANAGEMENT ---
    const productInputRef = useRef<HTMLInputElement>(null);
@@ -33,91 +33,62 @@ export const NewSale: React.FC = () => {
    };
    const closeDialog = () => setDialog(prev => ({ ...prev, isOpen: false }));
 
-   // --- MASTER DATA SUPABASE SYNC (100% REAL) ---
+   // --- MASTER DATA SUPABASE SYNC ---
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
    const [dbPromos, setDbPromos] = useState<Promotion[]>([]);
    const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
    const [dbRewardProducts, setDbRewardProducts] = useState<Product[]>([]);
-   const [dbSeries, setDbSeries] = useState<any[]>([]); // SERIES DIRECTO DE LA BD
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
-
-   // --- HEADER STATE ---
-   const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
-   const [series, setSeries] = useState('');
-   const [docNumber, setDocNumber] = useState('');
 
    useEffect(() => {
        const fetchMasters = async () => {
-           try {
-               const [sellRes, plRes, zRes, pRes, apRes, serRes] = await Promise.all([
-                   supabase.from('sellers').select('*').order('name'),
-                   supabase.from('price_lists').select('*').order('name'),
-                   supabase.from('zones').select('*'),
-                   supabase.from('promotions').select('*').eq('is_active', true),
-                   supabase.from('auto_promotions').select('*').eq('is_active', true),
-                   supabase.from('document_series').select('*').eq('is_active', true).order('series')
-               ]);
-               
-               if (sellRes.data) setDbSellers(sellRes.data);
-               if (plRes.data) setDbPriceLists(plRes.data);
-               if (zRes.data) setDbZones(zRes.data);
-               if (pRes.data) setDbPromos(pRes.data);
-               if (serRes.data) {
-                   setDbSeries(serRes.data);
-                   // Inyectamos el correlativo exacto inicial en vivo
-                   const initialFactura = serRes.data.find((s: any) => s.type === 'FACTURA');
-                   if (initialFactura) {
-                       setSeries(initialFactura.series);
-                       setDocNumber(String(initialFactura.current_number + 1).padStart(8, '0'));
+           if (!USE_MOCK_DB) {
+               try {
+                   const [sellRes, plRes, zRes, pRes, apRes] = await Promise.all([
+                       supabase.from('sellers').select('*').order('name'),
+                       supabase.from('price_lists').select('*').order('name'),
+                       supabase.from('zones').select('*'),
+                       supabase.from('promotions').select('*').eq('is_active', true),
+                       supabase.from('auto_promotions').select('*').eq('is_active', true)
+                   ]);
+                   if (sellRes.data) setDbSellers(sellRes.data);
+                   if (plRes.data) setDbPriceLists(plRes.data);
+                   if (zRes.data) setDbZones(zRes.data);
+                   if (pRes.data) setDbPromos(pRes.data);
+                   if (apRes.data) {
+                       setDbAutoPromos(apRes.data);
+                       const rewardIds = apRes.data.map(ap => ap.reward_product_id).filter(Boolean);
+                       if (rewardIds.length > 0) {
+                           const { data: rpData } = await supabase.from('products').select('*').in('id', rewardIds);
+                           if (rpData) setDbRewardProducts(rpData as Product[]);
+                       }
                    }
-               }
-               if (apRes.data) {
-                   setDbAutoPromos(apRes.data);
-                   const rewardIds = apRes.data.map(ap => ap.reward_product_id).filter(Boolean);
-                   if (rewardIds.length > 0) {
-                       const { data: rpData } = await supabase.from('products').select('*').in('id', rewardIds);
-                       if (rpData) setDbRewardProducts(rpData as Product[]);
-                   }
-               }
-           } catch (e) { console.error("Error cargando maestros:", e); }
+               } catch (e) { console.error("Error cargando maestros:", e); }
+           }
        };
        fetchMasters();
    }, []);
 
-   // Refrescador de Series en Vivo (Se invoca tras guardar una venta exitosa)
-   const fetchLiveSeries = async () => {
-       const { data } = await supabase.from('document_series').select('*').eq('is_active', true);
-       if (data) {
-           setDbSeries(data);
-           const current = data.find(s => s.type === docType && s.series === series);
-           if (current) {
-               setDocNumber(String(current.current_number + 1).padStart(8, '0'));
-           }
-       }
-   };
+   const activeSellers = USE_MOCK_DB ? sellers : dbSellers;
+   const activePriceLists = USE_MOCK_DB ? priceLists : dbPriceLists;
+   const activeZones = USE_MOCK_DB ? zones : dbZones;
+   const activePromos = USE_MOCK_DB ? promotions : dbPromos;
+   const activeAutoPromos = USE_MOCK_DB ? autoPromotions : dbAutoPromos;
 
-   // Cambio dinámico de Documento
-   const handleDocTypeChange = (newType: string) => {
-       setDocType(newType as any);
-       const activeForType = dbSeries.filter(s => s.type === newType);
-       if (activeForType.length > 0) {
-           setSeries(activeForType[0].series);
-           setDocNumber(String(activeForType[0].current_number + 1).padStart(8, '0'));
-       } else {
-           setSeries(''); setDocNumber('');
-       }
-   };
+   // --- HEADER STATE ---
+   const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
+   const [series, setSeries] = useState(company.series.find(s => s.type === 'FACTURA')?.series || 'F001');
+   const [docNumber, setDocNumber] = useState(String(company.series.find(s => s.type === 'FACTURA')?.current_number || 1).padStart(8, '0'));
 
-   // Cambio dinámico de Serie
-   const handleSeriesChange = (newSeries: string) => {
-       setSeries(newSeries);
-       const sObj = dbSeries.find(s => s.type === docType && s.series === newSeries);
-       if (sObj) {
-           setDocNumber(String(sObj.current_number + 1).padStart(8, '0'));
-       }
-   };
+   useEffect(() => {
+      const ser = company.series.find(s => s.type === docType);
+      if (ser) {
+         setSeries(ser.series);
+         setDocNumber(String(ser.current_number).padStart(8, '0'));
+      }
+   }, [docType, company.series]);
 
    const [paymentMethod, setPaymentMethod] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
    const [currency, setCurrency] = useState('SOLES');
@@ -135,7 +106,7 @@ export const NewSale: React.FC = () => {
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
 
    useEffect(() => {
-       if (clientSearch.length < 3) { setSearchedClients([]); return; }
+       if (USE_MOCK_DB || clientSearch.length < 3) { setSearchedClients([]); return; }
        const timer = setTimeout(async () => {
            setIsSearchingClient(true);
            const { data } = await supabase.from('clients').select('*').or(`name.ilike.%${clientSearch}%,doc_number.ilike.%${clientSearch}%`).limit(10);
@@ -154,7 +125,7 @@ export const NewSale: React.FC = () => {
    const [isSearchingProd, setIsSearchingProd] = useState(false);
 
    useEffect(() => {
-       if (productSearch.length < 2) { setSearchedProducts([]); return; }
+       if (USE_MOCK_DB || productSearch.length < 2) { setSearchedProducts([]); return; }
        const timer = setTimeout(async () => {
            setIsSearchingProd(true);
            try {
@@ -166,7 +137,11 @@ export const NewSale: React.FC = () => {
                    const enriched = pData.map(p => {
                        const prodBatches = (bData || []).filter(b => b.product_id === p.id) as Batch[];
                        batchCache[p.id] = prodBatches;
-                       return { ...p, current_stock: prodBatches.reduce((sum, b) => sum + b.quantity_current, 0) };
+                       // Mapeo seguro del stock
+                       const stock = prodBatches.length > 0 
+                           ? prodBatches.reduce((sum, b) => sum + Number(b.quantity_current || 0), 0)
+                           : Number(p.current_stock || p.stock || 0);
+                       return { ...p, current_stock: stock };
                    });
                    setLoadedBatches(prev => ({ ...prev, ...batchCache }));
                    setSearchedProducts(enriched);
@@ -192,9 +167,10 @@ export const NewSale: React.FC = () => {
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
    const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
 
-   // --- CEREBRO DE BÚSQUEDA DE VENTAS ---
    useEffect(() => {
        if (!isSearchModalOpen) return;
+       if (USE_MOCK_DB) return;
+
        const timer = setTimeout(async () => {
            setIsSearchingSale(true);
            try {
@@ -214,60 +190,70 @@ export const NewSale: React.FC = () => {
        return () => clearTimeout(timer);
    }, [saleSearchTerm, isSearchModalOpen]);
 
-   // --- HELPER: DETECTAR SI UN ITEM DEL CARRITO ES EMPAQUE MAYOR ---
+   const displayClients = USE_MOCK_DB ? clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase()) || c.doc_number.includes(clientSearch)) : searchedClients;
+   const displayProducts = USE_MOCK_DB ? products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase())).map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
+   const displaySales = USE_MOCK_DB ? sales.filter(s => !saleSearchTerm || s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm)).slice(0, 10) : searchedSales;
+
+   // --- HELPERS BÁSICOS ---
    const isItemPackage = (itemUnitName: string, prod: any) => {
-       if (!prod) return false;
-       return itemUnitName === prod.package_type?.toUpperCase() || itemUnitName === 'PKG';
+       if (!prod || !itemUnitName) return false;
+       return itemUnitName.toUpperCase() === (prod.package_type || '').toUpperCase() || itemUnitName.toUpperCase() === 'PKG' || itemUnitName.toUpperCase() === 'CJA';
    };
 
-   // --- CALCULATIONS ---
-   const calculateTotal = (qty: number, price: number, discPct: number) => { const gross = qty * price; return gross - (gross * (discPct / 100)); };
-   const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (company.igv_percent / 100));
+   const calculateTotal = (qty: number, price: number, discPct: number) => { 
+       const gross = Number(qty) * Number(price); 
+       return gross - (gross * (Number(discPct) / 100)); 
+   };
+   
+   const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (Number(company.igv_percent) / 100));
    const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
+
+   const getMultiplier = () => {
+      if (!clientData.price_list_id) return 1;
+      const list = activePriceLists.find(pl => pl.id === clientData.price_list_id);
+      // Conversión matemática segura del multiplicador
+      const val = list ? (list.multiplier ?? list.factor_multiplier ?? list.factor ?? list.value ?? 1) : 1;
+      return Number(val) || 1;
+   };
 
    // --- ACTIONS ---
    const handleNewSale = () => {
       setIsViewMode(false); setOriginalSale(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
       setClientCreditInfo({ limit: 0, debt: 0, overdue: false, isChecking: false });
-      
-      const initialType = 'FACTURA';
-      setDocType(initialType);
-      const activeFacturaSeries = dbSeries.find(s => s.type === initialType);
-      if (activeFacturaSeries) { 
-         setSeries(activeFacturaSeries.series); 
-         setDocNumber(String(activeFacturaSeries.current_number + 1).padStart(8, '0')); 
-      } else { 
-         setSeries(''); setDocNumber(''); 
-      }
+      const activeFacturaSeries = company.series.find(s => s.type === 'FACTURA' && s.is_active);
+      setDocType('FACTURA');
+      if (activeFacturaSeries) { setSeries(activeFacturaSeries.series); setDocNumber(String(activeFacturaSeries.current_number).padStart(8, '0')); } 
+      else { setSeries(''); setDocNumber(''); }
    };
 
-   // MODO VISTA EXCLUSIVO (Sin mock_db)
    const loadSale = async (sale: Sale) => {
       let itemsToLoad = sale.items;
       let loadedClient: Client | null = null;
       let finalCache = { ...cartProductsCache };
       
-      const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
-      if (data) {
-          itemsToLoad = data as SaleItem[]; 
-          const pIds = itemsToLoad.map(i => i.product_id);
-          if (pIds.length > 0) {
-              const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
-              if (pData) {
-                  pData.forEach(p => finalCache[p.id] = p as Product);
-                  setCartProductsCache(prev => ({...prev, ...finalCache}));
+      if (!USE_MOCK_DB) { 
+          const { data } = await supabase.from('sale_items').select('*').eq('sale_id', sale.id); 
+          if (data) {
+              itemsToLoad = data as SaleItem[]; 
+              const pIds = itemsToLoad.map(i => i.product_id);
+              if (pIds.length > 0) {
+                  const { data: pData } = await supabase.from('products').select('*').in('id', pIds);
+                  if (pData) {
+                      pData.forEach(p => finalCache[p.id] = p as Product);
+                      setCartProductsCache(prev => ({...prev, ...finalCache}));
+                  }
               }
           }
-      }
-      if (sale.client_id) {
-          const { data: cData } = await supabase.from('clients').select('*').eq('id', sale.client_id).single();
-          if (cData) loadedClient = cData as Client;
+          if (sale.client_id) {
+              const { data: cData } = await supabase.from('clients').select('*').eq('id', sale.client_id).single();
+              if (cData) loadedClient = cData as Client;
+          }
       }
 
       const safeItems = (itemsToLoad || []).map(item => {
-          const matchedProd = finalCache[item.product_id];
+          const matchedProd = finalCache[item.product_id] || (USE_MOCK_DB ? products.find(p => p.id === item.product_id) : undefined);
           return {
               ...item,
               unit_price: Number(item.unit_price || 0),
@@ -284,7 +270,7 @@ export const NewSale: React.FC = () => {
       setOriginalSale({ ...sale, items: safeItems });
       setDocType(sale.document_type as any); 
       setSeries(sale.series); 
-      setDocNumber(sale.number); // Muestra el número legal real de la base de datos
+      setDocNumber(sale.number);
       setSelectedClientId(sale.client_id || '');
       setSelectedSellerId(sale.seller_id || ''); 
       setPaymentMethod(sale.payment_method); 
@@ -337,9 +323,13 @@ export const NewSale: React.FC = () => {
       catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
-   const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems, true); };
+   const removeFromCart = (index: number) => { 
+      const newItems = cart.filter((_, i) => i !== index); 
+      applyAutoPromotions(newItems, true); 
+   };
 
    const checkClientCredit = async (clientId: string, creditLimit: number = 0) => {
+      if (USE_MOCK_DB) { setClientCreditInfo({ limit: creditLimit, debt: 0, overdue: false, isChecking: false }); return; }
       setClientCreditInfo({ limit: creditLimit, debt: 0, overdue: false, isChecking: true });
       try {
           const { data: unpaidSales } = await supabase.from('sales').select('created_at, total, balance').eq('client_id', clientId).eq('payment_status', 'PENDING').neq('status', 'canceled');
@@ -359,17 +349,14 @@ export const NewSale: React.FC = () => {
    const selectClient = async (c: Client) => {
       setSelectedClientId(c.id);
       const newDocType: 'FACTURA' | 'BOLETA' = c.doc_number.length === 11 ? 'FACTURA' : 'BOLETA';
+      setDocType(newDocType);
       
-      const activeSeriesObj = dbSeries.find(s => s.type === newDocType && s.is_active);
-      if (activeSeriesObj) { 
-          setDocType(newDocType);
-          setSeries(activeSeriesObj.series); 
-          setDocNumber(String(activeSeriesObj.current_number + 1).padStart(8, '0')); 
-      }
+      const activeSeries = company.series.find(s => s.type === newDocType && s.is_active);
+      if (activeSeries) { setSeries(activeSeries.series); setDocNumber(String(activeSeries.current_number).padStart(8, '0')); }
 
       let autoSellerId = '';
       if (c.zone_id) { 
-         const zone = dbZones.find(z => z.id === c.zone_id); 
+         const zone = activeZones.find(z => z.id === c.zone_id); 
          if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } 
       }
       setSelectedSellerId(autoSellerId);
@@ -381,16 +368,10 @@ export const NewSale: React.FC = () => {
       checkClientCredit(c.id, c.credit_limit || 0);
    };
 
-   const getMultiplier = () => {
-      if (!clientData.price_list_id) return 1;
-      const list = dbPriceLists.find(pl => pl.id === clientData.price_list_id);
-      return list ? (list.multiplier ?? list.factor_multiplier ?? list.factor ?? list.value ?? 1) : 1;
-   };
-
    const handleProductKeyDown = (e: React.KeyboardEvent) => {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedIndex(prev => (prev + 1) % searchedProducts.length);
-      } else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedIndex(prev => (prev - 1 + searchedProducts.length) % searchedProducts.length);
-      } else if (e.key === 'Enter') { e.preventDefault(); if (searchedProducts.length > 0) selectProduct(searchedProducts[highlightedIndex]);
+      if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedIndex(prev => (prev + 1) % displayProducts.length);
+      } else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedIndex(prev => (prev - 1 + displayProducts.length) % displayProducts.length);
+      } else if (e.key === 'Enter') { e.preventDefault(); if (displayProducts.length > 0) selectProduct(displayProducts[highlightedIndex]);
       } else if (e.key === 'Escape') { setShowProductSuggestions(false); }
    };
 
@@ -398,9 +379,9 @@ export const NewSale: React.FC = () => {
       setCartProductsCache(prev => ({...prev, [p.id]: p}));
       setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitMode('BASE'); 
 
-      let price = p.price_unit * getMultiplier();
+      let price = Number(p.price_unit || 0) * getMultiplier();
       let defaultDiscount = 0;
-      const activePromo = dbPromos.find(promo => {
+      const activePromo = activePromos.find(promo => {
           if (!promo.product_ids.includes(p.id)) return false;
           if (!isPromoValidForContext(promo, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
           if (promo.target_price_list_ids?.length > 0 && clientData.price_list_id && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(clientData.price_list_id)) return false;
@@ -427,7 +408,7 @@ export const NewSale: React.FC = () => {
    const handleUnitChange = (mode: 'BASE' | 'PKG') => {
       setUnitMode(mode);
       if (selectedProduct) {
-         let price = mode === 'PKG' ? selectedProduct.price_package : selectedProduct.price_unit;
+         let price = mode === 'PKG' ? Number(selectedProduct.price_package || 0) : Number(selectedProduct.price_unit || 0);
          price = price * getMultiplier();
          setUnitPrice(price);
       }
@@ -439,20 +420,28 @@ export const NewSale: React.FC = () => {
    }
 
    const executeAddToCart = () => {
-      if (!selectedProduct) return;
+      if (!selectedProduct) {
+          showDialog('error', 'Error', 'Por favor, busque y seleccione un producto primero.');
+          return;
+      }
       if (quantity <= 0) { showDialog('warning', 'Aviso', "Cantidad inválida"); return; }
-      const prod = selectedProduct as any;
       
+      const prod = selectedProduct as any;
       const isPkgMode = unitMode === 'PKG';
-      const conversionFactor = isPkgMode ? (prod.package_content || 1) : 1;
+      const conversionFactor = isPkgMode ? Number(prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
       
+      // CIRUGÍA: EXTRAE EL NOMBRE REAL DE LA UNIDAD DEL PRODUCTO DESDE LA BD
       const realUnitName = isPkgMode 
           ? (prod.package_type || 'CAJA').toUpperCase() 
           : (prod.unit_type || 'UND').toUpperCase();
       
-      const availableBatches = loadedBatches[prod.id] || [];
-      const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
+      const availableBatches = USE_MOCK_DB ? getBatchesForProduct(prod.id) : (loadedBatches[prod.id] || []);
+      
+      // Ajuste de validación de Stock: Verifica en Lotes, o directamente en el current_stock del producto
+      const totalStock = availableBatches.length > 0 
+          ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0)
+          : Number(prod.current_stock || prod.stock || 0);
 
       if (totalStock < requiredBaseUnits) { 
           showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); 
@@ -463,7 +452,7 @@ export const NewSale: React.FC = () => {
       const selectedBatches: BatchAllocation[] = [];
       for (const batch of availableBatches) {
          if (remaining <= 0) break;
-         const take = Math.min(remaining, batch.quantity_current);
+         const take = Math.min(remaining, Number(batch.quantity_current || 0));
          selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
          remaining -= take;
       }
@@ -479,12 +468,12 @@ export const NewSale: React.FC = () => {
       if (existingItemIndex >= 0) {
          showDialog('confirm', 'Sumar Cantidad', `El producto "${prod.name}" ya existe en la lista con la misma presentación.\n¿Desea sumar la cantidad?`, () => {
             const existing = initialNewCart[existingItemIndex];
-            const newQty = existing.quantity_presentation + quantity;
+            const newQty = Number(existing.quantity_presentation || 0) + quantity;
             const newPrice = calculateTotal(newQty, unitPrice, discountPercent);
             initialNewCart[existingItemIndex] = {
                ...existing, 
                quantity_presentation: newQty, 
-               quantity_base: isPkgMode ? newQty * (prod.package_content || 1) : newQty,
+               quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty,
                total_price: newPrice, 
                discount_percent: discountPercent, 
                discount_amount: (newQty * unitPrice) * (discountPercent / 100), 
@@ -502,7 +491,7 @@ export const NewSale: React.FC = () => {
             product_id: prod.id, 
             product_sku: prod.sku, 
             product_name: prod.name,
-            selected_unit: realUnitName, 
+            selected_unit: realUnitName, // GUARDA EL NOMBRE REAL EN EL KARDEX ("BOTELLA", "CAJA")
             quantity_presentation: quantity, 
             quantity_base: requiredBaseUnits, 
             unit_price: unitPrice,
@@ -527,15 +516,17 @@ export const NewSale: React.FC = () => {
       const newQty = parseInt(newQtyStr, 10);
       if (isNaN(newQty) || newQty <= 0) return;
       const item = cart[index];
-      const product = cartProductsCache[item.product_id];
+      const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : (cartProductsCache[item.product_id] || item.product);
       if (!product) return;
 
       const isPkg = isItemPackage(item.selected_unit, product);
-      const conversionFactor = isPkg ? (product.package_content || 1) : 1;
+      const conversionFactor = isPkg ? Number(product.package_content || 1) : 1;
       const requiredBaseUnits = newQty * conversionFactor;
       
-      const availableBatches = loadedBatches[product.id] || [];
-      const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
+      const availableBatches = USE_MOCK_DB ? getBatchesForProduct(product.id) : (loadedBatches[product.id] || []);
+      const totalStock = availableBatches.length > 0 
+          ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0)
+          : Number(product.current_stock || product.stock || 0);
 
       if (totalStock < requiredBaseUnits) { 
           showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); 
@@ -543,15 +534,16 @@ export const NewSale: React.FC = () => {
       }
 
       const updatedCart = [...cart];
-      const newPrice = calculateTotal(newQty, item.unit_price, item.discount_percent);
+      const newPrice = calculateTotal(newQty, Number(item.unit_price || 0), Number(item.discount_percent || 0));
       updatedCart[index] = {
          ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice,
-         discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: [],
+         discount_amount: (newQty * Number(item.unit_price || 0)) * (Number(item.discount_percent || 0) / 100), batch_allocations: [],
          product: product
       };
       applyAutoPromotions(updatedCart, true);
    };
 
+   // CIRUGÍA ACTUALIZAR LISTA: Recalcula multiplicador matemático seguro.
    const handleUpdatePrices = (silent = false) => {
       if (cart.length === 0) return;
       if (!clientData.price_list_id && silent !== true) { showDialog('warning', 'Aviso', "Seleccione una lista de precios primero."); return; }
@@ -560,15 +552,16 @@ export const NewSale: React.FC = () => {
 
       const updatedCart = cart.map(item => {
          if (item.is_bonus) return item; 
-         const product = cartProductsCache[item.product_id];
+         // Extraemos el producto del caché o de la propiedad que le inyectamos antes
+         const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : (cartProductsCache[item.product_id] || item.product);
          if (!product) return item;
          
          const isPkg = isItemPackage(item.selected_unit, product);
-         let newPrice = isPkg ? (product.price_package || product.price_unit) : product.price_unit;
-         newPrice = newPrice * multiplier;
+         let basePrice = isPkg ? Number(product.price_package || product.price_unit || 0) : Number(product.price_unit || 0);
+         let newPrice = basePrice * multiplier;
 
          let newDisc = 0;
-         const activePromo = dbPromos.find(promo => {
+         const activePromo = activePromos.find(promo => {
              if (!promo.product_ids.includes(product.id)) return false;
              if (!isPromoValidForContext(promo, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
              if (promo.target_price_list_ids?.length > 0 && clientData.price_list_id && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(clientData.price_list_id)) return false;
@@ -580,9 +573,17 @@ export const NewSale: React.FC = () => {
             else if (activePromo.type === 'FIXED_PRICE') newPrice = activePromo.value;
          }
 
-         const newTotal = calculateTotal(item.quantity_presentation, newPrice, newDisc);
-         const newDiscountAmt = (item.quantity_presentation * newPrice) * (newDisc / 100);
-         return { ...item, unit_price: newPrice, total_price: newTotal, discount_percent: newDisc, discount_amount: newDiscountAmt, product: product };
+         const newTotal = calculateTotal(Number(item.quantity_presentation || 0), newPrice, newDisc);
+         const newDiscountAmt = (Number(item.quantity_presentation || 0) * newPrice) * (newDisc / 100);
+         
+         return { 
+             ...item, 
+             unit_price: newPrice, 
+             total_price: newTotal, 
+             discount_percent: newDisc, 
+             discount_amount: newDiscountAmt, 
+             product: product 
+         };
       });
       
       applyAutoPromotions(updatedCart, silent); 
@@ -613,7 +614,7 @@ export const NewSale: React.FC = () => {
 
    const applyAutoPromotionsWithContext = (currentCart: SaleItem[], p_list_id: string, p_city: string, p_seller: string, silent = false) => {
       let newCart = currentCart.filter(item => !item.auto_promo_id);
-      const validPromos = dbAutoPromos.filter(ap => {
+      const validPromos = activeAutoPromos.filter(ap => {
          if (!isPromoValidForContext(ap, 'IN_STORE', p_city, p_seller || currentUser?.id, currentUser?.role)) return false;
          if (ap.target_price_list_ids?.length > 0 && p_list_id && !ap.target_price_list_ids.includes('ALL') && !ap.target_price_list_ids.includes(p_list_id)) return false;
          return true;
@@ -629,31 +630,31 @@ export const NewSale: React.FC = () => {
                 if (hasList) return ap.condition_product_ids.includes(item.product_id);
                 if (hasSingle) return item.product_id === ap.condition_product_id;
                 return true; 
-            }).reduce((sum, item) => sum + item.quantity_base, 0);
+            }).reduce((sum, item) => sum + Number(item.quantity_base || 0), 0);
             
             if (qtyBought >= ap.condition_amount) { applies = true; multiplyFactor = Math.floor(qtyBought / ap.condition_amount); }
          } else if (ap.condition_type === 'SPEND_Y_TOTAL') {
             const conditionItemKeys = ap.condition_product_ids || [];
             const totalSpent = newCart.reduce((sum, item) => {
                if (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) return sum;
-               return sum + item.total_price;
+               return sum + Number(item.total_price || 0);
             }, 0);
             if (totalSpent >= ap.condition_amount) { applies = true; multiplyFactor = Math.floor(totalSpent / ap.condition_amount); }
          } else if (ap.condition_type === 'SPEND_Y_CATEGORY') {
             const catSpent = newCart.reduce((sum, item) => {
-               const p = cartProductsCache[item.product_id];
-               if (p?.category === ap.condition_category) return sum + item.total_price;
+               const p = USE_MOCK_DB ? products.find(prod => prod.id === item.product_id) : (cartProductsCache[item.product_id] || item.product);
+               if (p?.category === ap.condition_category) return sum + Number(item.total_price || 0);
                return sum;
             }, 0);
             if (catSpent >= ap.condition_amount) { applies = true; multiplyFactor = Math.floor(catSpent / ap.condition_amount); }
          }
 
          if (applies && multiplyFactor > 0) {
-            const rewardProd = dbRewardProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
+            const rewardProd = USE_MOCK_DB ? products.find(p => p.id === ap.reward_product_id) : (dbRewardProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id]);
             if (rewardProd) {
                const rewardQty = ap.reward_quantity * multiplyFactor;
                const isPkgMode = ap.reward_unit_type === 'PKG';
-               const conversionFactor = isPkgMode ? (rewardProd.package_content || 1) : 1;
+               const conversionFactor = isPkgMode ? Number(rewardProd.package_content || 1) : 1;
                
                const realUnitName = isPkgMode 
                    ? (rewardProd.package_type || 'CAJA').toUpperCase() 
@@ -676,13 +677,19 @@ export const NewSale: React.FC = () => {
       if (silent !== true) showDialog('success', 'Precios Actualizados', "Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
    };
 
+   const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => {
+       applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent);
+   };
+
    const executeSaveSale = async () => {
-      // El número aquí es meramente visual para el log. La base de datos asignará el final
+      const correlative = getNextDocumentNumber(docType, series);
+      if (!correlative) { showDialog('error', 'Error', "Error al obtener la serie."); return; }
+
       const newSaleData: Sale = {
          id: crypto.randomUUID(), 
          document_type: docType,
-         series: series,
-         number: docNumber,
+         series: correlative!.series,
+         number: correlative!.number,
          payment_method: paymentMethod,
          payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
          balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
@@ -703,23 +710,23 @@ export const NewSale: React.FC = () => {
 
       setIsSaving(true);
 
-      try {
-         const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
-         if (error) throw error;
-         
-         if (data && data.success) {
-            const realNumber = data.real_number;
-            newSaleData.number = realNumber;
-            showDialog('success', 'Venta Guardada', `Venta registrada exitosamente con comprobante:\n${series}-${realNumber}`);
-            
-            // Actualizamos la interfaz inmediatamente
-            await fetchLiveSeries();
-            
-            try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
-            handleNewSale();
-         }
-      } catch (err: any) { showDialog('error', 'Error Crítico', err.message);
-      } finally { setIsSaving(false); }
+      if (!USE_MOCK_DB) {
+         try {
+            const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
+            if (error) throw error;
+            if (data && data.success) {
+               showDialog('success', 'Venta Guardada', `Venta registrada exitosamente. Kardex actualizado.`);
+               try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
+               handleNewSale();
+            }
+         } catch (err: any) { showDialog('error', 'Error Crítico', err.message);
+         } finally { setIsSaving(false); }
+      } else {
+         createSale(newSaleData);
+         try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
+         handleNewSale();
+         setIsSaving(false);
+      }
    };
 
    const handleSaveSale = async () => {
@@ -733,9 +740,10 @@ export const NewSale: React.FC = () => {
 
       if (cart.length === 0) return;
       if (!selectedClientId && !clientData.name) { showDialog('warning', 'Faltan Datos', "Ingrese datos del cliente"); return; }
-      if (!series) { showDialog('error', 'Falta Serie', "No hay una serie asignada en el sistema."); return; }
-      if (selectedClientId && !isUUID(selectedClientId)) { showDialog('warning', 'Alerta', "Cliente inválido."); return; }
-      if (cart.some(i => !isUUID(i.product_id))) { showDialog('warning', 'Alerta', "Hay productos de prueba en el carrito."); return; }
+      if (!series) { showDialog('error', 'Falta Serie', "No hay una serie asignada. Configure una en los Ajustes de Empresa."); return; }
+
+      if (selectedClientId && !isUUID(selectedClientId) && !USE_MOCK_DB) { showDialog('warning', 'Alerta', "Cliente de prueba detectado. Seleccione uno real."); return; }
+      if (!USE_MOCK_DB && cart.some(i => !isUUID(i.product_id))) { showDialog('warning', 'Alerta', "Hay productos de prueba. Use productos reales."); return; }
 
       if (paymentMethod === 'CREDITO') {
           if (clientCreditInfo.overdue) {
@@ -771,11 +779,12 @@ export const NewSale: React.FC = () => {
                      </div>
                      <div className="p-4 bg-slate-50 border-t flex justify-end gap-3">
                          {dialog.type === 'confirm' && (
-                             <button onClick={closeDialog} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded shadow-sm transition-colors">
+                             <button type="button" onClick={closeDialog} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded shadow-sm transition-colors">
                                  Cancelar
                              </button>
                          )}
                          <button
+                             type="button"
                              onClick={() => {
                                  if (dialog.onConfirm) dialog.onConfirm();
                                  closeDialog();
@@ -800,10 +809,10 @@ export const NewSale: React.FC = () => {
          {/* === HEADER SECTION === */}
          <div className="bg-white p-2 rounded shadow-sm border border-slate-300 mb-2 space-y-2 relative">
             <div className="absolute top-2 right-2 flex gap-2">
-               <button onClick={handleNewSale} className="bg-slate-700 text-white px-3 py-1 rounded shadow text-xs font-bold hover:bg-slate-600 flex items-center">
+               <button type="button" onClick={handleNewSale} className="bg-slate-700 text-white px-3 py-1 rounded shadow text-xs font-bold hover:bg-slate-600 flex items-center">
                   <FilePlus className="w-3.5 h-3.5 mr-1" /> Nuevo (F2)
                </button>
-               <button onClick={() => setIsSearchModalOpen(true)} className="bg-blue-600 text-white px-3 py-1 rounded shadow text-xs font-bold hover:bg-blue-500 flex items-center">
+               <button type="button" onClick={() => setIsSearchModalOpen(true)} className="bg-blue-600 text-white px-3 py-1 rounded shadow text-xs font-bold hover:bg-blue-500 flex items-center">
                   <Search className="w-3.5 h-3.5 mr-1" /> Buscar Doc (F3)
                </button>
             </div>
@@ -814,7 +823,12 @@ export const NewSale: React.FC = () => {
                   <select
                      className="border border-slate-300 rounded px-2 py-1 flex-1 bg-white text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
                      value={docType}
-                     onChange={(e) => handleDocTypeChange(e.target.value)}
+                     onChange={(e: any) => {
+                        setDocType(e.target.value);
+                        const activeSeries = company.series.find(s => s.type === e.target.value && s.is_active);
+                        if (activeSeries) { setSeries(activeSeries.series); setDocNumber(String(activeSeries.current_number).padStart(8, '0'));
+                        } else { setSeries(''); setDocNumber(''); }
+                     }}
                      disabled={isViewMode}
                   >
                      <option value="FACTURA">FACTURA</option>
@@ -823,8 +837,8 @@ export const NewSale: React.FC = () => {
                </div>
                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
                   <label className="font-bold text-slate-700 text-sm">Serie y Correlativo</label>
-                  <select className="w-20 text-center border border-slate-300 rounded px-1 py-1 text-sm font-bold bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={series} onChange={(e) => handleSeriesChange(e.target.value)} disabled={isViewMode}>
-                     {dbSeries.filter(s => s.type === docType).map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
+                  <select className="w-20 text-center border border-slate-300 rounded px-1 py-1 text-sm font-bold bg-white text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={series} onChange={(e) => { setSeries(e.target.value); const sObj = company.series.find(s => s.type === docType && s.series === e.target.value); if (sObj) setDocNumber(String(sObj.current_number).padStart(8, '0')); }} disabled={isViewMode}>
+                     {company.series.filter(s => s.type === docType && s.is_active).map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
                   </select>
                   <input className="w-24 text-center border border-transparent px-1 py-1 text-sm font-bold bg-transparent text-slate-800 pointer-events-none" value={docNumber} readOnly />
                </div>
@@ -836,7 +850,7 @@ export const NewSale: React.FC = () => {
                   <label className="font-bold text-slate-700 text-sm">Vendedor</label>
                   <select className="border border-slate-300 rounded px-2 py-1 text-sm bg-white font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none" value={selectedSellerId} onChange={e => setSelectedSellerId(e.target.value)} disabled={isViewMode}>
                      <option value="">-- Sin Vendedor --</option>
-                     {dbSellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                     {activeSellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                </div>
             </div>
@@ -844,7 +858,7 @@ export const NewSale: React.FC = () => {
             {!series && !isViewMode && <div className="ml-4 px-3 py-1 bg-red-100 text-red-800 text-[10px] font-bold rounded border border-red-300 w-fit">¡DEBE CONFIGURAR UNA SERIE EN AJUSTES!</div>}
          </div>
 
-         {/* === CLIENT SECTION === */}
+         {/* === CLIENT SECTION (CON ALERTA DE CRÉDITO) === */}
          <div className="flex items-start gap-2 mb-2">
             <div className="flex-1 grid grid-cols-12 gap-1 bg-slate-100 p-1.5 rounded border border-slate-200 relative">
                
@@ -883,15 +897,18 @@ export const NewSale: React.FC = () => {
                         disabled={isViewMode}
                      />
                      {isSearchingClient && <Loader2 className="absolute right-1 top-1 w-3 h-3 text-blue-500 animate-spin" />}
-                     {showClientSuggestions && clientSearch && searchedClients.length > 0 && (
+                     {showClientSuggestions && clientSearch && displayClients.length > 0 && (
                         <div className="absolute top-full left-0 w-[400px] bg-white border border-slate-400 shadow-xl z-50 max-h-48 overflow-auto">
-                           {searchedClients.map(c => (
+                           {displayClients.map(c => (
                               <div key={c.id} onMouseDown={() => selectClient(c)} className="p-2 hover:bg-blue-100 cursor-pointer border-b border-slate-100">
                                  <div className="font-bold text-slate-800">{c.name}</div>
                                  <div className="text-[10px] text-slate-500">{c.doc_number} | {c.address}</div>
                               </div>
                            ))}
                         </div>
+                     )}
+                     {showClientSuggestions && clientSearch && displayClients.length === 0 && !isSearchingClient && (
+                         <div className="absolute top-full left-0 w-[300px] bg-white border border-slate-400 shadow-xl z-50 p-2 text-slate-400 italic">No encontrado</div>
                      )}
                   </div>
                </div>
@@ -914,9 +931,10 @@ export const NewSale: React.FC = () => {
                         disabled={isViewMode}
                      >
                         <option value="">-- General --</option>
-                        {dbPriceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+                        {activePriceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
                      </select>
                      <button
+                        type="button"
                         onClick={() => handleUpdatePrices(false)}
                         disabled={isViewMode}
                         className="bg-blue-100 border border-blue-300 text-blue-700 px-1.5 rounded hover:bg-blue-200 disabled:opacity-50 flex items-center justify-center transition-colors"
@@ -940,7 +958,7 @@ export const NewSale: React.FC = () => {
                   <div className="flex bg-slate-50 border border-slate-300 rounded">
                      <input className="w-full px-2 py-0.5 bg-transparent text-slate-600 disabled:text-slate-500 outline-none" value={clientData.address} onChange={e => setClientData({ ...clientData, address: e.target.value })} disabled={isViewMode} />
                      {(() => {
-                        const fullClient = searchedClients.find(c => c.doc_number === clientData.doc_number);
+                        const fullClient = clients.find(c => c.doc_number === clientData.doc_number) || searchedClients.find(c => c.doc_number === clientData.doc_number);
                         if (fullClient && fullClient.branches && fullClient.branches.length > 0 && !isViewMode) {
                            return (
                               <button type="button" onClick={() => setShowBranchSelector(!showBranchSelector)} className="px-2 border-l border-slate-300 text-blue-600 hover:bg-blue-100 flex items-center justify-center transition-colors" title="Seleccionar otra sucursal">
@@ -955,7 +973,7 @@ export const NewSale: React.FC = () => {
                      <div className="absolute top-full right-0 mt-1 w-[400px] bg-white border border-slate-300 shadow-xl rounded z-50 overflow-hidden">
                         <div className="bg-slate-100 px-3 py-2 border-b border-slate-200 font-bold text-xs text-slate-600 uppercase">Seleccione Dirección de Entrega</div>
                         {(() => {
-                           const fullClient = searchedClients.find(c => c.doc_number === clientData.doc_number);
+                           const fullClient = clients.find(c => c.doc_number === clientData.doc_number) || searchedClients.find(c => c.doc_number === clientData.doc_number);
                            if (!fullClient) return null;
                            const allAddresses = [fullClient.address, ...(fullClient.branches || [])];
                            return (
@@ -1000,7 +1018,7 @@ export const NewSale: React.FC = () => {
                         />
                         {isSearchingProd && <Loader2 className="absolute right-1.5 top-1.5 w-4 h-4 text-blue-500 animate-spin" />}
                         
-                        {showProductSuggestions && searchedProducts.length > 0 && (
+                        {showProductSuggestions && displayProducts.length > 0 && (
                            <div className="absolute top-full left-0 w-full bg-white border border-slate-400 shadow-2xl z-50 max-h-60 overflow-auto">
                               <table className="w-full text-left text-xs">
                                  <thead className="bg-slate-100 font-bold text-slate-600">
@@ -1012,7 +1030,7 @@ export const NewSale: React.FC = () => {
                                     </tr>
                                  </thead>
                                  <tbody>
-                                    {searchedProducts.map((p, idx) => (
+                                    {displayProducts.map((p, idx) => (
                                        <tr key={p.id} onMouseDown={() => selectProduct(p as any)} className={`cursor-pointer ${idx === highlightedIndex ? 'bg-blue-200' : 'hover:bg-blue-50'}`}>
                                           <td className="p-2 font-mono text-blue-800 font-bold">{p.sku}</td>
                                           <td className="p-2 font-medium">{p.name}</td>
@@ -1034,7 +1052,6 @@ export const NewSale: React.FC = () => {
 
                   <div className="w-24 relative">
                      <label className="block text-[10px] font-bold text-blue-800 mb-0.5">Unidad</label>
-                     {/* SE MUESTRAN LOS NOMBRES EXACTOS DE LA BD */}
                      <select ref={unitSelectRef} className="w-full border border-blue-300 rounded py-1 px-1 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={unitMode} onChange={e => handleUnitChange(e.target.value as 'BASE' | 'PKG')} onKeyDown={e => handleInputKeyDown(e, addButtonRef as any)} disabled={!selectedProduct}>
                         <option value="BASE">{selectedProduct?.unit_type ? selectedProduct.unit_type.toUpperCase() : 'UND'}</option>
                         {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type.toUpperCase()}</option>}
@@ -1046,7 +1063,7 @@ export const NewSale: React.FC = () => {
                      <div className="flex justify-between items-center mb-0.5">
                         <label className="block text-[10px] font-bold text-blue-800">Precio</label>
                         {selectedProduct && (
-                           <button onClick={() => { if (priceLocked) requestAdminAuth(() => setPriceLocked(false), 'Desbloq Precio'); else setPriceLocked(true); }} className={`text-[8px] px-1 rounded font-bold ${priceLocked ? 'bg-slate-200 text-slate-500' : 'bg-red-500 text-white animate-pulse'}`}>{priceLocked ? 'BLOQ' : 'LIBRE'}</button>
+                           <button type="button" onClick={() => { if (priceLocked) requestAdminAuth(() => setPriceLocked(false), 'Desbloq Precio'); else setPriceLocked(true); }} className={`text-[8px] px-1 rounded font-bold ${priceLocked ? 'bg-slate-200 text-slate-500' : 'bg-red-500 text-white animate-pulse'}`}>{priceLocked ? 'BLOQ' : 'LIBRE'}</button>
                         )}
                      </div>
                      <input ref={priceInputRef} type="number" className="w-full border border-blue-300 rounded py-1 px-1 text-right text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-slate-200" value={unitPrice} onChange={e => setUnitPrice(Number(e.target.value))} onKeyDown={e => handleInputKeyDown(e, discountInputRef)} disabled={!selectedProduct || isBonus || priceLocked} />
@@ -1064,7 +1081,7 @@ export const NewSale: React.FC = () => {
                      </label>
                   </div>
 
-                  <button ref={addButtonRef} onClick={handleAddToCart} disabled={!selectedProduct} className="bg-accent hover:bg-blue-700 text-white p-1.5 rounded shadow-sm disabled:opacity-50 focus:ring-2 focus:ring-blue-500 outline-none">
+                  <button type="button" ref={addButtonRef} onClick={handleAddToCart} disabled={!selectedProduct} className="bg-accent hover:bg-blue-700 text-white p-1.5 rounded shadow-sm disabled:opacity-50 focus:ring-2 focus:ring-blue-500 outline-none">
                      <Plus className="w-5 h-5" />
                   </button>
                </div>
@@ -1088,8 +1105,8 @@ export const NewSale: React.FC = () => {
                <table className="w-full text-left text-xs">
                   <tbody>
                      {cart.map((item, index) => {
-                        const prod = cartProductsCache[item.product_id] || item.product;
-                        const autoPromo = item.auto_promo_id ? dbAutoPromos.find(ap => ap.id === item.auto_promo_id) : null;
+                        const prod = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : (cartProductsCache[item.product_id] || item.product);
+                        const autoPromo = item.auto_promo_id ? activeAutoPromos.find(ap => ap.id === item.auto_promo_id) : null;
                         return (
                            <tr key={item.id} className={`border-b border-slate-100 ${item.is_bonus ? 'bg-orange-50' : 'hover:bg-slate-50'}`}>
                               <td className="p-2 w-8 text-center text-xs font-bold text-slate-700">{index + 1}</td>
@@ -1139,6 +1156,7 @@ export const NewSale: React.FC = () => {
                               <td className="p-2 w-24 text-right font-bold text-slate-900 text-sm">S/ {Number(item.total_price || 0).toFixed(2)}</td>
                               <td className="p-2 w-8 text-right">
                                  <button
+                                    type="button"
                                     onClick={() => removeFromCart(index)}
                                     className={`text-red-400 hover:bg-red-50 p-1 rounded transition-colors ${item.auto_promo_id ? 'opacity-50 cursor-not-allowed hidden' : ''}`}
                                     disabled={isViewMode || !!item.auto_promo_id}
@@ -1158,7 +1176,7 @@ export const NewSale: React.FC = () => {
          {/* === FOOTER TOTALS === */}
          <div className="h-24 bg-slate-100 border-t border-slate-400 flex p-2 gap-4">
             <div className="flex-1 flex gap-2 items-end">
-               <button onClick={handlePreview} disabled={isViewMode && !originalSale} className={`bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded flex items-center shadow-sm font-bold ${(isViewMode && !originalSale) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`}>
+               <button type="button" onClick={handlePreview} disabled={isViewMode && !originalSale} className={`bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded flex items-center shadow-sm font-bold ${(isViewMode && !originalSale) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`}>
                   <Printer className="w-4 h-4 mr-2" /> Vista Previa
                </button>
                <div className="flex-1"></div>
@@ -1193,6 +1211,7 @@ export const NewSale: React.FC = () => {
             </div>
 
             <button
+               type="button"
                onClick={handleSaveSale}
                disabled={isViewMode && !originalSale}
                className={`w-32 bg-green-600 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${(isViewMode && !originalSale) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-700'}`}
@@ -1208,7 +1227,7 @@ export const NewSale: React.FC = () => {
                <div className="bg-white w-full max-w-5xl rounded-lg shadow-2xl flex flex-col max-h-[85vh]">
                   <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-100 rounded-t-lg">
                      <h3 className="font-bold text-slate-700 flex items-center text-lg"><Search className="w-5 h-5 mr-2" /> Buscar Documento</h3>
-                     <button onClick={() => setIsSearchModalOpen(false)} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
+                     <button type="button" onClick={() => setIsSearchModalOpen(false)} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
                   </div>
                   <div className="p-4 bg-slate-50 border-b border-slate-200 relative">
                      <input
@@ -1256,6 +1275,7 @@ export const NewSale: React.FC = () => {
                                  </td>
                                  <td className="p-4 text-right flex gap-2 justify-end">
                                     <button
+                                       type="button"
                                        onClick={() => setShowHistoryModal({ isOpen: true, sale: s })}
                                        className="bg-white border border-slate-300 px-3 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
                                        title="Ver Historial"
@@ -1263,6 +1283,7 @@ export const NewSale: React.FC = () => {
                                        H.
                                     </button>
                                     <button
+                                       type="button"
                                        onClick={() => loadSale(s)}
                                        className="bg-white border border-slate-300 px-4 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
                                     >
@@ -1287,7 +1308,7 @@ export const NewSale: React.FC = () => {
                <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
                   <div className="flex justify-between items-center bg-slate-100 rounded-t-lg mb-4">
                      <h3 className="font-bold text-slate-800 text-lg flex items-center"><Eye className="w-5 h-5 mr-2 text-slate-500" /> Historial de Documento: {showHistoryModal.sale.series}-{showHistoryModal.sale.number}</h3>
-                     <button onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
+                     <button type="button" onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
                   </div>
 
                   <div className="flex-1 overflow-auto border border-slate-200 rounded">
@@ -1320,7 +1341,7 @@ export const NewSale: React.FC = () => {
                   </div>
 
                   <div className="mt-4 flex justify-end">
-                     <button onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded">
+                     <button type="button" onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded">
                         Cerrar
                      </button>
                   </div>
@@ -1347,12 +1368,14 @@ export const NewSale: React.FC = () => {
 
                   <div className="flex gap-2 justify-end">
                      <button
+                        type="button"
                         onClick={() => setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' })}
                         className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 font-bold text-sm"
                      >
                         Cancelar (ESC)
                      </button>
                      <button
+                        type="button"
                         onClick={verifyAdminAndExecute}
                         className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold text-sm"
                      >
