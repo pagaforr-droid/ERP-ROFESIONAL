@@ -1,19 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, SaleItem, Client, Sale, Promotion, Batch } from '../types';
-import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3 } from 'lucide-react';
+import { Product, BatchAllocation, SaleItem, Client, Sale, Batch } from '../types';
+import { Plus, Trash2, Search, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
 
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export const EditSale: React.FC = () => {
-   const { users } = useStore();
+   // CORRECCIÓN: Extracción segura del usuario y listas
+   const { users, currentUser } = useStore();
 
    const productInputRef = useRef<HTMLInputElement>(null);
    const qtyInputRef = useRef<HTMLInputElement>(null);
    const unitSelectRef = useRef<HTMLSelectElement>(null);
+   const priceInputRef = useRef<HTMLInputElement>(null);
+   const discountInputRef = useRef<HTMLInputElement>(null);
+   const addButtonRef = useRef<HTMLButtonElement>(null);
 
+   const [priceLocked, setPriceLocked] = useState(false); // Desbloqueado por defecto para auditores
    const [isSaving, setIsSaving] = useState(false);
 
    const [dialog, setDialog] = useState<{ isOpen: boolean; type: 'success' | 'error' | 'warning' | 'confirm' | 'info'; title: string; message: string; onConfirm?: () => void }>({
@@ -25,12 +30,11 @@ export const EditSale: React.FC = () => {
    };
    const closeDialog = () => setDialog(prev => ({ ...prev, isOpen: false }));
 
-   // --- MASTER DATA SUPABASE SYNC ---
+   // --- MASTER DATA SUPABASE SYNC (EDICIÓN PURA) ---
    const [dbCompany, setDbCompany] = useState<any>(null); 
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
-   const [dbPromos, setDbPromos] = useState<Promotion[]>([]);
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
    // --- SALE STATE ---
@@ -53,19 +57,18 @@ export const EditSale: React.FC = () => {
    useEffect(() => {
        const fetchMasters = async () => {
            try {
-               const [compRes, sellRes, plRes, zRes, pRes] = await Promise.all([
+               // CORRECCIÓN: Carga limpia sin variables faltantes
+               const [compRes, sellRes, plRes, zRes] = await Promise.all([
                    supabase.from('company_config').select('*').limit(1).maybeSingle(),
                    supabase.from('sellers').select('*').order('name'),
                    supabase.from('price_lists').select('*').order('name'),
-                   supabase.from('zones').select('*'),
-                   supabase.from('promotions').select('*').eq('is_active', true)
+                   supabase.from('zones').select('*')
                ]);
                
                if (compRes.data) setDbCompany(compRes.data);
                if (sellRes.data) setDbSellers(sellRes.data);
                if (plRes.data) setDbPriceLists(plRes.data);
                if (zRes.data) setDbZones(zRes.data);
-               if (pRes.data) setDbPromos(pRes.data);
            } catch (e) { console.error("Error cargando maestros:", e); }
        };
        fetchMasters();
@@ -118,6 +121,8 @@ export const EditSale: React.FC = () => {
    const [unitMode, setUnitMode] = useState<'BASE' | 'PKG'>('BASE'); 
    const [quantity, setQuantity] = useState<number>(1);
    const [unitPrice, setUnitPrice] = useState<number>(0); 
+   const [discountPercent, setDiscountPercent] = useState<number>(0);
+   const [isBonus, setIsBonus] = useState(false);
    const [cart, setCart] = useState<SaleItem[]>([]);
 
    const [isSearchModalOpen, setIsSearchModalOpen] = useState(true); // Se abre por defecto para obligar a buscar
@@ -130,8 +135,10 @@ export const EditSale: React.FC = () => {
        const timer = setTimeout(async () => {
            setIsSearchingSale(true);
            try {
-               let query = supabase.from('sales').select('*').order('created_at', { ascending: false }).limit(10);
-               if (saleSearchTerm.trim().length > 0) query = query.or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`);
+               let query = supabase.from('sales').select('*').order('created_at', { ascending: false }).limit(15);
+               if (saleSearchTerm.trim().length > 0) {
+                  query = query.or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`);
+               }
                const { data, error } = await query;
                if (error) throw error;
                if (data) setSearchedSales(data as Sale[]);
@@ -155,6 +162,13 @@ export const EditSale: React.FC = () => {
    const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (Number(dbCompany?.igv_percent || 18) / 100));
    const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
+
+   const getMultiplier = () => {
+      if (!clientData.price_list_id) return 1;
+      const list = dbPriceLists.find(pl => pl.id === clientData.price_list_id);
+      const val = list ? (list.multiplier ?? list.factor_multiplier ?? list.factor ?? list.value ?? 1) : 1;
+      return Number(val) || 1;
+   };
 
    const loadSale = async (sale: Sale) => {
       // Bloqueo SUNAT
@@ -190,15 +204,21 @@ export const EditSale: React.FC = () => {
       });
 
       setOriginalSale({ ...sale, items: safeItems });
-      setDocType(sale.document_type as any); setSeries(sale.series); setDocNumber(sale.number); 
-      setSelectedClientId(sale.client_id || ''); setSelectedSellerId(sale.seller_id || ''); setPaymentMethod(sale.payment_method); setClientSearch(sale.client_name); 
+      setDocType(sale.document_type as any); 
+      setSeries(sale.series); 
+      setDocNumber(sale.number); 
+      setSelectedClientId(sale.client_id || ''); 
+      setSelectedSellerId(sale.seller_id || ''); 
+      setPaymentMethod(sale.payment_method); 
+      setClientSearch(sale.client_name); 
 
       setClientData({ name: sale.client_name, doc_number: sale.client_ruc, address: sale.client_address, price_list_id: loadedClient?.price_list_id || '', city: loadedClient?.city || '' });
-      setCart(safeItems); setIsSearchModalOpen(false);
+      setCart(safeItems); 
+      setIsSearchModalOpen(false);
    };
 
    const resetEntryForm = () => {
-      setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0);
+      setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0); setDiscountPercent(0); setIsBonus(false);
       setTimeout(() => productInputRef.current?.focus(), 50);
    }
 
@@ -217,13 +237,13 @@ export const EditSale: React.FC = () => {
       if (existingItemIndex >= 0) {
          const existing = cart[existingItemIndex];
          const newQty = Number(existing.quantity_presentation || 0) + quantity;
-         const newPrice = calculateTotal(newQty, unitPrice, 0); // EditSale asume precios fijos manuales
+         const newPrice = calculateTotal(newQty, unitPrice, discountPercent); 
          const newCart = [...cart];
-         newCart[existingItemIndex] = { ...existing, quantity_presentation: newQty, quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty, total_price: newPrice, unit_price: unitPrice, product: prod };
+         newCart[existingItemIndex] = { ...existing, quantity_presentation: newQty, quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty, total_price: newPrice, unit_price: unitPrice, discount_percent: discountPercent, is_bonus: isBonus, product: prod };
          setCart(newCart);
          resetEntryForm();
       } else {
-         const newCart = [...cart, { id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name, selected_unit: realUnitName, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice, total_price: calculateTotal(quantity, unitPrice, 0), discount_percent: 0, discount_amount: 0, is_bonus: false, batch_allocations: [], product: prod }];
+         const newCart = [...cart, { id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name, selected_unit: realUnitName, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice, total_price: calculateTotal(quantity, unitPrice, discountPercent), discount_percent: discountPercent, discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: [], product: prod }];
          setCart(newCart);
          resetEntryForm();
       }
@@ -280,8 +300,25 @@ export const EditSale: React.FC = () => {
    const proceedSelectProduct = (p: Product & { current_stock?: number }) => {
       setCartProductsCache(prev => ({...prev, [p.id]: p}));
       setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitMode('BASE'); 
-      setUnitPrice(Number(p.price_unit || 0)); setQuantity(1);
+      setUnitPrice(Number(p.price_unit || 0) * getMultiplier()); setQuantity(1); setDiscountPercent(0); setIsBonus(false);
       setTimeout(() => { qtyInputRef.current?.focus(); qtyInputRef.current?.select(); }, 50);
+   };
+
+   const handleUnitChange = (mode: 'BASE' | 'PKG') => {
+      setUnitMode(mode);
+      if (selectedProduct) {
+         let price = mode === 'PKG' ? Number(selectedProduct.price_package || 0) : Number(selectedProduct.price_unit || 0);
+         setUnitPrice(price * getMultiplier());
+      }
+   };
+
+   const handleInputKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<any> | 'ADD' | 'BONUS_TOGGLE') => {
+      if (e.key === 'Enter') {
+         e.preventDefault();
+         if (nextRef === 'ADD') addButtonRef.current?.focus();
+         else if (nextRef === 'BONUS_TOGGLE') setIsBonus(prev => !prev);
+         else if (nextRef.current) { nextRef.current.focus(); if (nextRef.current.select) nextRef.current.select(); }
+      } else if (e.key === 'Escape') { setSelectedProduct(null); setProductSearch(''); setTimeout(() => productInputRef.current?.focus(), 50); }
    };
 
    const executeSaveEdit = async () => {
@@ -290,7 +327,7 @@ export const EditSale: React.FC = () => {
 
       const seller = dbSellers.find(s => s.id === selectedSellerId);
 
-      // El número de factura original SE RESPETA
+      // El número de factura original SE RESPETA RIGUROSAMENTE
       const updatedSaleData: any = {
          ...originalSale,
          client_name: clientData.name || 'CLIENTE VARIOS',
@@ -312,16 +349,21 @@ export const EditSale: React.FC = () => {
       setIsSaving(true);
 
       try {
-         // Llamada al NUEVO procedimiento almacenado de Edición
+         // Llamada al NUEVO procedimiento almacenado de Edición en Supabase
          const { data, error } = await supabase.rpc('update_sale_transaction', { p_sale_data: updatedSaleData });
          if (error) throw error;
          
          if (data && data.success) {
-            showDialog('success', 'Comprobante Editado', `Modificación Guardada. El Kardex ha sido restituido y re-calculado.`);
-            try { await PdfEngine.openDocument(updatedSaleData as Sale, docType, dbCompany); } catch(e) {}
+            showDialog('success', 'Comprobante Editado', `Modificación Guardada con éxito. El Kardex ha sido rectificado automáticamente.`);
+            
+            // Si quieres imprimir automáticamente tras guardar, descomenta la siguiente línea:
+            // try { await PdfEngine.openDocument(updatedSaleData as Sale, docType, dbCompany); } catch(e) {}
+            
             // Cerramos todo
             setOriginalSale(null);
             setCart([]);
+            setClientSearch('');
+            setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
             setIsSearchModalOpen(true);
          }
       } catch (err: any) { 
@@ -332,7 +374,7 @@ export const EditSale: React.FC = () => {
    };
 
    // ===============================================
-   // RENDERIZADO VISUAL
+   // RENDERIZADO VISUAL (MODO EDICIÓN TÁCTICO)
    // ===============================================
 
    // PANTALLA DE BLOQUEO INICIAL (Forzar búsqueda)
@@ -345,13 +387,6 @@ export const EditSale: React.FC = () => {
                <button onClick={() => setIsSearchModalOpen(true)} className="bg-amber-600 hover:bg-amber-700 text-white px-8 py-3 rounded-lg font-bold shadow-lg shadow-amber-600/30 flex items-center transition-all active:scale-95">
                    <Search className="w-5 h-5 mr-2" /> Buscar Comprobante
                </button>
-               
-               {/* MODAL SEARCH ALOJADO AQUÍ PARA CUANDO ESTÁ CERRADO EL EDITOR */}
-               {isSearchModalOpen && (
-                   <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                      {/* CÓDIGO DEL MODAL DE BÚSQUEDA... */}
-                   </div>
-               )}
            </div>
        );
    }
