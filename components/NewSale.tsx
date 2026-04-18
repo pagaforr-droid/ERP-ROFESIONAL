@@ -166,9 +166,11 @@ export const NewSale: React.FC = () => {
            setIsSearchingSale(true);
            try {
                let query = supabase.from('sales').select('*').order('created_at', { ascending: false }).limit(10);
+               
                if (saleSearchTerm.trim().length > 0) {
                    query = query.or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`);
                }
+               
                const { data, error } = await query;
                if (error) throw error;
                if (data) setSearchedSales(data as Sale[]);
@@ -340,14 +342,13 @@ export const NewSale: React.FC = () => {
       checkClientCredit(c.id, c.credit_limit || 0);
    };
 
-   // Evaluar si recargar precios (omitimos recálculos automáticos constantes para dejar control manual al botón Refresh)
-   // Si lo deseas, puedes reactivar el useEffect aquí. Por ahora, forzamos el UpdatePrices con el botón.
-   useEffect(() => {
-       if (cart.length > 0 && !isViewMode) {
-           handleUpdatePrices(true); 
-       }
-   // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [clientData.price_list_id, selectedSellerId, clientData.city]);
+   // CIRUGÍA DE PRECIOS DINÁMICOS: Función auxiliar para obtener el multiplicador de la lista seleccionada
+   const getMultiplier = () => {
+      if (!clientData.price_list_id) return 1;
+      const list = activePriceLists.find(pl => pl.id === clientData.price_list_id);
+      // Extrae el valor dinámico de la base de datos, asumiendo nombre común de la columna
+      return list ? (list.multiplier ?? list.factor_multiplier ?? list.factor ?? list.value ?? 1) : 1;
+   };
 
    const handleProductKeyDown = (e: React.KeyboardEvent) => {
       if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedIndex(prev => (prev + 1) % displayProducts.length);
@@ -367,9 +368,8 @@ export const NewSale: React.FC = () => {
       setCartProductsCache(prev => ({...prev, [p.id]: p}));
       setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitType('UND'); 
 
-      let price = p.price_unit;
-      if (clientData.price_list_id === 'pl1') price = price * 0.92;
-      if (clientData.price_list_id === 'pl3') price = price * 1.05;
+      // APLICA LISTA DE PRECIOS DINÁMICAMENTE AL SELECCIONAR
+      let price = p.price_unit * getMultiplier();
 
       let defaultDiscount = 0;
       const activePromo = activePromos.find(promo => {
@@ -390,9 +390,9 @@ export const NewSale: React.FC = () => {
    const handleUnitChange = (type: 'UND' | 'PKG') => {
       setUnitType(type);
       if (selectedProduct) {
+         // APLICA LISTA DE PRECIOS DINÁMICAMENTE AL CAMBIAR UNIDAD
          let price = type === 'PKG' ? selectedProduct.price_package : selectedProduct.price_unit;
-         if (clientData.price_list_id === 'pl1') price = price * 0.92;
-         if (clientData.price_list_id === 'pl3') price = price * 1.05;
+         price = price * getMultiplier();
          setUnitPrice(price);
       }
    };
@@ -429,7 +429,7 @@ export const NewSale: React.FC = () => {
             initialNewCart[existingItemIndex] = {
                ...existing, quantity_presentation: newQty, quantity_base: unitType === 'PKG' ? newQty * (prod.package_content || 1) : newQty,
                total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: [],
-               product: prod // INYECTANDO PRODUCTO
+               product: prod
             };
          } else { return; }
       } else {
@@ -438,7 +438,7 @@ export const NewSale: React.FC = () => {
             selected_unit: unitType, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice,
             total_price: calculateTotal(quantity, unitPrice, discountPercent), discount_percent: discountPercent,
             discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: [],
-            product: prod // INYECTANDO PRODUCTO
+            product: prod
          });
       }
       
@@ -466,7 +466,7 @@ export const NewSale: React.FC = () => {
       updatedCart[index] = {
          ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice,
          discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: [],
-         product: product // INYECTANDO PRODUCTO
+         product: product
       };
       applyAutoPromotions(updatedCart);
    };
@@ -476,6 +476,8 @@ export const NewSale: React.FC = () => {
       if (cart.length === 0) return;
       if (!clientData.price_list_id && silent !== true) { alert("Seleccione una lista de precios primero."); return; }
 
+      const multiplier = getMultiplier(); // EXTRAE EL MULTIPLICADOR DINÁMICO DE LA BD
+
       const updatedCart = cart.map(item => {
          if (item.is_bonus) return item; 
          const product = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : cartProductsCache[item.product_id];
@@ -483,9 +485,8 @@ export const NewSale: React.FC = () => {
          
          let newPrice = item.selected_unit === 'PKG' ? (product.price_package || product.price_unit) : product.price_unit;
          
-         // LÓGICA DE LISTA DE PRECIOS BASE (Ajustable a reglas de BD)
-         if (clientData.price_list_id === 'pl1') newPrice = newPrice * 0.92; 
-         if (clientData.price_list_id === 'pl3') newPrice = newPrice * 1.05; 
+         // LÓGICA DE LISTA DE PRECIOS DINÁMICA
+         newPrice = newPrice * multiplier;
 
          let newDisc = 0;
          const activePromo = activePromos.find(promo => {
@@ -1073,11 +1074,11 @@ export const NewSale: React.FC = () => {
                <div className="text-right text-slate-600 font-bold">IGV (18%):</div>
                <div className="text-right font-mono text-slate-800">{igv.toFixed(2)}</div>
 
-               {/* --- NUEVA ALERTA DE CUENTA ANTERIOR --- */}
+               {/* --- ALERTA DE CUENTA ANTERIOR --- */}
                {clientCreditInfo.debt > 0 && (
                    <>
                        <div className="col-span-2 border-t border-slate-200 my-1"></div>
-                       <div className="text-right text-orange-600 font-bold text-[11px] self-center col-span-2 bg-orange-100 px-2 py-0.5 rounded uppercase shadow-sm">
+                       <div className="text-center text-orange-600 font-bold text-[11px] col-span-2 bg-orange-100 px-2 py-0.5 rounded shadow-sm">
                            PAGARÁ CTA. ANTERIOR: S/ {clientCreditInfo.debt.toFixed(2)}
                        </div>
                    </>
@@ -1221,41 +1222,6 @@ export const NewSale: React.FC = () => {
                   <div className="mt-4 flex justify-end">
                      <button onClick={() => setShowHistoryModal({ isOpen: false, sale: null })} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded">
                         Cerrar
-                     </button>
-                  </div>
-               </div>
-            </div>
-         )}
-
-         {/* === ADMIN PASSWORD MODAL === */}
-         {showAdminAuthModal.isOpen && (
-            <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
-               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
-                  <h3 className="font-bold text-slate-800 text-lg mb-2">Se requiere autorización</h3>
-                  <p className="text-sm text-slate-600 mb-4">Ingrese la contraseña de administrador para: <strong className="text-red-600">{showAdminAuthModal.targetActionName}</strong></p>
-
-                  <input
-                     id="admin-password-input"
-                     type="password"
-                     className="w-full border-2 border-slate-300 rounded p-2 mb-4 text-center text-2xl tracking-widest focus:ring-2 focus:ring-blue-500 outline-none"
-                     placeholder="••••"
-                     value={adminPasswordInput}
-                     onChange={e => setAdminPasswordInput(e.target.value)}
-                     onKeyDown={e => { if (e.key === 'Enter') verifyAdminAndExecute(); else if (e.key === 'Escape') setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' }); }}
-                  />
-
-                  <div className="flex gap-2 justify-end">
-                     <button
-                        onClick={() => setShowAdminAuthModal({ isOpen: false, triggerAction: () => { }, targetActionName: '' })}
-                        className="px-4 py-2 bg-slate-200 text-slate-700 rounded hover:bg-slate-300 font-bold text-sm"
-                     >
-                        Cancelar (ESC)
-                     </button>
-                     <button
-                        onClick={verifyAdminAndExecute}
-                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-bold text-sm"
-                     >
-                        Autorizar (ENTER)
                      </button>
                   </div>
                </div>
