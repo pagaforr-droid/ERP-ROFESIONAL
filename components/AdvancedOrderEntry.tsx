@@ -230,7 +230,6 @@ export const AdvancedOrderEntry: React.FC = () => {
           let itemsToLoad: any[] = [];
           let finalCache = { ...cartProductsCache };
           
-          // Barrido 1 relacional puro
           const { data: orderItemsData, error: itemsErr } = await supabase.from('order_items').select(`*, product:products (*)`).eq('order_id', order.id);
 
           if (itemsErr) throw itemsErr;
@@ -238,7 +237,7 @@ export const AdvancedOrderEntry: React.FC = () => {
           if (orderItemsData && orderItemsData.length > 0) {
               itemsToLoad = orderItemsData;
           } else if (order.items && Array.isArray(order.items) && order.items.length > 0) {
-              itemsToLoad = order.items; // Fallback legacy
+              itemsToLoad = order.items; 
           }
 
           if (itemsToLoad.length === 0) alert("⚠️ ADVERTENCIA: El pedido se cargó sin detalles.");
@@ -352,7 +351,7 @@ export const AdvancedOrderEntry: React.FC = () => {
    const selectClient = async (c: Client) => {
       setSelectedClientId(c.id);
       const newDocType: 'FACTURA' | 'BOLETA' = c.doc_number.length === 11 ? 'FACTURA' : 'BOLETA';
-      setDocType(newDocType); // Sugerimos el comprobante
+      setDocType(newDocType); 
 
       let autoSellerId = '';
       if (c.zone_id) { const zone = dbZones.find(z => z.id === c.zone_id); if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } }
@@ -455,7 +454,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       const newQty = parseInt(newQtyStr, 10);
       if (isNaN(newQty) || newQty <= 0) return;
       const item = cart[index];
-      const product = cartProductsCache[item.product_id];
+      const product = cartProductsCache[item.product_id] || item.product;
       if (!product) return;
 
       const isPkg = isItemPackage(item.selected_unit, product);
@@ -577,7 +576,7 @@ export const AdvancedOrderEntry: React.FC = () => {
    // 🚨 GUARDAR / ACTUALIZAR PEDIDO (Usa las nuevas funciones SQL)
    // =========================================================================
    const executeSaveOrder = async () => {
-      if (!series || (!docNumber && !isEditMode)) { showDialog('error', 'Error', "No hay serie asignada de PEDIDO."); return; }
+      if (!series && !isEditMode) { showDialog('error', 'Error', "No hay serie asignada de PEDIDO."); return; }
 
       const seller = dbSellers.find(s => s.id === selectedSellerId);
 
@@ -622,7 +621,6 @@ export const AdvancedOrderEntry: React.FC = () => {
       if (cart.length === 0) return;
       if (!selectedClientId && !clientData.name) { showDialog('warning', 'Faltan Datos', "Ingrese datos del cliente"); return; }
       if (!series && !isEditMode) { showDialog('error', 'Falta Serie', "No hay una serie asignada en el sistema para PEDIDOS."); return; }
-      if (selectedClientId && !isUUID(selectedClientId)) { showDialog('warning', 'Alerta', "Cliente inválido."); return; }
 
       if (paymentMethod === 'CREDITO') {
           if (clientCreditInfo.overdue) {
@@ -703,6 +701,7 @@ export const AdvancedOrderEntry: React.FC = () => {
                      className="border border-slate-300 rounded px-2 py-1 flex-1 bg-white text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
                      value={docType}
                      onChange={(e: any) => setDocType(e.target.value)}
+                     disabled={isEditMode}
                   >
                      <option value="FACTURA">FACTURA</option>
                      <option value="BOLETA">BOLETA</option>
@@ -1015,7 +1014,7 @@ export const AdvancedOrderEntry: React.FC = () => {
                               <td className="p-2 w-16 text-right text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</td>
                               <td className="p-2 w-24 text-right font-bold text-slate-900 text-sm">S/ {Number(item.total_price || 0).toFixed(2)}</td>
                               <td className="p-2 w-8 text-right">
-                                 <button type="button" onClick={() => removeFromCart(index)} className="text-red-400 hover:bg-red-50 p-1 rounded transition-colors">
+                                 <button type="button" onClick={() => removeFromCart(index)} disabled={!!item.auto_promo_id} className={`text-red-400 hover:bg-red-50 p-1 rounded transition-colors ${item.auto_promo_id ? 'opacity-50 cursor-not-allowed hidden' : ''}`}>
                                     <Trash2 className="w-4 h-4" />
                                  </button>
                               </td>
@@ -1031,6 +1030,9 @@ export const AdvancedOrderEntry: React.FC = () => {
          {/* === FOOTER TOTALS === */}
          <div className="h-24 bg-slate-100 border-t border-slate-400 flex p-2 gap-4">
             <div className="flex-1 flex gap-2 items-end pb-2">
+               <button type="button" onClick={handlePreview} disabled={cart.length === 0} className={`bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded flex items-center shadow-sm font-bold ${cart.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-50'}`}>
+                  <Printer className="w-4 h-4 mr-2" /> Vista Previa
+               </button>
                <div className="flex-1"></div>
                <div className="text-[11px] text-slate-600 font-medium">
                   * Este módulo generará un PEDIDO que reservará stock.<br/>
@@ -1095,7 +1097,10 @@ export const AdvancedOrderEntry: React.FC = () => {
                                     <div className="text-[13px] text-slate-500">{o.client_doc_number}</div>
                                  </td>
                                  <td className="p-4 text-right"><span className="font-black text-slate-900 text-[16px]">S/ {Number(o.total || 0).toFixed(2)}</span></td>
-                                 <td className="p-4 text-center flex justify-center">
+                                 <td className="p-4 text-center flex justify-center gap-2">
+                                    <button type="button" onClick={() => setShowHistoryModal({ isOpen: true, order: o })} className="bg-white border border-slate-300 px-3 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400" title="Ver Historial">
+                                       H.
+                                    </button>
                                     <button type="button" onClick={() => loadOrder(o)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow transition-colors flex items-center justify-center w-32">
                                        <Edit3 className="w-4 h-4 mr-2" /> Editar
                                     </button>
@@ -1112,7 +1117,55 @@ export const AdvancedOrderEntry: React.FC = () => {
             </div>
          )}
 
-         {/* --- ADMIN PASSWORD MODAL --- */}
+         {/* === HISTORY MODAL === */}
+         {showHistoryModal.isOpen && showHistoryModal.order && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+               <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
+                  <div className="flex justify-between items-center bg-slate-100 rounded-t-lg mb-4">
+                     <h3 className="font-bold text-slate-800 text-lg flex items-center"><Eye className="w-5 h-5 mr-2 text-slate-500" /> Historial de Documento: {showHistoryModal.order.code}</h3>
+                     <button type="button" onClick={() => setShowHistoryModal({ isOpen: false, order: null })} className="text-slate-500 hover:text-red-500"><X className="w-6 h-6" /></button>
+                  </div>
+
+                  <div className="flex-1 overflow-auto border border-slate-200 rounded">
+                     <table className="w-full text-left text-sm border-collapse">
+                        <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0">
+                           <tr>
+                              <th className="p-3 border-b border-slate-200">Fecha</th>
+                              <th className="p-3 border-b border-slate-200">Acción</th>
+                              <th className="p-3 border-b border-slate-200">Usuario</th>
+                              <th className="p-3 border-b border-slate-200">Detalles</th>
+                           </tr>
+                        </thead>
+                        <tbody>
+                           <tr className="hover:bg-slate-50">
+                              <td className="p-3 border-b border-slate-100">{new Date(showHistoryModal.order.created_at).toLocaleString()}</td>
+                              <td className="p-3 border-b border-slate-100 font-bold text-green-700">CREADO</td>
+                              <td className="p-3 border-b border-slate-100 italic">Sistema</td>
+                              <td className="p-3 border-b border-slate-100 text-slate-500">Documento Inicial</td>
+                           </tr>
+                           {/* Render actual history events si existen */}
+                           {showHistoryModal.order.history && showHistoryModal.order.history.map((evt: any, idx: number) => (
+                              <tr key={idx} className="hover:bg-slate-50">
+                                 <td className="p-3 border-b border-slate-100">{new Date(evt.date).toLocaleString()}</td>
+                                 <td className="p-3 border-b border-slate-100 font-bold text-blue-700">{evt.action}</td>
+                                 <td className="p-3 border-b border-slate-100 font-medium">{evt.user_id}</td>
+                                 <td className="p-3 border-b border-slate-100 text-slate-600">{evt.details || '-'}</td>
+                              </tr>
+                           ))}
+                        </tbody>
+                     </table>
+                  </div>
+
+                  <div className="mt-4 flex justify-end">
+                     <button type="button" onClick={() => setShowHistoryModal({ isOpen: false, order: null })} className="bg-slate-800 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded">
+                        Cerrar
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* === ADMIN PASSWORD MODAL === */}
          {showAdminAuthModal.isOpen && (
             <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
                <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-sm">
