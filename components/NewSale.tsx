@@ -9,8 +9,9 @@ import { PdfEngine } from './PdfEngine';
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export const NewSale: React.FC = () => {
-   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, updateSaleDetailed, currentUser, autoPromotions, promotions, sellers, zones } = useStore();
+   const { products, getBatchesForProduct, createSale, clients, company, priceLists, sales, getNextDocumentNumber, users, currentUser, autoPromotions, promotions, sellers, zones } = useStore();
 
+   // --- REFS FOR FOCUS MANAGEMENT ---
    const productInputRef = useRef<HTMLInputElement>(null);
    const qtyInputRef = useRef<HTMLInputElement>(null);
    const unitSelectRef = useRef<HTMLSelectElement>(null);
@@ -18,14 +19,18 @@ export const NewSale: React.FC = () => {
    const discountInputRef = useRef<HTMLInputElement>(null);
    const addButtonRef = useRef<HTMLButtonElement>(null);
 
+   // --- ADMIN LOCK STATE ---
    const [priceLocked, setPriceLocked] = useState(true);
    const [isSaving, setIsSaving] = useState(false);
 
+   // --- MASTER DATA SUPABASE SYNC ---
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
    const [dbPromos, setDbPromos] = useState<Promotion[]>([]);
    const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
+   
+   // Cachés Críticos
    const [dbRewardProducts, setDbRewardProducts] = useState<Product[]>([]);
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
@@ -64,6 +69,7 @@ export const NewSale: React.FC = () => {
    const activePromos = USE_MOCK_DB ? promotions : dbPromos;
    const activeAutoPromos = USE_MOCK_DB ? autoPromotions : dbAutoPromos;
 
+   // --- HEADER STATE ---
    const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
    const [series, setSeries] = useState(company.series.find(s => s.type === 'FACTURA')?.series || 'F001');
    const [docNumber, setDocNumber] = useState(String(company.series.find(s => s.type === 'FACTURA')?.current_number || 1).padStart(8, '0'));
@@ -79,6 +85,7 @@ export const NewSale: React.FC = () => {
    const [paymentMethod, setPaymentMethod] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
    const [currency, setCurrency] = useState('SOLES');
 
+   // --- CLIENT STATE ---
    const [selectedClientId, setSelectedClientId] = useState('');
    const [clientData, setClientData] = useState<Partial<Client>>({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
    const [clientSearch, setClientSearch] = useState('');
@@ -88,6 +95,7 @@ export const NewSale: React.FC = () => {
    const [showBranchSelector, setShowBranchSelector] = useState(false);
    const [selectedSellerId, setSelectedSellerId] = useState('');
 
+   // --- CREDIT RISK STATE ---
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
 
    useEffect(() => {
@@ -101,6 +109,7 @@ export const NewSale: React.FC = () => {
        return () => clearTimeout(timer);
    }, [clientSearch]);
 
+   // --- LINE ENTRY STATE ---
    const [productSearch, setProductSearch] = useState('');
    const [showProductSuggestions, setShowProductSuggestions] = useState(false);
    const [highlightedIndex, setHighlightedIndex] = useState(0);
@@ -139,15 +148,16 @@ export const NewSale: React.FC = () => {
    const [isBonus, setIsBonus] = useState(false);
    const [cart, setCart] = useState<SaleItem[]>([]);
 
+   // --- SEARCH SALES MODAL STATE ---
    const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
    const [saleSearchTerm, setSaleSearchTerm] = useState('');
    const [searchedSales, setSearchedSales] = useState<Sale[]>([]);
    const [isSearchingSale, setIsSearchingSale] = useState(false);
    const [isViewMode, setIsViewMode] = useState(false); 
-   const [isEditMode, setIsEditMode] = useState(false); 
    const [originalSale, setOriginalSale] = useState<Sale | null>(null);
    const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, sale: Sale | null }>({ isOpen: false, sale: null });
 
+   // --- CEREBRO DE BÚSQUEDA DE VENTAS (LIMITADO A 10) ---
    useEffect(() => {
        if (!isSearchModalOpen) return;
        if (USE_MOCK_DB) return;
@@ -175,13 +185,15 @@ export const NewSale: React.FC = () => {
    const displayProducts = USE_MOCK_DB ? products.filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()) || p.sku.toLowerCase().includes(productSearch.toLowerCase())).map(p => ({...p, current_stock: getBatchesForProduct(p.id).reduce((s,b)=>s+b.quantity_current,0)})) : searchedProducts;
    const displaySales = USE_MOCK_DB ? sales.filter(s => !saleSearchTerm || s.client_name.toLowerCase().includes(saleSearchTerm.toLowerCase()) || s.number.includes(saleSearchTerm)).slice(0, 10) : searchedSales;
 
+   // --- CALCULATIONS ---
    const calculateTotal = (qty: number, price: number, discPct: number) => { const gross = qty * price; return gross - (gross * (discPct / 100)); };
    const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (company.igv_percent / 100));
    const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
+   // --- ACTIONS ---
    const handleNewSale = () => {
-      setIsViewMode(false); setIsEditMode(false); setOriginalSale(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
+      setIsViewMode(false); setOriginalSale(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
       setClientCreditInfo({ limit: 0, debt: 0, overdue: false, isChecking: false });
       const activeFacturaSeries = company.series.find(s => s.type === 'FACTURA' && s.is_active);
@@ -190,9 +202,8 @@ export const NewSale: React.FC = () => {
       else { setSeries(''); setDocNumber(''); }
    };
 
-   // CIRUGÍA: LOAD SALE SEGURO CONTRA PANTALLAS BLANCAS E INYECCIÓN DE PRODUCTO PARA EL PDF
-   const loadSale = async (sale: Sale, mode: 'VIEW' | 'EDIT' = 'VIEW') => {
-      if (mode === 'EDIT' && (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED')) { alert('No se puede modificar un comprobante enviado o aceptado por SUNAT.'); return; }
+   // CIRUGÍA: MODO VISTA EXCLUSIVO (Eliminada edición y modificación)
+   const loadSale = async (sale: Sale) => {
       let itemsToLoad = sale.items;
       let loadedClient: Client | null = null;
       let finalCache = { ...cartProductsCache };
@@ -216,7 +227,6 @@ export const NewSale: React.FC = () => {
           }
       }
 
-      // Vacuna Anti-Crash e Inyección del producto (Vital para que el PDF sepa si es BOT, CJA, etc.)
       const safeItems = (itemsToLoad || []).map(item => {
           const matchedProd = finalCache[item.product_id] || (USE_MOCK_DB ? products.find(p => p.id === item.product_id) : undefined);
           return {
@@ -231,8 +241,7 @@ export const NewSale: React.FC = () => {
           };
       });
 
-      setIsViewMode(mode === 'VIEW'); 
-      setIsEditMode(mode === 'EDIT');
+      setIsViewMode(true); 
       setOriginalSale({ ...sale, items: safeItems });
       
       setDocType(sale.document_type as any); 
@@ -244,7 +253,6 @@ export const NewSale: React.FC = () => {
       setPaymentMethod(sale.payment_method); 
       setClientSearch(sale.client_name); 
 
-      // RESTAURAR CONTEXTO DEL CLIENTE (LISTA DE PRECIO Y CIUDAD)
       const finalPriceListId = loadedClient?.price_list_id || '';
       const finalCity = loadedClient?.city || '';
 
@@ -258,20 +266,16 @@ export const NewSale: React.FC = () => {
 
       setCart(safeItems); 
       setIsSearchModalOpen(false);
-
-      if (mode === 'EDIT') {
-          setTimeout(() => applyAutoPromotionsWithContext(safeItems, finalPriceListId, finalCity, sale.seller_id || '', true), 500); 
-      }
    };
 
    const handlePreview = async () => {
-      if (isViewMode && !isEditMode && originalSale) {
+      if (isViewMode && originalSale) {
          try { await PdfEngine.openDocument(originalSale, docType, company); } catch(e) { alert("Error al cargar el PDF de esta venta."); }
          return;
       }
 
       const tempSale: Sale = { 
-         id: isEditMode && originalSale ? originalSale.id : 'preview', 
+         id: 'preview', 
          document_type: docType, 
          series: series, 
          number: docNumber, 
@@ -286,9 +290,9 @@ export const NewSale: React.FC = () => {
          total: grandTotal, 
          status: 'completed', 
          dispatch_status: 'pending', 
-         created_at: isEditMode && originalSale ? originalSale.created_at : new Date().toISOString(), 
+         created_at: new Date().toISOString(), 
          items: cart,
-         sunat_status: isEditMode && originalSale ? originalSale.sunat_status : 'PENDING'
+         sunat_status: 'PENDING'
       };
       
       try { await PdfEngine.openDocument(tempSale, docType, company); } catch (err) { alert("Error generando la vista previa."); }
@@ -336,8 +340,10 @@ export const NewSale: React.FC = () => {
       checkClientCredit(c.id, c.credit_limit || 0);
    };
 
+   // Evaluar si recargar precios (omitimos recálculos automáticos constantes para dejar control manual al botón Refresh)
+   // Si lo deseas, puedes reactivar el useEffect aquí. Por ahora, forzamos el UpdatePrices con el botón.
    useEffect(() => {
-       if (cart.length > 0 && !isViewMode && !isEditMode) {
+       if (cart.length > 0 && !isViewMode) {
            handleUpdatePrices(true); 
        }
    // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -401,15 +407,16 @@ export const NewSale: React.FC = () => {
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(prod.id) : (loadedBatches[prod.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
-      let adjustedStock = totalStock;
-      if (isEditMode && originalSale) {
-          const origQty = originalSale.items
-              .filter(i => i.product_id === prod.id && !i.is_bonus)
-              .reduce((sum, i) => sum + i.quantity_base, 0);
-          adjustedStock += origQty;
-      }
+      if (totalStock < requiredBaseUnits) { alert(`Stock insuficiente. Disponible: ${totalStock} unid. Requerido: ${requiredBaseUnits} unid.`); return; }
 
-      if (adjustedStock < requiredBaseUnits) { alert(`Stock insuficiente. Disponible: ${adjustedStock} unid. Requerido: ${requiredBaseUnits} unid.`); return; }
+      let remaining = requiredBaseUnits;
+      const selectedBatches: BatchAllocation[] = [];
+      for (const batch of availableBatches) {
+         if (remaining <= 0) break;
+         const take = Math.min(remaining, batch.quantity_current);
+         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
+         remaining -= take;
+      }
 
       let initialNewCart = [...cart];
       const existingItemIndex = initialNewCart.findIndex(item => item.product_id === prod.id && item.selected_unit === unitType && !item.is_bonus && !item.auto_promo_id);
@@ -422,7 +429,7 @@ export const NewSale: React.FC = () => {
             initialNewCart[existingItemIndex] = {
                ...existing, quantity_presentation: newQty, quantity_base: unitType === 'PKG' ? newQty * (prod.package_content || 1) : newQty,
                total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: [],
-               product: prod // INYECTANDO EL PRODUCTO A LA MEMORIA PARA EL PDF
+               product: prod // INYECTANDO PRODUCTO
             };
          } else { return; }
       } else {
@@ -431,7 +438,7 @@ export const NewSale: React.FC = () => {
             selected_unit: unitType, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice,
             total_price: calculateTotal(quantity, unitPrice, discountPercent), discount_percent: discountPercent,
             discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: [],
-            product: prod // INYECTANDO EL PRODUCTO A LA MEMORIA PARA EL PDF
+            product: prod // INYECTANDO PRODUCTO
          });
       }
       
@@ -452,26 +459,19 @@ export const NewSale: React.FC = () => {
       const availableBatches = USE_MOCK_DB ? getBatchesForProduct(product.id) : (loadedBatches[product.id] || []);
       const totalStock = availableBatches.reduce((acc, b) => acc + b.quantity_current, 0);
 
-      let adjustedStock = totalStock;
-      if (isEditMode && originalSale) {
-          const origQty = originalSale.items
-              .filter(i => i.product_id === product.id && !i.is_bonus)
-              .reduce((sum, i) => sum + i.quantity_base, 0);
-          adjustedStock += origQty;
-      }
-
-      if (adjustedStock < requiredBaseUnits) { alert(`Stock insuficiente. Disponible: ${adjustedStock} unid. Requerido: ${requiredBaseUnits} unid.`); return; }
+      if (totalStock < requiredBaseUnits) { alert(`Stock insuficiente. Disponible: ${totalStock} unid. Requerido: ${requiredBaseUnits} unid.`); return; }
 
       const updatedCart = [...cart];
       const newPrice = calculateTotal(newQty, item.unit_price, item.discount_percent);
       updatedCart[index] = {
          ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice,
          discount_amount: (newQty * item.unit_price) * (item.discount_percent / 100), batch_allocations: [],
-         product: product // INYECTANDO EL PRODUCTO A LA MEMORIA PARA EL PDF
+         product: product // INYECTANDO PRODUCTO
       };
       applyAutoPromotions(updatedCart);
    };
 
+   // ACTIALIZAR LISTA DE PRECIOS EN EL DETALLE AL HACER CLIC EN REFRESH
    const handleUpdatePrices = (silent = false) => {
       if (cart.length === 0) return;
       if (!clientData.price_list_id && silent !== true) { alert("Seleccione una lista de precios primero."); return; }
@@ -482,6 +482,8 @@ export const NewSale: React.FC = () => {
          if (!product) return item;
          
          let newPrice = item.selected_unit === 'PKG' ? (product.price_package || product.price_unit) : product.price_unit;
+         
+         // LÓGICA DE LISTA DE PRECIOS BASE (Ajustable a reglas de BD)
          if (clientData.price_list_id === 'pl1') newPrice = newPrice * 0.92; 
          if (clientData.price_list_id === 'pl3') newPrice = newPrice * 1.05; 
 
@@ -598,7 +600,8 @@ export const NewSale: React.FC = () => {
    };
 
    const handleSaveSale = async () => {
-      if (isViewMode && !isEditMode) {
+      // SI ESTAMOS EN MODO VISUALIZACIÓN, IMPRIME LA FACTURA DIRECTAMENTE Y TERMINA
+      if (isViewMode) {
          if (originalSale) {
             try { await PdfEngine.openDocument(originalSale, docType, company); } 
             catch(e) { alert("Error abriendo PDF"); }
@@ -624,17 +627,17 @@ export const NewSale: React.FC = () => {
           }
       }
 
-      const confirmSave = window.confirm(`¿Está seguro que desea ${isEditMode ? 'MODIFICAR' : 'emitir'} el comprobante ${docType} ${series} por S/ ${grandTotal.toFixed(2)}?`);
+      const confirmSave = window.confirm(`¿Emitir comprobante ${docType} ${series} por S/ ${grandTotal.toFixed(2)}?`);
       if (!confirmSave) return;
 
       const correlative = getNextDocumentNumber(docType, series);
-      if (!correlative && !isEditMode) { alert("Error al obtener la serie."); return; }
+      if (!correlative) { alert("Error al obtener la serie."); return; }
 
       const newSaleData: Sale = {
-         id: isEditMode && originalSale ? originalSale.id : crypto.randomUUID(),
+         id: crypto.randomUUID(), // SIEMPRE CREA UNO NUEVO (DISPARO RÁPIDO)
          document_type: docType,
-         series: isEditMode ? series : correlative!.series,
-         number: isEditMode ? docNumber : correlative!.number,
+         series: correlative!.series,
+         number: correlative!.number,
          payment_method: paymentMethod,
          payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
          balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
@@ -647,45 +650,27 @@ export const NewSale: React.FC = () => {
          igv,
          total: grandTotal,
          status: 'completed',
-         dispatch_status: isEditMode && originalSale ? originalSale.dispatch_status : 'pending',
-         created_at: isEditMode && originalSale ? originalSale.created_at : new Date().toISOString(),
+         dispatch_status: 'pending',
+         created_at: new Date().toISOString(),
          items: cart,
-         sunat_status: isEditMode && originalSale ? originalSale.sunat_status : 'PENDING'
+         sunat_status: 'PENDING'
       };
 
       setIsSaving(true);
 
       if (!USE_MOCK_DB) {
          try {
-            let resultData, resultError;
-            
-            if (isEditMode && originalSale) {
-                const { data, error } = await supabase.rpc('update_sale_transaction', { 
-                    p_original_sale_id: originalSale.id, 
-                    p_new_sale_data: newSaleData 
-                });
-                resultData = data; resultError = error;
-            } else {
-                const { data, error } = await supabase.rpc('process_sale_transaction', { 
-                    p_sale_data: newSaleData 
-                });
-                resultData = data; resultError = error;
-            }
-
-            if (resultError) throw resultError;
-            if (resultData && resultData.success) {
-               alert(`Venta ${isEditMode ? 'modificada' : 'guardada'} exitosamente. Kardex actualizado.`);
+            const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
+            if (error) throw error;
+            if (data && data.success) {
+               alert(`Venta guardada exitosamente. Kardex actualizado.`);
                try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
                handleNewSale();
             }
          } catch (err: any) { alert(`Error crítico: ${err.message}`);
          } finally { setIsSaving(false); }
       } else {
-         if (isEditMode && originalSale) {
-            const result = updateSaleDetailed(newSaleData, originalSale, currentUser?.name || 'ADMIN');
-            if (!result.success) { alert(result.msg); setIsSaving(false); return; }
-            alert(result.msg);
-         } else { createSale(newSaleData); }
+         createSale(newSaleData);
          try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
          handleNewSale();
          setIsSaving(false);
@@ -752,10 +737,7 @@ export const NewSale: React.FC = () => {
                </div>
             </div>
             {isViewMode && <div className="ml-4 px-3 py-1 bg-yellow-200 text-yellow-800 font-bold rounded animate-pulse w-fit">MODO VISUALIZACIÓN</div>}
-            {isEditMode && <div className="ml-4 px-3 py-1 bg-red-600 text-white font-bold rounded animate-pulse relative pr-8 w-fit">
-               MODIFICANDO DOCUMENTO <button onClick={handleNewSale} className="absolute right-1 top-1.5 hover:text-red-200"><X className="w-4 h-4" /></button>
-            </div>}
-            {!series && !isViewMode && !isEditMode && <div className="ml-4 px-3 py-1 bg-red-100 text-red-800 text-[10px] font-bold rounded border border-red-300 w-fit">¡DEBE CONFIGURAR UNA SERIE EN AJUSTES!</div>}
+            {!series && !isViewMode && <div className="ml-4 px-3 py-1 bg-red-100 text-red-800 text-[10px] font-bold rounded border border-red-300 w-fit">¡DEBE CONFIGURAR UNA SERIE EN AJUSTES!</div>}
          </div>
 
          {/* === CLIENT SECTION (CON ALERTA DE CRÉDITO) === */}
@@ -899,7 +881,7 @@ export const NewSale: React.FC = () => {
          {/* === GRID SECTION === */}
          <div className="flex-1 bg-white border border-slate-400 flex flex-col shadow-sm">
             {/* Entry Row */}
-            {(!isViewMode || isEditMode) && (
+            {(!isViewMode) && (
                <div className="bg-blue-50 border-b border-blue-200 p-1 flex items-end gap-1">
                   <div className="flex-1 relative">
                      <label className="block text-[10px] font-bold text-blue-800 mb-0.5 ml-1">Producto (Búsqueda en Nube)</label>
@@ -1091,6 +1073,16 @@ export const NewSale: React.FC = () => {
                <div className="text-right text-slate-600 font-bold">IGV (18%):</div>
                <div className="text-right font-mono text-slate-800">{igv.toFixed(2)}</div>
 
+               {/* --- NUEVA ALERTA DE CUENTA ANTERIOR --- */}
+               {clientCreditInfo.debt > 0 && (
+                   <>
+                       <div className="col-span-2 border-t border-slate-200 my-1"></div>
+                       <div className="text-right text-orange-600 font-bold text-[11px] self-center col-span-2 bg-orange-100 px-2 py-0.5 rounded uppercase shadow-sm">
+                           PAGARÁ CTA. ANTERIOR: S/ {clientCreditInfo.debt.toFixed(2)}
+                       </div>
+                   </>
+               )}
+
                <div className="col-span-2 border-t border-slate-200 my-1"></div>
 
                <div className="text-right text-slate-800 font-bold text-sm self-center">TOTAL A PAGAR:</div>
@@ -1105,7 +1097,7 @@ export const NewSale: React.FC = () => {
                className={`w-32 bg-green-600 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${(isViewMode && !originalSale) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-700'}`}
             >
                <Save className="w-6 h-6 mb-1" />
-               {isViewMode ? 'IMPRIMIR' : (isEditMode ? 'MODIFICAR' : 'GUARDAR (F10)')}
+               {isViewMode ? 'IMPRIMIR' : 'GUARDAR (F10)'}
             </button>
          </div>
 
@@ -1170,18 +1162,10 @@ export const NewSale: React.FC = () => {
                                        H.
                                     </button>
                                     <button
-                                       onClick={() => loadSale(s, 'VIEW')}
+                                       onClick={() => loadSale(s)}
                                        className="bg-white border border-slate-300 px-4 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400"
                                     >
                                        <Eye className="w-4 h-4 mr-1.5 text-slate-500" /> Ver
-                                    </button>
-                                    <button
-                                       onClick={() => requestAdminAuth(() => loadSale(s, 'EDIT'), 'Modificar Documento')}
-                                       disabled={s.sunat_status === 'SENT' || s.sunat_status === 'ACCEPTED'}
-                                       className="bg-yellow-500 border border-yellow-600 px-4 py-1.5 rounded text-[13px] font-bold text-white hover:bg-yellow-600 shadow-sm flex items-center transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                       title={s.sunat_status === 'SENT' || s.sunat_status === 'ACCEPTED' ? 'No se puede modificar doc enviado a SUNAT' : 'Modificar Doc'}
-                                    >
-                                       Modificar
                                     </button>
                                  </td>
                               </tr>
