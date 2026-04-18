@@ -207,7 +207,6 @@ export const NewSale: React.FC = () => {
       else { setSeries(''); setDocNumber(''); }
    };
 
-   // SOLO CARGA PARA VISUALIZAR, NO MODIFICAR
    const loadSale = async (sale: Sale) => {
       let itemsToLoad = sale.items;
       let loadedClient: Client | null = null;
@@ -615,8 +614,22 @@ export const NewSale: React.FC = () => {
       const correlative = getNextDocumentNumber(docType, series);
       if (!correlative) { showDialog('error', 'Error', "Error al obtener la serie."); return; }
 
+      // --- CIRUGÍA DE UNIDADES PARA LA BD ---
+      const itemsForDB = cart.map(item => {
+          const prod = item.product || cartProductsCache[item.product_id];
+          let realUnit = item.selected_unit === 'PKG' ? 'CJA' : 'UND';
+          if (prod) {
+              realUnit = item.selected_unit === 'PKG' ? (prod.package_type || 'CJA') : (prod.base_unit || 'UND');
+          }
+          // Extrae 3 letras, ej. BOTELLA -> BOT
+          let shortUnit = realUnit.substring(0, 3).toUpperCase();
+          if (shortUnit === 'CAJ') shortUnit = 'CJA'; // estandarización visual
+          
+          return { ...item, selected_unit: shortUnit };
+      });
+
       const newSaleData: Sale = {
-         id: crypto.randomUUID(),
+         id: crypto.randomUUID(), // SIEMPRE ES UNA NUEVA VENTA DIRECTA
          document_type: docType,
          series: correlative!.series,
          number: correlative!.number,
@@ -634,7 +647,7 @@ export const NewSale: React.FC = () => {
          status: 'completed',
          dispatch_status: 'pending',
          created_at: new Date().toISOString(),
-         items: cart,
+         items: itemsForDB, // ENVIAMOS LA TRADUCCIÓN A SUPABASE
          sunat_status: 'PENDING'
       };
 
@@ -645,7 +658,7 @@ export const NewSale: React.FC = () => {
             const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
             if (error) throw error;
             if (data && data.success) {
-               showDialog('success', 'Venta Guardada', `Venta guardada exitosamente. Kardex actualizado.`);
+               showDialog('success', 'Venta Guardada', `Venta registrada exitosamente. Kardex actualizado.`);
                try { await PdfEngine.openDocument(newSaleData, docType, company); } catch(e) {}
                handleNewSale();
             }
@@ -981,8 +994,8 @@ export const NewSale: React.FC = () => {
                   <div className="w-20 relative">
                      <label className="block text-[10px] font-bold text-blue-800 mb-0.5">Unidad</label>
                      <select ref={unitSelectRef} className="w-full border border-blue-300 rounded py-1 px-1 text-xs bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={unitType} onChange={e => handleUnitChange(e.target.value as any)} onKeyDown={e => handleInputKeyDown(e, addButtonRef as any)} disabled={!selectedProduct}>
-                        <option value="UND">UND</option>
-                        {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type}</option>}
+                        <option value="UND">{selectedProduct?.base_unit ? selectedProduct.base_unit.substring(0, 4).toUpperCase() : 'UND'}</option>
+                        {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type.substring(0, 4).toUpperCase()}</option>}
                      </select>
                      <ChevronDown className="absolute right-1 top-5 w-3 h-3 text-slate-400 pointer-events-none" />
                   </div>
@@ -1033,7 +1046,7 @@ export const NewSale: React.FC = () => {
                <table className="w-full text-left text-xs">
                   <tbody>
                      {cart.map((item, index) => {
-                        const prod = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : cartProductsCache[item.product_id];
+                        const prod = USE_MOCK_DB ? products.find(p => p.id === item.product_id) : cartProductsCache[item.product_id] || item.product;
                         const autoPromo = item.auto_promo_id ? activeAutoPromos.find(ap => ap.id === item.auto_promo_id) : null;
                         return (
                            <tr key={item.id} className={`border-b border-slate-100 ${item.is_bonus ? 'bg-orange-50' : 'hover:bg-slate-50'}`}>
@@ -1076,8 +1089,11 @@ export const NewSale: React.FC = () => {
                                     />
                                  ) : item.quantity_presentation}
                               </td>
-                              <td className="p-2 w-20 text-center text-[10px] text-slate-500">
-                                  {item.selected_unit === 'PKG' ? (prod?.package_type || 'CAJA') : (prod?.base_unit || 'UND')}
+                              <td className="p-2 w-20 text-center text-[10px] text-slate-500 font-bold">
+                                  {/* Renderiza la unidad traducida o la original si ya vino de la BD */}
+                                  {item.selected_unit === 'PKG' ? (prod?.package_type?.substring(0,3).toUpperCase() || 'CJA') : 
+                                   item.selected_unit === 'UND' ? (prod?.base_unit?.substring(0,3).toUpperCase() || 'UND') : 
+                                   item.selected_unit}
                               </td>
                               <td className="p-2 w-20 text-right text-slate-600">S/ {Number(item.unit_price || 0).toFixed(2)}</td>
                               <td className="p-2 w-16 text-right text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</td>
@@ -1120,11 +1136,11 @@ export const NewSale: React.FC = () => {
                <div className="text-right text-slate-600 font-bold">IGV (18%):</div>
                <div className="text-right font-mono text-slate-800">{igv.toFixed(2)}</div>
 
-               {/* --- NUEVA ALERTA DE CUENTA ANTERIOR --- */}
+               {/* --- ALERTA DE CUENTA ANTERIOR --- */}
                {clientCreditInfo.debt > 0 && (
                    <>
                        <div className="col-span-2 border-t border-slate-200 my-1"></div>
-                       <div className="text-right text-orange-600 font-bold text-[11px] self-center col-span-2 bg-orange-100 px-2 py-0.5 rounded shadow-sm">
+                       <div className="text-center text-orange-600 font-bold text-[11px] col-span-2 bg-orange-100 px-2 py-0.5 rounded shadow-sm">
                            PAGARÁ CTA. ANTERIOR: S/ {clientCreditInfo.debt.toFixed(2)}
                        </div>
                    </>
