@@ -1,24 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, BatchAllocation, SaleItem, Client, Sale, Batch } from '../types';
-import { Plus, Trash2, Search, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3 } from 'lucide-react';
+import { Product, SaleItem, Client, Sale, Promotion, Batch } from '../types';
+// 🚨 CORRECCIÓN CRÍTICA: Importamos TODOS los iconos necesarios para que React no colapse
+import { Plus, Trash2, Search, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3, Printer, MapPin, Zap } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
 
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
 export const EditSale: React.FC = () => {
-   // CORRECCIÓN: Extracción segura del usuario y listas
    const { users, currentUser } = useStore();
 
    const productInputRef = useRef<HTMLInputElement>(null);
    const qtyInputRef = useRef<HTMLInputElement>(null);
    const unitSelectRef = useRef<HTMLSelectElement>(null);
-   const priceInputRef = useRef<HTMLInputElement>(null);
-   const discountInputRef = useRef<HTMLInputElement>(null);
-   const addButtonRef = useRef<HTMLButtonElement>(null);
 
-   const [priceLocked, setPriceLocked] = useState(false); // Desbloqueado por defecto para auditores
+   const [priceLocked, setPriceLocked] = useState(false); 
    const [isSaving, setIsSaving] = useState(false);
 
    const [dialog, setDialog] = useState<{ isOpen: boolean; type: 'success' | 'error' | 'warning' | 'confirm' | 'info'; title: string; message: string; onConfirm?: () => void }>({
@@ -53,11 +50,11 @@ export const EditSale: React.FC = () => {
    const [isSearchingClient, setIsSearchingClient] = useState(false);
    const [selectedSellerId, setSelectedSellerId] = useState('');
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
+   const [showBranchSelector, setShowBranchSelector] = useState(false);
 
    useEffect(() => {
        const fetchMasters = async () => {
            try {
-               // CORRECCIÓN: Carga limpia sin variables faltantes
                const [compRes, sellRes, plRes, zRes] = await Promise.all([
                    supabase.from('company_config').select('*').limit(1).maybeSingle(),
                    supabase.from('sellers').select('*').order('name'),
@@ -121,11 +118,9 @@ export const EditSale: React.FC = () => {
    const [unitMode, setUnitMode] = useState<'BASE' | 'PKG'>('BASE'); 
    const [quantity, setQuantity] = useState<number>(1);
    const [unitPrice, setUnitPrice] = useState<number>(0); 
-   const [discountPercent, setDiscountPercent] = useState<number>(0);
-   const [isBonus, setIsBonus] = useState(false);
    const [cart, setCart] = useState<SaleItem[]>([]);
 
-   const [isSearchModalOpen, setIsSearchModalOpen] = useState(true); // Se abre por defecto para obligar a buscar
+   const [isSearchModalOpen, setIsSearchModalOpen] = useState(true); 
    const [saleSearchTerm, setSaleSearchTerm] = useState('');
    const [searchedSales, setSearchedSales] = useState<Sale[]>([]);
    const [isSearchingSale, setIsSearchingSale] = useState(false);
@@ -162,13 +157,6 @@ export const EditSale: React.FC = () => {
    const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (Number(dbCompany?.igv_percent || 18) / 100));
    const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
    const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
-
-   const getMultiplier = () => {
-      if (!clientData.price_list_id) return 1;
-      const list = dbPriceLists.find(pl => pl.id === clientData.price_list_id);
-      const val = list ? (list.multiplier ?? list.factor_multiplier ?? list.factor ?? list.value ?? 1) : 1;
-      return Number(val) || 1;
-   };
 
    const loadSale = async (sale: Sale) => {
       // Bloqueo SUNAT
@@ -218,7 +206,7 @@ export const EditSale: React.FC = () => {
    };
 
    const resetEntryForm = () => {
-      setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0); setDiscountPercent(0); setIsBonus(false);
+      setSelectedProduct(null); setProductSearch(''); setQuantity(1); setUnitPrice(0);
       setTimeout(() => productInputRef.current?.focus(), 50);
    }
 
@@ -237,13 +225,13 @@ export const EditSale: React.FC = () => {
       if (existingItemIndex >= 0) {
          const existing = cart[existingItemIndex];
          const newQty = Number(existing.quantity_presentation || 0) + quantity;
-         const newPrice = calculateTotal(newQty, unitPrice, discountPercent); 
+         const newPrice = calculateTotal(newQty, unitPrice, 0); 
          const newCart = [...cart];
-         newCart[existingItemIndex] = { ...existing, quantity_presentation: newQty, quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty, total_price: newPrice, unit_price: unitPrice, discount_percent: discountPercent, is_bonus: isBonus, product: prod };
+         newCart[existingItemIndex] = { ...existing, quantity_presentation: newQty, quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty, total_price: newPrice, unit_price: unitPrice, product: prod };
          setCart(newCart);
          resetEntryForm();
       } else {
-         const newCart = [...cart, { id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name, selected_unit: realUnitName, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice, total_price: calculateTotal(quantity, unitPrice, discountPercent), discount_percent: discountPercent, discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: [], product: prod }];
+         const newCart = [...cart, { id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name, selected_unit: realUnitName, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice, total_price: calculateTotal(quantity, unitPrice, 0), discount_percent: 0, discount_amount: 0, is_bonus: false, batch_allocations: [], product: prod }];
          setCart(newCart);
          resetEntryForm();
       }
@@ -300,7 +288,7 @@ export const EditSale: React.FC = () => {
    const proceedSelectProduct = (p: Product & { current_stock?: number }) => {
       setCartProductsCache(prev => ({...prev, [p.id]: p}));
       setSelectedProduct(p); setProductSearch(p.name); setShowProductSuggestions(false); setUnitMode('BASE'); 
-      setUnitPrice(Number(p.price_unit || 0) * getMultiplier()); setQuantity(1); setDiscountPercent(0); setIsBonus(false);
+      setUnitPrice(Number(p.price_unit || 0)); setQuantity(1);
       setTimeout(() => { qtyInputRef.current?.focus(); qtyInputRef.current?.select(); }, 50);
    };
 
@@ -308,15 +296,14 @@ export const EditSale: React.FC = () => {
       setUnitMode(mode);
       if (selectedProduct) {
          let price = mode === 'PKG' ? Number(selectedProduct.price_package || 0) : Number(selectedProduct.price_unit || 0);
-         setUnitPrice(price * getMultiplier());
+         setUnitPrice(price);
       }
    };
 
-   const handleInputKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<any> | 'ADD' | 'BONUS_TOGGLE') => {
+   const handleInputKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<any> | 'ADD') => {
       if (e.key === 'Enter') {
          e.preventDefault();
          if (nextRef === 'ADD') addButtonRef.current?.focus();
-         else if (nextRef === 'BONUS_TOGGLE') setIsBonus(prev => !prev);
          else if (nextRef.current) { nextRef.current.focus(); if (nextRef.current.select) nextRef.current.select(); }
       } else if (e.key === 'Escape') { setSelectedProduct(null); setProductSearch(''); setTimeout(() => productInputRef.current?.focus(), 50); }
    };
@@ -349,17 +336,12 @@ export const EditSale: React.FC = () => {
       setIsSaving(true);
 
       try {
-         // Llamada al NUEVO procedimiento almacenado de Edición en Supabase
          const { data, error } = await supabase.rpc('update_sale_transaction', { p_sale_data: updatedSaleData });
          if (error) throw error;
          
          if (data && data.success) {
             showDialog('success', 'Comprobante Editado', `Modificación Guardada con éxito. El Kardex ha sido rectificado automáticamente.`);
             
-            // Si quieres imprimir automáticamente tras guardar, descomenta la siguiente línea:
-            // try { await PdfEngine.openDocument(updatedSaleData as Sale, docType, dbCompany); } catch(e) {}
-            
-            // Cerramos todo
             setOriginalSale(null);
             setCart([]);
             setClientSearch('');
@@ -377,7 +359,6 @@ export const EditSale: React.FC = () => {
    // RENDERIZADO VISUAL (MODO EDICIÓN TÁCTICO)
    // ===============================================
 
-   // PANTALLA DE BLOQUEO INICIAL (Forzar búsqueda)
    if (!originalSale && !isSearchModalOpen) {
        return (
            <div className="flex flex-col items-center justify-center h-full bg-slate-200">
@@ -613,7 +594,8 @@ export const EditSale: React.FC = () => {
                               <td className="p-2 w-24 font-mono text-slate-600">{item.product_sku}</td>
                               <td className="p-2 flex-1 font-bold text-xs text-slate-800">
                                  {item.product_name}
-                                 {item.is_bonus && <span className="ml-2 text-[9px] bg-orange-500 text-white px-1 py-0.5 rounded shadow-sm">GRATUITO</span>}
+                                 {item.auto_promo_id && <span className="ml-2 text-[9px] bg-green-500 text-white px-1 py-0.5 rounded shadow-sm inline-flex items-center"><Zap className="w-2 h-2 mr-1" />PROMO</span>}
+                                 {item.is_bonus && !item.auto_promo_id && <span className="ml-2 text-[9px] bg-orange-500 text-white px-1 py-0.5 rounded shadow-sm">GRATUITO</span>}
                               </td>
                               <td className="p-2 w-16 text-right font-bold">
                                  <input
