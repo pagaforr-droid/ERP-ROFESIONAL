@@ -701,6 +701,7 @@ export const AdvancedOrderEntry: React.FC = () => {
                      className="border border-slate-300 rounded px-2 py-1 flex-1 bg-white text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
                      value={docType}
                      onChange={(e: any) => setDocType(e.target.value)}
+                     disabled={isEditMode}
                   >
                      <option value="FACTURA">FACTURA</option>
                      <option value="BOLETA">BOLETA</option>
