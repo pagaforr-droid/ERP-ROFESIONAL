@@ -172,7 +172,7 @@ export const AdvancedOrderEntry: React.FC = () => {
        const timer = setTimeout(async () => {
            setIsSearchingOrder(true);
            try {
-               let query = supabase.from('orders').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(15);
+               let query = supabase.from('orders').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(10);
                if (orderSearchTerm.trim().length > 0) query = query.or(`code.ilike.%${orderSearchTerm}%,client_name.ilike.%${orderSearchTerm}%,client_doc_number.ilike.%${orderSearchTerm}%`);
                const { data, error } = await query;
                if (error) throw error;
@@ -205,7 +205,13 @@ export const AdvancedOrderEntry: React.FC = () => {
    };
 
    const handleNewOrder = () => {
-      setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
+      setIsEditMode(false); 
+      setOriginalOrder(null); 
+      setCart([]); 
+      setSelectedClientId(''); 
+      setClientSearch(''); 
+      setProductSearch(''); 
+      setSelectedSellerId('');
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
       setClientCreditInfo({ limit: 0, debt: 0, overdue: false, isChecking: false });
       
@@ -708,8 +714,8 @@ export const AdvancedOrderEntry: React.FC = () => {
                </div>
                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
                   <label className="font-bold text-slate-700 text-sm">Nro. Pedido</label>
-                  <select className="w-20 text-center border border-slate-300 rounded px-1 py-1 text-sm font-bold bg-white text-slate-900 outline-none" value={series} onChange={(e) => setSeries(e.target.value)} disabled={isEditMode}>
-                     {dbSeries.filter(s => s.type === 'PEDIDO').map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
+                  <select className="w-20 text-center border border-slate-300 rounded px-1 py-1 text-sm font-bold bg-white text-slate-900 outline-none" disabled>
+                     <option value={series}>{series}</option>
                   </select>
                   <input className="w-24 text-center border border-transparent px-1 py-1 text-sm font-bold bg-transparent text-slate-800 pointer-events-none" value={isEditMode ? docNumber : 'AUTOGEN'} readOnly />
                </div>
@@ -1118,7 +1124,7 @@ export const AdvancedOrderEntry: React.FC = () => {
 
          {/* === HISTORY MODAL === */}
          {showHistoryModal.isOpen && showHistoryModal.order && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
                <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
                   <div className="flex justify-between items-center bg-slate-100 rounded-t-lg mb-4">
                      <h3 className="font-bold text-slate-800 text-lg flex items-center"><Eye className="w-5 h-5 mr-2 text-slate-500" /> Historial de Documento: {showHistoryModal.order.code}</h3>
