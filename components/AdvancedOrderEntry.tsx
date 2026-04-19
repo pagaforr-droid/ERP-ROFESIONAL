@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, BatchAllocation, SaleItem, Client, Order, AutoPromotion, Promotion, Batch } from '../types';
-import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle } from 'lucide-react';
+// 🚨 CORRECCIÓN CRÍTICA: Se añadió 'Sale' a los tipos importados
+import { Product, BatchAllocation, SaleItem, Client, Order, Sale, AutoPromotion, Promotion, Batch } from '../types';
+// 🚨 CORRECCIÓN CRÍTICA: Se añadió 'Edit3' a los iconos importados
+import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, Edit3 } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
@@ -41,8 +43,8 @@ export const AdvancedOrderEntry: React.FC = () => {
    const [dbSeries, setDbSeries] = useState<any[]>([]);
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
-   const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA');
-   const [series, setSeries] = useState('');
+   const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA'); // Sugerido
+   const [series, setSeries] = useState(''); // Serie del PEDIDO
    const [docNumber, setDocNumber] = useState('');
 
    useEffect(() => {
@@ -205,13 +207,7 @@ export const AdvancedOrderEntry: React.FC = () => {
    };
 
    const handleNewOrder = () => {
-      setIsEditMode(false); 
-      setOriginalOrder(null); 
-      setCart([]); 
-      setSelectedClientId(''); 
-      setClientSearch(''); 
-      setProductSearch(''); 
-      setSelectedSellerId('');
+      setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClientId(''); setClientSearch(''); setProductSearch(''); setSelectedSellerId('');
       setClientData({ name: '', doc_number: '', address: '', price_list_id: '', city: '' });
       setClientCreditInfo({ limit: 0, debt: 0, overdue: false, isChecking: false });
       
@@ -332,7 +328,7 @@ export const AdvancedOrderEntry: React.FC = () => {
          previous_debt: clientCreditInfo.debt 
       };
       
-      try { await PdfEngine.openDocument(tempOrder, docType, dbCompany); } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
+      try { await PdfEngine.openDocument(tempOrder as Sale, docType, dbCompany); } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
    const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems, true); };
