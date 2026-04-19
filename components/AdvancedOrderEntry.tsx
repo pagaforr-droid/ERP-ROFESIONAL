@@ -172,7 +172,7 @@ export const AdvancedOrderEntry: React.FC = () => {
        const timer = setTimeout(async () => {
            setIsSearchingOrder(true);
            try {
-               let query = supabase.from('orders').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(10);
+               let query = supabase.from('orders').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(15);
                if (orderSearchTerm.trim().length > 0) query = query.or(`code.ilike.%${orderSearchTerm}%,client_name.ilike.%${orderSearchTerm}%,client_doc_number.ilike.%${orderSearchTerm}%`);
                const { data, error } = await query;
                if (error) throw error;
@@ -326,7 +326,6 @@ export const AdvancedOrderEntry: React.FC = () => {
          previous_debt: clientCreditInfo.debt 
       };
       
-      // Aseguramos que la interface asimile el tipo sin romper Typescript
       try { await PdfEngine.openDocument(tempOrder as unknown as Sale, docType, dbCompany); } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
@@ -709,8 +708,8 @@ export const AdvancedOrderEntry: React.FC = () => {
                </div>
                <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200 shadow-sm">
                   <label className="font-bold text-slate-700 text-sm">Nro. Pedido</label>
-                  <select className="w-20 text-center border border-slate-300 rounded px-1 py-1 text-sm font-bold bg-white text-slate-900 outline-none" disabled>
-                     <option value={series}>{series}</option>
+                  <select className="w-20 text-center border border-slate-300 rounded px-1 py-1 text-sm font-bold bg-white text-slate-900 outline-none" value={series} onChange={(e) => setSeries(e.target.value)} disabled={isEditMode}>
+                     {dbSeries.filter(s => s.type === 'PEDIDO').map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
                   </select>
                   <input className="w-24 text-center border border-transparent px-1 py-1 text-sm font-bold bg-transparent text-slate-800 pointer-events-none" value={isEditMode ? docNumber : 'AUTOGEN'} readOnly />
                </div>
