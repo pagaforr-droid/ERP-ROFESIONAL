@@ -211,6 +211,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     if (autoSellerId) setSellerId(autoSellerId);
     
     await fetchLiveSeries();
+    
     checkClientCredit(c.id, c.credit_limit || 0);
     setTimeout(() => productInputRef.current?.focus(), 100);
   };
@@ -495,16 +496,16 @@ export const AdvancedOrderEntry: React.FC = () => {
     applyPromotions(tempCart, priceListId);
   };
 
-  // --- MODIFICADO: BÚSQUEDA SEGURA DE PEDIDOS ---
+  // --- BÚSQUEDA CORREGIDA (ENUM STRICT) ---
   useEffect(() => {
     if (!isSearchModalOpen) return;
     const timer = setTimeout(async () => {
         setIsSearchingOrder(true);
         try {
-            // Buscamos cualquier variación de "pendiente" por seguridad
+            // Buscamos estrictamente 'pending' en minúsculas por restricción de Postgres ENUM
             let query = supabase.from('orders')
                 .select('*')
-                .in('status', ['pending', 'PENDING', 'PENDIENTE']) 
+                .eq('status', 'pending') 
                 .order('created_at', { ascending: false })
                 .limit(20);
                 
@@ -513,12 +514,10 @@ export const AdvancedOrderEntry: React.FC = () => {
             }
             
             const { data, error } = await query;
-            if (error) {
-                console.error("Error al buscar pedidos en Supabase:", error);
-            }
+            if (error) console.error("Error BD:", error);
             if (data) setSearchedOrders(data as Order[]);
         } catch (e) {
-            console.error("Excepción en la búsqueda de pedidos:", e);
+            console.error("Error App:", e);
         } finally { 
             setIsSearchingOrder(false); 
         }
@@ -526,20 +525,29 @@ export const AdvancedOrderEntry: React.FC = () => {
     return () => clearTimeout(timer);
   }, [orderSearchTerm, isSearchModalOpen]);
 
+  // --- CARGA DIRECTA Y OPTIMIZADA DESDE DB ---
   const loadOrder = async (order: Order) => {
     setIsSaving(true);
     try {
-        const { data: orderItemsData } = await supabase.from('order_items').select(`*`).eq('order_id', order.id);
+        // "Agarra el ID y busca el detalle"
+        const { data: orderItemsData, error } = await supabase.from('order_items').select(`*`).eq('order_id', order.id);
         
+        if (error) throw error;
+
         let loadedItems: CartItem[] = [];
         if (orderItemsData) {
+            // Traer productos involucrados por si no están en caché
+            const pIds = [...new Set(orderItemsData.map((item: any) => item.product_id))];
+            const { data: prods } = await supabase.from('products').select('*').in('id', pIds);
+            const prodMap = (prods || []).reduce((acc: any, p: any) => ({...acc, [p.id]: p}), {});
+
             loadedItems = orderItemsData.map((item: any) => {
-                const pRef = dbProducts.find(p => p.id === item.product_id) || {} as Product;
+                const pRef = prodMap[item.product_id] || dbProducts.find(p => p.id === item.product_id) || {} as Product;
                 return {
                     id: item.id,
                     product_id: item.product_id,
-                    sku: item.product_sku,
-                    name: item.product_name,
+                    sku: item.product_sku || pRef.sku,
+                    name: item.product_name || pRef.name,
                     quantity: item.quantity_presentation || item.quantity_base || item.quantity || 1,
                     unit_type: item.unit_type || item.selected_unit || 'UND',
                     unit_price: item.unit_price || 0,
@@ -622,7 +630,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       suggested_document_type: docType,
       payment_method: paymentMethod,
       total: total,
-      status: 'pending', // <--- ESTADO EXPLICITO PARA QUE NAZCA PENDIENTE
+      status: 'pending', 
       delivery_address: clientAddress,
       items: cart.map(c => ({
         id: c.id,
