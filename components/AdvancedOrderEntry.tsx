@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
-import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Edit } from 'lucide-react';
+import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Edit, Lock } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
@@ -84,7 +84,6 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [showAdminAuthModal, setShowAdminAuthModal] = useState({ isOpen: false, action: () => {}, targetName: '' });
   const [adminPwd, setAdminPwd] = useState('');
-  const [priceLocked, setPriceLocked] = useState(true);
 
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
@@ -135,6 +134,49 @@ export const AdvancedOrderEntry: React.FC = () => {
     }
   };
 
+  // --- LÓGICA CORE DE PRECIOS ---
+  const getMultiplier = (listId: string) => {
+    if (!listId) return 1;
+    const list = dbPriceLists.find(pl => pl.id === listId);
+    return list ? Number(list.multiplier || list.factor || 1) : 1;
+  };
+
+  const calculateCalculatedPrice = (p: Product, unit: string, listId: string) => {
+    let price = Number(p.price_unit || 0);
+    let defaultDiscount = 0;
+
+    // 1. Determinar precio según unidad (Mínima vs Máxima)
+    if (p.package_type && unit === p.package_type) {
+        price = p.price_package ? Number(p.price_package) : price * Number(p.package_quantity || 1);
+    }
+
+    // 2. Aplicar la Lista de Precios del Cliente
+    price = price * getMultiplier(listId);
+
+    // 3. Evaluar Promociones Directas (Porcentaje o Precio Fijo)
+    const activePromo = dbPromos.find(promo => {
+        if (!promo.product_ids.includes(p.id)) return false;
+        if (!isPromoValidForContext(promo, 'IN_STORE', '', sellerId || currentUser?.id, currentUser?.role)) return false;
+        if (promo.target_price_list_ids?.length > 0 && listId && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(listId)) return false;
+        return true;
+    });
+
+    if (activePromo) {
+        if (activePromo.type === 'PERCENTAGE_DISCOUNT') {
+            defaultDiscount = activePromo.value;
+        } else if (activePromo.type === 'FIXED_PRICE') {
+            let promoPrice = Number(activePromo.value);
+            // Si el precio fijo es por unidad, multiplicarlo si eligió presentación máxima sin precio_package definido
+            if (p.package_type && unit === p.package_type && !p.price_package) {
+                promoPrice = promoPrice * Number(p.package_quantity || 1);
+            }
+            price = promoPrice;
+        }
+    }
+
+    return { price, discount: defaultDiscount };
+  };
+
   // BÚSQUEDA DE CLIENTES
   useEffect(() => {
     if (clientSearch.length < 3) { setSearchedClients([]); setHighlightedClientIdx(0); return; }
@@ -156,7 +198,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     else if (e.key === 'Escape') { setSearchedClients([]); }
   };
 
-  const handleSelectClient = (c: Client) => {
+  const handleSelectClient = async (c: Client) => {
     setSelectedClient(c);
     setSelectedClientId(c.id);
     setClientName(c.name);
@@ -170,9 +212,11 @@ export const AdvancedOrderEntry: React.FC = () => {
     let autoSellerId = '';
     if (c.zone_id) { const zone = dbZones.find(z => z.id === c.zone_id); if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } }
     if (autoSellerId) setSellerId(autoSellerId);
+    
+    // REGLA: Jalar correlativo fresco de la base de datos al asignar cliente
+    await fetchLiveSeries();
+    
     checkClientCredit(c.id, c.credit_limit || 0);
-
-    // FOCO AUTOMÁTICO A PRODUCTOS
     setTimeout(() => productInputRef.current?.focus(), 100);
   };
 
@@ -213,34 +257,30 @@ export const AdvancedOrderEntry: React.FC = () => {
   const handleSelectProduct = (p: Product) => {
     setCartProductsCache(prev => ({...prev, [p.id]: p}));
     setSelectedProduct(p);
-    setProductSearch(p.sku + ' - ' + p.name); // Feedback visual
+    setProductSearch(p.sku + ' - ' + p.name); 
     setSearchedProducts([]);
     
-    // ASIGNACIÓN AUTOMÁTICA DE PRESENTACIÓN
-    setEntryUnit(p.package_type || p.unit_type || 'UND');
+    // Predeterminar Unidad Mínima
+    const defaultUnit = p.unit_type || 'UND';
+    setEntryUnit(defaultUnit);
     setEntryQty(1);
     
-    let price = Number(p.price_unit || 0) * getMultiplier(priceListId);
-    let defaultDiscount = 0;
-    const activePromo = dbPromos.find(promo => {
-        if (!promo.product_ids.includes(p.id)) return false;
-        if (!isPromoValidForContext(promo, 'IN_STORE', '', sellerId || currentUser?.id, currentUser?.role)) return false;
-        if (promo.target_price_list_ids?.length > 0 && priceListId && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(priceListId)) return false;
-        return true;
-    });
-
-    if (activePromo) {
-       if (activePromo.type === 'PERCENTAGE_DISCOUNT') defaultDiscount = activePromo.value;
-       else if (activePromo.type === 'FIXED_PRICE') price = activePromo.value;
-    }
-
+    // Calcular Precio Exacto
+    const { price, discount } = calculateCalculatedPrice(p, defaultUnit, priceListId);
     setEntryPrice(price);
-    setEntryDiscount(defaultDiscount);
+    setEntryDiscount(discount);
     setEntryBonus(false);
-    setPriceLocked(true);
 
-    // FOCO AUTOMÁTICO A CANTIDAD Y SELECCIONAR TEXTO
     setTimeout(() => { qtyInputRef.current?.focus(); qtyInputRef.current?.select(); }, 50);
+  };
+
+  const handleUnitChange = (newUnit: string) => {
+    setEntryUnit(newUnit);
+    if (selectedProduct) {
+        const { price, discount } = calculateCalculatedPrice(selectedProduct, newUnit, priceListId);
+        setEntryPrice(price);
+        setEntryDiscount(discount);
+    }
   };
 
   const handleQtyKeyDown = (e: React.KeyboardEvent) => {
@@ -267,16 +307,17 @@ export const AdvancedOrderEntry: React.FC = () => {
     } catch(e) { console.error(e); setClientCreditInfo(prev => ({...prev, isChecking: false})); }
   }
 
-  const getMultiplier = (listId: string) => {
-    if (!listId) return 1;
-    const list = dbPriceLists.find(pl => pl.id === listId);
-    return list ? Number(list.multiplier || list.factor || 1) : 1;
-  };
-
-  // RE-EVALUACIÓN AUTOMÁTICA DE PROMOCIONES
+  // RE-EVALUACIÓN AUTOMÁTICA DE PROMOCIONES Y BONIFICACIONES
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
-    // 1. Limpiar bonificaciones previas calculadas automáticamente
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
+
+    // Normalizar cantidades a unidad mínima para correcta evaluación
+    const getBaseQuantity = (item: CartItem) => {
+        if (item.unit_type === item.product_ref?.package_type) {
+            return item.quantity * Number(item.product_ref.package_quantity || 1);
+        }
+        return item.quantity;
+    };
 
     const validPromos = dbAutoPromos.filter(ap => {
       if (!isPromoValidForContext(ap, 'IN_STORE', '', currentUser?.id, currentUser?.role)) return false;
@@ -293,7 +334,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       if (ap.condition_type === 'BUY_X_PRODUCT') {
         const qtyBought = cleanCart
           .filter(i => (ap.condition_product_ids?.includes(i.product_id) || i.product_id === ap.condition_product_id) && !i.is_bonus)
-          .reduce((sum, i) => sum + i.quantity, 0);
+          .reduce((sum, i) => sum + getBaseQuantity(i), 0); // Usar cantidad normalizada
         
         if (qtyBought >= ap.condition_amount) {
           applies = true;
@@ -309,7 +350,6 @@ export const AdvancedOrderEntry: React.FC = () => {
         }
       }
 
-      // 2. Aplicar bonificación si cumple las reglas actuales
       if (applies && multiplier > 0) {
         const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
         if (rewardProduct) {
@@ -319,7 +359,7 @@ export const AdvancedOrderEntry: React.FC = () => {
             sku: rewardProduct.sku,
             name: rewardProduct.name,
             quantity: ap.reward_quantity * multiplier,
-            unit_type: ap.reward_unit_type || rewardProduct.package_type || 'UND',
+            unit_type: ap.reward_unit_type || rewardProduct.unit_type || 'UND',
             unit_price: 0,
             discount_percent: 100,
             total_price: 0,
@@ -369,7 +409,6 @@ export const AdvancedOrderEntry: React.FC = () => {
 
     applyPromotions(tempCart, priceListId);
 
-    // RESET Y FOCO PARA SIGUIENTE LECTURA
     setSelectedProduct(null);
     setProductSearch('');
     setEntryQty(1);
@@ -380,20 +419,20 @@ export const AdvancedOrderEntry: React.FC = () => {
   };
 
   const handleUpdateCartPrices = () => {
-    const multiplier = getMultiplier(priceListId);
     let tempCart = cart.map(item => {
       if (item.is_bonus || item.auto_promo_id) return item;
-      const baseP = Number(item.product_ref?.price_unit || 0);
-      const newP = baseP * multiplier;
-      const tGross = item.quantity * newP;
+      const pRef = item.product_ref;
+      const { price, discount } = calculateCalculatedPrice(pRef, item.unit_type, priceListId);
+      const tGross = item.quantity * price;
       return {
         ...item,
-        unit_price: newP,
-        total_price: tGross - (tGross * (item.discount_percent / 100))
+        unit_price: price,
+        discount_percent: discount,
+        total_price: tGross - (tGross * (discount / 100))
       };
     });
     applyPromotions(tempCart, priceListId);
-    alert("Precios del carrito actualizados según lista.");
+    alert("Precios del carrito actualizados según lista y unidades configuradas.");
   };
 
   const handleCartQtyChange = (id: string, newQty: number) => {
@@ -510,7 +549,7 @@ export const AdvancedOrderEntry: React.FC = () => {
         product_id: c.product_id,
         product_sku: c.sku,
         product_name: c.name,
-        quantity_base: c.quantity,
+        quantity_base: (c.unit_type === c.product_ref?.package_type) ? (c.quantity * Number(c.product_ref.package_quantity || 1)) : c.quantity,
         quantity_presentation: c.quantity,
         selected_unit: c.unit_type,
         unit_price: c.unit_price,
@@ -748,28 +787,39 @@ export const AdvancedOrderEntry: React.FC = () => {
             />
           </div>
 
-          <div className="w-24 relative">
+          <div className="w-32 relative">
             <label className="block text-[10px] font-bold text-blue-800 mb-1">Unidad</label>
-            <select className="w-full py-1.5 px-2 border border-blue-300 rounded text-sm font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={entryUnit} onChange={e => setEntryUnit(e.target.value)}>
-              <option value="UND">UND</option>
-              {selectedProduct?.package_type && <option value={selectedProduct.package_type}>{selectedProduct.package_type}</option>}
+            <select className="w-full py-1.5 px-2 border border-blue-300 rounded text-sm font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={entryUnit} onChange={e => handleUnitChange(e.target.value)}>
+              <option value={selectedProduct?.unit_type || 'UND'}>{selectedProduct?.unit_type || 'UND'} (Mínima)</option>
+              {selectedProduct?.package_type && <option value={selectedProduct.package_type}>{selectedProduct.package_type} (Máxima)</option>}
             </select>
             <ChevronDown className="absolute right-2 top-7 w-3 h-3 text-slate-400 pointer-events-none" />
           </div>
 
           <div className="w-28 relative">
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-[10px] font-bold text-blue-800">Precio Libre</label>
-              {selectedProduct && (
-                 <button onClick={() => { if(priceLocked) setShowAdminAuthModal({ isOpen: true, action: () => setPriceLocked(false), targetName: 'Desbloquear Precio' }); else setPriceLocked(true); }} className={`text-[8px] px-1 rounded font-bold ${priceLocked ? 'bg-slate-200 text-slate-500' : 'bg-red-500 text-white animate-pulse'}`}>{priceLocked ? 'BLOQ' : 'LIBRE'}</button>
-              )}
+            <label className="block text-[10px] font-bold text-slate-500 mb-1">Precio Unit.</label>
+            <div className="relative">
+                <input 
+                    type="number" 
+                    className="w-full py-1.5 pl-2 pr-6 border border-slate-300 rounded text-right text-sm font-bold bg-slate-100 text-slate-500 outline-none cursor-not-allowed" 
+                    readOnly 
+                    value={entryPrice.toFixed(2)} 
+                />
+                <Lock className="absolute right-2 top-2 w-3 h-3 text-slate-400" />
             </div>
-            <input type="number" className="w-full py-1.5 px-2 border border-blue-300 rounded text-right text-sm font-bold outline-none disabled:bg-slate-100" disabled={priceLocked} value={entryPrice} onChange={e => setEntryPrice(Number(e.target.value))} />
           </div>
 
           <div className="w-20">
-            <label className="block text-[10px] font-bold text-blue-800 mb-1 text-right">% Dsc</label>
-            <input type="number" className="w-full py-1.5 px-2 border border-blue-300 rounded text-right text-sm font-bold outline-none disabled:bg-slate-100" disabled={priceLocked} value={entryDiscount} onChange={e => setEntryDiscount(Number(e.target.value))} />
+            <label className="block text-[10px] font-bold text-slate-500 mb-1 text-right">% Dsc</label>
+            <div className="relative">
+                <input 
+                    type="number" 
+                    className="w-full py-1.5 pl-2 pr-5 border border-slate-300 rounded text-right text-sm font-bold bg-slate-100 text-slate-500 outline-none cursor-not-allowed" 
+                    readOnly 
+                    value={entryDiscount} 
+                />
+                <Lock className="absolute right-1 top-2 w-3 h-3 text-slate-400" />
+            </div>
           </div>
 
           <div className="w-20 flex items-center justify-center pb-2">
@@ -782,7 +832,7 @@ export const AdvancedOrderEntry: React.FC = () => {
             </label>
           </div>
 
-          <button onClick={() => { if(entryBonus || entryDiscount > 0) setShowAdminAuthModal({isOpen: true, action: executeAddToCart, targetName: 'Autorizar Dscto/Regalo'}); else executeAddToCart(); }} disabled={!selectedProduct} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded shadow disabled:opacity-50 transition-colors">
+          <button onClick={() => { if(entryBonus) setShowAdminAuthModal({isOpen: true, action: executeAddToCart, targetName: 'Autorizar Regalo'}); else executeAddToCart(); }} disabled={!selectedProduct} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded shadow disabled:opacity-50 transition-colors">
             <Plus className="w-5 h-5" />
           </button>
         </div>
@@ -859,8 +909,8 @@ export const AdvancedOrderEntry: React.FC = () => {
             <Printer className="w-4 h-4 mr-2" /> Vista Previa
           </button>
           <div className="text-[10px] text-slate-500 mt-2 italic">
-            * El stock será reservado al presionar Guardar.<br/>
-            * Las promociones se recalcularán automáticamente al editar cantidades.
+            * Los precios están bloqueados por sistema y se calculan según lista y unidad.<br/>
+            * Las promociones (Bonificaciones) se recalcularán automáticamente al editar cantidades.
           </div>
         </div>
 
@@ -888,6 +938,7 @@ export const AdvancedOrderEntry: React.FC = () => {
         </div>
       </div>
 
+      {/* MODALES REUTILIZADOS OMITIDOS EN EL TEXTO POR ESPACIO PERO INCLUIDOS EN CÓDIGO FINAL */}
       {/* MODAL BÚSQUEDA DE PEDIDOS */}
       {isSearchModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
