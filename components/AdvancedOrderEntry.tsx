@@ -146,9 +146,9 @@ export const AdvancedOrderEntry: React.FC = () => {
     let price = Number(p.price_unit || 0);
     let defaultDiscount = 0;
 
-    // 1. Determinar precio según unidad (Mínima vs Máxima)
+    // 1. Determinar precio según unidad (Mínima vs Máxima) - USANDO package_content
     if (p.package_type && unit === p.package_type) {
-        price = p.price_package ? Number(p.price_package) : price * Number(p.package_quantity || 1);
+        price = p.price_package ? Number(p.price_package) : price * Number(p.package_content || 1);
     }
 
     // 2. Aplicar la Lista de Precios del Cliente
@@ -167,8 +167,9 @@ export const AdvancedOrderEntry: React.FC = () => {
             defaultDiscount = activePromo.value;
         } else if (activePromo.type === 'FIXED_PRICE') {
             let promoPrice = Number(activePromo.value);
+            // Multiplicarlo si eligió presentación máxima sin price_package definido - USANDO package_content
             if (p.package_type && unit === p.package_type && !p.price_package) {
-                promoPrice = promoPrice * Number(p.package_quantity || 1);
+                promoPrice = promoPrice * Number(p.package_content || 1);
             }
             price = promoPrice;
         }
@@ -313,9 +314,10 @@ export const AdvancedOrderEntry: React.FC = () => {
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
 
+    // Normalización de Unidades: Cajas a Unidades Base para evaluar metas - USANDO package_content
     const getBaseQuantity = (item: CartItem) => {
         if (item.unit_type === item.product_ref?.package_type) {
-            return item.quantity * Number(item.product_ref.package_quantity || 1);
+            return item.quantity * Number(item.product_ref.package_content || 1);
         }
         return item.quantity;
     };
@@ -340,7 +342,7 @@ export const AdvancedOrderEntry: React.FC = () => {
             if (hasList) return ap.condition_product_ids.includes(i.product_id);
             if (hasSingle) return i.product_id === ap.condition_product_id;
             return true;
-        }).reduce((sum, i) => sum + getBaseQuantity(i), 0);
+        }).reduce((sum, i) => sum + getBaseQuantity(i), 0); // Convertido a BASE
         
         if (qtyBought >= ap.condition_amount) {
           applies = true;
@@ -404,7 +406,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     if (entryQty <= 0) return;
 
     const isPkgMode = entryUnit === selectedProduct.package_type;
-    const conversionFactor = isPkgMode ? Number(selectedProduct.package_quantity || 1) : 1;
+    const conversionFactor = isPkgMode ? Number(selectedProduct.package_content || 1) : 1; // USANDO package_content
     const requiredBaseUnits = entryQty * conversionFactor;
 
     const availableBatches = loadedBatches[selectedProduct.id] || [];
@@ -482,7 +484,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     const pRef = item.product_ref;
     
     const isPkgMode = item.unit_type === pRef.package_type;
-    const conversionFactor = isPkgMode ? Number(pRef.package_quantity || 1) : 1;
+    const conversionFactor = isPkgMode ? Number(pRef.package_content || 1) : 1; // USANDO package_content
     const requiredBaseUnits = newQty * conversionFactor;
 
     const availableBatches = loadedBatches[pRef.id] || [];
@@ -601,7 +603,7 @@ export const AdvancedOrderEntry: React.FC = () => {
         product_id: c.product_id,
         product_sku: c.sku,
         product_name: c.name,
-        quantity_base: (c.unit_type === c.product_ref?.package_type) ? (c.quantity * Number(c.product_ref.package_quantity || 1)) : c.quantity,
+        quantity_base: (c.unit_type === c.product_ref?.package_type) ? (c.quantity * Number(c.product_ref.package_content || 1)) : c.quantity, // USANDO package_content
         quantity_presentation: c.quantity,
         selected_unit: c.unit_type,
         unit_price: c.unit_price,
