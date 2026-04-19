@@ -53,6 +53,7 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [searchedClients, setSearchedClients] = useState<Client[]>([]);
   const [isSearchingClient, setIsSearchingClient] = useState(false);
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   
   const [clientName, setClientName] = useState('');
   const [clientDoc, setClientDoc] = useState('');
@@ -200,6 +201,7 @@ export const AdvancedOrderEntry: React.FC = () => {
   }
 
   const handleSelectClient = (c: Client) => {
+    setSelectedClient(c);
     setSelectedClientId(c.id);
     setClientName(c.name);
     setClientDoc(c.doc_number);
@@ -422,9 +424,9 @@ export const AdvancedOrderEntry: React.FC = () => {
         setDocType((order.suggested_document_type as any) || 'FACTURA'); 
         if (order.code && order.code.includes('-')) {
            const [s, n] = order.code.split('-');
-           setPedidoSeries(s); setDocNumber(n);
+           setPedidoSeries(s); setPedidoNumber(n);
         } else {
-           setDocNumber(order.code);
+           setPedidoNumber(order.code);
         }
 
         setSellerId(order.seller_id || ''); 
@@ -445,6 +447,7 @@ export const AdvancedOrderEntry: React.FC = () => {
 
   const handleNewOrder = () => {
     setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClientId('');
+    setSelectedClient(null);
     setClientName(''); setClientDoc(''); setClientAddress(''); setPriceListId(''); setSellerId('');
     fetchLiveSeries();
   };
@@ -456,7 +459,7 @@ export const AdvancedOrderEntry: React.FC = () => {
   const handlePreview = async () => {
     const seller = dbSellers.find(s => s.id === sellerId);
     const tempOrder: any = { 
-       id: 'preview', document_type: docType, series: pedidoSeries, number: docNumber, 
+       id: 'preview', document_type: docType, series: pedidoSeries, number: pedidoNumber, 
        payment_method: paymentMethod, payment_status: 'PENDING', balance: total, 
        client_name: clientName || 'CLIENTE MOSTRADOR', client_ruc: clientDoc || '00000000', 
        client_address: clientAddress || '', subtotal, igv, total: total, 
@@ -478,7 +481,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     setIsSaving(true);
     const orderPayload = {
       id: isEditMode && originalOrder ? originalOrder.id : crypto.randomUUID(),
-      code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${docNumber}`,
+      code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${pedidoNumber}`,
       client_id: selectedClientId || undefined,
       client_name: clientName,
       client_doc_type: clientDoc.length === 11 ? 'RUC' : 'DNI',
@@ -510,7 +513,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
       if (error) throw error;
 
-      alert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || docNumber}`);
+      alert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
       await fetchLiveSeries();
       handleNewOrder();
     } catch (error: any) {
@@ -558,7 +561,7 @@ export const AdvancedOrderEntry: React.FC = () => {
             <select className="bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900" value={pedidoSeries} onChange={e => setPedidoSeries(e.target.value)} disabled={isEditMode}>
               {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
             </select>
-            <input className="w-24 text-center bg-transparent font-bold text-slate-900" value={isEditMode ? docNumber : 'AUTOGEN'} readOnly />
+            <input className="w-24 text-center bg-transparent font-bold text-slate-900" value={isEditMode ? pedidoNumber : 'AUTOGEN'} readOnly />
           </div>
 
           <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200">
@@ -664,11 +667,11 @@ export const AdvancedOrderEntry: React.FC = () => {
                 <MapPin className="w-4 h-4 mr-1" /><ChevronDown className="w-3 h-3" />
               </button>
             )}
-            {showBranchSelector && (
+            {showBranchSelector && selectedClient && (
               <div className="absolute top-full right-0 w-[400px] bg-white border border-slate-300 shadow-xl rounded mt-1 z-50 overflow-hidden">
                 <div className="bg-slate-100 p-2 text-xs font-bold text-slate-600 uppercase border-b border-slate-200">Seleccionar Sucursal</div>
                 <div className="max-h-48 overflow-y-auto">
-                  {[selectedClient.address, ...selectedClient.branches].map((addr, i) => (
+                  {[selectedClient.address, ...(selectedClient.branches || [])].map((addr, i) => (
                     <div key={i} onClick={() => { setClientAddress(addr); setShowBranchSelector(false); }} className="p-2 border-b border-slate-100 hover:bg-blue-50 cursor-pointer flex gap-2 text-sm text-slate-700">
                       <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-blue-500" />
                       <span className={clientAddress === addr ? 'font-bold text-blue-800' : ''}>{addr}</span>
