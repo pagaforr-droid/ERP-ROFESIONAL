@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-// 🚨 CORRECCIÓN: Aseguramos la importación del tipo Sale y Order
-import { Product, BatchAllocation, SaleItem, Client, Order, Sale, AutoPromotion, Promotion, Batch } from '../types';
-// 🚨 CORRECCIÓN: Importamos TODOS los iconos necesarios para que React no sufra colapsos
+import { Product, BatchAllocation, SaleItem, Client, Order, AutoPromotion, Promotion, Batch, Sale } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, Edit3 } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
@@ -328,7 +326,8 @@ export const AdvancedOrderEntry: React.FC = () => {
          previous_debt: clientCreditInfo.debt 
       };
       
-      try { await PdfEngine.openDocument(tempOrder as Sale, docType, dbCompany); } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
+      // Aseguramos que la interface asimile el tipo sin romper Typescript
+      try { await PdfEngine.openDocument(tempOrder as unknown as Sale, docType, dbCompany); } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
    };
 
    const removeFromCart = (index: number) => { const newItems = cart.filter((_, i) => i !== index); applyAutoPromotions(newItems, true); };
