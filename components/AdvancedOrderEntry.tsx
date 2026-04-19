@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
-// 🚨 SOLO ICONOS BÁSICOS CONFIRMADOS EN TU SISTEMA
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Edit } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
@@ -26,6 +25,8 @@ interface CartItem {
 export const AdvancedOrderEntry: React.FC = () => {
   const { users, currentUser } = useStore();
 
+  // REFS PARA NAVEGACIÓN POR TECLADO
+  const clientInputRef = useRef<HTMLInputElement>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,9 +50,11 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [currency, setCurrency] = useState('SOLES');
   const [sellerId, setSellerId] = useState('');
 
+  // CLIENTES
   const [clientSearch, setClientSearch] = useState('');
   const [searchedClients, setSearchedClients] = useState<Client[]>([]);
   const [isSearchingClient, setIsSearchingClient] = useState(false);
+  const [highlightedClientIdx, setHighlightedClientIdx] = useState(0);
   const [selectedClientId, setSelectedClientId] = useState('');
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   
@@ -61,16 +64,14 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [priceListId, setPriceListId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CONTADO');
   const [showBranchSelector, setShowBranchSelector] = useState(false);
-
   const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
 
+  // PRODUCTOS
   const [productSearch, setProductSearch] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<(Product & { current_stock: number })[]>([]);
   const [isSearchingProd, setIsSearchingProd] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
-  const [showProductSuggestions, setShowProductSuggestions] = useState(false);
-  const [loadedBatches, setLoadedBatches] = useState<Record<string, any[]>>({}); 
   
   const [entryQty, setEntryQty] = useState<number>(1);
   const [entryUnit, setEntryUnit] = useState('UND');
@@ -126,28 +127,58 @@ export const AdvancedOrderEntry: React.FC = () => {
 
   const fetchLiveSeries = async () => {
     const { data } = await supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true);
-    if (data) {
+    if (data && data.length > 0) {
         setDbSeries(data);
-        const current = data.find(s => s.series === pedidoSeries);
-        if (current) {
-            setPedidoNumber(String(current.current_number + 1).padStart(8, '0'));
-        }
+        const current = data.find(s => s.series === pedidoSeries) || data[0];
+        setPedidoSeries(current.series);
+        setPedidoNumber(String(current.current_number + 1).padStart(8, '0'));
     }
   };
 
+  // BÚSQUEDA DE CLIENTES
   useEffect(() => {
-    if (clientSearch.length < 3) { setSearchedClients([]); return; }
+    if (clientSearch.length < 3) { setSearchedClients([]); setHighlightedClientIdx(0); return; }
     const timer = setTimeout(async () => {
       setIsSearchingClient(true);
       const { data } = await supabase.from('clients').select('*').or(`name.ilike.%${clientSearch}%,doc_number.ilike.%${clientSearch}%`).limit(10);
       if (data) setSearchedClients(data as Client[]);
+      setHighlightedClientIdx(0);
       setIsSearchingClient(false);
     }, 350);
     return () => clearTimeout(timer);
   }, [clientSearch]);
 
+  const handleClientKeyDown = (e: React.KeyboardEvent) => {
+    if (searchedClients.length === 0) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedClientIdx(prev => (prev + 1) % searchedClients.length); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedClientIdx(prev => (prev - 1 + searchedClients.length) % searchedClients.length); }
+    else if (e.key === 'Enter') { e.preventDefault(); handleSelectClient(searchedClients[highlightedClientIdx]); }
+    else if (e.key === 'Escape') { setSearchedClients([]); }
+  };
+
+  const handleSelectClient = (c: Client) => {
+    setSelectedClient(c);
+    setSelectedClientId(c.id);
+    setClientName(c.name);
+    setClientDoc(c.doc_number);
+    setClientAddress(c.address);
+    setPriceListId(c.price_list_id || '');
+    setPaymentMethod(c.payment_condition?.toUpperCase().includes('CREDIT') ? 'CREDITO' : 'CONTADO');
+    setClientSearch('');
+    setSearchedClients([]);
+    
+    let autoSellerId = '';
+    if (c.zone_id) { const zone = dbZones.find(z => z.id === c.zone_id); if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } }
+    if (autoSellerId) setSellerId(autoSellerId);
+    checkClientCredit(c.id, c.credit_limit || 0);
+
+    // FOCO AUTOMÁTICO A PRODUCTOS
+    setTimeout(() => productInputRef.current?.focus(), 100);
+  };
+
+  // BÚSQUEDA DE PRODUCTOS
   useEffect(() => {
-    if (productSearch.length < 2) { setSearchedProducts([]); return; }
+    if (productSearch.length < 2) { setSearchedProducts([]); setHighlightedIndex(0); return; }
     const timer = setTimeout(async () => {
       setIsSearchingProd(true);
       try {
@@ -164,72 +195,29 @@ export const AdvancedOrderEntry: React.FC = () => {
         } else {
           setSearchedProducts([]);
         }
+        setHighlightedIndex(0);
       } catch (error) { console.error(error); } finally { setIsSearchingProd(false); }
     }, 350);
     return () => clearTimeout(timer);
   }, [productSearch]);
 
-  useEffect(() => {
-    if (!isSearchModalOpen) return;
-    const timer = setTimeout(async () => {
-        setIsSearchingOrder(true);
-        try {
-            let query = supabase.from('orders').select('*').eq('status', 'pending').order('created_at', { ascending: false }).limit(10);
-            if (orderSearchTerm.trim().length > 0) query = query.or(`code.ilike.%${orderSearchTerm}%,client_name.ilike.%${orderSearchTerm}%,client_doc_number.ilike.%${orderSearchTerm}%`);
-            const { data } = await query;
-            if (data) setSearchedOrders(data as Order[]);
-        } catch (e) {} finally { setIsSearchingOrder(false); }
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [orderSearchTerm, isSearchModalOpen]);
-
-  const checkClientCredit = async (clientId: string, creditLimit: number = 0) => {
-    setClientCreditInfo({ limit: creditLimit, debt: 0, overdue: false, isChecking: true });
-    try {
-        const { data: unpaidSales } = await supabase.from('sales').select('created_at, total, balance').eq('client_id', clientId).eq('payment_status', 'PENDING').neq('status', 'canceled');
-        let debt = 0; let hasOverdue = false;
-        const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        if (unpaidSales) {
-            unpaidSales.forEach(s => {
-                const amount = s.balance !== undefined && s.balance !== null ? Number(s.balance) : Number(s.total);
-                debt += amount;
-                if (new Date(s.created_at) < sevenDaysAgo && amount > 0) hasOverdue = true;
-            });
-        }
-        setClientCreditInfo({ limit: creditLimit, debt, overdue: hasOverdue, isChecking: false });
-    } catch(e) { console.error(e); setClientCreditInfo(prev => ({...prev, isChecking: false})); }
-  }
-
-  const handleSelectClient = (c: Client) => {
-    setSelectedClient(c);
-    setSelectedClientId(c.id);
-    setClientName(c.name);
-    setClientDoc(c.doc_number);
-    setClientAddress(c.address);
-    setPriceListId(c.price_list_id || '');
-    setPaymentMethod(c.payment_condition?.toUpperCase().includes('CREDIT') ? 'CREDITO' : 'CONTADO');
-    setClientSearch('');
-    setSearchedClients([]);
-    
-    let autoSellerId = '';
-    if (c.zone_id) { const zone = dbZones.find(z => z.id === c.zone_id); if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } }
-    setSellerId(autoSellerId);
-    checkClientCredit(c.id, c.credit_limit || 0);
-  };
-
-  const getMultiplier = (listId: string) => {
-    if (!listId) return 1;
-    const list = dbPriceLists.find(pl => pl.id === listId);
-    return list ? Number(list.multiplier || list.factor || 1) : 1;
+  const handleProductKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedIndex(prev => (prev + 1) % searchedProducts.length);
+    } else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedIndex(prev => (prev - 1 + searchedProducts.length) % searchedProducts.length);
+    } else if (e.key === 'Enter') { 
+       e.preventDefault(); 
+       if (searchedProducts.length > 0) handleSelectProduct(searchedProducts[highlightedIndex]);
+    } else if (e.key === 'Escape') { setSearchedProducts([]); }
   };
 
   const handleSelectProduct = (p: Product) => {
     setCartProductsCache(prev => ({...prev, [p.id]: p}));
     setSelectedProduct(p);
-    setProductSearch(p.name);
+    setProductSearch(p.sku + ' - ' + p.name); // Feedback visual
     setSearchedProducts([]);
     
-    setEntryUnit(p.unit_type || 'UND');
+    // ASIGNACIÓN AUTOMÁTICA DE PRESENTACIÓN
+    setEntryUnit(p.package_type || p.unit_type || 'UND');
     setEntryQty(1);
     
     let price = Number(p.price_unit || 0) * getMultiplier(priceListId);
@@ -251,17 +239,43 @@ export const AdvancedOrderEntry: React.FC = () => {
     setEntryBonus(false);
     setPriceLocked(true);
 
+    // FOCO AUTOMÁTICO A CANTIDAD Y SELECCIONAR TEXTO
     setTimeout(() => { qtyInputRef.current?.focus(); qtyInputRef.current?.select(); }, 50);
   };
 
-  const handleProductKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedIndex(prev => (prev + 1) % searchedProducts.length);
-    } else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedIndex(prev => (prev - 1 + searchedProducts.length) % searchedProducts.length);
-    } else if (e.key === 'Enter') { e.preventDefault(); if (searchedProducts.length > 0) handleSelectProduct(searchedProducts[highlightedIndex]);
-    } else if (e.key === 'Escape') { setShowProductSuggestions(false); }
+  const handleQtyKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        executeAddToCart();
+    }
   };
 
+  const checkClientCredit = async (clientId: string, creditLimit: number = 0) => {
+    setClientCreditInfo({ limit: creditLimit, debt: 0, overdue: false, isChecking: true });
+    try {
+        const { data: unpaidSales } = await supabase.from('sales').select('created_at, total, balance').eq('client_id', clientId).eq('payment_status', 'PENDING').neq('status', 'canceled');
+        let debt = 0; let hasOverdue = false;
+        const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        if (unpaidSales) {
+            unpaidSales.forEach(s => {
+                const amount = s.balance !== undefined && s.balance !== null ? Number(s.balance) : Number(s.total);
+                debt += amount;
+                if (new Date(s.created_at) < sevenDaysAgo && amount > 0) hasOverdue = true;
+            });
+        }
+        setClientCreditInfo({ limit: creditLimit, debt, overdue: hasOverdue, isChecking: false });
+    } catch(e) { console.error(e); setClientCreditInfo(prev => ({...prev, isChecking: false})); }
+  }
+
+  const getMultiplier = (listId: string) => {
+    if (!listId) return 1;
+    const list = dbPriceLists.find(pl => pl.id === listId);
+    return list ? Number(list.multiplier || list.factor || 1) : 1;
+  };
+
+  // RE-EVALUACIÓN AUTOMÁTICA DE PROMOCIONES
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
+    // 1. Limpiar bonificaciones previas calculadas automáticamente
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
 
     const validPromos = dbAutoPromos.filter(ap => {
@@ -295,6 +309,7 @@ export const AdvancedOrderEntry: React.FC = () => {
         }
       }
 
+      // 2. Aplicar bonificación si cumple las reglas actuales
       if (applies && multiplier > 0) {
         const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
         if (rewardProduct) {
@@ -304,7 +319,7 @@ export const AdvancedOrderEntry: React.FC = () => {
             sku: rewardProduct.sku,
             name: rewardProduct.name,
             quantity: ap.reward_quantity * multiplier,
-            unit_type: ap.reward_unit_type || 'UND',
+            unit_type: ap.reward_unit_type || rewardProduct.package_type || 'UND',
             unit_price: 0,
             discount_percent: 100,
             total_price: 0,
@@ -354,6 +369,7 @@ export const AdvancedOrderEntry: React.FC = () => {
 
     applyPromotions(tempCart, priceListId);
 
+    // RESET Y FOCO PARA SIGUIENTE LECTURA
     setSelectedProduct(null);
     setProductSearch('');
     setEntryQty(1);
@@ -446,10 +462,10 @@ export const AdvancedOrderEntry: React.FC = () => {
   };
 
   const handleNewOrder = () => {
-    setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClientId('');
-    setSelectedClient(null);
+    setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClientId(''); setSelectedClient(null);
     setClientName(''); setClientDoc(''); setClientAddress(''); setPriceListId(''); setSellerId('');
     fetchLiveSeries();
+    setTimeout(() => clientInputRef.current?.focus(), 100);
   };
 
   const subtotal = cart.reduce((sum, item) => sum + item.total_price, 0) / (1 + (Number(dbCompany?.igv_percent || 18) / 100));
@@ -468,14 +484,12 @@ export const AdvancedOrderEntry: React.FC = () => {
     };
     try { 
       await PdfEngine.openDocument(tempOrder as unknown as Sale, docType, dbCompany); 
-    } catch (err) { 
-      alert('Error generando la vista previa.'); 
-    }
+    } catch (err) { alert('Error generando la vista previa.'); }
   };
 
   const handleSaveOrder = async () => {
-    if (!clientName) { alert("Debe ingresar un cliente."); return; }
-    if (cart.length === 0) { alert("El pedido no puede estar vacío."); return; }
+    if (!clientName) { alert("Debe ingresar un cliente."); clientInputRef.current?.focus(); return; }
+    if (cart.length === 0) { alert("El pedido no puede estar vacío."); productInputRef.current?.focus(); return; }
     if (!pedidoSeries && !isEditMode) { alert("Configure una serie para PEDIDO en ajustes."); return; }
 
     setIsSaving(true);
@@ -514,13 +528,9 @@ export const AdvancedOrderEntry: React.FC = () => {
       if (error) throw error;
 
       alert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
-      await fetchLiveSeries();
       handleNewOrder();
-    } catch (error: any) {
-      alert("Error al guardar: " + error.message);
-    } finally {
-      setIsSaving(false);
-    }
+    } catch (error: any) { alert("Error al guardar: " + error.message);
+    } finally { setIsSaving(false); }
   };
 
   const verifyAdmin = () => {
@@ -529,14 +539,11 @@ export const AdvancedOrderEntry: React.FC = () => {
       showAdminAuthModal.action();
       setShowAdminAuthModal({ isOpen: false, action: () => {}, targetName: '' });
       setAdminPwd('');
-    } else {
-      alert("Contraseña incorrecta.");
-    }
+    } else { alert("Contraseña incorrecta."); }
   };
 
   return (
     <div className="flex flex-col h-full bg-slate-100 p-4 font-sans text-xs">
-      
       {/* OVERLAY SAVING */}
       {isSaving && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex flex-col items-center justify-center">
@@ -545,46 +552,50 @@ export const AdvancedOrderEntry: React.FC = () => {
         </div>
       )}
 
-      {/* CABECERA PRINCIPAL */}
-      <div className="bg-white p-3 rounded shadow-sm border border-slate-200 mb-2 flex items-center justify-between">
+      {/* CABECERA PRINCIPAL REORGANIZADA */}
+      <div className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 mb-2 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200">
-            <span className="font-bold text-slate-700">Convertir a</span>
-            <select className="bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900" value={docType} onChange={e => setDocType(e.target.value)}>
+          
+          <div className="flex flex-col">
+            <label className="text-[10px] font-bold text-slate-500 mb-0.5">Convertir a</label>
+            <select className="bg-slate-50 border border-slate-300 rounded px-3 py-1.5 font-bold text-slate-900 focus:ring-1 focus:ring-blue-500 outline-none" value={docType} onChange={e => setDocType(e.target.value)}>
               <option value="FACTURA">FACTURA</option>
               <option value="BOLETA">BOLETA</option>
             </select>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200">
-            <span className="font-bold text-slate-700">Pedido N°</span>
-            <select className="bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900" value={pedidoSeries} onChange={e => setPedidoSeries(e.target.value)} disabled={isEditMode}>
-              {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
-            </select>
-            <input className="w-24 text-center bg-transparent font-bold text-slate-900" value={isEditMode ? pedidoNumber : 'AUTOGEN'} readOnly />
+          <div className="flex flex-col">
+             <label className="text-[10px] font-bold text-slate-500 mb-0.5">Documento N°</label>
+             <div className="flex items-center bg-slate-50 border border-slate-300 rounded overflow-hidden">
+                <select className="bg-transparent px-2 py-1.5 font-bold text-slate-900 border-r border-slate-300 outline-none hover:bg-slate-100 min-w-[5rem]" value={pedidoSeries} onChange={e => setPedidoSeries(e.target.value)} disabled={isEditMode}>
+                  {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
+                </select>
+                <input className="w-28 px-3 py-1.5 text-center bg-transparent font-bold text-slate-900 outline-none" value={isEditMode ? pedidoNumber : 'AUTOGEN'} readOnly />
+             </div>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200">
-            <span className="font-bold text-slate-700">Moneda</span>
-            <select className="bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900" value={currency} onChange={e => setCurrency(e.target.value)}>
+          <div className="flex flex-col">
+            <label className="text-[10px] font-bold text-slate-500 mb-0.5">Moneda</label>
+            <select className="bg-slate-50 border border-slate-300 rounded px-3 py-1.5 font-bold text-slate-900 focus:ring-1 focus:ring-blue-500 outline-none" value={currency} onChange={e => setCurrency(e.target.value)}>
               <option value="SOLES">SOLES</option>
             </select>
           </div>
 
-          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200">
-            <span className="font-bold text-slate-700">Vendedor</span>
-            <select className="bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900 w-40" value={sellerId} onChange={e => setSellerId(e.target.value)}>
-              <option value="">-- Sin Vendedor --</option>
+          <div className="flex flex-col">
+            <label className="text-[10px] font-bold text-slate-500 mb-0.5">Vendedor Asignado</label>
+            <select className="bg-slate-50 border border-slate-300 rounded px-3 py-1.5 font-bold text-slate-900 w-48 focus:ring-1 focus:ring-blue-500 outline-none" value={sellerId} onChange={e => setSellerId(e.target.value)}>
+              <option value="">-- Seleccionar --</option>
               {dbSellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
+
         </div>
 
         <div className="flex gap-2">
-          <button onClick={handleNewOrder} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-1.5 rounded font-bold shadow-sm flex items-center">
+          <button onClick={handleNewOrder} className="bg-slate-700 hover:bg-slate-600 text-white px-5 py-2 rounded-lg font-bold shadow-sm flex items-center transition-colors">
             <FilePlus className="w-4 h-4 mr-2" /> Nuevo (F2)
           </button>
-          <button onClick={() => setIsSearchModalOpen(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded font-bold shadow-sm flex items-center">
+          <button onClick={() => setIsSearchModalOpen(true)} className="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-bold shadow-sm flex items-center transition-colors">
             <Search className="w-4 h-4 mr-2" /> Cargar/Editar Pedido
           </button>
         </div>
@@ -605,15 +616,18 @@ export const AdvancedOrderEntry: React.FC = () => {
             <div className="relative">
               <Search className="absolute left-2 top-1.5 w-4 h-4 text-slate-400" />
               <input 
-                className="w-full pl-8 pr-2 py-1 border border-slate-300 rounded text-sm font-medium focus:ring-1 focus:ring-blue-500 outline-none" 
+                ref={clientInputRef}
+                autoFocus
+                className="w-full pl-8 pr-2 py-1 border border-slate-300 rounded text-sm font-medium focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" 
                 placeholder="RUC o Nombre..." 
                 value={clientSearch}
                 onChange={e => setClientSearch(e.target.value)}
+                onKeyDown={handleClientKeyDown}
               />
               {searchedClients.length > 0 && clientSearch && (
-                <div className="absolute top-full left-0 w-[400px] bg-white border border-slate-300 shadow-xl rounded z-50 mt-1">
-                  {searchedClients.map(c => (
-                    <div key={c.id} onMouseDown={() => handleSelectClient(c)} className="p-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100">
+                <div className="absolute top-full left-0 w-[400px] bg-white border border-slate-300 shadow-xl rounded z-50 mt-1 overflow-hidden">
+                  {searchedClients.map((c, i) => (
+                    <div key={c.id} onMouseDown={() => handleSelectClient(c)} className={`p-2 cursor-pointer border-b border-slate-100 ${highlightedClientIdx === i ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
                       <div className="font-bold text-slate-800">{c.name}</div>
                       <div className="text-[10px] text-slate-500">{c.doc_number}</div>
                     </div>
@@ -625,19 +639,19 @@ export const AdvancedOrderEntry: React.FC = () => {
           
           <div className="col-span-4">
             <label className="block text-[10px] font-bold text-slate-500 mb-1">Razón Social</label>
-            <input className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-bold text-slate-800 bg-slate-50" value={clientName} onChange={e => setClientName(e.target.value)} />
+            <input className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-bold text-slate-800 bg-slate-50 outline-none" value={clientName} onChange={e => setClientName(e.target.value)} />
           </div>
           
           <div className="col-span-2">
             <label className="block text-[10px] font-bold text-slate-500 mb-1">RUC/DNI</label>
-            <input className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-mono font-bold text-slate-800 bg-slate-50" value={clientDoc} onChange={e => setClientDoc(e.target.value)} />
+            <input className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-mono font-bold text-slate-800 bg-slate-50 outline-none" value={clientDoc} onChange={e => setClientDoc(e.target.value)} />
           </div>
           
           <div className="col-span-3">
             <div className="flex gap-2">
               <div className="flex-1">
                 <label className="block text-[10px] font-bold text-slate-500 mb-1">Lista Precio</label>
-                <select className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-bold text-slate-800" value={priceListId} onChange={e => setPriceListId(e.target.value)}>
+                <select className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-bold text-slate-800 outline-none" value={priceListId} onChange={e => setPriceListId(e.target.value)}>
                   <option value="">-- General --</option>
                   {dbPriceLists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                 </select>
@@ -648,7 +662,7 @@ export const AdvancedOrderEntry: React.FC = () => {
                   <button onClick={handleUpdateCartPrices} className="bg-blue-100 text-blue-700 px-2 rounded hover:bg-blue-200" title="Actualizar precios del carrito">
                     <RefreshCw className="w-4 h-4" />
                   </button>
-                  <select className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-bold text-slate-800" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                  <select className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-bold text-slate-800 outline-none" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
                     <option value="CONTADO">CONTADO</option>
                     <option value="CREDITO">CRÉDITO</option>
                   </select>
@@ -661,7 +675,7 @@ export const AdvancedOrderEntry: React.FC = () => {
         <div className="mt-2">
           <label className="block text-[10px] font-bold text-slate-500 mb-1">Dirección de Entrega</label>
           <div className="flex relative">
-            <input className="flex-1 py-1 px-2 border border-slate-300 rounded text-sm text-slate-700 bg-slate-50" value={clientAddress} onChange={e => setClientAddress(e.target.value)} />
+            <input className="flex-1 py-1 px-2 border border-slate-300 rounded text-sm text-slate-700 bg-slate-50 outline-none" value={clientAddress} onChange={e => setClientAddress(e.target.value)} />
             {selectedClient?.branches && selectedClient.branches.length > 0 && (
               <button onClick={() => setShowBranchSelector(!showBranchSelector)} className="absolute right-0 h-full px-3 border-l border-slate-300 text-blue-600 hover:bg-blue-50 flex items-center">
                 <MapPin className="w-4 h-4 mr-1" /><ChevronDown className="w-3 h-3" />
@@ -687,7 +701,6 @@ export const AdvancedOrderEntry: React.FC = () => {
       {/* ENTRADA DE PRODUCTOS */}
       <div className="bg-white border border-slate-300 shadow-sm flex flex-col flex-1 rounded-t-lg overflow-hidden">
         
-        {/* Barra de Búsqueda de Productos */}
         <div className="bg-blue-50 border-b border-blue-200 p-2 flex gap-2 items-end">
           <div className="flex-1 relative">
             <label className="block text-[10px] font-bold text-blue-800 mb-1">Producto (Buscar por Código o Nombre)</label>
@@ -695,7 +708,7 @@ export const AdvancedOrderEntry: React.FC = () => {
               <Search className="absolute left-2 top-2 w-4 h-4 text-blue-400" />
               <input 
                 ref={productInputRef}
-                className="w-full pl-8 pr-2 py-1.5 border border-blue-300 rounded text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                className="w-full pl-8 pr-2 py-1.5 border border-blue-300 rounded text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none uppercase transition-shadow"
                 placeholder="PISTOLEAR O ESCRIBIR..."
                 value={productSearch}
                 onChange={e => setProductSearch(e.target.value)}
@@ -708,8 +721,8 @@ export const AdvancedOrderEntry: React.FC = () => {
                       <tr><th className="p-2">Código</th><th className="p-2">Producto</th><th className="p-2 text-right">Precio Und</th><th className="p-2 text-right text-blue-600">Stock Real</th></tr>
                     </thead>
                     <tbody>
-                      {searchedProducts.map(p => (
-                        <tr key={p.id} onMouseDown={() => handleSelectProduct(p)} className="hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50">
+                      {searchedProducts.map((p, i) => (
+                        <tr key={p.id} onMouseDown={() => handleSelectProduct(p)} className={`cursor-pointer text-sm border-b border-slate-50 ${highlightedIndex === i ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
                           <td className="p-2 font-mono font-bold text-blue-800">{p.sku}</td>
                           <td className="p-2 text-slate-800">{p.name}</td>
                           <td className="p-2 text-right text-slate-600">S/ {Number(p.price_unit).toFixed(2)}</td>
@@ -725,14 +738,21 @@ export const AdvancedOrderEntry: React.FC = () => {
 
           <div className="w-20">
             <label className="block text-[10px] font-bold text-blue-800 mb-1 text-center">Cant.</label>
-            <input ref={qtyInputRef} type="number" min="1" className="w-full py-1.5 px-2 border border-blue-300 rounded text-center text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={entryQty} onChange={e => setEntryQty(Number(e.target.value))} />
+            <input 
+              ref={qtyInputRef} 
+              type="number" min="1" 
+              className="w-full py-1.5 px-2 border border-blue-300 rounded text-center text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" 
+              value={entryQty} 
+              onChange={e => setEntryQty(Number(e.target.value))}
+              onKeyDown={handleQtyKeyDown} 
+            />
           </div>
 
           <div className="w-24 relative">
             <label className="block text-[10px] font-bold text-blue-800 mb-1">Unidad</label>
             <select className="w-full py-1.5 px-2 border border-blue-300 rounded text-sm font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={entryUnit} onChange={e => setEntryUnit(e.target.value)}>
               <option value="UND">UND</option>
-              {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type}</option>}
+              {selectedProduct?.package_type && <option value={selectedProduct.package_type}>{selectedProduct.package_type}</option>}
             </select>
             <ChevronDown className="absolute right-2 top-7 w-3 h-3 text-slate-400 pointer-events-none" />
           </div>
@@ -835,7 +855,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       {/* FOOTER TOTALES */}
       <div className="bg-slate-100 border-t border-slate-300 mt-2 p-2 flex justify-between items-end gap-4 shrink-0 rounded-b-lg">
         <div className="flex flex-col justify-end">
-          <button onClick={handlePreview} disabled={cart.length === 0} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded shadow-sm font-bold hover:bg-slate-50 flex items-center disabled:opacity-50">
+          <button onClick={handlePreview} disabled={cart.length === 0} className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded shadow-sm font-bold hover:bg-slate-50 flex items-center disabled:opacity-50 transition-colors">
             <Printer className="w-4 h-4 mr-2" /> Vista Previa
           </button>
           <div className="text-[10px] text-slate-500 mt-2 italic">
@@ -879,7 +899,7 @@ export const AdvancedOrderEntry: React.FC = () => {
               <div className="p-4 bg-slate-50 border-b border-slate-200 relative">
                  <input
                     autoFocus
-                    className="w-full border-2 border-slate-300 rounded p-4 text-xl font-bold focus:border-blue-500 outline-none"
+                    className="w-full border-2 border-slate-300 rounded p-4 text-xl font-bold focus:border-blue-500 outline-none transition-shadow"
                     placeholder="Escriba Nro Pedido (Ej. PE01), RUC o Cliente..."
                     value={orderSearchTerm}
                     onChange={e => setOrderSearchTerm(e.target.value)}
@@ -910,7 +930,7 @@ export const AdvancedOrderEntry: React.FC = () => {
                                 <button onClick={() => setShowHistoryModal({ isOpen: true, order: o })} className="bg-white border border-slate-300 px-3 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400" title="Ver Historial">
                                    H.
                                 </button>
-                                <button onClick={() => loadOrder(o)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow flex items-center justify-center">
+                                <button onClick={() => loadOrder(o)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow flex items-center justify-center transition-colors">
                                    <Edit className="w-4 h-4 mr-2" /> Editar
                                 </button>
                              </td>
@@ -964,13 +984,13 @@ export const AdvancedOrderEntry: React.FC = () => {
             <p className="text-sm text-slate-500 mb-4 pb-4 border-b border-slate-100">Ingrese credencial para: <strong className="text-slate-800">{showAdminAuthModal.targetName}</strong></p>
             <input
                type="password" placeholder="••••••••"
-               className="w-full border-2 border-slate-200 rounded-lg p-3 mb-4 text-center text-2xl tracking-[0.5em] focus:border-blue-500 outline-none transition-colors"
+               className="w-full border-2 border-slate-200 rounded-lg p-3 mb-4 text-center text-2xl tracking-[0.5em] focus:border-blue-500 outline-none transition-shadow"
                value={adminPwd} onChange={e => setAdminPwd(e.target.value)}
                onKeyDown={e => { if (e.key === 'Enter') verifyAdmin(); if (e.key === 'Escape') setShowAdminAuthModal({ isOpen: false, action: () => {}, targetName: '' }); }}
             />
             <div className="flex gap-2">
-               <button onClick={() => setShowAdminAuthModal({ isOpen: false, action: () => {}, targetName: '' })} className="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg font-bold hover:bg-slate-200">Cancelar</button>
-               <button onClick={verifyAdmin} className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg font-bold shadow hover:bg-blue-700">Autorizar</button>
+               <button onClick={() => setShowAdminAuthModal({ isOpen: false, action: () => {}, targetName: '' })} className="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg font-bold hover:bg-slate-200 transition-colors">Cancelar</button>
+               <button onClick={verifyAdmin} className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg font-bold shadow hover:bg-blue-700 transition-colors">Autorizar</button>
             </div>
           </div>
         </div>
