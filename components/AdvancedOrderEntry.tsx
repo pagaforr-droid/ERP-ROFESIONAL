@@ -40,6 +40,7 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [dbSeries, setDbSeries] = useState<any[]>([]);
   const [dbZones, setDbZones] = useState<any[]>([]);
   const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
+  const [loadedBatches, setLoadedBatches] = useState<Record<string, any[]>>({}); 
   
   const [isEditMode, setIsEditMode] = useState(false);
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
@@ -156,7 +157,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     // 3. Evaluar Promociones Directas (Porcentaje o Precio Fijo)
     const activePromo = dbPromos.find(promo => {
         if (!promo.product_ids.includes(p.id)) return false;
-        if (!isPromoValidForContext(promo, 'IN_STORE', '', sellerId || currentUser?.id, currentUser?.role)) return false;
+        if (!isPromoValidForContext(promo, 'IN_STORE', selectedClient?.city || '', sellerId || currentUser?.id, currentUser?.role)) return false;
         if (promo.target_price_list_ids?.length > 0 && listId && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(listId)) return false;
         return true;
     });
@@ -220,7 +221,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     setTimeout(() => productInputRef.current?.focus(), 100);
   };
 
-  // BÚSQUEDA DE PRODUCTOS
+  // BÚSQUEDA DE PRODUCTOS CON KARDEX INTEGRADO
   useEffect(() => {
     if (productSearch.length < 2) { setSearchedProducts([]); setHighlightedIndex(0); return; }
     const timer = setTimeout(async () => {
@@ -229,12 +230,18 @@ export const AdvancedOrderEntry: React.FC = () => {
         const { data: pData } = await supabase.from('products').select('*').or(`name.ilike.%${productSearch}%,sku.ilike.%${productSearch}%`).eq('is_active', true).limit(15);
         if (pData && pData.length > 0) {
           const pIds = pData.map(p => p.id);
-          const { data: bData } = await supabase.from('batches').select('product_id, quantity_current').in('product_id', pIds).gt('quantity_current', 0);
+          // Cargar Lotes para validación estricta de Stock
+          const { data: bData } = await supabase.from('batches').select('*').in('product_id', pIds).gt('quantity_current', 0).order('expiration_date', { ascending: true });
+          const batchCache: Record<string, any[]> = {};
           
           const enriched = pData.map(p => {
-            const stock = (bData || []).filter(b => b.product_id === p.id).reduce((sum, b) => sum + Number(b.quantity_current), 0);
+            const prodBatches = (bData || []).filter(b => b.product_id === p.id);
+            batchCache[p.id] = prodBatches;
+            const stock = prodBatches.length > 0 ? prodBatches.reduce((sum, b) => sum + Number(b.quantity_current || 0), 0) : Number(p.current_stock || p.stock || 0);
             return { ...p, current_stock: stock };
           });
+          
+          setLoadedBatches(prev => ({ ...prev, ...batchCache }));
           setSearchedProducts(enriched);
         } else {
           setSearchedProducts([]);
@@ -307,11 +314,11 @@ export const AdvancedOrderEntry: React.FC = () => {
     } catch(e) { console.error(e); setClientCreditInfo(prev => ({...prev, isChecking: false})); }
   }
 
-  // RE-EVALUACIÓN AUTOMÁTICA DE PROMOCIONES Y BONIFICACIONES
+  // --- RE-EVALUACIÓN AUTOMÁTICA DE PROMOCIONES DE ÉLITE ---
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
 
-    // Normalizar cantidades a unidad mínima para correcta evaluación
+    // Normalización de Unidades: Cajas a Unidades Base para evaluar metas
     const getBaseQuantity = (item: CartItem) => {
         if (item.unit_type === item.product_ref?.package_type) {
             return item.quantity * Number(item.product_ref.package_quantity || 1);
@@ -320,7 +327,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     };
 
     const validPromos = dbAutoPromos.filter(ap => {
-      if (!isPromoValidForContext(ap, 'IN_STORE', '', currentUser?.id, currentUser?.role)) return false;
+      if (!isPromoValidForContext(ap, 'IN_STORE', selectedClient?.city || '', sellerId || currentUser?.id, currentUser?.role)) return false;
       if (ap.target_price_list_ids && ap.target_price_list_ids.length > 0 && listId) {
         if (!ap.target_price_list_ids.includes('ALL') && !ap.target_price_list_ids.includes(listId)) return false;
       }
@@ -331,35 +338,62 @@ export const AdvancedOrderEntry: React.FC = () => {
       let applies = false;
       let multiplier = 0;
 
+      // Evaluar metas
       if (ap.condition_type === 'BUY_X_PRODUCT') {
-        const qtyBought = cleanCart
-          .filter(i => (ap.condition_product_ids?.includes(i.product_id) || i.product_id === ap.condition_product_id) && !i.is_bonus)
-          .reduce((sum, i) => sum + getBaseQuantity(i), 0); // Usar cantidad normalizada
+        const qtyBought = cleanCart.filter(i => {
+            if (i.is_bonus) return false;
+            // Lógica Multiproducto
+            const hasList = ap.condition_product_ids && ap.condition_product_ids.length > 0;
+            const hasSingle = !!ap.condition_product_id;
+            if (hasList) return ap.condition_product_ids.includes(i.product_id);
+            if (hasSingle) return i.product_id === ap.condition_product_id;
+            return true;
+        }).reduce((sum, i) => sum + getBaseQuantity(i), 0);
         
         if (qtyBought >= ap.condition_amount) {
           applies = true;
           multiplier = Math.floor(qtyBought / ap.condition_amount);
         }
-      }
-
-      if (ap.condition_type === 'SPEND_Y_TOTAL') {
-        const totalSpent = cleanCart.filter(i => !i.is_bonus).reduce((sum, item) => sum + item.total_price, 0);
+      } 
+      else if (ap.condition_type === 'SPEND_Y_TOTAL') {
+        const conditionItemKeys = ap.condition_product_ids || [];
+        const totalSpent = cleanCart.reduce((sum, item) => {
+            if (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) return sum;
+            return sum + item.total_price;
+        }, 0);
         if (totalSpent >= ap.condition_amount) {
           applies = true;
           multiplier = Math.floor(totalSpent / ap.condition_amount);
         }
+      } 
+      else if (ap.condition_type === 'SPEND_Y_CATEGORY') {
+        const catSpent = cleanCart.reduce((sum, item) => {
+            const p = cartProductsCache[item.product_id] || item.product_ref;
+            if (p?.category === ap.condition_category) return sum + item.total_price;
+            return sum;
+        }, 0);
+        if (catSpent >= ap.condition_amount) {
+            applies = true;
+            multiplier = Math.floor(catSpent / ap.condition_amount);
+        }
       }
 
+      // Aplicar premio si aplica
       if (applies && multiplier > 0) {
         const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
         if (rewardProduct) {
+          const rewardQty = ap.reward_quantity * multiplier;
+          // Respetar unidad de bonificación
+          const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
+          const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
+
           cleanCart.push({
             id: crypto.randomUUID(),
             product_id: rewardProduct.id,
             sku: rewardProduct.sku,
             name: rewardProduct.name,
-            quantity: ap.reward_quantity * multiplier,
-            unit_type: ap.reward_unit_type || rewardProduct.unit_type || 'UND',
+            quantity: rewardQty,
+            unit_type: realUnitName,
             unit_price: 0,
             discount_percent: 100,
             total_price: 0,
@@ -378,6 +412,19 @@ export const AdvancedOrderEntry: React.FC = () => {
   const executeAddToCart = () => {
     if (!selectedProduct) return;
     if (entryQty <= 0) return;
+
+    // Validación estricta de Stock (Kardex)
+    const isPkgMode = entryUnit === selectedProduct.package_type;
+    const conversionFactor = isPkgMode ? Number(selectedProduct.package_quantity || 1) : 1;
+    const requiredBaseUnits = entryQty * conversionFactor;
+
+    const availableBatches = loadedBatches[selectedProduct.id] || [];
+    const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(selectedProduct.current_stock || selectedProduct.stock || 0);
+
+    if (totalStock < requiredBaseUnits && !entryBonus) {
+        alert(`❌ Stock Insuficiente para ${selectedProduct.name}.\nDisponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`);
+        return;
+    }
 
     const gross = entryQty * entryPrice;
     const finalPrice = gross - (gross * (entryDiscount / 100));
@@ -437,13 +484,30 @@ export const AdvancedOrderEntry: React.FC = () => {
 
   const handleCartQtyChange = (id: string, newQty: number) => {
     if (isNaN(newQty) || newQty <= 0) return;
-    let tempCart = cart.map(item => {
-      if (item.id === id) {
-        const tGross = newQty * item.unit_price;
-        return { ...item, quantity: newQty, total_price: tGross - (tGross * (item.discount_percent / 100)) };
-      }
-      return item;
-    });
+    
+    let tempCart = [...cart];
+    const itemIndex = tempCart.findIndex(i => i.id === id);
+    if (itemIndex < 0) return;
+
+    const item = tempCart[itemIndex];
+    const pRef = item.product_ref;
+    
+    // Validar Stock al editar cantidad en la grilla
+    const isPkgMode = item.unit_type === pRef.package_type;
+    const conversionFactor = isPkgMode ? Number(pRef.package_quantity || 1) : 1;
+    const requiredBaseUnits = newQty * conversionFactor;
+
+    const availableBatches = loadedBatches[pRef.id] || [];
+    const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(pRef.current_stock || pRef.stock || 0);
+
+    if (totalStock < requiredBaseUnits && !item.is_bonus) {
+        alert(`❌ Stock Insuficiente para ${pRef.name}.\nDisponible: ${totalStock} unid.\nIntentó solicitar: ${requiredBaseUnits} unid.`);
+        return; // Anular cambio si no hay stock
+    }
+
+    const tGross = newQty * item.unit_price;
+    tempCart[itemIndex] = { ...item, quantity: newQty, total_price: tGross - (tGross * (item.discount_percent / 100)) };
+    
     applyPromotions(tempCart, priceListId);
   };
 
@@ -765,7 +829,7 @@ export const AdvancedOrderEntry: React.FC = () => {
                           <td className="p-2 font-mono font-bold text-blue-800">{p.sku}</td>
                           <td className="p-2 text-slate-800">{p.name}</td>
                           <td className="p-2 text-right text-slate-600">S/ {Number(p.price_unit).toFixed(2)}</td>
-                          <td className="p-2 text-right font-black text-slate-800">{p.current_stock}</td>
+                          <td className={`p-2 text-right font-black ${p.current_stock > 0 ? 'text-green-600' : 'text-red-500'}`}>{p.current_stock}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -910,7 +974,8 @@ export const AdvancedOrderEntry: React.FC = () => {
           </button>
           <div className="text-[10px] text-slate-500 mt-2 italic">
             * Los precios están bloqueados por sistema y se calculan según lista y unidad.<br/>
-            * Las promociones (Bonificaciones) se recalcularán automáticamente al editar cantidades.
+            * Las promociones (Bonificaciones) se recalcularán automáticamente al editar cantidades.<br/>
+            * <b>Inventario Verificado:</b> El stock se descuenta usando la trazabilidad de los lotes reales.
           </div>
         </div>
 
@@ -938,7 +1003,6 @@ export const AdvancedOrderEntry: React.FC = () => {
         </div>
       </div>
 
-      {/* MODALES REUTILIZADOS OMITIDOS EN EL TEXTO POR ESPACIO PERO INCLUIDOS EN CÓDIGO FINAL */}
       {/* MODAL BÚSQUEDA DE PEDIDOS */}
       {isSearchModalOpen && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
