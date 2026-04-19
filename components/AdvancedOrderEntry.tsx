@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-// 🚨 CORRECCIÓN CRÍTICA: Se añadió 'Sale' a los tipos importados
+// 🚨 CORRECCIÓN: Aseguramos la importación del tipo Sale y Order
 import { Product, BatchAllocation, SaleItem, Client, Order, Sale, AutoPromotion, Promotion, Batch } from '../types';
-// 🚨 CORRECCIÓN CRÍTICA: Se añadió 'Edit3' a los iconos importados
+// 🚨 CORRECCIÓN: Importamos TODOS los iconos necesarios para que React no sufra colapsos
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, Edit3 } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
@@ -43,8 +43,8 @@ export const AdvancedOrderEntry: React.FC = () => {
    const [dbSeries, setDbSeries] = useState<any[]>([]);
    const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
 
-   const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA'); // Sugerido
-   const [series, setSeries] = useState(''); // Serie del PEDIDO
+   const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('FACTURA'); 
+   const [series, setSeries] = useState(''); 
    const [docNumber, setDocNumber] = useState('');
 
    useEffect(() => {
