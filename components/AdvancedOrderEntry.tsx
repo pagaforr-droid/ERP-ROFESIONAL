@@ -1,504 +1,664 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../services/supabase';
 import { useStore } from '../services/store';
-import { Search, Save, Plus, Trash2, X, AlertTriangle, RefreshCw, FilePlus, ShoppingBag } from 'lucide-react';
+import { Product, Client, Order, AutoPromotion, Promotion, Batch } from '../types';
+import { Search, Plus, Trash2, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle } from 'lucide-react';
+import { supabase } from '../services/supabase';
+
+// Interfaz para los items del carrito
+interface CartItem {
+  id: string;
+  product_id: string;
+  sku: string;
+  name: string;
+  quantity: number;
+  unit_type: string;
+  unit_price: number;
+  discount_percent: number;
+  total_price: number;
+  is_bonus: boolean;
+  auto_promo_id?: string;
+  promo_name?: string;
+  product_ref: Product;
+}
 
 export const AdvancedOrderEntry: React.FC = () => {
-  const { currentUser } = useStore();
+  const { users, currentUser } = useStore();
 
-  // ==========================================
-  // 1. ESTADOS PRINCIPALES (LIMPIOS)
-  // ==========================================
-  const [cart, setCart] = useState<any[]>([]);
-  const [clientSearch, setClientSearch] = useState('');
-  const [searchedClients, setSearchedClients] = useState<any[]>([]);
-  const [selectedClient, setSelectedClient] = useState<any>(null);
+  // --- REFS ---
+  const productInputRef = useRef<HTMLInputElement>(null);
+  const qtyInputRef = useRef<HTMLInputElement>(null);
+  const priceInputRef = useRef<HTMLInputElement>(null);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+
+  // --- MAESTROS ---
+  const [dbCompany, setDbCompany] = useState<any>(null);
+  const [dbSellers, setDbSellers] = useState<any[]>([]);
+  const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
+  const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
+  const [dbProducts, setDbProducts] = useState<Product[]>([]);
   
-  const [productSearch, setProductSearch] = useState('');
-  const [searchedProducts, setSearchedProducts] = useState<any[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<any>(null);
-  const [entryQty, setEntryQty] = useState(1);
-  const [entryPrice, setEntryPrice] = useState(0);
+  // --- ESTADO CABECERA (PEDIDO) ---
+  const [docType] = useState('PEDIDO'); // Fijo
+  const [series, setSeries] = useState('PE01');
+  const [docNumber, setDocNumber] = useState('Cargando...');
+  const [currency, setCurrency] = useState('SOLES');
+  const [sellerId, setSellerId] = useState('');
 
-  const [docType, setDocType] = useState('FACTURA'); // Sugerido
-  const [pedidoSeries, setPedidoSeries] = useState('');
-  const [pedidoNumber, setPedidoNumber] = useState('');
+  // --- ESTADO CLIENTE ---
+  const [clientSearch, setClientSearch] = useState('');
+  const [searchedClients, setSearchedClients] = useState<Client[]>([]);
+  const [isSearchingClient, setIsSearchingClient] = useState(false);
+  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  
+  const [clientName, setClientName] = useState('');
+  const [clientDoc, setClientDoc] = useState('');
+  const [clientAddress, setClientAddress] = useState('');
   const [priceListId, setPriceListId] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CONTADO');
-  
-  const [isSaving, setIsSaving] = useState(false);
-  const [alertMsg, setAlertMsg] = useState('');
+  const [showBranchSelector, setShowBranchSelector] = useState(false);
 
-  // Maestros
-  const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
-  const [dbAutoPromos, setDbAutoPromos] = useState<any[]>([]);
-  const [dbProducts, setDbProducts] = useState<any[]>([]); // Para extraer regalos
+  // --- ESTADO INGRESO PRODUCTO ---
+  const [productSearch, setProductSearch] = useState('');
+  const [searchedProducts, setSearchedProducts] = useState<(Product & { current_stock: number })[]>([]);
+  const [isSearchingProd, setIsSearchingProd] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  
+  const [entryQty, setEntryQty] = useState<number>(1);
+  const [entryUnit, setEntryUnit] = useState('UND');
+  const [entryPrice, setEntryPrice] = useState<number>(0);
+  const [entryDiscount, setEntryDiscount] = useState<number>(0);
+  const [entryBonus, setEntryBonus] = useState(false);
+
+  // --- CARRITO ---
+  const [cart, setCart] = useState<CartItem[]>([]);
+  
+  // --- UI STATES ---
+  const [isSaving, setIsSaving] = useState(false);
+  const [showAdminAuthModal, setShowAdminAuthModal] = useState({ isOpen: false, action: () => {}, targetName: '' });
+  const [adminPwd, setAdminPwd] = useState('');
 
   // ==========================================
-  // 2. CARGA INICIAL DE DATOS
+  // INICIALIZACIÓN
   // ==========================================
   useEffect(() => {
-    const init = async () => {
-      // Cargar Listas de Precios
-      const { data: lists } = await supabase.from('price_lists').select('*');
-      if (lists) setDbPriceLists(lists);
-
-      // Cargar Promociones Activas
-      const { data: promos } = await supabase.from('auto_promotions').select('*').eq('is_active', true);
-      if (promos) setDbAutoPromos(promos);
-
-      // Cargar Catálogo (necesario para buscar regalos rápido)
-      const { data: prods } = await supabase.from('products').select('*');
-      if (prods) setDbProducts(prods);
-
-      // Buscar la serie de PEDIDOS
-      const { data: seriesData } = await supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true).limit(1).maybeSingle();
-      if (seriesData) {
-        setPedidoSeries(seriesData.series);
-        setPedidoNumber(String(seriesData.current_number + 1).padStart(8, '0'));
+    const fetchMasters = async () => {
+      try {
+        const [compRes, sellRes, plRes, apRes, prodRes, serRes] = await Promise.all([
+          supabase.from('company_config').select('*').limit(1).maybeSingle(),
+          supabase.from('sellers').select('*').order('name'),
+          supabase.from('price_lists').select('*').order('name'),
+          supabase.from('auto_promotions').select('*').eq('is_active', true),
+          supabase.from('products').select('*').eq('is_active', true),
+          supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true).limit(1).maybeSingle()
+        ]);
+        
+        if (compRes.data) setDbCompany(compRes.data);
+        if (sellRes.data) setDbSellers(sellRes.data);
+        if (plRes.data) setDbPriceLists(plRes.data);
+        if (apRes.data) setDbAutoPromos(apRes.data);
+        if (prodRes.data) setDbProducts(prodRes.data as Product[]);
+        if (serRes.data) {
+          setSeries(serRes.data.series);
+          setDocNumber(String(serRes.data.current_number + 1).padStart(8, '0'));
+        }
+      } catch (e) {
+        console.error("Error inicializando maestros:", e);
       }
     };
-    init();
+    fetchMasters();
   }, []);
 
   // ==========================================
-  // 3. BUSCADORES EN TIEMPO REAL
+  // BUSCADORES
   // ==========================================
   useEffect(() => {
     if (clientSearch.length < 3) { setSearchedClients([]); return; }
     const timer = setTimeout(async () => {
-      const { data } = await supabase.from('clients').select('*').or(`name.ilike.%${clientSearch}%,doc_number.ilike.%${clientSearch}%`).limit(8);
-      if (data) setSearchedClients(data);
-    }, 300);
+      setIsSearchingClient(true);
+      const { data } = await supabase.from('clients').select('*').or(`name.ilike.%${clientSearch}%,doc_number.ilike.%${clientSearch}%`).limit(10);
+      if (data) setSearchedClients(data as Client[]);
+      setIsSearchingClient(false);
+    }, 350);
     return () => clearTimeout(timer);
   }, [clientSearch]);
 
   useEffect(() => {
     if (productSearch.length < 2) { setSearchedProducts([]); return; }
     const timer = setTimeout(async () => {
-      const { data } = await supabase.from('products').select('*').or(`name.ilike.%${productSearch}%,sku.ilike.%${productSearch}%`).eq('is_active', true).limit(10);
-      if (data) setSearchedProducts(data);
-    }, 300);
+      setIsSearchingProd(true);
+      try {
+        const { data: pData } = await supabase.from('products').select('*').or(`name.ilike.%${productSearch}%,sku.ilike.%${productSearch}%`).eq('is_active', true).limit(10);
+        if (pData && pData.length > 0) {
+          const pIds = pData.map(p => p.id);
+          const { data: bData } = await supabase.from('batches').select('product_id, quantity_current').in('product_id', pIds).gt('quantity_current', 0);
+          
+          const enriched = pData.map(p => {
+            const stock = (bData || []).filter(b => b.product_id === p.id).reduce((sum, b) => sum + Number(b.quantity_current), 0);
+            return { ...p, current_stock: stock };
+          });
+          setSearchedProducts(enriched);
+        } else {
+          setSearchedProducts([]);
+        }
+      } catch (error) { console.error(error); } finally { setIsSearchingProd(false); }
+    }, 350);
     return () => clearTimeout(timer);
   }, [productSearch]);
 
   // ==========================================
-  // 4. LÓGICA DE CARRITO Y PROMOCIONES
+  // HANDLERS DE SELECCIÓN
   // ==========================================
-  const calculateTotals = (currentCart: any[]) => {
-    const total = currentCart.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
-    const subtotal = total / 1.18;
-    const igv = total - subtotal;
-    return { subtotal, igv, total };
+  const handleSelectClient = (c: Client) => {
+    setSelectedClient(c);
+    setClientName(c.name);
+    setClientDoc(c.doc_number);
+    setClientAddress(c.address);
+    setPriceListId(c.price_list_id || '');
+    setPaymentMethod(c.payment_condition?.toUpperCase().includes('CREDIT') ? 'CREDITO' : 'CONTADO');
+    setClientSearch('');
+    setSearchedClients([]);
+    
+    // Autoasignar vendedor de su zona si existe
+    if (c.zone_id) {
+       // Buscar en DB local si tuvieras zones cargadas, o dejarlo manual.
+    }
   };
 
-  const evalPromotions = (baseCart: any[]) => {
-    // Primero, limpiamos las promociones viejas (is_bonus = true)
-    let newCart = baseCart.filter(item => !item.is_bonus);
+  const getMultiplier = (listId: string) => {
+    if (!listId) return 1;
+    const list = dbPriceLists.find(pl => pl.id === listId);
+    return list ? Number(list.multiplier || list.factor || 1) : 1;
+  };
+
+  const handleSelectProduct = (p: Product) => {
+    setSelectedProduct(p);
+    setProductSearch(p.name);
+    setSearchedProducts([]);
     
-    // Evaluamos cada promoción activa
-    dbAutoPromos.forEach(promo => {
+    setEntryUnit(p.unit_type || 'UND');
+    setEntryQty(1);
+    
+    const multiplier = getMultiplier(priceListId);
+    setEntryPrice(Number(p.price_unit || 0) * multiplier);
+    setEntryDiscount(0);
+    setEntryBonus(false);
+
+    setTimeout(() => { qtyInputRef.current?.focus(); qtyInputRef.current?.select(); }, 50);
+  };
+
+  // ==========================================
+  // MOTOR DE PROMOCIONES
+  // ==========================================
+  const applyPromotions = (currentCart: CartItem[], listId: string) => {
+    // 1. Limpiar regalos actuales para recalcular
+    let cleanCart = currentCart.filter(item => !item.auto_promo_id);
+
+    // 2. Filtrar Promos que apliquen a esta lista
+    const validPromos = dbAutoPromos.filter(ap => {
+      if (ap.target_price_list_ids && ap.target_price_list_ids.length > 0 && listId) {
+        if (!ap.target_price_list_ids.includes('ALL') && !ap.target_price_list_ids.includes(listId)) return false;
+      }
+      return true;
+    });
+
+    // 3. Evaluar
+    validPromos.forEach(ap => {
       let applies = false;
       let multiplier = 0;
 
-      // Condición: Comprar X cantidad de un producto
-      if (promo.condition_type === 'BUY_X_PRODUCT') {
-        const qtyBought = newCart
-          .filter(item => item.product_id === promo.condition_product_id)
-          .reduce((sum, item) => sum + item.quantity, 0);
-        
-        if (qtyBought >= promo.condition_amount) {
+      if (ap.condition_type === 'BUY_X_PRODUCT') {
+        const qtyBought = cleanCart
+          .filter(i => (ap.condition_product_ids?.includes(i.product_id) || i.product_id === ap.condition_product_id) && !i.is_bonus)
+          .reduce((sum, i) => sum + i.quantity, 0);
+
+        if (qtyBought >= ap.condition_amount) {
           applies = true;
-          multiplier = Math.floor(qtyBought / promo.condition_amount);
+          multiplier = Math.floor(qtyBought / ap.condition_amount);
         }
       }
 
-      // Condición: Gastar Y monto total
-      if (promo.condition_type === 'SPEND_Y_TOTAL') {
-        const totalSpent = calculateTotals(newCart).total;
-        if (totalSpent >= promo.condition_amount) {
-          applies = true;
-          multiplier = Math.floor(totalSpent / promo.condition_amount);
-        }
-      }
-
-      // Si aplica, inyectamos el regalo
       if (applies && multiplier > 0) {
-        const rewardProduct = dbProducts.find(p => p.id === promo.reward_product_id);
-        if (rewardProduct) {
-          newCart.push({
+        const rewardProd = dbProducts.find(p => p.id === ap.reward_product_id);
+        if (rewardProd) {
+          cleanCart.push({
             id: crypto.randomUUID(),
-            product_id: rewardProduct.id,
-            sku: rewardProduct.sku,
-            name: rewardProduct.name,
-            quantity: promo.reward_quantity * multiplier,
+            product_id: rewardProd.id,
+            sku: rewardProd.sku,
+            name: rewardProd.name,
+            quantity: ap.reward_quantity * multiplier,
+            unit_type: ap.reward_unit_type || 'UND',
             unit_price: 0,
+            discount_percent: 100,
             total_price: 0,
             is_bonus: true,
-            promo_name: promo.name
+            auto_promo_id: ap.id,
+            promo_name: ap.name,
+            product_ref: rewardProd
           });
         }
       }
     });
 
-    return newCart;
+    setCart(cleanCart);
   };
 
-  const handleAddProduct = () => {
+  // ==========================================
+  // LÓGICA DE CARRITO
+  // ==========================================
+  const executeAddToCart = () => {
     if (!selectedProduct) return;
-    if (entryQty <= 0) return;
+    
+    const gross = entryQty * entryPrice;
+    const finalPrice = gross - (gross * (entryDiscount / 100));
 
-    const newItem = {
+    const newItem: CartItem = {
       id: crypto.randomUUID(),
       product_id: selectedProduct.id,
       sku: selectedProduct.sku,
       name: selectedProduct.name,
       quantity: entryQty,
+      unit_type: entryUnit,
       unit_price: entryPrice,
-      total_price: entryQty * entryPrice,
-      is_bonus: false
+      discount_percent: entryDiscount,
+      total_price: entryBonus ? 0 : finalPrice,
+      is_bonus: entryBonus,
+      product_ref: selectedProduct
     };
 
-    // Verificar si ya existe en el carrito
-    const existingIndex = cart.findIndex(i => i.product_id === newItem.product_id && !i.is_bonus);
-    let updatedCart = [...cart];
-
-    if (existingIndex >= 0) {
-      updatedCart[existingIndex].quantity += entryQty;
-      updatedCart[existingIndex].total_price = updatedCart[existingIndex].quantity * updatedCart[existingIndex].unit_price;
+    let tempCart = [...cart];
+    const existingIdx = tempCart.findIndex(i => i.product_id === newItem.product_id && !i.is_bonus && !i.auto_promo_id);
+    
+    if (existingIdx >= 0) {
+      tempCart[existingIdx].quantity += entryQty;
+      const tGross = tempCart[existingIdx].quantity * tempCart[existingIdx].unit_price;
+      tempCart[existingIdx].total_price = tGross - (tGross * (tempCart[existingIdx].discount_percent / 100));
     } else {
-      updatedCart.push(newItem);
+      tempCart.push(newItem);
     }
 
-    // Aplicar Promociones Automáticas
-    updatedCart = evalPromotions(updatedCart);
-    setCart(updatedCart);
+    applyPromotions(tempCart, priceListId);
 
-    // Resetear inputs
+    // Reset Form
     setSelectedProduct(null);
     setProductSearch('');
     setEntryQty(1);
     setEntryPrice(0);
+    setEntryDiscount(0);
+    setEntryBonus(false);
+    setTimeout(() => productInputRef.current?.focus(), 50);
   };
 
-  const handleUpdatePrices = () => {
-    if (!priceListId) {
-      showAlert("Seleccione una Lista de Precios primero.");
-      return;
-    }
-
-    const list = dbPriceLists.find(l => l.id === priceListId);
-    const factor = list ? (list.multiplier || list.factor || 1) : 1;
-
-    let updatedCart = cart.map(item => {
-      if (item.is_bonus) return item; // No tocar regalos
-      
-      const prodMaster = dbProducts.find(p => p.id === item.product_id);
-      if (!prodMaster) return item;
-
-      const newPrice = Number(prodMaster.price_unit || 0) * factor;
+  const handleUpdateCartPrices = () => {
+    const multiplier = getMultiplier(priceListId);
+    let tempCart = cart.map(item => {
+      if (item.is_bonus || item.auto_promo_id) return item;
+      const baseP = Number(item.product_ref?.price_unit || 0);
+      const newP = baseP * multiplier;
+      const tGross = item.quantity * newP;
       return {
         ...item,
-        unit_price: newPrice,
-        total_price: item.quantity * newPrice
+        unit_price: newP,
+        total_price: tGross - (tGross * (item.discount_percent / 100))
       };
     });
+    applyPromotions(tempCart, priceListId);
+  };
 
-    updatedCart = evalPromotions(updatedCart);
-    setCart(updatedCart);
-    showAlert("Precios actualizados masivamente.", true);
+  const handleCartQtyChange = (id: string, newQty: number) => {
+    if (isNaN(newQty) || newQty <= 0) return;
+    let tempCart = cart.map(item => {
+      if (item.id === id) {
+        const tGross = newQty * item.unit_price;
+        return { ...item, quantity: newQty, total_price: tGross - (tGross * (item.discount_percent / 100)) };
+      }
+      return item;
+    });
+    applyPromotions(tempCart, priceListId);
   };
 
   // ==========================================
-  // 5. GUARDAR PEDIDO EN SUPABASE
+  // CÁLCULOS FINALES
   // ==========================================
-  const handleSaveOrder = async () => {
-    if (!selectedClient) { showAlert("Debe seleccionar un cliente."); return; }
-    if (cart.length === 0) { showAlert("El pedido no puede estar vacío."); return; }
-    if (!pedidoSeries) { showAlert("Configure una serie para PEDIDO en ajustes."); return; }
+  const subtotal = cart.reduce((sum, item) => sum + item.total_price, 0) / 1.18;
+  const igv = cart.reduce((sum, item) => sum + item.total_price, 0) - subtotal;
+  const total = cart.reduce((sum, item) => sum + item.total_price, 0);
 
-    setIsSaving(true);
-    const totals = calculateTotals(cart);
-
-    const orderPayload = {
-      id: crypto.randomUUID(),
-      code: `${pedidoSeries}-${pedidoNumber}`, // Temporal, el SQL lo ajusta
-      client_id: selectedClient.id,
-      client_name: selectedClient.name,
-      client_doc_type: selectedClient.doc_number?.length === 11 ? 'RUC' : 'DNI',
-      client_doc_number: selectedClient.doc_number,
-      seller_id: currentUser?.id,
-      suggested_document_type: docType,
-      payment_method: paymentMethod,
-      total: totals.total,
-      delivery_address: selectedClient.address || '',
-      status: 'pending',
-      items: cart.map(c => ({
-        id: crypto.randomUUID(),
-        product_id: c.product_id,
-        product_sku: c.sku,
-        product_name: c.name,
-        quantity_base: c.quantity,
-        quantity_presentation: c.quantity,
-        unit_price: c.unit_price,
-        total_price: c.unit_price * c.quantity,
-        is_bonus: c.is_bonus,
-        selected_unit: 'UND'
-      }))
-    };
-
-    try {
-      const { data, error } = await supabase.rpc('process_order_transaction', { p_order_data: orderPayload });
-      if (error) throw error;
-
-      showAlert(`¡Pedido guardado con éxito! Código: ${data.real_code}`, true);
-      
-      // Resetear todo
-      setCart([]);
-      setSelectedClient(null);
-      setClientSearch('');
-      setPedidoNumber(String(Number(pedidoNumber) + 1).padStart(8, '0'));
-    } catch (error: any) {
-      showAlert("Error al guardar: " + error.message);
-    } finally {
-      setIsSaving(false);
+  // ==========================================
+  // ADMINISTRADOR AUTH
+  // ==========================================
+  const verifyAdmin = () => {
+    const admin = users.find(u => u.role === 'ADMIN' && u.password === adminPwd);
+    if (admin) {
+      showAdminAuthModal.action();
+      setShowAdminAuthModal({ isOpen: false, action: () => {}, targetName: '' });
+      setAdminPwd('');
+    } else {
+      alert("Contraseña incorrecta.");
     }
   };
 
-  const showAlert = (msg: string, isSuccess = false) => {
-    setAlertMsg(msg);
-    setTimeout(() => setAlertMsg(''), 4000);
-  };
-
-  const { subtotal, igv, total } = calculateTotals(cart);
-
   return (
-    <div className="flex flex-col h-full bg-slate-100 p-4 font-sans text-sm">
+    <div className="flex flex-col h-full bg-slate-100 p-4 font-sans text-xs">
       
-      {/* ALERTAS */}
-      {alertMsg && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-slate-900 text-white px-6 py-3 rounded-lg shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4">
-          <AlertTriangle className="w-5 h-5 text-amber-500" />
-          <span className="font-bold">{alertMsg}</span>
-        </div>
-      )}
-
-      {/* CABECERA PRINCIPAL */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4 flex justify-between items-center">
-        <div className="flex items-center gap-3">
-          <div className="bg-blue-600 p-2 rounded-lg text-white">
-            <ShoppingBag className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-black text-slate-800">Generador de Pedidos</h1>
-            <p className="text-xs text-slate-500 font-medium">Módulo nativo de reserva de stock y preventa</p>
-          </div>
-        </div>
-        
-        <div className="flex gap-4">
-          <div className="bg-slate-50 p-2 rounded border border-slate-200 flex items-center gap-2">
-            <span className="font-bold text-slate-500">Documento Final:</span>
-            <select className="bg-white border border-slate-300 rounded px-2 py-1 font-bold" value={docType} onChange={e => setDocType(e.target.value)}>
-              <option value="FACTURA">Factura</option>
-              <option value="BOLETA">Boleta</option>
+      {/* CABECERA AL ESTILO DE LA IMAGEN */}
+      <div className="bg-white p-3 rounded shadow-sm border border-slate-200 mb-2 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200">
+            <span className="font-bold text-slate-700">Tipo</span>
+            <select className="bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900" disabled>
+              <option>PEDIDO</option>
             </select>
           </div>
-          <div className="bg-blue-50 p-2 rounded border border-blue-200 flex items-center gap-2">
-            <span className="font-bold text-blue-800">Pedido N°:</span>
-            <span className="text-lg font-black text-blue-900">{pedidoSeries}-{pedidoNumber || '...'}</span>
+
+          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200">
+            <span className="font-bold text-slate-700">Serie y Correlativo</span>
+            <select className="bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900" value={series} onChange={e => setSeries(e.target.value)}>
+              {dbSeries.length > 0 ? dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>) : <option>{series}</option>}
+            </select>
+            <input className="w-24 text-center bg-transparent font-bold text-slate-900" value={docNumber} readOnly />
           </div>
+
+          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200">
+            <span className="font-bold text-slate-700">Moneda</span>
+            <select className="bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900" value={currency} onChange={e => setCurrency(e.target.value)}>
+              <option value="SOLES">SOLES</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2 bg-slate-50 px-2 py-1.5 rounded border border-slate-200">
+            <span className="font-bold text-slate-700">Vendedor</span>
+            <select className="bg-white border border-slate-300 rounded px-2 py-1 font-bold text-slate-900 w-40" value={sellerId} onChange={e => setSellerId(e.target.value)}>
+              <option value="">-- Sin Vendedor --</option>
+              {dbSellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={() => window.location.reload()} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-1.5 rounded font-bold shadow-sm flex items-center">
+            <FilePlus className="w-4 h-4 mr-2" /> Nuevo (F2)
+          </button>
+          <button className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded font-bold shadow-sm flex items-center">
+            <Search className="w-4 h-4 mr-2" /> Buscar Pedido (F3)
+          </button>
         </div>
       </div>
 
-      {/* DATOS DEL CLIENTE */}
-      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 mb-4 grid grid-cols-12 gap-4">
-        <div className="col-span-4 relative">
-          <label className="block text-xs font-bold text-slate-500 mb-1">Buscar Cliente (RUC/Nombre)</label>
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-            <input 
-              className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-medium"
-              placeholder="Ej. Juan Perez..."
-              value={clientSearch}
-              onChange={e => setClientSearch(e.target.value)}
-            />
-            {searchedClients.length > 0 && clientSearch && (
-              <div className="absolute top-full left-0 w-full bg-white border border-slate-300 shadow-xl rounded-lg mt-1 z-50 overflow-hidden">
-                {searchedClients.map(c => (
-                  <div key={c.id} onClick={() => { setSelectedClient(c); setClientSearch(c.name); setPriceListId(c.price_list_id || ''); setSearchedClients([]); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-100">
-                    <div className="font-bold text-slate-800">{c.name}</div>
-                    <div className="text-xs text-slate-500">{c.doc_number}</div>
-                  </div>
-                ))}
+      {/* SECCIÓN CLIENTE */}
+      <div className="bg-white p-3 rounded shadow-sm border border-slate-200 mb-2">
+        <div className="grid grid-cols-12 gap-3">
+          <div className="col-span-3 relative">
+            <label className="block text-[10px] font-bold text-slate-500 mb-1">Cod / Buscar</label>
+            <div className="relative">
+              <Search className="absolute left-2 top-1.5 w-4 h-4 text-slate-400" />
+              <input 
+                className="w-full pl-8 pr-2 py-1 border border-slate-300 rounded text-sm font-medium focus:ring-1 focus:ring-blue-500 outline-none" 
+                placeholder="RUC o Nombre..." 
+                value={clientSearch}
+                onChange={e => setClientSearch(e.target.value)}
+              />
+              {searchedClients.length > 0 && clientSearch && (
+                <div className="absolute top-full left-0 w-[400px] bg-white border border-slate-300 shadow-xl rounded z-50 mt-1">
+                  {searchedClients.map(c => (
+                    <div key={c.id} onMouseDown={() => handleSelectClient(c)} className="p-2 hover:bg-blue-50 cursor-pointer border-b border-slate-100">
+                      <div className="font-bold text-slate-800">{c.name}</div>
+                      <div className="text-[10px] text-slate-500">{c.doc_number}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          
+          <div className="col-span-4">
+            <label className="block text-[10px] font-bold text-slate-500 mb-1">Razón Social</label>
+            <input className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-bold text-slate-800 bg-slate-50" value={clientName} onChange={e => setClientName(e.target.value)} />
+          </div>
+          
+          <div className="col-span-2">
+            <label className="block text-[10px] font-bold text-slate-500 mb-1">RUC/DNI</label>
+            <input className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-mono font-bold text-slate-800 bg-slate-50" value={clientDoc} onChange={e => setClientDoc(e.target.value)} />
+          </div>
+          
+          <div className="col-span-3">
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="block text-[10px] font-bold text-slate-500 mb-1">Lista Precio</label>
+                <select className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-bold text-slate-800" value={priceListId} onChange={e => setPriceListId(e.target.value)}>
+                  <option value="">-- General --</option>
+                  {dbPriceLists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="block text-[10px] font-bold text-slate-500 mb-1">Forma Pago</label>
+                <div className="flex gap-1">
+                  <button onClick={handleUpdateCartPrices} className="bg-blue-100 text-blue-700 px-2 rounded hover:bg-blue-200" title="Actualizar precios del carrito">
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                  <select className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-bold text-slate-800" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
+                    <option value="CONTADO">CONTADO</option>
+                    <option value="CREDITO">CRÉDITO</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-2">
+          <label className="block text-[10px] font-bold text-slate-500 mb-1">Dirección de Entrega</label>
+          <div className="flex relative">
+            <input className="flex-1 py-1 px-2 border border-slate-300 rounded text-sm text-slate-700 bg-slate-50" value={clientAddress} onChange={e => setClientAddress(e.target.value)} />
+            {selectedClient?.branches && selectedClient.branches.length > 0 && (
+              <button onClick={() => setShowBranchSelector(!showBranchSelector)} className="absolute right-0 h-full px-3 border-l border-slate-300 text-blue-600 hover:bg-blue-50 flex items-center">
+                <MapPin className="w-4 h-4 mr-1" /><ChevronDown className="w-3 h-3" />
+              </button>
+            )}
+            {showBranchSelector && (
+              <div className="absolute top-full right-0 w-[400px] bg-white border border-slate-300 shadow-xl rounded mt-1 z-50 overflow-hidden">
+                <div className="bg-slate-100 p-2 text-xs font-bold text-slate-600 uppercase border-b border-slate-200">Seleccionar Sucursal</div>
+                <div className="max-h-48 overflow-y-auto">
+                  {[selectedClient.address, ...selectedClient.branches].map((addr, i) => (
+                    <div key={i} onClick={() => { setClientAddress(addr); setShowBranchSelector(false); }} className="p-2 border-b border-slate-100 hover:bg-blue-50 cursor-pointer flex gap-2 text-sm text-slate-700">
+                      <MapPin className="w-4 h-4 mt-0.5 shrink-0 text-blue-500" />
+                      <span className={clientAddress === addr ? 'font-bold text-blue-800' : ''}>{addr}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
-        </div>
-        
-        <div className="col-span-3">
-          <label className="block text-xs font-bold text-slate-500 mb-1">Lista de Precios Aplicable</label>
-          <div className="flex gap-2">
-            <select className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none font-medium" value={priceListId} onChange={e => setPriceListId(e.target.value)}>
-              <option value="">-- General --</option>
-              {dbPriceLists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
-            <button onClick={handleUpdatePrices} className="bg-blue-100 text-blue-700 p-2 rounded-lg hover:bg-blue-200" title="Recalcular carrito con esta lista">
-              <RefreshCw className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        <div className="col-span-3">
-          <label className="block text-xs font-bold text-slate-500 mb-1">Condición de Pago</label>
-          <select className="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none font-bold text-slate-700" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
-            <option value="CONTADO">AL CONTADO</option>
-            <option value="CREDITO">A CRÉDITO</option>
-          </select>
-        </div>
-
-        <div className="col-span-2 flex items-end">
-           {selectedClient && (
-             <div className="w-full bg-emerald-50 border border-emerald-200 p-2 rounded-lg text-emerald-800 text-xs font-bold text-center">
-               Cliente Seleccionado OK
-             </div>
-           )}
         </div>
       </div>
 
       {/* ENTRADA DE PRODUCTOS */}
-      <div className="bg-white p-4 rounded-t-xl shadow-sm border border-slate-200 border-b-0 flex gap-3 items-end">
-        <div className="flex-1 relative">
-          <label className="block text-xs font-bold text-blue-800 mb-1">Agregar Producto (Código o Nombre)</label>
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 w-4 h-4 text-blue-400" />
-            <input 
-              className="w-full pl-9 pr-3 py-2 border-2 border-blue-200 rounded-lg focus:border-blue-500 outline-none font-bold text-slate-800 uppercase"
-              placeholder="Buscar producto..."
-              value={productSearch}
-              onChange={e => setProductSearch(e.target.value)}
-            />
-            {searchedProducts.length > 0 && productSearch && (
-              <div className="absolute top-full left-0 w-full bg-white border border-slate-300 shadow-2xl rounded-lg mt-1 z-50 overflow-hidden max-h-64 overflow-y-auto">
-                {searchedProducts.map(p => (
-                  <div key={p.id} onClick={() => { setSelectedProduct(p); setProductSearch(p.name); setEntryPrice(p.price_unit || 0); setEntryQty(1); setSearchedProducts([]); }} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-100 flex justify-between items-center">
-                    <div>
-                      <div className="font-bold text-slate-800">{p.sku} - {p.name}</div>
-                      <div className="text-xs text-slate-500">Precio Base: S/ {p.price_unit}</div>
-                    </div>
-                    <div className="font-black text-blue-700 bg-blue-100 px-2 py-1 rounded">Stock: {p.stock || p.current_stock || 0}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="w-24">
-          <label className="block text-xs font-bold text-blue-800 mb-1 text-center">Cant.</label>
-          <input type="number" min="1" className="w-full border-2 border-blue-200 rounded-lg py-2 px-2 text-center font-black text-lg outline-none" value={entryQty} onChange={e => setEntryQty(Number(e.target.value))} />
-        </div>
-
-        <div className="w-32">
-          <label className="block text-xs font-bold text-blue-800 mb-1 text-center">Precio Libre</label>
-          <input type="number" className="w-full border-2 border-blue-200 rounded-lg py-2 px-2 text-right font-bold outline-none" value={entryPrice} onChange={e => setEntryPrice(Number(e.target.value))} />
-        </div>
-
-        <button onClick={handleAddProduct} disabled={!selectedProduct} className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-lg disabled:opacity-50 transition-colors shadow-md shadow-blue-500/30">
-          <Plus className="w-6 h-6" />
-        </button>
-      </div>
-
-      {/* GRILLA DE DETALLES */}
-      <div className="flex-1 bg-white border border-slate-200 shadow-sm overflow-auto rounded-b-xl">
-        <table className="w-full text-left border-collapse">
-          <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-300">
-            <tr>
-              <th className="p-3">Código</th>
-              <th className="p-3">Descripción</th>
-              <th className="p-3 text-center">Cantidad</th>
-              <th className="p-3 text-right">Precio Unit.</th>
-              <th className="p-3 text-right">Subtotal</th>
-              <th className="p-3 text-center">Acción</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {cart.map((item, idx) => (
-              <tr key={item.id} className={item.is_bonus ? 'bg-orange-50' : 'hover:bg-slate-50'}>
-                <td className="p-3 font-mono font-bold text-slate-600">{item.sku}</td>
-                <td className="p-3">
-                  <div className="font-bold text-slate-800 flex items-center gap-2">
-                    {item.name}
-                    {item.is_bonus && <span className="bg-orange-500 text-white text-[10px] px-2 py-0.5 rounded-full flex items-center"><Zap className="w-3 h-3 mr-1"/> REGALO: {item.promo_name}</span>}
-                  </div>
-                </td>
-                <td className="p-3 text-center">
-                  {!item.is_bonus ? (
-                    <input 
-                      type="number" 
-                      className="w-20 text-center bg-white border border-slate-300 rounded px-2 py-1 font-bold"
-                      value={item.quantity}
-                      onChange={e => {
-                        const newCart = [...cart];
-                        newCart[idx].quantity = Number(e.target.value);
-                        newCart[idx].total_price = newCart[idx].quantity * newCart[idx].unit_price;
-                        setCart(evalPromotions(newCart));
-                      }}
-                    />
-                  ) : (
-                    <span className="font-black text-orange-600">{item.quantity}</span>
-                  )}
-                </td>
-                <td className="p-3 text-right font-medium">S/ {item.unit_price.toFixed(2)}</td>
-                <td className="p-3 text-right font-black text-slate-900">S/ {item.total_price.toFixed(2)}</td>
-                <td className="p-3 text-center">
-                  <button onClick={() => setCart(evalPromotions(cart.filter((_, i) => i !== idx)))} disabled={item.is_bonus} className="text-red-400 hover:bg-red-100 p-2 rounded-lg transition-colors disabled:opacity-30">
-                    <Trash2 className="w-5 h-5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {cart.length === 0 && (
-              <tr>
-                <td colSpan={6} className="p-12 text-center text-slate-400 font-medium text-base border-dashed border-2 border-slate-200">
-                  El carrito está vacío. Agregue productos para comenzar el pedido.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* FOOTER TOTALS */}
-      <div className="mt-4 bg-slate-900 rounded-xl p-4 shadow-xl flex justify-between items-center text-white">
-        <div className="text-slate-400 text-xs">
-          Generador de Pedidos Tandao v2.0 <br/>
-          * Los pedidos reservan stock al guardarse mediante FIFO.
-        </div>
+      <div className="bg-white border border-slate-300 shadow-sm flex flex-col flex-1 rounded-t-lg overflow-hidden">
         
-        <div className="flex gap-8 items-center">
-          <div className="text-right">
-            <div className="text-slate-400 font-medium mb-1">Subtotal</div>
-            <div className="font-mono text-lg">S/ {subtotal.toFixed(2)}</div>
+        {/* Barra de Búsqueda de Productos */}
+        <div className="bg-blue-50 border-b border-blue-200 p-2 flex gap-2 items-end">
+          <div className="flex-1 relative">
+            <label className="block text-[10px] font-bold text-blue-800 mb-1">Producto (Búsqueda en Nube)</label>
+            <div className="relative">
+              <Search className="absolute left-2 top-2 w-4 h-4 text-blue-400" />
+              <input 
+                ref={productInputRef}
+                className="w-full pl-8 pr-2 py-1.5 border border-blue-300 rounded text-sm font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                placeholder="PISTOLEAR O ESCRIBIR..."
+                value={productSearch}
+                onChange={e => setProductSearch(e.target.value)}
+              />
+              {searchedProducts.length > 0 && productSearch && (
+                <div className="absolute top-full left-0 w-full bg-white border border-slate-300 shadow-2xl rounded mt-1 z-50 max-h-60 overflow-y-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-100 text-xs font-bold text-slate-600">
+                      <tr><th className="p-2">Código</th><th className="p-2">Producto</th><th className="p-2 text-right">Precio</th><th className="p-2 text-right text-blue-600">Stock</th></tr>
+                    </thead>
+                    <tbody>
+                      {searchedProducts.map(p => (
+                        <tr key={p.id} onMouseDown={() => handleSelectProduct(p)} className="hover:bg-blue-50 cursor-pointer text-sm border-b border-slate-50">
+                          <td className="p-2 font-mono font-bold text-blue-800">{p.sku}</td>
+                          <td className="p-2 text-slate-800">{p.name}</td>
+                          <td className="p-2 text-right text-slate-600">S/ {Number(p.price_unit).toFixed(2)}</td>
+                          <td className="p-2 text-right font-black text-slate-800">{p.current_stock}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="text-right">
-            <div className="text-slate-400 font-medium mb-1">IGV (18%)</div>
-            <div className="font-mono text-lg">S/ {igv.toFixed(2)}</div>
+
+          <div className="w-20">
+            <label className="block text-[10px] font-bold text-blue-800 mb-1 text-center">Cant.</label>
+            <input ref={qtyInputRef} type="number" min="1" className="w-full py-1.5 px-2 border border-blue-300 rounded text-center text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={entryQty} onChange={e => setEntryQty(Number(e.target.value))} />
           </div>
-          <div className="text-right border-l border-slate-700 pl-8">
-            <div className="text-blue-400 font-bold mb-1 uppercase tracking-widest">Total Pedido</div>
-            <div className="font-mono text-4xl font-black text-white">S/ {total.toFixed(2)}</div>
+
+          <div className="w-24">
+            <label className="block text-[10px] font-bold text-blue-800 mb-1 text-center">Unidad</label>
+            <select className="w-full py-1.5 px-2 border border-blue-300 rounded text-sm font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none" value={entryUnit} onChange={e => setEntryUnit(e.target.value)}>
+              <option value="UND">UND</option>
+              {selectedProduct?.package_type && <option value="PKG">{selectedProduct.package_type}</option>}
+            </select>
           </div>
-          
+
+          <div className="w-24">
+            <label className="block text-[10px] font-bold text-blue-800 mb-1 text-center">Precio</label>
+            <input type="number" className="w-full py-1.5 px-2 border border-blue-300 rounded text-right text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={entryPrice} onChange={e => setEntryPrice(Number(e.target.value))} />
+          </div>
+
+          <div className="w-20">
+            <label className="block text-[10px] font-bold text-blue-800 mb-1 text-center">% Dsc</label>
+            <input type="number" className="w-full py-1.5 px-2 border border-blue-300 rounded text-right text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={entryDiscount} onChange={e => setEntryDiscount(Number(e.target.value))} />
+          </div>
+
+          <div className="w-20 flex items-center justify-center pb-2">
+            <label className="flex items-center gap-1 text-[11px] font-bold text-blue-800 cursor-pointer">
+              <input type="checkbox" checked={entryBonus} onChange={e => {
+                if (e.target.checked) setShowAdminAuthModal({ isOpen: true, action: () => setEntryBonus(true), targetName: 'Activar Bonificación Manual' });
+                else setEntryBonus(false);
+              }} />
+              Bonif.
+            </label>
+          </div>
+
+          <button onClick={executeAddToCart} disabled={!selectedProduct} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded shadow disabled:opacity-50 transition-colors">
+            <Plus className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* GRILLA */}
+        <div className="flex-1 overflow-auto bg-white">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 border-b border-slate-300">
+              <tr>
+                <th className="p-2 text-center w-10">#</th>
+                <th className="p-2 w-28">CÓDIGO</th>
+                <th className="p-2">DESCRIPCIÓN PRODUCTO</th>
+                <th className="p-2 text-center w-20">CANT</th>
+                <th className="p-2 text-center w-24">UNIDAD</th>
+                <th className="p-2 text-right w-24">PRECIO</th>
+                <th className="p-2 text-right w-20">DSC %</th>
+                <th className="p-2 text-right w-28">IMPORTE</th>
+                <th className="p-2 text-center w-12"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {cart.map((item, idx) => (
+                <tr key={item.id} className={item.is_bonus ? 'bg-orange-50/50' : 'hover:bg-slate-50'}>
+                  <td className="p-2 text-center font-bold text-slate-500">{idx + 1}</td>
+                  <td className="p-2 font-mono text-slate-700">{item.sku}</td>
+                  <td className="p-2">
+                    <div className="font-bold text-slate-800 flex items-center gap-2">
+                      {item.name}
+                      {item.auto_promo_id && <span className="bg-orange-500 text-white text-[9px] px-1.5 py-0.5 rounded shadow-sm flex items-center"><Zap className="w-3 h-3 mr-1"/> {item.promo_name}</span>}
+                    </div>
+                  </td>
+                  <td className="p-2 text-center">
+                    {!item.is_bonus ? (
+                      <input 
+                        type="number" min="1"
+                        className="w-16 text-center border border-slate-300 rounded px-1 py-1 font-bold text-slate-900 focus:ring-1 focus:ring-blue-500 outline-none"
+                        value={item.quantity}
+                        onChange={e => handleCartQtyChange(item.id, Number(e.target.value))}
+                      />
+                    ) : (
+                      <span className="font-black text-orange-600">{item.quantity}</span>
+                    )}
+                  </td>
+                  <td className="p-2 text-center font-bold text-slate-500">{item.unit_type}</td>
+                  <td className="p-2 text-right text-slate-700">S/ {item.unit_price.toFixed(2)}</td>
+                  <td className="p-2 text-right text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</td>
+                  <td className="p-2 text-right font-black text-slate-900 text-sm">S/ {item.total_price.toFixed(2)}</td>
+                  <td className="p-2 text-center">
+                    <button onClick={() => setCart(evalPromotions(cart.filter(c => c.id !== item.id), priceListId))} disabled={item.is_bonus && !!item.auto_promo_id} className="text-red-400 hover:text-red-600 hover:bg-red-50 p-1 rounded disabled:opacity-30">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {cart.length === 0 && (
+                <tr><td colSpan={9} className="p-8 text-center text-slate-400 font-medium italic border-dashed border-2 border-slate-200 mt-4 m-4 rounded">No hay productos. Utilice la barra superior para agregar un artículo.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* FOOTER TOTALES */}
+      <div className="bg-slate-100 border-t border-slate-300 mt-2 p-2 flex justify-between items-end gap-4 shrink-0 rounded-b-lg">
+        <div className="flex flex-col justify-end">
+          <button className="bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded shadow-sm font-bold hover:bg-slate-50 flex items-center">
+            <Printer className="w-4 h-4 mr-2" /> Vista Previa
+          </button>
+          <div className="text-[10px] text-slate-500 mt-2 italic">
+            * El stock será reservado al presionar Guardar.<br/>
+            * Las promociones se recalcularán automáticamente al editar cantidades.
+          </div>
+        </div>
+
+        <div className="flex gap-4 items-center">
+          <div className="bg-white border border-slate-300 shadow-sm rounded p-3 grid grid-cols-2 gap-x-6 gap-y-1 w-64">
+             <div className="text-right text-slate-500 font-bold">Op. Gravada:</div>
+             <div className="text-right font-mono text-slate-800 font-medium">{subtotal.toFixed(2)}</div>
+             <div className="text-right text-slate-500 font-bold">IGV (18%):</div>
+             <div className="text-right font-mono text-slate-800 font-medium">{igv.toFixed(2)}</div>
+             <div className="col-span-2 border-t border-slate-200 my-1"></div>
+             <div className="text-right text-slate-800 font-black text-sm self-center">TOTAL A PAGAR:</div>
+             <div className="text-right font-black text-xl bg-slate-800 text-amber-400 px-2 rounded font-mono shadow-inner tracking-widest">
+                {total.toFixed(2)}
+             </div>
+          </div>
+
           <button 
-            onClick={handleSaveOrder} 
-            disabled={cart.length === 0 || isSaving} 
-            className="ml-4 bg-blue-600 hover:bg-blue-500 text-white px-8 py-4 rounded-xl font-black text-lg shadow-lg shadow-blue-900/50 flex items-center transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={cart.length === 0 || !clientData.name || isSaving}
+            className="bg-amber-600 hover:bg-amber-700 text-white w-36 h-20 rounded-lg shadow-lg flex flex-col items-center justify-center font-black transition-colors disabled:opacity-50 active:scale-95"
           >
-            {isSaving ? <Loader2 className="w-6 h-6 animate-spin mr-2" /> : <Save className="w-6 h-6 mr-2" />}
-            GUARDAR PEDIDO
+             {isSaving ? <Loader2 className="w-6 h-6 animate-spin mb-1" /> : <Save className="w-6 h-6 mb-1" />}
+             GUARDAR (F10)
           </button>
         </div>
       </div>
+
+      {/* MODAL ADMIN */}
+      {showAdminAuthModal.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm animate-in fade-in zoom-in duration-200">
+            <h3 className="font-black text-slate-800 text-lg mb-1 flex items-center"><ShieldCheck className="w-5 h-5 mr-2 text-blue-600"/> Autorización Requerida</h3>
+            <p className="text-sm text-slate-500 mb-4 pb-4 border-b border-slate-100">Ingrese la credencial administrativa para: <strong className="text-slate-800">{showAdminAuthModal.targetName}</strong></p>
+            <input
+               id="admin-password-input" type="password" placeholder="••••••••"
+               className="w-full border-2 border-slate-200 rounded-lg p-3 mb-4 text-center text-2xl tracking-[0.5em] focus:border-blue-500 outline-none transition-colors"
+               value={adminPwd} onChange={e => setAdminPwd(e.target.value)}
+               onKeyDown={e => { if (e.key === 'Enter') verifyAdmin(); if (e.key === 'Escape') setShowAdminAuthModal({ isOpen: false, action: () => {}, targetName: '' }); }}
+            />
+            <div className="flex gap-2">
+               <button onClick={() => setShowAdminAuthModal({ isOpen: false, action: () => {}, targetName: '' })} className="flex-1 bg-slate-100 text-slate-600 py-2.5 rounded-lg font-bold hover:bg-slate-200">Cancelar</button>
+               <button onClick={verifyAdmin} className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg font-bold shadow hover:bg-blue-700">Autorizar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
