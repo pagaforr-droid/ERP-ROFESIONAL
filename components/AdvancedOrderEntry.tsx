@@ -603,9 +603,11 @@ export const AdvancedOrderEntry: React.FC = () => {
         product_id: c.product_id,
         product_sku: c.sku,
         product_name: c.name,
-        quantity_base: (c.unit_type === c.product_ref?.package_type) ? (c.quantity * Number(c.product_ref.package_content || 1)) : c.quantity, // USANDO package_content
+        quantity_base: (c.unit_type === c.product_ref?.package_type) ? (c.quantity * Number(c.product_ref.package_content || 1)) : c.quantity,
         quantity_presentation: c.quantity,
-        selected_unit: c.unit_type,
+        quantity: c.quantity, // Añadido por si el backend lo espera
+        unit_type: c.unit_type, // <--- LA SOLUCIÓN AL ERROR NULL CONSTRAINT
+        selected_unit: c.unit_type, // Mantenemos este por compatibilidad
         unit_price: c.unit_price,
         discount_percent: c.discount_percent,
         discount_amount: (c.quantity * c.unit_price) * (c.discount_percent / 100),
