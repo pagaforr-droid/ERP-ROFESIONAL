@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-// 🚨 CORRECCIÓN: Tipos completos importados
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
-// 🚨 CORRECCIÓN CRÍTICA: Se importó ShoppingBag, Eye y Edit3 para evitar el Pantallazo Blanco
-import { Search, Plus, Trash2, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, ShoppingBag, Eye, Edit3 } from 'lucide-react';
+// 🚨 SOLO ICONOS BÁSICOS CONFIRMADOS EN TU SISTEMA
+import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Edit } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
@@ -27,7 +26,6 @@ interface CartItem {
 export const AdvancedOrderEntry: React.FC = () => {
   const { users, currentUser } = useStore();
 
-  // --- REFS ---
   const productInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
@@ -36,10 +34,12 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [dbSellers, setDbSellers] = useState<any[]>([]);
   const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
   const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
+  const [dbPromos, setDbPromos] = useState<Promotion[]>([]);
   const [dbProducts, setDbProducts] = useState<Product[]>([]);
   const [dbSeries, setDbSeries] = useState<any[]>([]);
+  const [dbZones, setDbZones] = useState<any[]>([]);
+  const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
   
-  // --- ESTADO CABECERA (PEDIDO) ---
   const [isEditMode, setIsEditMode] = useState(false);
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
 
@@ -49,11 +49,10 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [currency, setCurrency] = useState('SOLES');
   const [sellerId, setSellerId] = useState('');
 
-  // --- ESTADO CLIENTE ---
   const [clientSearch, setClientSearch] = useState('');
   const [searchedClients, setSearchedClients] = useState<Client[]>([]);
   const [isSearchingClient, setIsSearchingClient] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [selectedClientId, setSelectedClientId] = useState('');
   
   const [clientName, setClientName] = useState('');
   const [clientDoc, setClientDoc] = useState('');
@@ -62,11 +61,15 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState('CONTADO');
   const [showBranchSelector, setShowBranchSelector] = useState(false);
 
-  // --- ESTADO INGRESO PRODUCTO ---
+  const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
+
   const [productSearch, setProductSearch] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<(Product & { current_stock: number })[]>([]);
   const [isSearchingProd, setIsSearchingProd] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const [showProductSuggestions, setShowProductSuggestions] = useState(false);
+  const [loadedBatches, setLoadedBatches] = useState<Record<string, any[]>>({}); 
   
   const [entryQty, setEntryQty] = useState<number>(1);
   const [entryUnit, setEntryUnit] = useState('UND');
@@ -74,33 +77,31 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [entryDiscount, setEntryDiscount] = useState<number>(0);
   const [entryBonus, setEntryBonus] = useState(false);
 
-  // --- CARRITO ---
   const [cart, setCart] = useState<CartItem[]>([]);
   
-  // --- UI STATES ---
   const [isSaving, setIsSaving] = useState(false);
-  const [alertMsg, setAlertMsg] = useState('');
   const [showAdminAuthModal, setShowAdminAuthModal] = useState({ isOpen: false, action: () => {}, targetName: '' });
   const [adminPwd, setAdminPwd] = useState('');
+  const [priceLocked, setPriceLocked] = useState(true);
 
   const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
   const [searchedOrders, setSearchedOrders] = useState<Order[]>([]);
   const [isSearchingOrder, setIsSearchingOrder] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState<{ isOpen: boolean, order: Order | null }>({ isOpen: false, order: null });
 
-  // ==========================================
-  // INICIALIZACIÓN
-  // ==========================================
   useEffect(() => {
     const fetchMasters = async () => {
       try {
-        const [compRes, sellRes, plRes, apRes, prodRes, serRes] = await Promise.all([
+        const [compRes, sellRes, plRes, apRes, prodRes, serRes, zoneRes, promRes] = await Promise.all([
           supabase.from('company_config').select('*').limit(1).maybeSingle(),
           supabase.from('sellers').select('*').order('name'),
           supabase.from('price_lists').select('*').order('name'),
           supabase.from('auto_promotions').select('*').eq('is_active', true),
           supabase.from('products').select('*').eq('is_active', true),
-          supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true)
+          supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true),
+          supabase.from('zones').select('*'),
+          supabase.from('promotions').select('*').eq('is_active', true)
         ]);
         
         if (compRes.data) setDbCompany(compRes.data);
@@ -108,6 +109,8 @@ export const AdvancedOrderEntry: React.FC = () => {
         if (plRes.data) setDbPriceLists(plRes.data);
         if (apRes.data) setDbAutoPromos(apRes.data);
         if (prodRes.data) setDbProducts(prodRes.data as Product[]);
+        if (zoneRes.data) setDbZones(zoneRes.data);
+        if (promRes.data) setDbPromos(promRes.data);
         if (serRes.data && serRes.data.length > 0) {
           setDbSeries(serRes.data);
           setPedidoSeries(serRes.data[0].series);
@@ -131,9 +134,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     }
   };
 
-  // ==========================================
-  // BUSCADORES
-  // ==========================================
   useEffect(() => {
     if (clientSearch.length < 3) { setSearchedClients([]); return; }
     const timer = setTimeout(async () => {
@@ -182,11 +182,25 @@ export const AdvancedOrderEntry: React.FC = () => {
     return () => clearTimeout(timer);
   }, [orderSearchTerm, isSearchModalOpen]);
 
-  // ==========================================
-  // HANDLERS DE SELECCIÓN
-  // ==========================================
+  const checkClientCredit = async (clientId: string, creditLimit: number = 0) => {
+    setClientCreditInfo({ limit: creditLimit, debt: 0, overdue: false, isChecking: true });
+    try {
+        const { data: unpaidSales } = await supabase.from('sales').select('created_at, total, balance').eq('client_id', clientId).eq('payment_status', 'PENDING').neq('status', 'canceled');
+        let debt = 0; let hasOverdue = false;
+        const sevenDaysAgo = new Date(); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        if (unpaidSales) {
+            unpaidSales.forEach(s => {
+                const amount = s.balance !== undefined && s.balance !== null ? Number(s.balance) : Number(s.total);
+                debt += amount;
+                if (new Date(s.created_at) < sevenDaysAgo && amount > 0) hasOverdue = true;
+            });
+        }
+        setClientCreditInfo({ limit: creditLimit, debt, overdue: hasOverdue, isChecking: false });
+    } catch(e) { console.error(e); setClientCreditInfo(prev => ({...prev, isChecking: false})); }
+  }
+
   const handleSelectClient = (c: Client) => {
-    setSelectedClient(c);
+    setSelectedClientId(c.id);
     setClientName(c.name);
     setClientDoc(c.doc_number);
     setClientAddress(c.address);
@@ -194,6 +208,11 @@ export const AdvancedOrderEntry: React.FC = () => {
     setPaymentMethod(c.payment_condition?.toUpperCase().includes('CREDIT') ? 'CREDITO' : 'CONTADO');
     setClientSearch('');
     setSearchedClients([]);
+    
+    let autoSellerId = '';
+    if (c.zone_id) { const zone = dbZones.find(z => z.id === c.zone_id); if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } }
+    setSellerId(autoSellerId);
+    checkClientCredit(c.id, c.credit_limit || 0);
   };
 
   const getMultiplier = (listId: string) => {
@@ -203,6 +222,7 @@ export const AdvancedOrderEntry: React.FC = () => {
   };
 
   const handleSelectProduct = (p: Product) => {
+    setCartProductsCache(prev => ({...prev, [p.id]: p}));
     setSelectedProduct(p);
     setProductSearch(p.name);
     setSearchedProducts([]);
@@ -210,17 +230,35 @@ export const AdvancedOrderEntry: React.FC = () => {
     setEntryUnit(p.unit_type || 'UND');
     setEntryQty(1);
     
-    const multiplier = getMultiplier(priceListId);
-    setEntryPrice(Number(p.price_unit || 0) * multiplier);
-    setEntryDiscount(0);
+    let price = Number(p.price_unit || 0) * getMultiplier(priceListId);
+    let defaultDiscount = 0;
+    const activePromo = dbPromos.find(promo => {
+        if (!promo.product_ids.includes(p.id)) return false;
+        if (!isPromoValidForContext(promo, 'IN_STORE', '', sellerId || currentUser?.id, currentUser?.role)) return false;
+        if (promo.target_price_list_ids?.length > 0 && priceListId && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(priceListId)) return false;
+        return true;
+    });
+
+    if (activePromo) {
+       if (activePromo.type === 'PERCENTAGE_DISCOUNT') defaultDiscount = activePromo.value;
+       else if (activePromo.type === 'FIXED_PRICE') price = activePromo.value;
+    }
+
+    setEntryPrice(price);
+    setEntryDiscount(defaultDiscount);
     setEntryBonus(false);
+    setPriceLocked(true);
 
     setTimeout(() => { qtyInputRef.current?.focus(); qtyInputRef.current?.select(); }, 50);
   };
 
-  // ==========================================
-  // MOTOR DE PROMOCIONES
-  // ==========================================
+  const handleProductKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedIndex(prev => (prev + 1) % searchedProducts.length);
+    } else if (e.key === 'ArrowUp') { e.preventDefault(); setHighlightedIndex(prev => (prev - 1 + searchedProducts.length) % searchedProducts.length);
+    } else if (e.key === 'Enter') { e.preventDefault(); if (searchedProducts.length > 0) handleSelectProduct(searchedProducts[highlightedIndex]);
+    } else if (e.key === 'Escape') { setShowProductSuggestions(false); }
+  };
+
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
 
@@ -256,7 +294,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       }
 
       if (applies && multiplier > 0) {
-        const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id);
+        const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
         if (rewardProduct) {
           cleanCart.push({
             id: crypto.randomUUID(),
@@ -280,9 +318,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     setCart(cleanCart);
   };
 
-  // ==========================================
-  // LÓGICA DE CARRITO
-  // ==========================================
   const executeAddToCart = () => {
     if (!selectedProduct) return;
     if (entryQty <= 0) return;
@@ -305,7 +340,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     };
 
     let tempCart = [...cart];
-    const existingIdx = tempCart.findIndex(i => i.product_id === newItem.product_id && !i.is_bonus && !i.auto_promo_id);
+    const existingIdx = tempCart.findIndex(i => i.product_id === newItem.product_id && !i.is_bonus && !i.auto_promo_id && i.unit_type === newItem.unit_type);
     
     if (existingIdx >= 0) {
       tempCart[existingIdx].quantity += entryQty;
@@ -340,7 +375,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       };
     });
     applyPromotions(tempCart, priceListId);
-    showAlert("Precios del carrito actualizados según lista.");
+    alert("Precios del carrito actualizados según lista.");
   };
 
   const handleCartQtyChange = (id: string, newQty: number) => {
@@ -355,9 +390,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     applyPromotions(tempCart, priceListId);
   };
 
-  // ==========================================
-  // CARGAR PEDIDO PARA EDICIÓN
-  // ==========================================
   const loadOrder = async (order: Order) => {
     setIsSaving(true);
     try {
@@ -400,26 +432,27 @@ export const AdvancedOrderEntry: React.FC = () => {
         setClientName(order.client_name);
         setClientDoc(order.client_doc_number);
         setClientAddress(order.delivery_address || '');
-        setSelectedClient({ id: order.client_id, name: order.client_name, doc_number: order.client_doc_number } as Client);
+        setSelectedClientId(order.client_id || '');
 
         setCart(loadedItems); 
         setIsSearchModalOpen(false);
     } catch (err: any) {
-        showAlert('Error al cargar pedido: ' + err.message);
+        alert('Error al cargar pedido: ' + err.message);
     } finally {
         setIsSaving(false);
     }
   };
 
   const handleNewOrder = () => {
-    setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClient(null);
+    setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClientId('');
     setClientName(''); setClientDoc(''); setClientAddress(''); setPriceListId(''); setSellerId('');
     fetchLiveSeries();
   };
 
-  // ==========================================
-  // VISTA PREVIA PDF
-  // ==========================================
+  const subtotal = cart.reduce((sum, item) => sum + item.total_price, 0) / (1 + (Number(dbCompany?.igv_percent || 18) / 100));
+  const igv = cart.reduce((sum, item) => sum + item.total_price, 0) - subtotal;
+  const total = cart.reduce((sum, item) => sum + item.total_price, 0);
+
   const handlePreview = async () => {
     const seller = dbSellers.find(s => s.id === sellerId);
     const tempOrder: any = { 
@@ -433,23 +466,20 @@ export const AdvancedOrderEntry: React.FC = () => {
     try { 
       await PdfEngine.openDocument(tempOrder as unknown as Sale, docType, dbCompany); 
     } catch (err) { 
-      showAlert('Error generando la vista previa.'); 
+      alert('Error generando la vista previa.'); 
     }
   };
 
-  // ==========================================
-  // GUARDAR PEDIDO EN SUPABASE
-  // ==========================================
   const handleSaveOrder = async () => {
-    if (!clientName) { showAlert("Debe ingresar un cliente."); return; }
-    if (cart.length === 0) { showAlert("El pedido no puede estar vacío."); return; }
-    if (!pedidoSeries && !isEditMode) { showAlert("Configure una serie para PEDIDO en ajustes."); return; }
+    if (!clientName) { alert("Debe ingresar un cliente."); return; }
+    if (cart.length === 0) { alert("El pedido no puede estar vacío."); return; }
+    if (!pedidoSeries && !isEditMode) { alert("Configure una serie para PEDIDO en ajustes."); return; }
 
     setIsSaving(true);
     const orderPayload = {
       id: isEditMode && originalOrder ? originalOrder.id : crypto.randomUUID(),
       code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${docNumber}`,
-      client_id: selectedClient?.id || undefined,
+      client_id: selectedClientId || undefined,
       client_name: clientName,
       client_doc_type: clientDoc.length === 11 ? 'RUC' : 'DNI',
       client_doc_number: clientDoc,
@@ -480,19 +510,14 @@ export const AdvancedOrderEntry: React.FC = () => {
       const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
       if (error) throw error;
 
-      showAlert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || docNumber}`, true);
+      alert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || docNumber}`);
       await fetchLiveSeries();
       handleNewOrder();
     } catch (error: any) {
-      showAlert("Error al guardar: " + error.message);
+      alert("Error al guardar: " + error.message);
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const showAlert = (msg: string, isSuccess = false) => {
-    setAlertMsg(msg);
-    setTimeout(() => setAlertMsg(''), 4000);
   };
 
   const verifyAdmin = () => {
@@ -506,25 +531,12 @@ export const AdvancedOrderEntry: React.FC = () => {
     }
   };
 
-  const subtotal = cart.reduce((sum, item) => sum + item.total_price, 0) / (1 + (Number(dbCompany?.igv_percent || 18) / 100));
-  const igv = cart.reduce((sum, item) => sum + item.total_price, 0) - subtotal;
-  const total = cart.reduce((sum, item) => sum + item.total_price, 0);
-
   return (
     <div className="flex flex-col h-full bg-slate-100 p-4 font-sans text-xs">
       
-      {/* ALERTAS */}
-      {alertMsg && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[200] bg-slate-900 text-white px-6 py-3 rounded-lg shadow-2xl flex items-center gap-3 animate-in slide-in-from-top-4">
-          <AlertTriangle className="w-5 h-5 text-amber-500" />
-          <span className="font-bold">{alertMsg}</span>
-        </div>
-      )}
-
       {/* OVERLAY SAVING */}
       {isSaving && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex flex-col items-center justify-center">
-            <Loader2 className="w-16 h-16 text-blue-500 animate-spin mb-4" />
             <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO PEDIDO...</h2>
             <p className="text-blue-200 font-medium mt-2">Asegurando y reservando stock</p>
         </div>
@@ -595,7 +607,6 @@ export const AdvancedOrderEntry: React.FC = () => {
                 value={clientSearch}
                 onChange={e => setClientSearch(e.target.value)}
               />
-              {isSearchingClient && <Loader2 className="absolute right-2 top-1.5 w-4 h-4 text-blue-500 animate-spin" />}
               {searchedClients.length > 0 && clientSearch && (
                 <div className="absolute top-full left-0 w-[400px] bg-white border border-slate-300 shadow-xl rounded z-50 mt-1">
                   {searchedClients.map(c => (
@@ -685,13 +696,13 @@ export const AdvancedOrderEntry: React.FC = () => {
                 placeholder="PISTOLEAR O ESCRIBIR..."
                 value={productSearch}
                 onChange={e => setProductSearch(e.target.value)}
+                onKeyDown={handleProductKeyDown}
               />
-              {isSearchingProd && <Loader2 className="absolute right-2 top-2 w-4 h-4 text-blue-500 animate-spin" />}
               {searchedProducts.length > 0 && productSearch && (
                 <div className="absolute top-full left-0 w-full bg-white border border-slate-300 shadow-2xl rounded mt-1 z-50 max-h-60 overflow-y-auto">
                   <table className="w-full text-left">
                     <thead className="bg-slate-100 text-xs font-bold text-slate-600">
-                      <tr><th className="p-2">Código</th><th className="p-2">Producto</th><th className="p-2 text-right">Precio</th><th className="p-2 text-right text-blue-600">Stock Real</th></tr>
+                      <tr><th className="p-2">Código</th><th className="p-2">Producto</th><th className="p-2 text-right">Precio Und</th><th className="p-2 text-right text-blue-600">Stock Real</th></tr>
                     </thead>
                     <tbody>
                       {searchedProducts.map(p => (
@@ -838,7 +849,7 @@ export const AdvancedOrderEntry: React.FC = () => {
              <div className="text-right font-mono text-slate-800 font-medium">{igv.toFixed(2)}</div>
              <div className="col-span-2 border-t border-slate-200 my-1"></div>
              <div className="text-right text-slate-800 font-black text-sm self-center">TOTAL A PAGAR:</div>
-             <div className="text-right font-black text-xl bg-slate-800 text-amber-400 px-2 rounded font-mono shadow-inner tracking-widest">
+             <div className="text-right font-black text-xl bg-slate-800 text-blue-400 px-2 rounded font-mono shadow-inner tracking-widest">
                 {total.toFixed(2)}
              </div>
           </div>
@@ -870,7 +881,6 @@ export const AdvancedOrderEntry: React.FC = () => {
                     value={orderSearchTerm}
                     onChange={e => setOrderSearchTerm(e.target.value)}
                  />
-                 {isSearchingOrder && <Loader2 className="absolute right-8 top-8 w-6 h-6 text-blue-500 animate-spin" />}
               </div>
               <div className="flex-1 overflow-auto bg-white relative">
                  <table className="w-full text-left text-sm border-collapse">
@@ -894,8 +904,11 @@ export const AdvancedOrderEntry: React.FC = () => {
                              </td>
                              <td className="p-4 text-right font-black text-slate-900 text-[16px]">S/ {Number(o.total || 0).toFixed(2)}</td>
                              <td className="p-4 text-center flex justify-center gap-2">
+                                <button onClick={() => setShowHistoryModal({ isOpen: true, order: o })} className="bg-white border border-slate-300 px-3 py-1.5 rounded text-[13px] font-bold text-slate-700 hover:bg-slate-100 shadow-sm flex items-center transition-all hover:border-slate-400" title="Ver Historial">
+                                   H.
+                                </button>
                                 <button onClick={() => loadOrder(o)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold shadow flex items-center justify-center">
-                                   <Edit3 className="w-4 h-4 mr-2" /> Editar
+                                   <Edit className="w-4 h-4 mr-2" /> Editar
                                 </button>
                              </td>
                           </tr>
@@ -910,11 +923,41 @@ export const AdvancedOrderEntry: React.FC = () => {
         </div>
       )}
 
+      {/* MODAL HISTORIAL */}
+      {showHistoryModal.isOpen && showHistoryModal.order && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+           <div className="bg-white rounded-xl shadow-2xl flex flex-col max-h-[85vh] w-full max-w-2xl border border-blue-500 overflow-hidden">
+              <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-900 text-white">
+                 <h3 className="font-black flex items-center text-lg"><Eye className="w-5 h-5 mr-2 text-blue-400" /> Historial de Pedido: {showHistoryModal.order.code}</h3>
+                 <button onClick={() => setShowHistoryModal({ isOpen: false, order: null })} className="text-slate-400 hover:text-white"><X className="w-6 h-6" /></button>
+              </div>
+              <div className="flex-1 overflow-auto bg-white p-4">
+                 <table className="w-full text-left text-sm border-collapse border border-slate-200">
+                    <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0">
+                       <tr>
+                          <th className="p-3 border-b border-slate-200">Fecha</th>
+                          <th className="p-3 border-b border-slate-200">Acción</th>
+                          <th className="p-3 border-b border-slate-200">Usuario</th>
+                       </tr>
+                    </thead>
+                    <tbody>
+                       <tr className="hover:bg-slate-50">
+                          <td className="p-3 border-b border-slate-100">{new Date(showHistoryModal.order.created_at).toLocaleString()}</td>
+                          <td className="p-3 border-b border-slate-100 font-bold text-green-700">CREADO</td>
+                          <td className="p-3 border-b border-slate-100 italic">Sistema</td>
+                       </tr>
+                    </tbody>
+                 </table>
+              </div>
+           </div>
+        </div>
+      )}
+
       {/* MODAL ADMIN */}
       {showAdminAuthModal.isOpen && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm animate-in fade-in zoom-in duration-200">
-            <h3 className="font-black text-slate-800 text-lg mb-1 flex items-center"><ShieldCheck className="w-5 h-5 mr-2 text-blue-600"/> Autorización Requerida</h3>
+            <h3 className="font-black text-slate-800 text-lg mb-1 flex items-center">Autorización Requerida</h3>
             <p className="text-sm text-slate-500 mb-4 pb-4 border-b border-slate-100">Ingrese credencial para: <strong className="text-slate-800">{showAdminAuthModal.targetName}</strong></p>
             <input
                type="password" placeholder="••••••••"
