@@ -167,7 +167,6 @@ export const AdvancedOrderEntry: React.FC = () => {
             defaultDiscount = activePromo.value;
         } else if (activePromo.type === 'FIXED_PRICE') {
             let promoPrice = Number(activePromo.value);
-            // Si el precio fijo es por unidad, multiplicarlo si eligió presentación máxima sin precio_package definido
             if (p.package_type && unit === p.package_type && !p.price_package) {
                 promoPrice = promoPrice * Number(p.package_quantity || 1);
             }
@@ -214,7 +213,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     if (c.zone_id) { const zone = dbZones.find(z => z.id === c.zone_id); if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } }
     if (autoSellerId) setSellerId(autoSellerId);
     
-    // REGLA: Jalar correlativo fresco de la base de datos al asignar cliente
     await fetchLiveSeries();
     
     checkClientCredit(c.id, c.credit_limit || 0);
@@ -230,7 +228,6 @@ export const AdvancedOrderEntry: React.FC = () => {
         const { data: pData } = await supabase.from('products').select('*').or(`name.ilike.%${productSearch}%,sku.ilike.%${productSearch}%`).eq('is_active', true).limit(15);
         if (pData && pData.length > 0) {
           const pIds = pData.map(p => p.id);
-          // Cargar Lotes para validación estricta de Stock
           const { data: bData } = await supabase.from('batches').select('*').in('product_id', pIds).gt('quantity_current', 0).order('expiration_date', { ascending: true });
           const batchCache: Record<string, any[]> = {};
           
@@ -267,12 +264,10 @@ export const AdvancedOrderEntry: React.FC = () => {
     setProductSearch(p.sku + ' - ' + p.name); 
     setSearchedProducts([]);
     
-    // Predeterminar Unidad Mínima
     const defaultUnit = p.unit_type || 'UND';
     setEntryUnit(defaultUnit);
     setEntryQty(1);
     
-    // Calcular Precio Exacto
     const { price, discount } = calculateCalculatedPrice(p, defaultUnit, priceListId);
     setEntryPrice(price);
     setEntryDiscount(discount);
@@ -314,11 +309,10 @@ export const AdvancedOrderEntry: React.FC = () => {
     } catch(e) { console.error(e); setClientCreditInfo(prev => ({...prev, isChecking: false})); }
   }
 
-  // --- RE-EVALUACIÓN AUTOMÁTICA DE PROMOCIONES DE ÉLITE ---
+  // --- RE-EVALUACIÓN AUTOMÁTICA DE PROMOCIONES ---
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
 
-    // Normalización de Unidades: Cajas a Unidades Base para evaluar metas
     const getBaseQuantity = (item: CartItem) => {
         if (item.unit_type === item.product_ref?.package_type) {
             return item.quantity * Number(item.product_ref.package_quantity || 1);
@@ -338,11 +332,9 @@ export const AdvancedOrderEntry: React.FC = () => {
       let applies = false;
       let multiplier = 0;
 
-      // Evaluar metas
       if (ap.condition_type === 'BUY_X_PRODUCT') {
         const qtyBought = cleanCart.filter(i => {
             if (i.is_bonus) return false;
-            // Lógica Multiproducto
             const hasList = ap.condition_product_ids && ap.condition_product_ids.length > 0;
             const hasSingle = !!ap.condition_product_id;
             if (hasList) return ap.condition_product_ids.includes(i.product_id);
@@ -378,12 +370,10 @@ export const AdvancedOrderEntry: React.FC = () => {
         }
       }
 
-      // Aplicar premio si aplica
       if (applies && multiplier > 0) {
         const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
         if (rewardProduct) {
           const rewardQty = ap.reward_quantity * multiplier;
-          // Respetar unidad de bonificación
           const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
           const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
 
@@ -413,7 +403,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     if (!selectedProduct) return;
     if (entryQty <= 0) return;
 
-    // Validación estricta de Stock (Kardex)
     const isPkgMode = entryUnit === selectedProduct.package_type;
     const conversionFactor = isPkgMode ? Number(selectedProduct.package_quantity || 1) : 1;
     const requiredBaseUnits = entryQty * conversionFactor;
@@ -492,7 +481,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     const item = tempCart[itemIndex];
     const pRef = item.product_ref;
     
-    // Validar Stock al editar cantidad en la grilla
     const isPkgMode = item.unit_type === pRef.package_type;
     const conversionFactor = isPkgMode ? Number(pRef.package_quantity || 1) : 1;
     const requiredBaseUnits = newQty * conversionFactor;
@@ -502,7 +490,7 @@ export const AdvancedOrderEntry: React.FC = () => {
 
     if (totalStock < requiredBaseUnits && !item.is_bonus) {
         alert(`❌ Stock Insuficiente para ${pRef.name}.\nDisponible: ${totalStock} unid.\nIntentó solicitar: ${requiredBaseUnits} unid.`);
-        return; // Anular cambio si no hay stock
+        return;
     }
 
     const tGross = newQty * item.unit_price;
@@ -673,7 +661,7 @@ export const AdvancedOrderEntry: React.FC = () => {
                 <select className="bg-transparent px-2 py-1.5 font-bold text-slate-900 border-r border-slate-300 outline-none hover:bg-slate-100 min-w-[5rem]" value={pedidoSeries} onChange={e => setPedidoSeries(e.target.value)} disabled={isEditMode}>
                   {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
                 </select>
-                <input className="w-28 px-3 py-1.5 text-center bg-transparent font-bold text-slate-900 outline-none" value={isEditMode ? pedidoNumber : 'AUTOGEN'} readOnly />
+                <input className="w-32 px-3 py-1.5 text-center bg-transparent font-bold text-slate-900 outline-none" value={pedidoNumber || 'Cargando...'} readOnly />
              </div>
           </div>
 
