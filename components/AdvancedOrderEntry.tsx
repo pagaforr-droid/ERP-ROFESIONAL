@@ -624,6 +624,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     setTimeout(() => clientInputRef.current?.focus(), 100);
   };
 
+  // Estos valores son puramente visuales, los reales se re-calculan en handleSaveOrder
   const subtotal = cart.reduce((sum, item) => sum + item.total_price, 0) / (1 + (Number(dbCompany?.igv_percent || 18) / 100));
   const igv = cart.reduce((sum, item) => sum + item.total_price, 0) - subtotal;
   const total = cart.reduce((sum, item) => sum + item.total_price, 0);
@@ -651,21 +652,22 @@ export const AdvancedOrderEntry: React.FC = () => {
 
     setIsSaving(true);
     
-    // LÓGICA MAGISTRAL REACT: Envío impecable, sustituyendo undefined por null 
-    // para que no desaparezcan las llaves en el viaje a la base de datos.
+    // 🔥 CÁLCULO EN TIEMPO REAL: Leemos de nuevo todo el carrito y aseguramos el total
+    const currentTotal = cart.reduce((sum, item) => sum + item.total_price, 0);
+
     const orderPayload = {
       id: isEditMode && originalOrder ? originalOrder.id : crypto.randomUUID(),
       code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${pedidoNumber}`,
       client_id: selectedClientId || null,
-      client_name: clientName,
+      client_name: clientName.trim(), // Aseguramos el valor actual de los inputs
       client_doc_type: clientDoc.length === 11 ? 'RUC' : 'DNI',
-      client_doc_number: clientDoc,
+      client_doc_number: clientDoc.trim(),
       seller_id: sellerId || null,
       suggested_document_type: docType,
       payment_method: paymentMethod,
-      total: Number(total.toFixed(2)),
+      total: Number(currentTotal.toFixed(2)), // Re-calculado para evitar desfases
       status: 'pending', 
-      delivery_address: clientAddress || null, 
+      delivery_address: clientAddress.trim() || null, 
       items: cart.map(c => {
         const isPkgMode = c.unit_type === c.product_ref?.package_type;
         const conversionFactor = isPkgMode ? Number(c.product_ref?.package_content || 1) : 1;
@@ -690,6 +692,8 @@ export const AdvancedOrderEntry: React.FC = () => {
         };
       })
     };
+
+    console.log("📝 DATOS ENVIADOS AL SERVIDOR:", orderPayload); // <--- HERRAMIENTA DE AUDITORÍA (F12)
 
     try {
       const rpcName = isEditMode ? 'update_order_transaction' : 'process_order_transaction';
