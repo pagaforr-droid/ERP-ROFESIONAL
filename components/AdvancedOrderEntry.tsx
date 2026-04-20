@@ -650,19 +650,22 @@ export const AdvancedOrderEntry: React.FC = () => {
     if (!pedidoSeries && !isEditMode) { alert("Configure una serie para PEDIDO en ajustes."); return; }
 
     setIsSaving(true);
+    
+    // LÓGICA MAGISTRAL REACT: Envío impecable, sustituyendo undefined por null 
+    // para que no desaparezcan las llaves en el viaje a la base de datos.
     const orderPayload = {
       id: isEditMode && originalOrder ? originalOrder.id : crypto.randomUUID(),
       code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${pedidoNumber}`,
-      client_id: selectedClientId || undefined,
+      client_id: selectedClientId || null,
       client_name: clientName,
       client_doc_type: clientDoc.length === 11 ? 'RUC' : 'DNI',
       client_doc_number: clientDoc,
-      seller_id: sellerId || undefined,
+      seller_id: sellerId || null,
       suggested_document_type: docType,
       payment_method: paymentMethod,
-      total: Number(total.toFixed(2)), // <--- CASTING EXPLÍCITO A NÚMERO
+      total: Number(total.toFixed(2)),
       status: 'pending', 
-      delivery_address: clientAddress,
+      delivery_address: clientAddress || null, 
       items: cart.map(c => {
         const isPkgMode = c.unit_type === c.product_ref?.package_type;
         const conversionFactor = isPkgMode ? Number(c.product_ref?.package_content || 1) : 1;
