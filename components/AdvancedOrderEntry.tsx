@@ -20,7 +20,7 @@ interface CartItem {
   auto_promo_id?: string;
   promo_name?: string;
   product_ref: Product;
-  original_base_qty?: number; // <--- MEMORIA DE ÉLITE PARA REVERSIÓN VIRTUAL
+  original_base_qty?: number; 
 }
 
 export const AdvancedOrderEntry: React.FC = () => {
@@ -389,7 +389,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     setCart(cleanCart);
   };
 
-  // --- REVERSIÓN VIRTUAL AL AGREGAR NUEVO PRODUCTO ---
   const executeAddToCart = () => {
     if (!selectedProduct) return;
     if (entryQty <= 0) return;
@@ -406,7 +405,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     let tempCart = [...cart];
     const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === entryUnit);
     
-    // Si el producto ya está en el carrito, le sumamos lo que ya tenía reservado originalmente (Reversión Virtual)
     let originalReserved = 0;
     let existingQty = 0;
     if (existingIdx >= 0) {
@@ -416,7 +414,7 @@ export const AdvancedOrderEntry: React.FC = () => {
         }
     }
 
-    totalStock += originalReserved; // Sumamos la reserva original al stock actual para permitir la edición fluida
+    totalStock += originalReserved; 
 
     const totalRequiredBaseUnits = (existingQty + entryQty) * conversionFactor;
 
@@ -476,7 +474,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     alert("Precios del carrito actualizados según lista y unidades configuradas.");
   };
 
-  // --- REVERSIÓN VIRTUAL AL EDITAR CANTIDADES ---
   const handleCartQtyChange = (id: string, newQty: number) => {
     if (isNaN(newQty) || newQty <= 0) return;
     
@@ -496,7 +493,6 @@ export const AdvancedOrderEntry: React.FC = () => {
         ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) 
         : Number(pRef.current_stock || pRef.stock || 0);
 
-    // LÓGICA MAGISTRAL FRONTEND: Sumamos el stock reservado originalmente por este pedido
     if (isEditMode && item.original_base_qty) {
         totalStock += item.original_base_qty;
     }
@@ -539,7 +535,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     return () => clearTimeout(timer);
   }, [orderSearchTerm, isSearchModalOpen]);
 
-  // --- CARGA MAGISTRAL AL FORMULARIO PRINCIPAL (CON LOTES) ---
   const loadOrder = async (order: Order) => {
     setIsSaving(true);
     try {
@@ -550,7 +545,6 @@ export const AdvancedOrderEntry: React.FC = () => {
         if (orderItemsData && orderItemsData.length > 0) {
             const pIds = [...new Set(orderItemsData.map((item: any) => item.product_id))];
             
-            // Lógica de Élite: Descargar tanto productos como lotes (Kardex actual)
             const [prodsRes, batchesRes] = await Promise.all([
                 supabase.from('products').select('*').in('id', pIds),
                 supabase.from('batches').select('*').in('product_id', pIds).gt('quantity_current', 0)
@@ -559,7 +553,6 @@ export const AdvancedOrderEntry: React.FC = () => {
             const prods = prodsRes.data || [];
             const bData = batchesRes.data || [];
 
-            // Inyectar en la memoria caché para la validación visual de stock
             const batchCache: Record<string, any[]> = { ...loadedBatches };
             const prodMap = prods.reduce((acc: any, p: any) => {
                 batchCache[p.id] = bData.filter(b => b.product_id === p.id);
@@ -584,7 +577,7 @@ export const AdvancedOrderEntry: React.FC = () => {
                     auto_promo_id: item.auto_promo_id || undefined,
                     promo_name: item.auto_promo_id ? 'PROMO' : undefined,
                     product_ref: pRef,
-                    original_base_qty: item.quantity_base || 0 // GUARDA EL ESTADO ORIGINAL PARA LA REVERSIÓN VIRTUAL
+                    original_base_qty: item.quantity_base || 0 
                 };
             });
         }
@@ -667,7 +660,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       seller_id: sellerId || undefined,
       suggested_document_type: docType,
       payment_method: paymentMethod,
-      total: total,
+      total: Number(total.toFixed(2)), // <--- CASTING EXPLÍCITO A NÚMERO
       status: 'pending', 
       delivery_address: clientAddress,
       items: cart.map(c => {
