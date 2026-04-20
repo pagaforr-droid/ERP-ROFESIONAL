@@ -20,6 +20,7 @@ interface CartItem {
   auto_promo_id?: string;
   promo_name?: string;
   product_ref: Product;
+  original_base_qty?: number; // <--- MEMORIA DE ÉLITE PARA REVERSIÓN VIRTUAL
 }
 
 export const AdvancedOrderEntry: React.FC = () => {
@@ -40,7 +41,6 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
   const [loadedBatches, setLoadedBatches] = useState<Record<string, any[]>>({}); 
   
-  // --- ESTADOS DE MODO EDICIÓN ---
   const [isEditMode, setIsEditMode] = useState(false);
   const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
 
@@ -389,6 +389,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     setCart(cleanCart);
   };
 
+  // --- REVERSIÓN VIRTUAL AL AGREGAR NUEVO PRODUCTO ---
   const executeAddToCart = () => {
     if (!selectedProduct) return;
     if (entryQty <= 0) return;
@@ -398,39 +399,53 @@ export const AdvancedOrderEntry: React.FC = () => {
     const requiredBaseUnits = entryQty * conversionFactor;
 
     const availableBatches = loadedBatches[selectedProduct.id] || [];
-    const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(selectedProduct.current_stock || selectedProduct.stock || 0);
+    let totalStock = availableBatches.length > 0 
+        ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) 
+        : Number(selectedProduct.current_stock || selectedProduct.stock || 0);
 
-    if (totalStock < requiredBaseUnits && !entryBonus) {
-        alert(`❌ Stock Insuficiente para ${selectedProduct.name}.\nDisponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`);
+    let tempCart = [...cart];
+    const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === entryUnit);
+    
+    // Si el producto ya está en el carrito, le sumamos lo que ya tenía reservado originalmente (Reversión Virtual)
+    let originalReserved = 0;
+    let existingQty = 0;
+    if (existingIdx >= 0) {
+        existingQty = tempCart[existingIdx].quantity;
+        if (isEditMode && tempCart[existingIdx].original_base_qty) {
+            originalReserved = tempCart[existingIdx].original_base_qty || 0;
+        }
+    }
+
+    totalStock += originalReserved; // Sumamos la reserva original al stock actual para permitir la edición fluida
+
+    const totalRequiredBaseUnits = (existingQty + entryQty) * conversionFactor;
+
+    if (totalStock < totalRequiredBaseUnits && !entryBonus) {
+        alert(`❌ Stock Insuficiente para ${selectedProduct.name}.\nDisponible: ${totalStock} unid. (Incluye tu reserva original)\nRequerido total: ${totalRequiredBaseUnits} unid.`);
         return;
     }
 
     const gross = entryQty * entryPrice;
     const finalPrice = gross - (gross * (entryDiscount / 100));
 
-    const newItem: CartItem = {
-      id: crypto.randomUUID(),
-      product_id: selectedProduct.id,
-      sku: selectedProduct.sku,
-      name: selectedProduct.name,
-      quantity: entryQty,
-      unit_type: entryUnit,
-      unit_price: entryPrice,
-      discount_percent: entryDiscount,
-      total_price: entryBonus ? 0 : finalPrice,
-      is_bonus: entryBonus,
-      product_ref: selectedProduct
-    };
-
-    let tempCart = [...cart];
-    const existingIdx = tempCart.findIndex(i => i.product_id === newItem.product_id && !i.is_bonus && !i.auto_promo_id && i.unit_type === newItem.unit_type);
-    
     if (existingIdx >= 0) {
       tempCart[existingIdx].quantity += entryQty;
       const tGross = tempCart[existingIdx].quantity * tempCart[existingIdx].unit_price;
       tempCart[existingIdx].total_price = tGross - (tGross * (tempCart[existingIdx].discount_percent / 100));
     } else {
-      tempCart.push(newItem);
+      tempCart.push({
+        id: crypto.randomUUID(),
+        product_id: selectedProduct.id,
+        sku: selectedProduct.sku,
+        name: selectedProduct.name,
+        quantity: entryQty,
+        unit_type: entryUnit,
+        unit_price: entryPrice,
+        discount_percent: entryDiscount,
+        total_price: entryBonus ? 0 : finalPrice,
+        is_bonus: entryBonus,
+        product_ref: selectedProduct
+      });
     }
 
     applyPromotions(tempCart, priceListId);
@@ -461,6 +476,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     alert("Precios del carrito actualizados según lista y unidades configuradas.");
   };
 
+  // --- REVERSIÓN VIRTUAL AL EDITAR CANTIDADES ---
   const handleCartQtyChange = (id: string, newQty: number) => {
     if (isNaN(newQty) || newQty <= 0) return;
     
@@ -476,10 +492,17 @@ export const AdvancedOrderEntry: React.FC = () => {
     const requiredBaseUnits = newQty * conversionFactor;
 
     const availableBatches = loadedBatches[pRef.id] || [];
-    const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(pRef.current_stock || pRef.stock || 0);
+    let totalStock = availableBatches.length > 0 
+        ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) 
+        : Number(pRef.current_stock || pRef.stock || 0);
+
+    // LÓGICA MAGISTRAL FRONTEND: Sumamos el stock reservado originalmente por este pedido
+    if (isEditMode && item.original_base_qty) {
+        totalStock += item.original_base_qty;
+    }
 
     if (totalStock < requiredBaseUnits && !item.is_bonus) {
-        alert(`❌ Stock Insuficiente para ${pRef.name}.\nDisponible: ${totalStock} unid.\nIntentó solicitar: ${requiredBaseUnits} unid.`);
+        alert(`❌ Stock Insuficiente para ${pRef.name}.\nDisponible: ${totalStock} unid. (Incluye tu reserva original)\nIntentó solicitar: ${requiredBaseUnits} unid.`);
         return;
     }
 
@@ -516,7 +539,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     return () => clearTimeout(timer);
   }, [orderSearchTerm, isSearchModalOpen]);
 
-  // --- CARGA MAGISTRAL AL FORMULARIO PRINCIPAL ---
+  // --- CARGA MAGISTRAL AL FORMULARIO PRINCIPAL (CON LOTES) ---
   const loadOrder = async (order: Order) => {
     setIsSaving(true);
     try {
@@ -526,8 +549,24 @@ export const AdvancedOrderEntry: React.FC = () => {
         let loadedItems: CartItem[] = [];
         if (orderItemsData && orderItemsData.length > 0) {
             const pIds = [...new Set(orderItemsData.map((item: any) => item.product_id))];
-            const { data: prods } = await supabase.from('products').select('*').in('id', pIds);
-            const prodMap = (prods || []).reduce((acc: any, p: any) => ({...acc, [p.id]: p}), {});
+            
+            // Lógica de Élite: Descargar tanto productos como lotes (Kardex actual)
+            const [prodsRes, batchesRes] = await Promise.all([
+                supabase.from('products').select('*').in('id', pIds),
+                supabase.from('batches').select('*').in('product_id', pIds).gt('quantity_current', 0)
+            ]);
+
+            const prods = prodsRes.data || [];
+            const bData = batchesRes.data || [];
+
+            // Inyectar en la memoria caché para la validación visual de stock
+            const batchCache: Record<string, any[]> = { ...loadedBatches };
+            const prodMap = prods.reduce((acc: any, p: any) => {
+                batchCache[p.id] = bData.filter(b => b.product_id === p.id);
+                return {...acc, [p.id]: p};
+            }, {});
+
+            setLoadedBatches(batchCache);
 
             loadedItems = orderItemsData.map((item: any) => {
                 const pRef = prodMap[item.product_id] || dbProducts.find(p => p.id === item.product_id) || {} as Product;
@@ -544,7 +583,8 @@ export const AdvancedOrderEntry: React.FC = () => {
                     is_bonus: item.is_bonus || false,
                     auto_promo_id: item.auto_promo_id || undefined,
                     promo_name: item.auto_promo_id ? 'PROMO' : undefined,
-                    product_ref: pRef
+                    product_ref: pRef,
+                    original_base_qty: item.quantity_base || 0 // GUARDA EL ESTADO ORIGINAL PARA LA REVERSIÓN VIRTUAL
                 };
             });
         }
@@ -656,7 +696,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     };
 
     try {
-      // 🚀 DECISIÓN INTELIGENTE: Si estamos editando usamos la función con reversión de stock
       const rpcName = isEditMode ? 'update_order_transaction' : 'process_order_transaction';
       
       const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
