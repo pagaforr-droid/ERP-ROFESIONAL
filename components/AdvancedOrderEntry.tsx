@@ -5,7 +5,7 @@ import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlu
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
-import { EditOrderEntry } from './EditOrderEntry'; // <-- IMPORT DEL MÓDULO DE EDICIÓN AISLADA
+import { EditOrderEntry } from './EditOrderEntry'; 
 
 interface CartItem {
   id: string;
@@ -26,12 +26,10 @@ interface CartItem {
 export const AdvancedOrderEntry: React.FC = () => {
   const { users, currentUser } = useStore();
 
-  // REFS PARA NAVEGACIÓN POR TECLADO
   const clientInputRef = useRef<HTMLInputElement>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
 
-  // --- MAESTROS ---
   const [dbCompany, setDbCompany] = useState<any>(null);
   const [dbSellers, setDbSellers] = useState<any[]>([]);
   const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
@@ -52,7 +50,6 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [currency, setCurrency] = useState('SOLES');
   const [sellerId, setSellerId] = useState('');
 
-  // CLIENTES
   const [clientSearch, setClientSearch] = useState('');
   const [searchedClients, setSearchedClients] = useState<Client[]>([]);
   const [isSearchingClient, setIsSearchingClient] = useState(false);
@@ -68,7 +65,6 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [showBranchSelector, setShowBranchSelector] = useState(false);
   const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
 
-  // PRODUCTOS
   const [productSearch, setProductSearch] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<(Product & { current_stock: number })[]>([]);
   const [isSearchingProd, setIsSearchingProd] = useState(false);
@@ -136,7 +132,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     }
   };
 
-  // --- LÓGICA CORE DE PRECIOS ---
   const getMultiplier = (listId: string) => {
     if (!listId) return 1;
     const list = dbPriceLists.find(pl => pl.id === listId);
@@ -175,7 +170,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     return { price, discount: defaultDiscount };
   };
 
-  // BÚSQUEDA DE CLIENTES
   useEffect(() => {
     if (clientSearch.length < 3) { setSearchedClients([]); setHighlightedClientIdx(0); return; }
     const timer = setTimeout(async () => {
@@ -217,7 +211,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     setTimeout(() => productInputRef.current?.focus(), 100);
   };
 
-  // BÚSQUEDA DE PRODUCTOS CON KARDEX INTEGRADO
   useEffect(() => {
     if (productSearch.length < 2) { setSearchedProducts([]); setHighlightedIndex(0); return; }
     const timer = setTimeout(async () => {
@@ -307,7 +300,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     } catch(e) { console.error(e); setClientCreditInfo(prev => ({...prev, isChecking: false})); }
   }
 
-  // --- RE-EVALUACIÓN AUTOMÁTICA DE PROMOCIONES ---
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
 
@@ -497,7 +489,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     applyPromotions(tempCart, priceListId);
   };
 
-  // --- BÚSQUEDA CORREGIDA (ENUM STRICT) ---
   useEffect(() => {
     if (!isSearchModalOpen) return;
     const timer = setTimeout(async () => {
@@ -525,10 +516,10 @@ export const AdvancedOrderEntry: React.FC = () => {
     return () => clearTimeout(timer);
   }, [orderSearchTerm, isSearchModalOpen]);
 
-  // --- CONECTOR MAGISTRAL: DELEGAR LA EDICIÓN AL COMPONENTE ESPECIALISTA ---
+  // --- CONECTOR MAGISTRAL ---
   const loadOrder = (order: Order) => {
     setEditingOrderId(order.id);
-    setIsSearchModalOpen(false);
+    setIsSearchModalOpen(false); // Cerramos el modal de búsqueda para que se vea la edición
   };
 
   const handleNewOrder = () => {
@@ -553,6 +544,7 @@ export const AdvancedOrderEntry: React.FC = () => {
        seller_name: seller ? seller.name : ''
     };
     try { 
+      const { PdfEngine } = await import('./PdfEngine');
       await PdfEngine.openDocument(tempOrder as unknown as Sale, docType, dbCompany); 
     } catch (err) { alert('Error generando la vista previa.'); }
   };
@@ -614,19 +606,20 @@ export const AdvancedOrderEntry: React.FC = () => {
     } else { alert("Contraseña incorrecta."); }
   };
 
+  // 🚨 RENDERIZADO EXCLUSIVO PARA MODO EDICIÓN 🚨
+  // Si estamos editando, NO renderizamos todo el panel de creación de nuevo pedido
+  if (editingOrderId) {
+    return (
+        <EditOrderEntry 
+          orderId={editingOrderId} 
+          onClose={() => setEditingOrderId(null)} 
+        />
+    );
+  }
+
   return (
     <div className="flex flex-col h-full bg-slate-100 p-4 font-sans text-xs">
       
-      {/* 🚨 EL NUEVO MÓDULO DE EDICIÓN AISLADA 🚨 */}
-      {editingOrderId && (
-        <EditOrderEntry 
-          orderId={editingOrderId} 
-          onClose={() => {
-            setEditingOrderId(null);
-          }} 
-        />
-      )}
-
       {/* OVERLAY SAVING */}
       {isSaving && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex flex-col items-center justify-center">
@@ -1085,4 +1078,4 @@ export const AdvancedOrderEntry: React.FC = () => {
       )}
     </div>
   );
-};
+}
