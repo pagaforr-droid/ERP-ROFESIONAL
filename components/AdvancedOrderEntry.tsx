@@ -5,6 +5,7 @@ import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlu
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
+import { EditOrderEntry } from './EditOrderEntry'; // <-- IMPORT DEL MÓDULO DE EDICIÓN AISLADA
 
 interface CartItem {
   id: string;
@@ -42,8 +43,8 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
   const [loadedBatches, setLoadedBatches] = useState<Record<string, any[]>>({}); 
   
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
+  // ESTADO MAGISTRAL PARA CONTROLAR LA EDICIÓN AISLADA
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
   const [docType, setDocType] = useState('FACTURA'); 
   const [pedidoSeries, setPedidoSeries] = useState('');
@@ -502,7 +503,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     const timer = setTimeout(async () => {
         setIsSearchingOrder(true);
         try {
-            // Buscamos estrictamente 'pending' en minúsculas por restricción de Postgres ENUM
             let query = supabase.from('orders')
                 .select('*')
                 .eq('status', 'pending') 
@@ -525,70 +525,14 @@ export const AdvancedOrderEntry: React.FC = () => {
     return () => clearTimeout(timer);
   }, [orderSearchTerm, isSearchModalOpen]);
 
-  // --- CARGA DIRECTA Y OPTIMIZADA DESDE DB ---
-  const loadOrder = async (order: Order) => {
-    setIsSaving(true);
-    try {
-        // "Agarra el ID y busca el detalle"
-        const { data: orderItemsData, error } = await supabase.from('order_items').select(`*`).eq('order_id', order.id);
-        
-        if (error) throw error;
-
-        let loadedItems: CartItem[] = [];
-        if (orderItemsData) {
-            // Traer productos involucrados por si no están en caché
-            const pIds = [...new Set(orderItemsData.map((item: any) => item.product_id))];
-            const { data: prods } = await supabase.from('products').select('*').in('id', pIds);
-            const prodMap = (prods || []).reduce((acc: any, p: any) => ({...acc, [p.id]: p}), {});
-
-            loadedItems = orderItemsData.map((item: any) => {
-                const pRef = prodMap[item.product_id] || dbProducts.find(p => p.id === item.product_id) || {} as Product;
-                return {
-                    id: item.id,
-                    product_id: item.product_id,
-                    sku: item.product_sku || pRef.sku,
-                    name: item.product_name || pRef.name,
-                    quantity: item.quantity_presentation || item.quantity_base || item.quantity || 1,
-                    unit_type: item.unit_type || item.selected_unit || 'UND',
-                    unit_price: item.unit_price || 0,
-                    discount_percent: item.discount_percent || 0,
-                    total_price: item.total_price || 0,
-                    is_bonus: item.is_bonus || false,
-                    auto_promo_id: item.auto_promo_id || undefined,
-                    product_ref: pRef
-                };
-            });
-        }
-
-        setOriginalOrder(order);
-        setIsEditMode(true);
-        
-        setDocType((order.suggested_document_type as any) || 'FACTURA'); 
-        if (order.code && order.code.includes('-')) {
-           const [s, n] = order.code.split('-');
-           setPedidoSeries(s); setPedidoNumber(n);
-        } else {
-           setPedidoNumber(order.code);
-        }
-
-        setSellerId(order.seller_id || ''); 
-        setPaymentMethod(order.payment_method as any || 'CONTADO'); 
-        setClientName(order.client_name);
-        setClientDoc(order.client_doc_number);
-        setClientAddress(order.delivery_address || '');
-        setSelectedClientId(order.client_id || '');
-
-        setCart(loadedItems); 
-        setIsSearchModalOpen(false);
-    } catch (err: any) {
-        alert('Error al cargar pedido: ' + err.message);
-    } finally {
-        setIsSaving(false);
-    }
+  // --- CONECTOR MAGISTRAL: DELEGAR LA EDICIÓN AL COMPONENTE ESPECIALISTA ---
+  const loadOrder = (order: Order) => {
+    setEditingOrderId(order.id);
+    setIsSearchModalOpen(false);
   };
 
   const handleNewOrder = () => {
-    setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClientId(''); setSelectedClient(null);
+    setCart([]); setSelectedClientId(''); setSelectedClient(null);
     setClientName(''); setClientDoc(''); setClientAddress(''); setPriceListId(''); setSellerId('');
     fetchLiveSeries();
     setTimeout(() => clientInputRef.current?.focus(), 100);
@@ -616,12 +560,12 @@ export const AdvancedOrderEntry: React.FC = () => {
   const handleSaveOrder = async () => {
     if (!clientName) { alert("Debe ingresar un cliente."); clientInputRef.current?.focus(); return; }
     if (cart.length === 0) { alert("El pedido no puede estar vacío."); productInputRef.current?.focus(); return; }
-    if (!pedidoSeries && !isEditMode) { alert("Configure una serie para PEDIDO en ajustes."); return; }
+    if (!pedidoSeries) { alert("Configure una serie para PEDIDO en ajustes."); return; }
 
     setIsSaving(true);
     const orderPayload = {
-      id: isEditMode && originalOrder ? originalOrder.id : crypto.randomUUID(),
-      code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${pedidoNumber}`,
+      id: crypto.randomUUID(),
+      code: `${pedidoSeries}-${pedidoNumber}`,
       client_id: selectedClientId || undefined,
       client_name: clientName,
       client_doc_type: clientDoc.length === 11 ? 'RUC' : 'DNI',
@@ -652,11 +596,10 @@ export const AdvancedOrderEntry: React.FC = () => {
     };
 
     try {
-      const rpcName = isEditMode ? 'update_order_transaction' : 'process_order_transaction';
-      const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
+      const { data, error } = await supabase.rpc('process_order_transaction', { p_order_data: orderPayload });
       if (error) throw error;
 
-      alert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
+      alert(`¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
       handleNewOrder();
     } catch (error: any) { alert("Error al guardar: " + error.message);
     } finally { setIsSaving(false); }
@@ -673,6 +616,17 @@ export const AdvancedOrderEntry: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full bg-slate-100 p-4 font-sans text-xs">
+      
+      {/* 🚨 EL NUEVO MÓDULO DE EDICIÓN AISLADA 🚨 */}
+      {editingOrderId && (
+        <EditOrderEntry 
+          orderId={editingOrderId} 
+          onClose={() => {
+            setEditingOrderId(null);
+          }} 
+        />
+      )}
+
       {/* OVERLAY SAVING */}
       {isSaving && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex flex-col items-center justify-center">
@@ -696,7 +650,7 @@ export const AdvancedOrderEntry: React.FC = () => {
           <div className="flex flex-col">
              <label className="text-[10px] font-bold text-slate-500 mb-0.5">Documento N°</label>
              <div className="flex items-center bg-slate-50 border border-slate-300 rounded overflow-hidden">
-                <select className="bg-transparent px-2 py-1.5 font-bold text-slate-900 border-r border-slate-300 outline-none hover:bg-slate-100 min-w-[5rem]" value={pedidoSeries} onChange={e => setPedidoSeries(e.target.value)} disabled={isEditMode}>
+                <select className="bg-transparent px-2 py-1.5 font-bold text-slate-900 border-r border-slate-300 outline-none hover:bg-slate-100 min-w-[5rem]" value={pedidoSeries} onChange={e => setPedidoSeries(e.target.value)}>
                   {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
                 </select>
                 <input className="w-32 px-3 py-1.5 text-center bg-transparent font-bold text-slate-900 outline-none" value={pedidoNumber || 'Cargando...'} readOnly />
@@ -729,13 +683,6 @@ export const AdvancedOrderEntry: React.FC = () => {
           </button>
         </div>
       </div>
-
-      {isEditMode && (
-         <div className="mb-2 px-3 py-2 bg-red-600 text-white font-bold rounded flex justify-between items-center shadow-sm">
-            <span>MODIFICANDO PEDIDO: {originalOrder?.code}</span>
-            <button onClick={handleNewOrder} className="hover:text-red-200 bg-red-700 px-2 py-1 rounded text-[10px]">DESCARTAR CAMBIOS</button>
-         </div>
-      )}
 
       {/* SECCIÓN CLIENTE */}
       <div className="bg-white p-3 rounded shadow-sm border border-slate-200 mb-2">
@@ -1024,7 +971,7 @@ export const AdvancedOrderEntry: React.FC = () => {
             className="bg-blue-600 hover:bg-blue-700 text-white w-36 h-20 rounded-lg shadow-lg flex flex-col items-center justify-center font-black transition-colors disabled:opacity-50 active:scale-95"
           >
              <Save className="w-6 h-6 mb-1" />
-             {isEditMode ? 'SOBREESCRIBIR' : 'GUARDAR (F10)'}
+             GUARDAR (F10)
           </button>
         </div>
       </div>
