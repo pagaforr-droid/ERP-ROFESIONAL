@@ -5,7 +5,6 @@ import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlu
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
-import { EditOrderEntry } from './EditOrderEntry'; 
 
 interface CartItem {
   id: string;
@@ -41,8 +40,9 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
   const [loadedBatches, setLoadedBatches] = useState<Record<string, any[]>>({}); 
   
-  // ESTADO MAGISTRAL PARA CONTROLAR LA EDICIÓN AISLADA
-  const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
+  // --- ESTADOS DE MODO EDICIÓN ---
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
 
   const [docType, setDocType] = useState('FACTURA'); 
   const [pedidoSeries, setPedidoSeries] = useState('');
@@ -110,7 +110,7 @@ export const AdvancedOrderEntry: React.FC = () => {
         if (prodRes.data) setDbProducts(prodRes.data as Product[]);
         if (zoneRes.data) setDbZones(zoneRes.data);
         if (promRes.data) setDbPromos(promRes.data);
-        if (serRes.data && serRes.data.length > 0) {
+        if (serRes.data && serRes.data.length > 0 && !isEditMode) {
           setDbSeries(serRes.data);
           setPedidoSeries(serRes.data[0].series);
           setPedidoNumber(String(serRes.data[0].current_number + 1).padStart(8, '0'));
@@ -120,9 +120,10 @@ export const AdvancedOrderEntry: React.FC = () => {
       }
     };
     fetchMasters();
-  }, []);
+  }, [isEditMode]);
 
   const fetchLiveSeries = async () => {
+    if (isEditMode) return;
     const { data } = await supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true);
     if (data && data.length > 0) {
         setDbSeries(data);
@@ -206,7 +207,6 @@ export const AdvancedOrderEntry: React.FC = () => {
     if (autoSellerId) setSellerId(autoSellerId);
     
     await fetchLiveSeries();
-    
     checkClientCredit(c.id, c.credit_limit || 0);
     setTimeout(() => productInputRef.current?.focus(), 100);
   };
@@ -516,14 +516,76 @@ export const AdvancedOrderEntry: React.FC = () => {
     return () => clearTimeout(timer);
   }, [orderSearchTerm, isSearchModalOpen]);
 
-  // --- CONECTOR MAGISTRAL ---
-  const loadOrder = (order: Order) => {
-    setEditingOrderId(order.id);
-    setIsSearchModalOpen(false); // Cerramos el modal de búsqueda para que se vea la edición
+  // --- CARGA MAGISTRAL AL FORMULARIO PRINCIPAL ---
+  const loadOrder = async (order: Order) => {
+    setIsSaving(true);
+    try {
+        const { data: orderItemsData, error } = await supabase.from('order_items').select(`*`).eq('order_id', order.id);
+        if (error) throw error;
+
+        let loadedItems: CartItem[] = [];
+        if (orderItemsData && orderItemsData.length > 0) {
+            const pIds = [...new Set(orderItemsData.map((item: any) => item.product_id))];
+            const { data: prods } = await supabase.from('products').select('*').in('id', pIds);
+            const prodMap = (prods || []).reduce((acc: any, p: any) => ({...acc, [p.id]: p}), {});
+
+            loadedItems = orderItemsData.map((item: any) => {
+                const pRef = prodMap[item.product_id] || dbProducts.find(p => p.id === item.product_id) || {} as Product;
+                return {
+                    id: item.id,
+                    product_id: item.product_id,
+                    sku: item.product_sku || pRef.sku,
+                    name: item.product_name || pRef.name,
+                    quantity: item.quantity || item.quantity_presentation || item.quantity_base || 1,
+                    unit_type: item.unit_type || item.selected_unit || 'UND',
+                    unit_price: item.unit_price || 0,
+                    discount_percent: item.discount_percent || 0,
+                    total_price: item.total_price || 0,
+                    is_bonus: item.is_bonus || false,
+                    auto_promo_id: item.auto_promo_id || undefined,
+                    promo_name: item.auto_promo_id ? 'PROMO' : undefined,
+                    product_ref: pRef
+                };
+            });
+        }
+
+        setOriginalOrder(order);
+        setIsEditMode(true);
+        
+        setDocType((order.suggested_document_type as any) || 'FACTURA'); 
+        if (order.code && order.code.includes('-')) {
+           const [s, n] = order.code.split('-');
+           setPedidoSeries(s); setPedidoNumber(n);
+        } else {
+           setPedidoNumber(order.code);
+        }
+
+        setSellerId(order.seller_id || ''); 
+        setPaymentMethod(order.payment_method as any || 'CONTADO'); 
+        setClientName(order.client_name);
+        setClientDoc(order.client_doc_number);
+        setClientAddress(order.delivery_address || '');
+        setSelectedClientId(order.client_id || '');
+
+        if (order.client_id) {
+           const { data: clientData } = await supabase.from('clients').select('*').eq('id', order.client_id).single();
+           if (clientData) {
+               setPriceListId(clientData.price_list_id || '');
+               setSelectedClient(clientData as Client);
+           }
+        }
+
+        setCart(loadedItems); 
+        setIsSearchModalOpen(false);
+    } catch (err: any) {
+        alert('Error al cargar pedido para edición: ' + err.message);
+    } finally {
+        setIsSaving(false);
+    }
   };
 
   const handleNewOrder = () => {
-    setCart([]); setSelectedClientId(''); setSelectedClient(null);
+    setIsEditMode(false); setOriginalOrder(null); setCart([]); setSelectedClientId(''); setSelectedClient(null);
     setClientName(''); setClientDoc(''); setClientAddress(''); setPriceListId(''); setSellerId('');
     fetchLiveSeries();
     setTimeout(() => clientInputRef.current?.focus(), 100);
@@ -552,12 +614,12 @@ export const AdvancedOrderEntry: React.FC = () => {
   const handleSaveOrder = async () => {
     if (!clientName) { alert("Debe ingresar un cliente."); clientInputRef.current?.focus(); return; }
     if (cart.length === 0) { alert("El pedido no puede estar vacío."); productInputRef.current?.focus(); return; }
-    if (!pedidoSeries) { alert("Configure una serie para PEDIDO en ajustes."); return; }
+    if (!pedidoSeries && !isEditMode) { alert("Configure una serie para PEDIDO en ajustes."); return; }
 
     setIsSaving(true);
     const orderPayload = {
-      id: crypto.randomUUID(),
-      code: `${pedidoSeries}-${pedidoNumber}`,
+      id: isEditMode && originalOrder ? originalOrder.id : crypto.randomUUID(),
+      code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${pedidoNumber}`,
       client_id: selectedClientId || undefined,
       client_name: clientName,
       client_doc_type: clientDoc.length === 11 ? 'RUC' : 'DNI',
@@ -568,33 +630,45 @@ export const AdvancedOrderEntry: React.FC = () => {
       total: total,
       status: 'pending', 
       delivery_address: clientAddress,
-      items: cart.map(c => ({
-        id: c.id,
-        product_id: c.product_id,
-        product_sku: c.sku,
-        product_name: c.name,
-        quantity_base: (c.unit_type === c.product_ref?.package_type) ? (c.quantity * Number(c.product_ref.package_content || 1)) : c.quantity,
-        quantity_presentation: c.quantity,
-        quantity: c.quantity, 
-        unit_type: c.unit_type, 
-        selected_unit: c.unit_type, 
-        unit_price: c.unit_price,
-        discount_percent: c.discount_percent,
-        discount_amount: (c.quantity * c.unit_price) * (c.discount_percent / 100),
-        total_price: c.total_price,
-        is_bonus: c.is_bonus,
-        auto_promo_id: c.auto_promo_id || null
-      }))
+      items: cart.map(c => {
+        const isPkgMode = c.unit_type === c.product_ref?.package_type;
+        const conversionFactor = isPkgMode ? Number(c.product_ref?.package_content || 1) : 1;
+        const qtyBase = c.quantity * conversionFactor;
+
+        return {
+          id: c.id,
+          product_id: c.product_id,
+          product_sku: c.sku,
+          product_name: c.name,
+          quantity: c.quantity,
+          unit_type: c.unit_type,
+          selected_unit: c.unit_type,
+          quantity_presentation: c.quantity,
+          quantity_base: qtyBase,
+          unit_price: c.unit_price,
+          discount_percent: c.discount_percent,
+          discount_amount: (c.quantity * c.unit_price) * (c.discount_percent / 100),
+          total_price: c.total_price,
+          is_bonus: c.is_bonus,
+          auto_promo_id: c.auto_promo_id || null
+        };
+      })
     };
 
     try {
-      const { data, error } = await supabase.rpc('process_order_transaction', { p_order_data: orderPayload });
+      // 🚀 DECISIÓN INTELIGENTE: Si estamos editando usamos la función con reversión de stock
+      const rpcName = isEditMode ? 'update_order_transaction' : 'process_order_transaction';
+      
+      const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
       if (error) throw error;
 
-      alert(`¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
+      alert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
       handleNewOrder();
-    } catch (error: any) { alert("Error al guardar: " + error.message);
-    } finally { setIsSaving(false); }
+    } catch (error: any) { 
+        alert("Error al guardar: " + error.message);
+    } finally { 
+        setIsSaving(false); 
+    }
   };
 
   const verifyAdmin = () => {
@@ -606,20 +680,9 @@ export const AdvancedOrderEntry: React.FC = () => {
     } else { alert("Contraseña incorrecta."); }
   };
 
-  // 🚨 RENDERIZADO EXCLUSIVO PARA MODO EDICIÓN 🚨
-  // Si estamos editando, NO renderizamos todo el panel de creación de nuevo pedido
-  if (editingOrderId) {
-    return (
-        <EditOrderEntry 
-          orderId={editingOrderId} 
-          onClose={() => setEditingOrderId(null)} 
-        />
-    );
-  }
-
   return (
     <div className="flex flex-col h-full bg-slate-100 p-4 font-sans text-xs">
-      
+
       {/* OVERLAY SAVING */}
       {isSaving && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[150] flex flex-col items-center justify-center">
@@ -643,7 +706,7 @@ export const AdvancedOrderEntry: React.FC = () => {
           <div className="flex flex-col">
              <label className="text-[10px] font-bold text-slate-500 mb-0.5">Documento N°</label>
              <div className="flex items-center bg-slate-50 border border-slate-300 rounded overflow-hidden">
-                <select className="bg-transparent px-2 py-1.5 font-bold text-slate-900 border-r border-slate-300 outline-none hover:bg-slate-100 min-w-[5rem]" value={pedidoSeries} onChange={e => setPedidoSeries(e.target.value)}>
+                <select className="bg-transparent px-2 py-1.5 font-bold text-slate-900 border-r border-slate-300 outline-none hover:bg-slate-100 min-w-[5rem]" value={pedidoSeries} onChange={e => setPedidoSeries(e.target.value)} disabled={isEditMode}>
                   {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
                 </select>
                 <input className="w-32 px-3 py-1.5 text-center bg-transparent font-bold text-slate-900 outline-none" value={pedidoNumber || 'Cargando...'} readOnly />
@@ -676,6 +739,13 @@ export const AdvancedOrderEntry: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {isEditMode && (
+         <div className="mb-2 px-4 py-3 bg-gradient-to-r from-red-600 to-red-500 text-white font-bold rounded-lg flex justify-between items-center shadow border border-red-700">
+            <span className="flex items-center text-sm"><Edit className="w-5 h-5 mr-2" /> ESTÁS MODIFICANDO EL PEDIDO: {originalOrder?.code}</span>
+            <button onClick={handleNewOrder} className="hover:text-red-800 bg-white text-red-600 font-black px-3 py-1.5 rounded shadow-sm text-xs transition-colors">DESCARTAR CAMBIOS</button>
+         </div>
+      )}
 
       {/* SECCIÓN CLIENTE */}
       <div className="bg-white p-3 rounded shadow-sm border border-slate-200 mb-2">
@@ -961,10 +1031,10 @@ export const AdvancedOrderEntry: React.FC = () => {
           <button 
             onClick={handleSaveOrder} 
             disabled={cart.length === 0 || !clientName || isSaving}
-            className="bg-blue-600 hover:bg-blue-700 text-white w-36 h-20 rounded-lg shadow-lg flex flex-col items-center justify-center font-black transition-colors disabled:opacity-50 active:scale-95"
+            className={`${isEditMode ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'} text-white w-40 h-20 rounded-lg shadow-lg flex flex-col items-center justify-center font-black transition-colors disabled:opacity-50 active:scale-95`}
           >
              <Save className="w-6 h-6 mb-1" />
-             GUARDAR (F10)
+             {isEditMode ? 'SOBREESCRIBIR' : 'GUARDAR (F10)'}
           </button>
         </div>
       </div>
@@ -1078,4 +1148,4 @@ export const AdvancedOrderEntry: React.FC = () => {
       )}
     </div>
   );
-}
+};
