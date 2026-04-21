@@ -126,7 +126,8 @@ export const MobileOrders: React.FC = () => {
             supabase.from('auto_promotions').select('*').eq('is_active', true),
             supabase.from('promotions').select('*').eq('is_active', true),
             clientQuery,
-            supabase.from('products').select('*').eq('is_active', true),
+            // 🔥 CORRECCIÓN 1: Ahora consultamos la vista que trae el stock precalculado de los lotes
+            supabase.from('vw_active_products').select('*'),
             supabase.from('sales').select('*').eq('payment_status', 'PENDING').eq('payment_method', 'CREDITO'),
             supabase.from('orders').select('*').eq('seller_id', sellerId).gte('created_at', today),
             supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true)
@@ -160,7 +161,6 @@ export const MobileOrders: React.FC = () => {
     return list ? Number(list.multiplier || list.factor || 1) : 1;
   };
 
-  // LÓGICA DE PRECIO ESTRICTA A LA UNIDAD MÍNIMA
   const calculateCalculatedPrice = (p: Product, unit: string, listId: string) => {
     let baseUnitPrice = Number(p.price_unit || 0);
     let defaultDiscount = 0;
@@ -190,7 +190,6 @@ export const MobileOrders: React.FC = () => {
     return { price: finalPrice, discount: defaultDiscount };
   };
 
-  // CLON EXACTO DEL ESCRITORIO
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
 
@@ -280,7 +279,6 @@ export const MobileOrders: React.FC = () => {
     setCart(cleanCart);
   };
 
-  // CLON EXACTO DEL ESCRITORIO
   const executeAddToCart = () => {
     if (!selectedProduct) return;
     if (entryQty <= 0) return;
@@ -290,9 +288,11 @@ export const MobileOrders: React.FC = () => {
     const requiredBaseUnits = entryQty * conversionFactor;
 
     const availableBatches = loadedBatches[selectedProduct.id] || [];
+    
+    // 🔥 CORRECCIÓN 2: Eliminamos la dependencia al "stock" heredado fantasma
     let totalStock = availableBatches.length > 0 
         ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) 
-        : Number(selectedProduct.current_stock || selectedProduct.stock || 0);
+        : Number(selectedProduct.current_stock || 0);
 
     let tempCart = [...cart];
     const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === entryUnit);
@@ -349,7 +349,6 @@ export const MobileOrders: React.FC = () => {
     setViewMode('CLIENT_DETAIL');
   };
 
-  // CLON EXACTO DEL ESCRITORIO
   const handleCartQtyChange = (id: string, newQty: number) => {
     if (isNaN(newQty) || newQty <= 0) return;
     
@@ -365,9 +364,11 @@ export const MobileOrders: React.FC = () => {
     const requiredBaseUnits = newQty * conversionFactor;
 
     const availableBatches = loadedBatches[pRef.id] || [];
+    
+    // 🔥 CORRECCIÓN 3: Eliminamos la trampa de stock heredado aquí también
     let totalStock = availableBatches.length > 0 
         ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) 
-        : Number(pRef.current_stock || pRef.stock || 0);
+        : Number(pRef.current_stock || 0);
 
     if (isEditMode && item.original_base_qty) {
         totalStock += item.original_base_qty;
@@ -412,7 +413,7 @@ export const MobileOrders: React.FC = () => {
             const pIds = [...new Set(orderItemsData.map((item: any) => item.product_id))];
             
             const [prodsRes, batchesRes] = await Promise.all([
-                supabase.from('products').select('*').in('id', pIds),
+                supabase.from('vw_active_products').select('*').in('id', pIds), // Consultar la vista también aquí
                 supabase.from('batches').select('*').in('product_id', pIds).gt('quantity_current', 0)
             ]);
 
@@ -471,12 +472,19 @@ export const MobileOrders: React.FC = () => {
     } catch(e) { alert("Error al cargar pedido."); } finally { setIsLoadingData(false); }
   };
 
-  // DESCARGA LOTES EN TIEMPO REAL AL SELECCIONAR PRODUCTO PARA EVITAR LIMITE DE 1000
   const handleProductClick = async (p: Product) => {
     setIsLoadingData(true);
     try {
-        const { data: bData } = await supabase.from('batches').select('*').eq('product_id', p.id).gt('quantity_current', 0);
-        const freshStock = bData ? bData.reduce((sum, b) => sum + Number(b.quantity_current || 0), 0) : Number(p.current_stock || p.stock || 0);
+        // 🔥 CORRECCIÓN 4: Capturamos y manejamos errores de RLS aquí
+        const { data: bData, error } = await supabase.from('batches').select('*').eq('product_id', p.id).gt('quantity_current', 0);
+        
+        if (error) {
+            console.error("Error crítico leyendo lotes:", error);
+            alert("Error de conexión validando el stock en tiempo real.");
+            return;
+        }
+
+        const freshStock = bData ? bData.reduce((sum, b) => sum + Number(b.quantity_current || 0), 0) : Number(p.current_stock || 0);
         
         const updatedProduct = { ...p, current_stock: freshStock };
         
@@ -509,7 +517,6 @@ export const MobileOrders: React.FC = () => {
      }
   };
 
-  // CLON EXACTO DEL ESCRITORIO
   const handleSaveOrder = async () => {
     if (!selectedClient) return;
     if (cart.length === 0) { alert("El pedido está vacío."); return; }
@@ -561,8 +568,15 @@ export const MobileOrders: React.FC = () => {
     try {
       const rpcName = isEditMode ? 'update_order_transaction' : 'process_order_transaction';
       
+      // 🔥 CORRECCIÓN 5: Inspección del payload y captura de errores crudos de PostgreSQL
+      console.log(`📦 PAYLOAD ENVIADO AL RPC (${rpcName}):`, JSON.stringify(orderPayload, null, 2));
+
       const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
-      if (error) throw error;
+      
+      if (error) {
+          console.error("🔥 EL BACKEND RECHAZÓ EL PEDIDO:", error);
+          throw error; 
+      }
 
       alert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
       
@@ -571,7 +585,8 @@ export const MobileOrders: React.FC = () => {
       setCart([]);
       handleSellerSelect(currentSellerId); 
     } catch (error: any) { 
-        alert("Error al guardar: " + error.message); 
+        // Mostrará el error exacto que arroje PostgreSQL en vez de fallar en silencio
+        alert("Error al guardar: " + (error.message || JSON.stringify(error))); 
     } finally { 
         setIsSaving(false); 
     }
