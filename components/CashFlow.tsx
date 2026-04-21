@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { CashMovement, ExpenseCategory, ScheduledTransaction } from '../types';
-import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, BarChart3, Briefcase, Store, Truck, Coins } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, BarChart3, Briefcase, Store, Truck, Coins, Loader2 } from 'lucide-react';
 
 type Tab = 'SESSION' | 'DASHBOARD' | 'MOVEMENTS' | 'PLANNER' | 'CONFIG';
 

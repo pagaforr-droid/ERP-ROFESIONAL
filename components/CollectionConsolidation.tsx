@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Wallet, CheckSquare, Square, Save, Printer, User, Filter, AlertCircle, FileText, Loader2, CheckCircle2, Clock, HelpCircle, History, Download, XCircle, Search, Trash2, Edit, UserPlus, ChevronRight } from 'lucide-react';
 import { CollectionPlanilla, CollectionRecord, Client } from '../types';
@@ -360,7 +360,7 @@ export const CollectionConsolidation: React.FC = () => {
             amount: item.amountToPay
          }));
 
-         manualLiquidation(payments, currentUser?.id || 'ADMIN', {
+         await manualLiquidation(payments, currentUser?.id || 'ADMIN', {
             date: new Date(planillaDate).toISOString(),
             glosa: planillaGlosa,
             ...(editingPlanillaData?.type === 'MANUAL' ? {
@@ -489,17 +489,22 @@ export const CollectionConsolidation: React.FC = () => {
       setShowAdminAuthModal(null);
    };
 
-   const confirmAnnulPlanilla = () => {
+   const confirmAnnulPlanilla = async () => {
       if (showAnnulModal) {
-         annulCollectionPlanilla(showAnnulModal, currentUser?.id);
-         setShowAnnulModal(null);
-         if (selectedPlanillaId === showAnnulModal) {
-            setSelectedPlanillaId(null);
+         try {
+            await annulCollectionPlanilla(showAnnulModal, currentUser?.id || 'ADMIN');
+            setShowAnnulModal(null);
+            if (selectedPlanillaId === showAnnulModal) {
+               setSelectedPlanillaId(null);
+            }
+         } catch (error) {
+            console.error("Error al anular:", error);
+            alert("Error al anular la planilla en Supabase.");
          }
       }
    };
 
-   const confirmEditPlanilla = () => {
+   const confirmEditPlanilla = async () => {
       if (showEditPlanillaId) {
          // 1. Find the Planilla and Records before reverting
          const p = collectionPlanillas.find(x => x.id === showEditPlanillaId);
@@ -508,56 +513,66 @@ export const CollectionConsolidation: React.FC = () => {
          const planillaRecords = collectionRecords.filter(r => p.records.includes(r.id));
          const wasManual = planillaRecords.every(r => r.seller_id === 'MANUAL');
 
-         // 2. Extorno (Revertir para editar sin anular) to put the balances and records back
-         revertPlanillaForEdit(showEditPlanillaId);
-         setEditingPlanillaData({ id: p.id, code: p.code, type: wasManual ? 'MANUAL' : 'PENDING' });
+         try {
+            // 2. Extorno (Revertir para editar sin anular) to put the balances and records back
+            await revertPlanillaForEdit(showEditPlanillaId);
+            setEditingPlanillaData({ id: p.id, code: p.code, type: wasManual ? 'MANUAL' : 'PENDING' });
 
-         if (wasManual && planillaRecords.length > 0) {
-            // Restore Manual workflow state (CART)
-            const restoredCartItems: ManualCartItem[] = [];
+            if (wasManual && planillaRecords.length > 0) {
+               // Restore Manual workflow state (CART)
+               const restoredCartItems: ManualCartItem[] = [];
 
-            planillaRecords.forEach(r => {
-               const sale = sales.find(s => s.id === r.sale_id);
-               if (sale) {
-                  // After revertPlanillaForEdit, the balance in store is already returned!
-                  const currentReturnedBalance = sale.balance !== undefined ? sale.balance : sale.total;
+               planillaRecords.forEach(r => {
+                  const sale = sales.find(s => s.id === r.sale_id);
+                  if (sale) {
+                     // After revertPlanillaForEdit, the balance in store is already returned!
+                     const currentReturnedBalance = sale.balance !== undefined ? sale.balance : sale.total;
 
-                  restoredCartItems.push({
-                     saleId: sale.id,
-                     clientName: sale.client_name || r.client_name,
-                     clientDoc: sale.client_ruc || 'S/D',
-                     docRef: r.document_ref,
-                     date: sale.created_at,
-                     total: sale.total,
-                     balance: currentReturnedBalance,
-                     amountToPay: r.amount_reported
-                  });
-               }
-            });
+                     restoredCartItems.push({
+                        saleId: sale.id,
+                        clientName: sale.client_name || r.client_name,
+                        clientDoc: sale.client_ruc || 'S/D',
+                        docRef: r.document_ref,
+                        date: sale.created_at,
+                        total: sale.total,
+                        balance: currentReturnedBalance,
+                        amountToPay: r.amount_reported
+                     });
+                  }
+               });
 
-            setPlanillaDate(p.date ? p.date.split('T')[0] : new Date().toISOString().split('T')[0]);
-            setPlanillaGlosa(p.glosa || '');
-            setManualCart(restoredCartItems);
-            setActiveTab('MANUAL');
+               setPlanillaDate(p.date ? p.date.split('T')[0] : new Date().toISOString().split('T')[0]);
+               setPlanillaGlosa(p.glosa || '');
+               setManualCart(restoredCartItems);
+               setActiveTab('MANUAL');
 
-         } else {
-            // Normal Pending Restoration
-            setActiveTab('PENDING');
-            setSelectedIds(new Set(p.records.filter(id => {
-               const rec = collectionRecords.find(r => r.id === id);
-               return rec && rec.seller_id !== 'MANUAL';
-            })));
+            } else {
+               // Normal Pending Restoration
+               setActiveTab('PENDING');
+               setSelectedIds(new Set(p.records.filter(id => {
+                  const rec = collectionRecords.find(r => r.id === id);
+                  return rec && rec.seller_id !== 'MANUAL';
+               })));
+            }
+
+            setSelectedPlanillaId(null);
+            setShowEditPlanillaId(null);
+         } catch (error) {
+            console.error("Error al revertir la planilla:", error);
+            alert("Error al revertir la planilla para ediciÃ³n.");
          }
-
-         setSelectedPlanillaId(null);
-         setShowEditPlanillaId(null);
       }
    };
 
-   const handleRemoveRecordFromPlanilla = (recordId: string) => {
+   const handleRemoveRecordFromPlanilla = async (recordId: string) => {
       if (!selectedPlanillaId) return;
       if (!window.confirm("Â¿EstÃ¡ seguro de extraer este documento de la planilla guardada? Esto recalcularÃ¡ los saldos automÃ¡ticamente y devolverÃ¡ el voucher a estado Pendiente.")) return;
-      removeRecordFromPlanilla(selectedPlanillaId, recordId);
+      try {
+         await removeRecordFromPlanilla(selectedPlanillaId, recordId);
+      } catch (error) {
+         console.error("Error al remover el registro:", error);
+         alert("Error al intentar extraer el documento.");
+      }
    };
 
    // --- RENDER HELPERS ---
