@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+﻿import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Wallet, CheckSquare, Square, Save, Printer, User, Filter, AlertCircle, FileText, Loader2, CheckCircle2, Clock, HelpCircle, History, Download, XCircle, Search, Trash2, Edit, UserPlus, ChevronRight } from 'lucide-react';
 import { CollectionPlanilla, CollectionRecord, Client } from '../types';
@@ -159,6 +159,11 @@ export const CollectionConsolidation: React.FC = () => {
            .single();
         setIsSessionOpen(!!session);
 
+         const { data: recData } = await supabase.from('collection_records').select('*');
+         const { data: planData } = await supabase.from('collection_planillas').select('*');
+         if (recData) useStore.setState({ collectionRecords: recData as any[] });
+         if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
+
         // Cargar categorias y preseleccionar
         const { data: catData } = await supabase.from('expense_categories').select('*');
         if (catData) {
@@ -212,7 +217,7 @@ export const CollectionConsolidation: React.FC = () => {
             if (error.message.includes('Aperturado')) {
                alert("Seguridad: No se puede generar una Planilla de Cobranzas sin un Turno de Caja Aperturado activamente.");
             } else {
-               alert(`Error de sincronización con Supabase: ${error.message}`);
+               alert(`Error de sincronizaciÃ³n con Supabase: ${error.message}`);
             }
             setIsProcessing(false);
             return;
@@ -236,7 +241,7 @@ export const CollectionConsolidation: React.FC = () => {
       } catch (error) {
          console.error(error);
          setIsProcessing(false);
-         alert("Ocurrió un error al procesar la planilla.");
+         alert("OcurriÃ³ un error al procesar la planilla.");
       }
    };
 
@@ -373,7 +378,7 @@ export const CollectionConsolidation: React.FC = () => {
       } catch (error) {
          console.error(error);
          setIsProcessing(false);
-         alert("Ocurrió un error al procesar la planilla manual.");
+         alert("OcurriÃ³ un error al procesar la planilla manual.");
       }
    };
 
@@ -391,7 +396,7 @@ export const CollectionConsolidation: React.FC = () => {
       excelData.push([]); // Empty row
 
       // Headers
-      excelData.push(['N°', 'FECHA DOC', 'VENDEDOR', 'CLIENTE', 'NRO DOCUMENTO', 'IMPORTE (S/)']);
+      excelData.push(['NÂ°', 'FECHA DOC', 'VENDEDOR', 'CLIENTE', 'NRO DOCUMENTO', 'IMPORTE (S/)']);
 
       // Data Rows
       records.forEach((r, i) => {
@@ -415,7 +420,7 @@ export const CollectionConsolidation: React.FC = () => {
 
       // Simple styling to make it look professional (Set column widths)
       ws['!cols'] = [
-         { wch: 5 },  // N°
+         { wch: 5 },  // NÂ°
          { wch: 15 }, // Fecha Doc
          { wch: 25 }, // Vendedor
          { wch: 40 }, // Cliente
@@ -470,7 +475,7 @@ export const CollectionConsolidation: React.FC = () => {
       const isValid = adminUsers.some(admin => admin.password === adminAuthInput);
 
       if (!isValid) {
-         setAdminAuthError('Contraseña incorrecta o permisos insuficientes.');
+         setAdminAuthError('ContraseÃ±a incorrecta o permisos insuficientes.');
          return;
       }
 
@@ -551,7 +556,7 @@ export const CollectionConsolidation: React.FC = () => {
 
    const handleRemoveRecordFromPlanilla = (recordId: string) => {
       if (!selectedPlanillaId) return;
-      if (!window.confirm("¿Está seguro de extraer este documento de la planilla guardada? Esto recalculará los saldos automáticamente y devolverá el voucher a estado Pendiente.")) return;
+      if (!window.confirm("Â¿EstÃ¡ seguro de extraer este documento de la planilla guardada? Esto recalcularÃ¡ los saldos automÃ¡ticamente y devolverÃ¡ el voucher a estado Pendiente.")) return;
       removeRecordFromPlanilla(selectedPlanillaId, recordId);
    };
 
@@ -564,8 +569,8 @@ export const CollectionConsolidation: React.FC = () => {
       return (
          <div className="hidden print:block absolute inset-0 bg-white z-[9999] p-8 text-black" style={{ fontFamily: 'Arial, sans-serif' }}>
             <div className="text-center border-b-2 border-black pb-4 mb-6">
-               <h1 className="text-2xl font-bold uppercase tracking-wider">LIQUIDACIÓN DE COBRANZAS</h1>
-               <h2 className="text-xl font-bold mt-1">PLANILLA N° {selectedPlanilla.code}</h2>
+               <h1 className="text-2xl font-bold uppercase tracking-wider">LIQUIDACIÃ“N DE COBRANZAS</h1>
+               <h2 className="text-xl font-bold mt-1">PLANILLA NÂ° {selectedPlanilla.code}</h2>
                <div className="flex justify-between mt-4 text-sm font-bold text-gray-700">
                   <span>FECHA: {new Date(selectedPlanilla.date).toLocaleDateString()} {new Date(selectedPlanilla.date).toLocaleTimeString()}</span>
                   <span>GENERADO POR: {currentUser?.name || selectedPlanilla.user_id || 'SISTEMA'}</span>
@@ -575,7 +580,7 @@ export const CollectionConsolidation: React.FC = () => {
             <table className="w-full text-sm border-collapse mb-8">
                <thead>
                   <tr className="bg-gray-100 border-y-2 border-black text-left">
-                     <th className="py-2 px-1">N°</th>
+                     <th className="py-2 px-1">NÂ°</th>
                      <th className="py-2 px-1">Vendedor</th>
                      <th className="py-2 px-1">Cliente</th>
                      <th className="py-2 px-1">Documento</th>
@@ -741,7 +746,7 @@ export const CollectionConsolidation: React.FC = () => {
                      {/* LEFT COL: Search Client */}
                      <div className="w-1/3 border-r border-slate-200 flex flex-col bg-slate-50">
                         <div className="p-3 border-b border-slate-200 bg-white">
-                           <label className="text-xs font-bold text-slate-500 mb-1 block">Código / Nombre / Cliente / RUC</label>
+                           <label className="text-xs font-bold text-slate-500 mb-1 block">CÃ³digo / Nombre / Cliente / RUC</label>
                            <input
                               type="text"
                               autoFocus
@@ -879,9 +884,9 @@ export const CollectionConsolidation: React.FC = () => {
                      <div className="bg-blue-100 p-3 rounded-full mb-3">
                         <HelpCircle className="w-8 h-8 text-blue-600" />
                      </div>
-                     <h3 className="text-lg font-bold text-slate-800">¿Crear Planilla?</h3>
+                     <h3 className="text-lg font-bold text-slate-800">Â¿Crear Planilla?</h3>
                      <p className="text-slate-500 text-sm mt-2">
-                        Se ingresarán <strong>{showConfirmModal === 'MANUAL' ? manualSelectedIds.size : selectedIds.size} cobros</strong> a caja por:
+                        Se ingresarÃ¡n <strong>{showConfirmModal === 'MANUAL' ? manualSelectedIds.size : selectedIds.size} cobros</strong> a caja por:
                      </p>
                      <div className="text-3xl font-bold text-slate-900 mt-2">
                         S/ {showConfirmModal === 'MANUAL' ? manualTotals.toFixed(2) : totals.toFixed(2)}
@@ -922,10 +927,10 @@ export const CollectionConsolidation: React.FC = () => {
                   <div className="mx-auto bg-green-100 w-20 h-20 rounded-full flex items-center justify-center mb-4 shadow-inner">
                      <CheckCircle2 className="w-12 h-12 text-green-600" />
                   </div>
-                  <h3 className="text-xl font-bold text-slate-800 mb-2">¡Planilla Generada!</h3>
+                  <h3 className="text-xl font-bold text-slate-800 mb-2">Â¡Planilla Generada!</h3>
                   <p className="text-slate-600 mb-6 text-sm leading-relaxed">
                      Se ha generado el ingreso a caja por <strong className="text-green-700 text-lg">S/ {lastTotal.toFixed(2)}</strong>.<br />
-                     Puede revisar el formato de impresión A4 en el Historial.
+                     Puede revisar el formato de impresiÃ³n A4 en el Historial.
                   </p>
                   <button
                      onClick={() => setShowSuccessModal(false)}
@@ -946,11 +951,11 @@ export const CollectionConsolidation: React.FC = () => {
                         <User className="w-8 h-8 text-slate-700" />
                      </div>
                      <h3 className="text-lg font-bold text-slate-800">
-                        {showAdminAuthModal === 'ANNUL' ? 'Autorización para Anular' : 'Autorización para Editar'}
+                        {showAdminAuthModal === 'ANNUL' ? 'AutorizaciÃ³n para Anular' : 'AutorizaciÃ³n para Editar'}
                      </h3>
                      <p className="text-slate-500 text-sm mt-2">
-                        Esta acción requiere privilegios de <strong className="text-slate-700">Administrador</strong>.
-                        Ingrese la contraseña maestra para continuar.
+                        Esta acciÃ³n requiere privilegios de <strong className="text-slate-700">Administrador</strong>.
+                        Ingrese la contraseÃ±a maestra para continuar.
                      </p>
                   </div>
 
@@ -958,7 +963,7 @@ export const CollectionConsolidation: React.FC = () => {
                      <input
                         type="password"
                         autoFocus
-                        placeholder="Contraseña de Administrador"
+                        placeholder="ContraseÃ±a de Administrador"
                         className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-center font-bold tracking-widest text-slate-800 shadow-inner bg-slate-50"
                         value={adminAuthInput}
                         onChange={(e) => setAdminAuthInput(e.target.value)}
@@ -1066,9 +1071,9 @@ export const CollectionConsolidation: React.FC = () => {
                      <input type="date" className="w-full border border-slate-300 rounded p-1 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" value={planillaDate} onChange={(e) => setPlanillaDate(e.target.value)} />
                   </div>
                   <div className="flex-1 min-w-[150px]">
-                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Categoría (Ingreso)</label>
+                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">CategorÃ­a (Ingreso)</label>
                      <select className="w-full border border-slate-300 rounded p-1 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={selectedCategoryId} onChange={(e) => setSelectedCategoryId(e.target.value)}>
-                        <option value="">Seleccione Categoría...</option>
+                        <option value="">Seleccione CategorÃ­a...</option>
                         {expenseCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                      </select>
                   </div>
@@ -1108,7 +1113,7 @@ export const CollectionConsolidation: React.FC = () => {
                         />
                      </div>
                      <div className="flex-1 min-w-[150px] max-w-xs">
-                        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Glosa / Observación</label>
+                        <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Glosa / ObservaciÃ³n</label>
                         <input
                            type="text"
                            placeholder="Motivo o detalle del ingreso..."
@@ -1122,7 +1127,7 @@ export const CollectionConsolidation: React.FC = () => {
                      {editingPlanillaData?.type === 'MANUAL' && (
                         <div className="bg-amber-100 text-amber-800 px-4 py-1.5 rounded border border-amber-300 font-bold text-sm flex items-center shadow-sm animate-pulse-fast">
                            <Edit className="w-4 h-4 mr-2" /> Editando: {editingPlanillaData.code}
-                           <button onClick={() => setEditingPlanillaData(null)} className="ml-3 text-amber-600 hover:text-amber-900 transition-colors" title="Cancelar Edición"><XCircle className="w-4 h-4" /></button>
+                           <button onClick={() => setEditingPlanillaData(null)} className="ml-3 text-amber-600 hover:text-amber-900 transition-colors" title="Cancelar EdiciÃ³n"><XCircle className="w-4 h-4" /></button>
                         </div>
                      )}
                      <button
@@ -1226,13 +1231,13 @@ export const CollectionConsolidation: React.FC = () => {
                         <table className="w-full text-sm text-left relative">
                            <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10">
                               <tr>
-                                 <th className="p-3 w-10 text-center">N°</th>
+                                 <th className="p-3 w-10 text-center">NÂ°</th>
                                  <th className="p-3">Cliente</th>
                                  <th className="p-3">Doc Ref.</th>
                                  <th className="p-3 text-right">Total.Doc</th>
                                  <th className="p-3 text-right">Saldo Deudor</th>
                                  <th className="p-3 text-right w-40">Importe a Pagar (S/)</th>
-                                 <th className="p-3 w-20 text-center">Acción</th>
+                                 <th className="p-3 w-20 text-center">AcciÃ³n</th>
                               </tr>
                            </thead>
                            <tbody className="divide-y divide-slate-100">
@@ -1285,9 +1290,9 @@ export const CollectionConsolidation: React.FC = () => {
                         <div className="bg-slate-50 p-6 rounded-full border border-slate-100 mb-4">
                            <Wallet className="w-16 h-16 opacity-30 text-slate-400" />
                         </div>
-                        <h3 className="text-xl font-bold text-slate-600">Planilla Vacía</h3>
+                        <h3 className="text-xl font-bold text-slate-600">Planilla VacÃ­a</h3>
                         <p className="text-sm mt-2 text-slate-500 max-w-sm text-center">
-                           Aún no ha agregado documentos a esta planilla de cobranza múltiple.
+                           AÃºn no ha agregado documentos a esta planilla de cobranza mÃºltiple.
                         </p>
                         <button
                            onClick={() => setShowManualSearchModal(true)}
@@ -1350,7 +1355,7 @@ export const CollectionConsolidation: React.FC = () => {
                         <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center gap-2">
                            <div>
                               <h3 className="font-bold text-lg text-slate-800">{selectedPlanilla.code}</h3>
-                              <p className="text-xs text-slate-500">Detenalle de recaudación financiera</p>
+                              <p className="text-xs text-slate-500">Detenalle de recaudaciÃ³n financiera</p>
                            </div>
                            <div className="flex gap-2">
                               {selectedPlanilla.status === 'ACTIVE' && (
@@ -1358,14 +1363,14 @@ export const CollectionConsolidation: React.FC = () => {
                                     <button
                                        onClick={() => initiateAdminAuth("EDIT", selectedPlanilla.id)}
                                        className="flex items-center text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded border border-blue-200 transition-colors"
-                                       title="Anulará la planilla y seleccionará los documentos, listo para modificar y volver a procesar."
+                                       title="AnularÃ¡ la planilla y seleccionarÃ¡ los documentos, listo para modificar y volver a procesar."
                                     >
                                        <Edit className="w-4 h-4 mr-1" /> Editar
                                     </button>
                                     <button
                                        onClick={() => initiateAdminAuth("ANNUL", selectedPlanilla.id)}
                                        className="flex items-center text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded border border-red-200 transition-colors"
-                                       title="Revertirá el ingreso a caja y mandará todo a Pendiente"
+                                       title="RevertirÃ¡ el ingreso a caja y mandarÃ¡ todo a Pendiente"
                                     >
                                        <XCircle className="w-4 h-4 mr-1" /> Anular
                                     </button>
@@ -1384,7 +1389,7 @@ export const CollectionConsolidation: React.FC = () => {
                                  <Printer className="w-4 h-4 mr-1" /> Imprimir A4
                               </button>
                               <button onClick={() => setSelectedPlanillaId(null)} className="ml-2 text-slate-400 hover:text-slate-600 bg-slate-100 p-1.5 rounded">
-                                 ✕
+                                 âœ•
                               </button>
                            </div>
                         </div>
@@ -1447,4 +1452,5 @@ export const CollectionConsolidation: React.FC = () => {
       </div>
    );
 };
+
 

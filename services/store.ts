@@ -1843,7 +1843,7 @@ export const useStore = create<AppState>((set, get) => ({
 
    openCashSession: async (amount, userId) => {
       const { data: newSessionId, error } = await supabase.rpc('open_cash_session', {
-         p_opening_amount: amount,
+         p_amount: amount,
          p_user_id: userId
       });
 
