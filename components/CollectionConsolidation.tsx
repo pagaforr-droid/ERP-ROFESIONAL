@@ -1,10 +1,9 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Wallet, CheckSquare, Square, Save, Printer, User, Filter, AlertCircle, FileText, Loader2, CheckCircle2, Clock, HelpCircle, History, Download, XCircle, Search, Trash2, Edit, UserPlus, ChevronRight } from 'lucide-react';
 import { CollectionPlanilla, CollectionRecord, Client } from '../types';
 import * as XLSX from 'xlsx';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../services/supabase';
 
 export const CollectionConsolidation: React.FC = () => {
    const { collectionRecords, collectionPlanillas, sellers, consolidateCollections, currentUser, annulCollectionPlanilla, revertPlanillaForEdit, removeRecordFromPlanilla, sales, manualLiquidation, users, clients } = useStore();

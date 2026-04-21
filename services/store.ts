@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { Product, Batch, Sale, Vehicle, DispatchSheet, Client, Supplier, Warehouse, Driver, Transporter, Purchase, Zone, PriceList, Seller, Order, SaleItem, BatchAllocation, CompanyConfig, DocumentSeries, CashMovement, ExpenseCategory, ScheduledTransaction, DispatchLiquidation, User, AttendanceRecord, Promotion, Combo, CollectionRecord, CollectionPlanilla, OrderItem, AutoPromotion, Quota, Employee, SalaryAdvance, PayrollRecord } from '../types';
 import { calculatePromotions } from '../utils/promotions';
+import { supabase } from './supabase';
 
 // Helper for UUID generation
 const generateUUID = () => {
