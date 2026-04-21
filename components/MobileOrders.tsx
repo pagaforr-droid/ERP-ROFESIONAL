@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
 import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User } from 'lucide-react';
@@ -27,7 +27,6 @@ interface CartItem {
 }
 
 export const MobileOrders: React.FC = () => {
-  // Solo conservamos el control de sesión del usuario logueado en la PC (si aplica)
   const { currentUser, logout } = useStore();
 
   // === ESTADOS DE NAVEGACIÓN MÓVIL ===
@@ -37,8 +36,8 @@ export const MobileOrders: React.FC = () => {
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
 
   // === ESTADOS MAESTROS (100% SUPABASE) ===
-  const [dbSellers, setDbSellers] = useState<any[]>([]); // <--- AHORA VIENEN DE SUPABASE
-  const [dbZones, setDbZones] = useState<any[]>([]);     // <--- AHORA VIENEN DE SUPABASE
+  const [dbSellers, setDbSellers] = useState<any[]>([]); 
+  const [dbZones, setDbZones] = useState<any[]>([]);     
   const [dbCompany, setDbCompany] = useState<any>(null);
   const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
   const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
@@ -103,9 +102,8 @@ export const MobileOrders: React.FC = () => {
             if (sellRes.data) setDbSellers(sellRes.data);
             if (zoneRes.data) setDbZones(zoneRes.data);
             
-            // Auto-login si es perfil vendedor en el sistema principal
             if (currentUser?.role === 'SELLER' && sellRes.data) {
-                const matchingSeller = sellRes.data.find(s => s.name.trim().toUpperCase() === currentUser.name.trim().toUpperCase());
+                const matchingSeller = sellRes.data.find(s => (s.name || '').trim().toUpperCase() === (currentUser.name || '').trim().toUpperCase());
                 if (matchingSeller) handleSellerSelect(matchingSeller.id);
             }
         } catch (error) {
@@ -129,7 +127,6 @@ export const MobileOrders: React.FC = () => {
 
     try {
         const today = new Date().toISOString().split('T')[0];
-        // Filtramos inteligentemente usando los dbZones reales
         const sellerZoneIds = dbZones.filter(z => z.assigned_seller_id === sellerId).map(z => z.id);
         
         let clientQuery = supabase.from('clients').select('*').eq('is_active', true);
@@ -155,9 +152,10 @@ export const MobileOrders: React.FC = () => {
         if (cliRes.data) setDbClients(cliRes.data as Client[]);
         if (salesRes.data) setDbSales(salesRes.data as Sale[]);
         if (ordersRes.data) setDbOrders(ordersRes.data as Order[]);
+        
         if (seriesRes.data && seriesRes.data.length > 0) {
             setDbSeries(seriesRes.data);
-            setPedidoSeries(seriesRes.data[0].series);
+            setPedidoSeries(seriesRes.data[0].series || '');
             setPedidoNumber(String(seriesRes.data[0].current_number + 1).padStart(8, '0'));
         }
 
@@ -199,16 +197,16 @@ export const MobileOrders: React.FC = () => {
     price = price * getMultiplier(listId);
 
     const activePromo = dbPromos.find(promo => {
-        if (!promo.product_ids.includes(p.id)) return false;
+        if (!(promo.product_ids || []).includes(p.id)) return false;
         if (!isPromoValidForContext(promo, 'IN_STORE', selectedClient?.city || '', currentSellerId || currentUser?.id, currentUser?.role)) return false;
         if (promo.target_price_list_ids?.length > 0 && listId && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(listId)) return false;
         return true;
     });
 
     if (activePromo) {
-        if (activePromo.type === 'PERCENTAGE_DISCOUNT') defaultDiscount = activePromo.value;
+        if (activePromo.type === 'PERCENTAGE_DISCOUNT') defaultDiscount = Number(activePromo.value || 0);
         else if (activePromo.type === 'FIXED_PRICE') {
-            let promoPrice = Number(activePromo.value);
+            let promoPrice = Number(activePromo.value || 0);
             if (p.package_type && unit === p.package_type && !p.price_package) promoPrice = promoPrice * Number(p.package_content || 1);
             price = promoPrice;
         }
@@ -239,25 +237,25 @@ export const MobileOrders: React.FC = () => {
             if (ap.condition_product_id) return i.product_id === ap.condition_product_id;
             return true;
         }).reduce((sum, i) => sum + getBaseQuantity(i), 0); 
-        if (qtyBought >= ap.condition_amount) { applies = true; multiplier = Math.floor(qtyBought / ap.condition_amount); }
+        if (qtyBought >= (ap.condition_amount || 1)) { applies = true; multiplier = Math.floor(qtyBought / (ap.condition_amount || 1)); }
       } 
       else if (ap.condition_type === 'SPEND_Y_TOTAL') {
         const conditionItemKeys = ap.condition_product_ids || [];
-        const totalSpent = cleanCart.reduce((sum, item) => (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) ? sum : sum + item.total_price, 0);
-        if (totalSpent >= ap.condition_amount) { applies = true; multiplier = Math.floor(totalSpent / ap.condition_amount); }
+        const totalSpent = cleanCart.reduce((sum, item) => (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) ? sum : sum + (item.total_price || 0), 0);
+        if (totalSpent >= (ap.condition_amount || 1)) { applies = true; multiplier = Math.floor(totalSpent / (ap.condition_amount || 1)); }
       } 
       else if (ap.condition_type === 'SPEND_Y_CATEGORY') {
         const catSpent = cleanCart.reduce((sum, item) => {
             const p = cartProductsCache[item.product_id] || item.product_ref;
-            return p?.category === ap.condition_category ? sum + item.total_price : sum;
+            return p?.category === ap.condition_category ? sum + (item.total_price || 0) : sum;
         }, 0);
-        if (catSpent >= ap.condition_amount) { applies = true; multiplier = Math.floor(catSpent / ap.condition_amount); }
+        if (catSpent >= (ap.condition_amount || 1)) { applies = true; multiplier = Math.floor(catSpent / (ap.condition_amount || 1)); }
       }
 
       if (applies && multiplier > 0) {
         const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
         if (rewardProduct) {
-          const rewardQty = ap.reward_quantity * multiplier;
+          const rewardQty = (ap.reward_quantity || 1) * multiplier;
           const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
           const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
 
@@ -279,7 +277,7 @@ export const MobileOrders: React.FC = () => {
     const conversionFactor = isPkgMode ? Number(selectedProduct.package_content || 1) : 1; 
     const requiredBaseUnits = entryQty * conversionFactor;
 
-    let totalStock = selectedProduct.current_stock;
+    let totalStock = selectedProduct.current_stock || 0;
     let tempCart = [...cart];
     const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === entryUnit);
     
@@ -335,7 +333,7 @@ export const MobileOrders: React.FC = () => {
     if (isEditMode && item.original_base_qty) totalStock += item.original_base_qty;
 
     if (totalStock < requiredBaseUnits && !item.is_bonus) {
-        alert(`❌ Stock Insuficiente para ${pRef.name}.\nDisponible: ${totalStock} unid. (Incluye reserva original)`);
+        alert(`❌ Stock Insuficiente para ${pRef.name || 'Producto'}.\nDisponible: ${totalStock} unid. (Incluye reserva original)`);
         return;
     }
 
@@ -351,10 +349,10 @@ export const MobileOrders: React.FC = () => {
     setIsEditMode(false); setOriginalOrder(null); setEditingOrderId(null);
     setSelectedClient(client);
     setSelectedClientId(client.id);
-    setClientAddress(client.address);
+    setClientAddress(client.address || '');
     setPriceListId(client.price_list_id || '');
-    setPaymentMethod(client.payment_condition?.toUpperCase().includes('CREDIT') ? 'CREDITO' : 'CONTADO');
-    setDocType(client.doc_number.length === 11 ? 'FACTURA' : 'BOLETA');
+    setPaymentMethod((client.payment_condition || '').toUpperCase().includes('CREDIT') ? 'CREDITO' : 'CONTADO');
+    setDocType((client.doc_number || '').length === 11 ? 'FACTURA' : 'BOLETA');
     setCart([]);
     setClientTab('ORDER'); 
     setViewMode('CLIENT_DETAIL');
@@ -362,7 +360,7 @@ export const MobileOrders: React.FC = () => {
   };
 
   const handleEditOrder = async (order: Order) => {
-    if (order.status !== 'pending') { alert("Solo editables los pendientes."); return; }
+    if (order.status !== 'pending') { alert("Solo editables los pedidos pendientes."); return; }
     setIsLoadingData(true);
     try {
         const { data: orderItemsData, error } = await supabase.from('order_items').select(`*`).eq('order_id', order.id);
@@ -376,8 +374,8 @@ export const MobileOrders: React.FC = () => {
                 const pRef = dbProducts.find(p => p.id === item.product_id) || {} as Product;
                 setCartProductsCache(prev => ({...prev, [pRef.id]: pRef}));
                 return {
-                    id: item.id, product_id: item.product_id, sku: item.product_sku || pRef.sku, name: item.product_name || pRef.name,
-                    quantity: item.quantity, unit_type: item.unit_type || 'UND', unit_price: item.unit_price || 0,
+                    id: item.id, product_id: item.product_id, sku: item.product_sku || pRef.sku || '', name: item.product_name || pRef.name || 'Producto',
+                    quantity: item.quantity || 1, unit_type: item.unit_type || 'UND', unit_price: item.unit_price || 0,
                     discount_percent: item.discount_percent || 0, total_price: item.total_price || 0,
                     is_bonus: item.is_bonus || false, auto_promo_id: item.auto_promo_id || undefined,
                     promo_name: item.auto_promo_id ? 'PROMO' : undefined, product_ref: pRef,
@@ -390,11 +388,12 @@ export const MobileOrders: React.FC = () => {
         setIsEditMode(true);
         setEditingOrderId(order.id);
         setDocType((order.suggested_document_type as any) || 'FACTURA'); 
+        
         if (order.code && order.code.includes('-')) {
-           const [s, n] = order.code.split('-'); setPedidoSeries(s); setPedidoNumber(n);
-        } else { setPedidoNumber(order.code); }
+           const [s, n] = order.code.split('-'); setPedidoSeries(s || ''); setPedidoNumber(n || '');
+        } else { setPedidoNumber(order.code || ''); }
 
-        setPaymentMethod(order.payment_method as any || 'CONTADO'); 
+        setPaymentMethod((order.payment_method as any) || 'CONTADO'); 
         setClientAddress(order.delivery_address || '');
         setSelectedClientId(order.client_id || '');
         if (client) {
@@ -428,15 +427,15 @@ export const MobileOrders: React.FC = () => {
     if (cart.length === 0) { alert("El pedido está vacío."); return; }
     
     setIsSaving(true);
-    const currentTotal = cart.reduce((sum, item) => sum + item.total_price, 0);
+    const currentTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
     const orderPayload = {
       id: isEditMode && originalOrder ? originalOrder.id : crypto.randomUUID(),
       code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${pedidoNumber}`,
       client_id: selectedClientId || null,
-      client_name: selectedClient.name,
-      client_doc_type: selectedClient.doc_type,
-      client_doc_number: selectedClient.doc_number,
+      client_name: selectedClient.name || '',
+      client_doc_type: selectedClient.doc_type || 'RUC',
+      client_doc_number: selectedClient.doc_number || '',
       seller_id: currentSellerId || null,
       suggested_document_type: docType,
       payment_method: paymentMethod,
@@ -451,7 +450,7 @@ export const MobileOrders: React.FC = () => {
           quantity: c.quantity, unit_type: c.unit_type, selected_unit: c.unit_type,
           quantity_presentation: c.quantity, quantity_base: c.quantity * factor,
           unit_price: c.unit_price, discount_percent: c.discount_percent,
-          discount_amount: (c.quantity * c.unit_price) * (c.discount_percent / 100),
+          discount_amount: (c.quantity * c.unit_price) * ((c.discount_percent || 0) / 100),
           total_price: c.total_price, is_bonus: c.is_bonus, auto_promo_id: c.auto_promo_id || null
         };
       })
@@ -467,14 +466,14 @@ export const MobileOrders: React.FC = () => {
       setViewMode('CLIENT_LIST');
       setListTab('HISTORY');
       setCart([]);
-      handleSellerSelect(currentSellerId); // RECARGA EL STOCK Y LOS PEDIDOS DE LA BD
+      handleSellerSelect(currentSellerId); 
     } catch (error: any) { alert("Error al guardar: " + error.message); } 
     finally { setIsSaving(false); }
   };
 
   const confirmPayment = async () => {
     if (!selectedSale || paymentAmount <= 0) return;
-    const currentBalance = selectedSale.balance !== undefined ? selectedSale.balance : selectedSale.total;
+    const currentBalance = selectedSale.balance !== undefined && selectedSale.balance !== null ? selectedSale.balance : selectedSale.total;
     if (paymentAmount > currentBalance) { alert("El monto supera el saldo."); return; }
 
     setIsSaving(true);
@@ -485,7 +484,7 @@ export const MobileOrders: React.FC = () => {
        if (error) throw error;
        alert("Cobro reportado a central.");
        setIsPaymentModalOpen(false); setPaymentAmount(0); setSelectedSale(null);
-       handleSellerSelect(currentSellerId); // Refresca deudas
+       handleSellerSelect(currentSellerId); 
     } catch(e:any) { alert("Error reportando cobro: " + e.message); } 
     finally { setIsSaving(false); }
   };
@@ -496,18 +495,18 @@ export const MobileOrders: React.FC = () => {
   };
 
   // ============================================================================
-  // DERIVED UI DATA
+  // DERIVED UI DATA (A prueba de Nulls)
   // ============================================================================
   const filteredClientsList = useMemo(() => {
       if (!clientSearchTerm) return dbClients;
       const term = clientSearchTerm.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      return dbClients.filter(c => c.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(term) || c.doc_number.includes(term));
+      return dbClients.filter(c => (c.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(term) || (c.doc_number || '').includes(term));
   }, [dbClients, clientSearchTerm]);
 
   const filteredProductsList = useMemo(() => {
       const term = prodSearch.toLowerCase();
       return dbProducts.filter(p => {
-         const matchesSearch = p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term);
+         const matchesSearch = (p.name || '').toLowerCase().includes(term) || (p.sku || '').toLowerCase().includes(term);
          const matchesCategory = selectedCategory === 'TODOS' || p.category === selectedCategory;
          return matchesSearch && matchesCategory;
       });
@@ -515,11 +514,11 @@ export const MobileOrders: React.FC = () => {
 
   const pendingBills = useMemo(() => {
       if (!selectedClient) return [];
-      return dbSales.filter(s => s.client_id === selectedClient.id).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      return dbSales.filter(s => s.client_id === selectedClient.id).sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
   }, [dbSales, selectedClient]);
 
-  const cartTotal = cart.reduce((acc, item) => acc + item.total_price, 0);
-  const categoriesList = useMemo(() => ['TODOS', ...Array.from(new Set(dbProducts.map(p => p.category))).sort()], [dbProducts]);
+  const cartTotal = cart.reduce((acc, item) => acc + Number(item.total_price || 0), 0);
+  const categoriesList = useMemo(() => ['TODOS', ...Array.from(new Set(dbProducts.map(p => p.category))).filter(Boolean).sort()], [dbProducts]);
 
   // ============================================================================
   // RENDER (UI MÓVIL)
@@ -570,7 +569,7 @@ export const MobileOrders: React.FC = () => {
              <div className="flex justify-between items-center mb-4">
                 <div>
                    <h2 className="text-xl font-black">Ruta Móvil</h2>
-                   <p className="text-sm text-blue-300 font-medium">Vendedor: {dbSellers.find(s=>s.id === currentSellerId)?.name}</p>
+                   <p className="text-sm text-blue-300 font-medium">Vendedor: {dbSellers.find(s=>s.id === currentSellerId)?.name || 'Desconocido'}</p>
                 </div>
                 <button onClick={() => setIsExitModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full transition-colors">
                    <LogOut className="w-5 h-5 text-slate-300" />
@@ -601,7 +600,7 @@ export const MobileOrders: React.FC = () => {
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
              {listTab === 'CLIENTS' && filteredClientsList.map(c => {
-                const debt = dbSales.filter(s => s.client_id === c.id && s.payment_status === 'PENDING').reduce((sum, s) => sum + (s.balance || s.total), 0);
+                const debt = dbSales.filter(s => s.client_id === c.id && s.payment_status === 'PENDING').reduce((sum, s) => sum + Number(s.balance ?? s.total ?? 0), 0);
                 return (
                    <div key={c.id} onClick={() => handleClientSelect(c)} className="bg-white p-4 rounded-2xl shadow-sm active:scale-95 transition-transform cursor-pointer border border-slate-100">
                       <div className="flex justify-between items-start mb-2">
@@ -609,7 +608,7 @@ export const MobileOrders: React.FC = () => {
                          <ArrowRight className="text-slate-300 w-5 h-5 shrink-0" />
                       </div>
                       <div className="flex justify-between items-end">
-                         <div className="text-xs text-slate-500 font-mono bg-slate-100 px-2 py-1 rounded inline-block">{c.doc_number}</div>
+                         <div className="text-xs text-slate-500 font-mono bg-slate-100 px-2 py-1 rounded inline-block">{c.doc_number || '-'}</div>
                          {debt > 0 && <span className="bg-red-50 text-red-600 border border-red-100 text-xs px-2 py-1 rounded-lg font-black shadow-sm">Deuda: S/ {debt.toFixed(2)}</span>}
                       </div>
                    </div>
@@ -621,7 +620,7 @@ export const MobileOrders: React.FC = () => {
                 <div key={o.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
                    <div className="flex justify-between items-start mb-2">
                       <div className="bg-slate-100 text-slate-600 text-xs font-mono font-bold px-2 py-1 rounded">{o.code}</div>
-                      <span className="font-black text-slate-900 text-lg">S/ {o.total.toFixed(2)}</span>
+                      <span className="font-black text-slate-900 text-lg">S/ {Number(o.total || 0).toFixed(2)}</span>
                    </div>
                    <h3 className="font-bold text-slate-700 text-sm mb-3">{o.client_name}</h3>
                    {o.status === 'pending' ? (
@@ -657,10 +656,10 @@ export const MobileOrders: React.FC = () => {
                       <button onClick={() => setIsPaymentModalOpen(false)} className="bg-slate-100 p-2 rounded-full"><X className="w-5 h-5 text-slate-500" /></button>
                    </div>
                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6">
-                      <div className="flex justify-between items-center text-sm mb-2"><span className="text-slate-500 font-bold">Total:</span><span className="font-bold">S/ {selectedSale.total.toFixed(2)}</span></div>
+                      <div className="flex justify-between items-center text-sm mb-2"><span className="text-slate-500 font-bold">Total:</span><span className="font-bold">S/ {Number(selectedSale.total || 0).toFixed(2)}</span></div>
                       <div className="flex justify-between items-center text-red-600 border-t border-slate-200 pt-2">
                          <span className="font-black">Saldo Pendiente:</span>
-                         <span className="font-black text-xl">S/ {(selectedSale.balance ?? selectedSale.total).toFixed(2)}</span>
+                         <span className="font-black text-xl">S/ {Number(selectedSale.balance ?? selectedSale.total ?? 0).toFixed(2)}</span>
                       </div>
                    </div>
                    <div className="mb-6">
@@ -676,10 +675,10 @@ export const MobileOrders: React.FC = () => {
 
           <div className="bg-white shadow-sm p-4 sticky top-0 z-20 rounded-b-3xl">
              <div className="flex items-start gap-3 mb-4">
-                <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-2 rounded-full mt-1 active:bg-slate-200"><ChevronLeft className="w-5 h-5 text-slate-600" /></button>
+                <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-2 rounded-full mt-1 active:bg-slate-200"><ChevronLeft className="w-6 h-6 text-slate-600" /></button>
                 <div className="flex-1">
                    <h2 className="font-black text-xl text-slate-900 leading-tight mb-1">{selectedClient?.name}</h2>
-                   <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{selectedClient?.doc_number}</span>
+                   <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{selectedClient?.doc_number || '-'}</span>
                 </div>
              </div>
              
@@ -687,14 +686,14 @@ export const MobileOrders: React.FC = () => {
              <div className="relative mb-4">
                 <div className={`flex items-start gap-2 p-3 bg-slate-50 border rounded-xl ${selectedClient?.branches?.length ? 'active:bg-blue-50 border-blue-200' : 'border-slate-200'}`} onClick={() => { if (selectedClient?.branches?.length) setShowBranchSelector(!showBranchSelector); }}>
                    <MapPin className={`w-5 h-5 shrink-0 ${selectedClient?.branches?.length ? 'text-blue-600' : 'text-slate-400'}`} />
-                   <div className="flex-1 text-sm font-bold text-slate-700 leading-tight">{clientAddress}</div>
+                   <div className="flex-1 text-sm font-bold text-slate-700 leading-tight">{clientAddress || 'Sin dirección'}</div>
                    {selectedClient?.branches?.length ? <ChevronDown className="w-5 h-5 text-blue-500" /> : null}
                 </div>
                 {showBranchSelector && selectedClient?.branches?.length && (
                    <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 shadow-2xl rounded-xl z-50 overflow-hidden">
                       <div className="bg-slate-100 px-4 py-2 border-b border-slate-200 font-bold text-xs text-slate-500 uppercase">Cambiar Dirección</div>
                       <div className="max-h-48 overflow-y-auto p-2 space-y-1">
-                         {[selectedClient.address, ...(selectedClient.branches || [])].map((addr, idx) => (
+                         {[selectedClient.address, ...(selectedClient.branches || [])].filter(Boolean).map((addr, idx) => (
                             <div key={idx} onClick={() => { setClientAddress(addr); setShowBranchSelector(false); }} className="p-3 rounded-lg active:bg-blue-50 bg-white border border-slate-50 flex items-start gap-2">
                                <MapPin className={`w-5 h-5 shrink-0 ${clientAddress === addr ? 'text-blue-600' : 'text-slate-300'}`} />
                                <div className={`text-sm leading-tight ${clientAddress === addr ? 'font-black text-blue-900' : 'font-bold text-slate-600'}`}>{addr}</div>
@@ -747,7 +746,7 @@ export const MobileOrders: React.FC = () => {
                             )}
                             <div className="text-right">
                                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">{item.unit_type}</div>
-                               <div className="font-black text-slate-900 text-xl">S/ {item.total_price.toFixed(2)}</div>
+                               <div className="font-black text-slate-900 text-xl">S/ {Number(item.total_price || 0).toFixed(2)}</div>
                             </div>
                          </div>
                       </div>
@@ -782,12 +781,12 @@ export const MobileOrders: React.FC = () => {
                       <div key={bill.id} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200">
                          <div className="flex justify-between items-start mb-6">
                             <div>
-                               <div className="text-[10px] text-slate-400 font-black uppercase tracking-wider mb-1">{bill.document_type}</div>
+                               <div className="text-[10px] text-slate-400 font-black uppercase tracking-wider mb-1">{bill.document_type || 'DOC'}</div>
                                <div className="font-mono font-black text-slate-800 text-lg">{bill.series}-{bill.number}</div>
                             </div>
                             <div className="text-right">
-                               <div className="text-xs text-slate-400 font-bold line-through">S/ {bill.total.toFixed(2)}</div>
-                               <div className="text-2xl font-black text-red-600">S/ {(bill.balance ?? bill.total).toFixed(2)}</div>
+                               <div className="text-xs text-slate-400 font-bold line-through">S/ {Number(bill.total || 0).toFixed(2)}</div>
+                               <div className="text-2xl font-black text-red-600">S/ {Number(bill.balance ?? bill.total ?? 0).toFixed(2)}</div>
                             </div>
                          </div>
                          <button onClick={() => openPaymentModal(bill)} className="w-full py-4 bg-green-500 text-white rounded-2xl font-black text-base shadow-lg shadow-green-500/30 active:scale-95 flex justify-center items-center gap-2">
@@ -815,7 +814,7 @@ export const MobileOrders: React.FC = () => {
              </div>
              <div className="overflow-x-auto pb-2 scrollbar-hide flex gap-2">
                 {categoriesList.map(cat => (
-                   <button key={cat} onClick={() => setSelectedCategory(cat)} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-xs font-black transition-colors ${selectedCategory === cat ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>{cat}</button>
+                   <button key={cat as string} onClick={() => setSelectedCategory(cat as string)} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-xs font-black transition-colors ${selectedCategory === cat ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>{cat}</button>
                 ))}
              </div>
           </div>
@@ -828,7 +827,7 @@ export const MobileOrders: React.FC = () => {
                    
                    <div className="text-sm font-black text-green-700 mb-8 bg-green-50 p-4 rounded-2xl border border-green-200 flex justify-between items-center">
                       <span>DISPONIBLE EN RUTA:</span>
-                      <span className="text-lg">{selectedProduct.current_stock} Und.</span>
+                      <span className="text-lg">{selectedProduct.current_stock || 0} Und.</span>
                    </div>
                    
                    <div className="flex items-center justify-between bg-slate-50 p-3 rounded-3xl mb-8 border border-slate-200 shadow-inner">
@@ -840,7 +839,7 @@ export const MobileOrders: React.FC = () => {
                    <div className="grid grid-cols-2 gap-3 mb-8">
                       <button onClick={() => handleUnitChange('UND')} className={`p-4 rounded-2xl font-black flex flex-col items-center border-2 transition-all ${entryUnit === 'UND' ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-400'}`}>
                          <span className="text-xs tracking-widest mb-1">MINIMA (UND)</span>
-                         <span className="text-xl">S/ {selectedProduct.price_unit.toFixed(2)}</span>
+                         <span className="text-xl">S/ {Number(selectedProduct.price_unit || 0).toFixed(2)}</span>
                       </button>
                       <button onClick={() => handleUnitChange(selectedProduct.package_type || 'PKG')} disabled={!selectedProduct.package_type} className={`p-4 rounded-2xl font-black flex flex-col items-center border-2 transition-all ${entryUnit !== 'UND' ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-400'} disabled:opacity-30 disabled:bg-slate-50`}>
                          <span className="text-xs tracking-widest mb-1">MÁXIMA ({selectedProduct.package_type || 'CAJA'})</span>
@@ -860,13 +859,13 @@ export const MobileOrders: React.FC = () => {
                          <div className="font-bold text-slate-800 text-sm leading-tight mb-1.5">{p.name}</div>
                          <div className="flex gap-2 items-center">
                             <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded tracking-widest">{p.sku}</span>
-                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded tracking-widest ${p.current_stock > 0 ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>
-                               {p.current_stock} DISP
+                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded tracking-widest ${(p.current_stock || 0) > 0 ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>
+                               {p.current_stock || 0} DISP
                             </span>
                          </div>
                       </div>
                       <div className="text-right flex flex-col items-end">
-                         <div className="font-black text-blue-600 text-base mb-2">S/ {p.price_unit.toFixed(2)}</div>
+                         <div className="font-black text-blue-600 text-base mb-2">S/ {Number(p.price_unit || 0).toFixed(2)}</div>
                          <div className="bg-slate-900 text-white rounded-full p-1.5 shadow-md"><Plus className="w-4 h-4" /></div>
                       </div>
                    </div>
