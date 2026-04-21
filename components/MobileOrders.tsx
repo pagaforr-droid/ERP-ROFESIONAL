@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
-import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User } from 'lucide-react';
+import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User, ArrowRight, Edit } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
 
@@ -27,7 +27,8 @@ interface CartItem {
 }
 
 export const MobileOrders: React.FC = () => {
-  const { currentUser, logout } = useStore();
+  // Solo conservamos el control de sesión del usuario
+  const { currentUser, sellers, zones, logout } = useStore();
 
   // === ESTADOS DE NAVEGACIÓN MÓVIL ===
   const [viewMode, setViewMode] = useState<ViewMode>('SELLER_SELECT');
@@ -281,7 +282,6 @@ export const MobileOrders: React.FC = () => {
     let tempCart = [...cart];
     const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === entryUnit);
     
-    // REVERSIÓN VIRTUAL
     let originalReserved = 0;
     let existingQty = 0;
     if (existingIdx >= 0) {
@@ -343,7 +343,7 @@ export const MobileOrders: React.FC = () => {
   };
 
   // ============================================================================
-  // 4. FLUJO DE VENTAS MÓVIL Y GUARDADO DE DATOS (SUPABASE)
+  // 4. FLUJO DE VENTAS MÓVIL Y GUARDADO DE DATOS
   // ============================================================================
   const handleClientSelect = (client: Client) => {
     setIsEditMode(false); setOriginalOrder(null); setEditingOrderId(null);
@@ -469,6 +469,14 @@ export const MobileOrders: React.FC = () => {
       handleSellerSelect(currentSellerId); 
     } catch (error: any) { alert("Error al guardar: " + error.message); } 
     finally { setIsSaving(false); }
+  };
+
+  const handleNewOrder = () => {
+    setIsEditMode(false); 
+    setOriginalOrder(null); 
+    setEditingOrderId(null);
+    setCart([]); 
+    setViewMode('CLIENT_LIST');
   };
 
   const confirmPayment = async () => {
@@ -682,7 +690,13 @@ export const MobileOrders: React.FC = () => {
                 </div>
              </div>
              
-             {/* Branch Selector Móvil */}
+             {isEditMode && (
+                <div className="mb-4 px-3 py-2 bg-gradient-to-r from-red-600 to-red-500 text-white font-bold rounded-xl flex justify-between items-center shadow">
+                   <span className="flex items-center text-xs"><Edit className="w-4 h-4 mr-2" /> EDITANDO: {originalOrder?.code}</span>
+                   <button onClick={handleNewOrder} className="bg-white text-red-600 font-black px-2 py-1 rounded shadow-sm text-[10px] uppercase">Descartar</button>
+                </div>
+             )}
+
              <div className="relative mb-4">
                 <div className={`flex items-start gap-2 p-3 bg-slate-50 border rounded-xl ${selectedClient?.branches?.length ? 'active:bg-blue-50 border-blue-200' : 'border-slate-200'}`} onClick={() => { if (selectedClient?.branches?.length) setShowBranchSelector(!showBranchSelector); }}>
                    <MapPin className={`w-5 h-5 shrink-0 ${selectedClient?.branches?.length ? 'text-blue-600' : 'text-slate-400'}`} />
@@ -715,8 +729,8 @@ export const MobileOrders: React.FC = () => {
           {clientTab === 'ORDER' && (
              <div className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex gap-2 px-4 py-3 bg-slate-50 border-b border-slate-200">
-                   <div className={`flex-1 flex items-center justify-center rounded-xl text-xs font-black border ${isEditMode ? 'bg-red-50 text-red-600 border-red-200' : 'bg-white text-slate-700 shadow-sm border-slate-200'}`}>
-                      {isEditMode ? 'MODIFICANDO PEDIDO' : docType}
+                   <div className="flex-1 flex items-center justify-center rounded-xl text-xs font-black border bg-white text-slate-700 shadow-sm border-slate-200">
+                      {docType}
                    </div>
                    <select className="flex-1 bg-white text-slate-700 px-3 py-3 rounded-xl text-xs font-black border border-slate-200 shadow-sm outline-none" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)}>
                       <option value="CONTADO">CONTADO</option>
