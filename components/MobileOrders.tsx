@@ -774,8 +774,8 @@ export const MobileOrders: React.FC = () => {
           {isSaving && <div className="absolute inset-0 bg-white/90 z-[100] flex flex-col items-center justify-center"><Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" /><p className="font-bold text-slate-600">Sincronizando con Base...</p></div>}
 
           {isPaymentModalOpen && selectedSale && (
-             <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-                <div className="bg-white w-full rounded-t-3xl p-6 shadow-2xl animate-slide-up max-h-[85vh] overflow-y-auto flex flex-col">
+             <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-0 sm:p-4">
+                <div className="bg-white w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl p-6 pb-10 shadow-2xl animate-slide-up max-h-[85dvh] overflow-y-auto flex flex-col">
                    <div className="flex justify-between items-start mb-6 shrink-0">
                       <div>
                          <h3 className="text-xl font-black text-slate-800">Reportar Cobro</h3>
@@ -790,13 +790,13 @@ export const MobileOrders: React.FC = () => {
                          <span className="font-black text-xl">S/ {Number(selectedSale.balance ?? selectedSale.total ?? 0).toFixed(2)}</span>
                       </div>
                    </div>
-                   <div className="mb-6 shrink-0">
+                   <div className="mb-6 shrink-0 flex-1">
                       <label className="block text-xs font-black text-slate-500 mb-2 uppercase tracking-widest flex justify-between">
                         <span>A CUENTA / AMORTIZACIÓN (S/)</span>
                       </label>
                       <input type="number" autoFocus className="w-full py-3 text-center text-3xl font-black text-slate-800 border-2 border-slate-300 rounded-2xl focus:border-green-500 focus:ring-0 outline-none" value={paymentAmount || ''} onChange={e => setPaymentAmount(Number(e.target.value))} />
                    </div>
-                   <button onClick={confirmPayment} disabled={isSaving || paymentAmount <= 0} className="w-full shrink-0 bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl font-black text-xl shadow-lg shadow-green-600/30 flex items-center justify-center disabled:opacity-50 mt-auto">
+                   <button onClick={confirmPayment} disabled={isSaving || paymentAmount <= 0} className="w-full shrink-0 bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl font-black text-xl shadow-lg shadow-green-600/30 flex items-center justify-center disabled:opacity-50 mt-4">
                       {isSaving ? <Loader2 className="w-6 h-6 animate-spin" /> : 'CONFIRMAR COBRO'}
                    </button>
                 </div>
