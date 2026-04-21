@@ -341,11 +341,12 @@ export const MobileOrders: React.FC = () => {
     applyPromotions(tempCart, priceListId);
 
     setSelectedProduct(null);
-    setProductSearch('');
+    setProdSearch('');
     setEntryQty(1);
     setEntryPrice(0);
     setEntryDiscount(0);
     setEntryBonus(false);
+    setClientTab('ORDER');
     setViewMode('CLIENT_DETAIL');
   };
 
@@ -774,26 +775,28 @@ export const MobileOrders: React.FC = () => {
 
           {isPaymentModalOpen && selectedSale && (
              <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-                <div className="bg-white w-full rounded-t-3xl p-6 shadow-2xl animate-slide-up">
-                   <div className="flex justify-between items-start mb-6">
+                <div className="bg-white w-full rounded-t-3xl p-6 shadow-2xl animate-slide-up max-h-[85vh] overflow-y-auto flex flex-col">
+                   <div className="flex justify-between items-start mb-6 shrink-0">
                       <div>
                          <h3 className="text-xl font-black text-slate-800">Reportar Cobro</h3>
                          <p className="text-sm text-slate-500 font-mono font-bold mt-1">{selectedSale.series}-{selectedSale.number}</p>
                       </div>
                       <button onClick={() => setIsPaymentModalOpen(false)} className="bg-slate-100 p-2 rounded-full"><X className="w-5 h-5 text-slate-500" /></button>
                    </div>
-                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6">
+                   <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6 shrink-0">
                       <div className="flex justify-between items-center text-sm mb-2"><span className="text-slate-500 font-bold">Total:</span><span className="font-bold">S/ {Number(selectedSale.total || 0).toFixed(2)}</span></div>
                       <div className="flex justify-between items-center text-red-600 border-t border-slate-200 pt-2">
                          <span className="font-black">Saldo Pendiente:</span>
                          <span className="font-black text-xl">S/ {Number(selectedSale.balance ?? selectedSale.total ?? 0).toFixed(2)}</span>
                       </div>
                    </div>
-                   <div className="mb-6">
-                      <label className="block text-xs font-black text-slate-500 mb-2 uppercase tracking-widest">Monto que paga el cliente</label>
-                      <input type="number" autoFocus className="w-full py-4 text-center text-4xl font-black text-slate-800 border-2 border-slate-300 rounded-2xl focus:border-green-500 focus:ring-0 outline-none" value={paymentAmount || ''} onChange={e => setPaymentAmount(Number(e.target.value))} />
+                   <div className="mb-6 shrink-0">
+                      <label className="block text-xs font-black text-slate-500 mb-2 uppercase tracking-widest flex justify-between">
+                        <span>A CUENTA / AMORTIZACIÓN (S/)</span>
+                      </label>
+                      <input type="number" autoFocus className="w-full py-3 text-center text-3xl font-black text-slate-800 border-2 border-slate-300 rounded-2xl focus:border-green-500 focus:ring-0 outline-none" value={paymentAmount || ''} onChange={e => setPaymentAmount(Number(e.target.value))} />
                    </div>
-                   <button onClick={confirmPayment} disabled={isSaving || paymentAmount <= 0} className="w-full bg-green-600 hover:bg-green-700 text-white py-5 rounded-2xl font-black text-xl shadow-lg shadow-green-600/30 flex items-center justify-center disabled:opacity-50">
+                   <button onClick={confirmPayment} disabled={isSaving || paymentAmount <= 0} className="w-full shrink-0 bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl font-black text-xl shadow-lg shadow-green-600/30 flex items-center justify-center disabled:opacity-50 mt-auto">
                       {isSaving ? <Loader2 className="w-6 h-6 animate-spin" /> : 'CONFIRMAR COBRO'}
                    </button>
                 </div>

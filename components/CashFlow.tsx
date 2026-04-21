@@ -195,41 +195,56 @@ export const CashFlow: React.FC = () => {
          setShowModal(true);
       };
 
-      const handleSubmit = () => {
+      const [isSaving, setIsSaving] = useState(false);
+
+      const handleSubmit = async () => {
          if (amount <= 0 || !catId || !date) return;
+         setIsSaving(true);
          const cat = store.expenseCategories.find(c => c.id === catId);
 
-         if (editId) {
-            const existing = store.cashMovements.find(m => m.id === editId);
-            if (existing) {
-               store.updateCashMovement({
-                  ...existing,
+         try {
+            if (editId) {
+               const existing = store.cashMovements.find(m => m.id === editId);
+               if (existing) {
+                  await store.updateCashMovement({
+                     ...existing,
+                     category_name: cat?.name || 'GENERIC',
+                     category_id: catId,
+                     amount,
+                     description: desc || 'Movimiento manual',
+                     date: new Date(date + 'T12:00:00Z').toISOString() // Force date string
+                  });
+               }
+            } else {
+               await store.addCashMovement({
+                  id: crypto.randomUUID(),
+                  type: modalType,
                   category_name: cat?.name || 'GENERIC',
                   category_id: catId,
                   amount,
                   description: desc || 'Movimiento manual',
-                  date: new Date(date + 'T12:00:00Z').toISOString() // Force date string
+                  date: new Date(date + 'T12:00:00Z').toISOString(),
+                  user_id: store.currentUser?.id || 'SISTEMA'
                });
             }
-         } else {
-            store.addCashMovement({
-               id: crypto.randomUUID(),
-               type: modalType,
-               category_name: cat?.name || 'GENERIC',
-               category_id: catId,
-               amount,
-               description: desc || 'Movimiento manual',
-               date: new Date(date + 'T12:00:00Z').toISOString(),
-               user_id: store.currentUser?.name || store.currentUser?.id
-            });
+            setShowModal(false);
+         } catch (e: any) {
+             alert(`Error al guardar: ${e.message}`);
+         } finally {
+             setIsSaving(false);
          }
-
-         setShowModal(false);
       };
 
-      const handleDelete = (id: string) => {
+      const handleDelete = async (id: string) => {
          if (confirm("¿Estás seguro de eliminar este movimiento? Afectará el cuadre de caja actual.")) {
-            store.deleteCashMovement(id);
+            setIsSaving(true);
+            try {
+               await store.deleteCashMovement(id);
+            } catch(e: any) {
+               alert(`Error eliminando: ${e.message}`);
+            } finally {
+               setIsSaving(false);
+            }
          }
       };
 
@@ -581,6 +596,7 @@ export const CashFlow: React.FC = () => {
       const activeSession = store.currentCashSession;
 
       const [openingAmount, setOpeningAmount] = useState(0);
+      const [isProcessingSession, setIsProcessingSession] = useState(false);
 
       // Denominations State for Closing
       const [b200, setB200] = useState(0); const [b100, setB100] = useState(0); const [b50, setB50] = useState(0); const [b20, setB20] = useState(0); const [b10, setB10] = useState(0);
@@ -605,27 +621,41 @@ export const CashFlow: React.FC = () => {
          (m5 * 5) + (m2 * 2) + (m1 * 1) + (m05 * 0.5) + (m02 * 0.2) + (m01 * 0.1);
       const totalDeclared = totalCashDeclared + vouchers + transfers;
 
-      const handleOpen = () => {
+      const handleOpen = async () => {
          if (openingAmount < 0) return;
-         store.openCashSession(openingAmount, store.currentUser?.name || store.currentUser?.id || 'SISTEMA');
-         setOpeningAmount(0);
+         setIsProcessingSession(true);
+         try {
+            await store.openCashSession(openingAmount, store.currentUser?.id || 'SISTEMA');
+            setOpeningAmount(0);
+         } catch(error: any) {
+            alert(`Error al aperturar caja: ${error?.message || 'Revisa tu conexión'}`);
+         } finally {
+            setIsProcessingSession(false);
+         }
       };
 
-      const handleClose = () => {
+      const handleClose = async () => {
          if (!activeSession) return;
          if (confirm("¿Confirmar el cierre de caja y guardar el arqueo final? Esta acción no se puede deshacer.")) {
-            store.closeCashSession(activeSession.id, {
-               declared_cash: totalCashDeclared,
-               declared_vouchers: vouchers,
-               declared_transfers: transfers,
-               declared_total: totalDeclared,
-               details: { b200, b100, b50, b20, b10, m5, m2, m1, m05, m02, m01 }
-            }, store.currentUser?.name || store.currentUser?.id || 'SISTEMA');
+            setIsProcessingSession(true);
+            try {
+               await store.closeCashSession(activeSession.id, {
+                  declared_cash: totalCashDeclared,
+                  declared_vouchers: vouchers,
+                  declared_transfers: transfers,
+                  declared_total: totalDeclared,
+                  details: { b200, b100, b50, b20, b10, m5, m2, m1, m05, m02, m01 }
+               }, store.currentUser?.id || 'SISTEMA');
 
-            // Reset inputs
-            setB200(0); setB100(0); setB50(0); setB20(0); setB10(0);
-            setM5(0); setM2(0); setM1(0); setM05(0); setM02(0); setM01(0);
-            setVouchers(0); setTransfers(0);
+               // Reset inputs
+               setB200(0); setB100(0); setB50(0); setB20(0); setB10(0);
+               setM5(0); setM2(0); setM1(0); setM05(0); setM02(0); setM01(0);
+               setVouchers(0); setTransfers(0);
+            } catch(error: any) {
+               alert(`Error al cerrar caja: ${error?.message || 'Verifica tu conexión'}`);
+            } finally {
+               setIsProcessingSession(false);
+            }
          }
       };
 
@@ -646,8 +676,8 @@ export const CashFlow: React.FC = () => {
                         value={openingAmount} onChange={e => setOpeningAmount(Number(e.target.value))} autoFocus />
                   </div>
 
-                  <button onClick={handleOpen} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-md transition-all active:scale-95 text-lg">
-                     APERTURAR CAJA
+                  <button onClick={handleOpen} disabled={isProcessingSession} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 rounded-xl shadow-md transition-all active:scale-95 text-lg disabled:opacity-50 flex justify-center items-center">
+                     {isProcessingSession ? <Loader2 className="w-6 h-6 animate-spin" /> : 'APERTURAR CAJA'}
                   </button>
 
                   {/* Previous Sessions Lists */}

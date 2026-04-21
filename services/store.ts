@@ -1771,9 +1771,24 @@ export const useStore = create<AppState>((set, get) => ({
    addPriceList: (list) => set(s => ({ priceLists: [...s.priceLists, list] })),
    updatePriceList: (list) => set(s => ({ priceLists: s.priceLists.map(l => l.id === list.id ? list : l) })),
 
-   addCashMovement: (m) => set(s => ({ cashMovements: [m, ...s.cashMovements] })),
-   updateCashMovement: (m) => set(s => ({ cashMovements: s.cashMovements.map(cm => cm.id === m.id ? m : cm) })),
-   deleteCashMovement: (id) => set(s => ({ cashMovements: s.cashMovements.filter(cm => cm.id !== id) })),
+   addCashMovement: async (m) => {
+      const { data, error } = await supabase.from('cash_movements').insert([{
+         ...m,
+         // Supabase usa auth context
+      }]);
+      if (error) { console.error('Supabase Error:', error); throw error; }
+      set(s => ({ cashMovements: [m, ...s.cashMovements] }));
+   },
+   updateCashMovement: async (m) => {
+      const { data, error } = await supabase.from('cash_movements').update(m).eq('id', m.id);
+      if (error) { console.error('Supabase Error:', error); throw error; }
+      set(s => ({ cashMovements: s.cashMovements.map(cm => cm.id === m.id ? m : cm) }));
+   },
+   deleteCashMovement: async (id) => {
+      const { error } = await supabase.from('cash_movements').delete().eq('id', id);
+      if (error) { console.error('Supabase Error:', error); throw error; }
+      set(s => ({ cashMovements: s.cashMovements.filter(cm => cm.id !== id) }));
+   },
    addExpenseCategory: (c) => set(s => ({ expenseCategories: [...s.expenseCategories, c] })),
    updateExpenseCategory: (c) => set(s => ({ expenseCategories: s.expenseCategories.map(cat => cat.id === c.id ? c : cat) })),
    deleteExpenseCategory: (id) => set(s => ({ expenseCategories: s.expenseCategories.filter(c => c.id !== id) })),
@@ -1825,91 +1840,119 @@ export const useStore = create<AppState>((set, get) => ({
       };
    }),
 
-   openCashSession: (amount, userId) => set(s => {
-      if (s.currentCashSession) return s; 
+   openCashSession: async (amount, userId) => {
+      const { data: newSessionId, error } = await supabase.rpc('open_cash_session', {
+         p_opening_amount: amount,
+         p_user_id: userId
+      });
 
-      const newSession: import('../types').CashRegisterSession = {
-         id: crypto.randomUUID(),
-         open_time: new Date().toISOString(),
-         opened_by: userId,
-         status: 'OPEN',
-         system_opening_amount: amount,
-         system_income: 0,
-         system_expense: 0,
-         system_expected_close: amount,
-         declared_cash: 0,
-         declared_transfers: 0,
-         declared_vouchers: 0,
-         declared_total: 0,
-         difference: 0
-      };
+      if (error) {
+         console.error('Supabase Error:', error);
+         throw error;
+      }
 
-      const openMovement: import('../types').CashMovement = {
-         id: crypto.randomUUID(),
-         type: 'INCOME',
-         category_name: 'APERTURA CAJA',
-         description: `Saldo inicial declarado al abrir caja`,
-         amount: amount,
-         date: new Date().toISOString(),
-         user_id: userId,
-         reference_id: newSession.id
-      };
+      set(s => {
+         if (s.currentCashSession) return s; 
 
-      return {
-         cashSessions: [newSession, ...s.cashSessions],
-         currentCashSession: newSession,
-         cashMovements: [openMovement, ...s.cashMovements]
-      };
-   }),
+         const newSession: import('../types').CashRegisterSession = {
+            id: newSessionId || crypto.randomUUID(), // Usar el ID devuelto por Supabase
+            open_time: new Date().toISOString(),
+            opened_by: userId,
+            status: 'OPEN',
+            system_opening_amount: amount,
+            system_income: 0,
+            system_expense: 0,
+            system_expected_close: amount,
+            declared_cash: 0,
+            declared_transfers: 0,
+            declared_vouchers: 0,
+            declared_total: 0,
+            difference: 0
+         };
 
-   closeCashSession: (sessionId, details, userId) => set(s => {
-      const session = s.cashSessions.find(x => x.id === sessionId);
-      if (!session || session.status === 'CLOSED') return s;
+         const openMovement: import('../types').CashMovement = {
+            id: crypto.randomUUID(),
+            type: 'INCOME',
+            category_name: 'APERTURA CAJA',
+            description: `Saldo inicial declarado al abrir caja`,
+            amount: amount,
+            date: new Date().toISOString(),
+            user_id: userId,
+            reference_id: newSession.id
+         };
 
-      const closeTime = new Date().toISOString();
+         return {
+            cashSessions: [newSession, ...s.cashSessions],
+            currentCashSession: newSession,
+            cashMovements: [openMovement, ...s.cashMovements]
+         };
+      });
+   },
 
-      const sessionMovements = s.cashMovements.filter(m =>
-         new Date(m.date) >= new Date(session.open_time) &&
-         new Date(m.date) <= new Date(closeTime) &&
-         m.reference_id !== session.id 
-      );
+   closeCashSession: async (sessionId, details, userId) => {
+      const { error } = await supabase.rpc('close_cash_session', {
+         p_session_id: sessionId,
+         p_declared_cash: details.declared_cash,
+         p_declared_vouchers: details.declared_vouchers,
+         p_declared_transfers: details.declared_transfers,
+         p_declared_total: details.declared_total,
+         p_user_id: userId
+      });
 
-      const sessionSales = s.sales.filter(sale =>
-         sale.payment_method === 'CONTADO' &&
-         !sale.document_type.includes('NOTA') &&
-         new Date(sale.created_at) >= new Date(session.open_time) &&
-         new Date(sale.created_at) <= new Date(closeTime)
-      );
+      if (error) {
+         console.error('Supabase Error:', error);
+         throw error;
+      }
 
-      const manualIncome = sessionMovements.filter(m => m.type === 'INCOME').reduce((acc, m) => acc + m.amount, 0);
-      const manualExpense = sessionMovements.filter(m => m.type === 'EXPENSE').reduce((acc, m) => acc + m.amount, 0);
+      set(s => {
+         const session = s.cashSessions.find(x => x.id === sessionId);
+         if (!session || session.status === 'CLOSED') return s;
 
-      const salesIncome = sessionSales.reduce((acc, sale) => acc + sale.total, 0);
+         const closeTime = new Date().toISOString();
 
-      const totalIncome = manualIncome + salesIncome;
-      const totalExpense = manualExpense;
+         const sessionMovements = s.cashMovements.filter(m =>
+            new Date(m.date) >= new Date(session.open_time) &&
+            new Date(m.date) <= new Date(closeTime) &&
+            m.reference_id !== session.id 
+         );
 
-      const expectedClose = session.system_opening_amount + totalIncome - totalExpense;
+         const sessionSales = s.sales.filter(sale =>
+            sale.payment_method === 'CONTADO' &&
+            !sale.document_type.includes('NOTA') &&
+            new Date(sale.created_at) >= new Date(session.open_time) &&
+            new Date(sale.created_at) <= new Date(closeTime)
+         );
 
-      const diff = details.declared_total - expectedClose;
+         const manualIncome = sessionMovements.filter(m => m.type === 'INCOME').reduce((acc, m) => acc + m.amount, 0);
+         const manualExpense = sessionMovements.filter(m => m.type === 'EXPENSE').reduce((acc, m) => acc + m.amount, 0);
 
-      const closedSession: import('../types').CashRegisterSession = {
-         ...session,
-         ...details,
-         close_time: closeTime,
-         closed_by: userId,
-         status: 'CLOSED',
-         system_income: totalIncome,
-         system_expense: totalExpense,
-         system_expected_close: expectedClose,
-         difference: diff
-      };
+         const salesIncome = sessionSales.reduce((acc, sale) => acc + sale.total, 0);
 
-      return {
-         cashSessions: s.cashSessions.map(c => c.id === sessionId ? closedSession : c),
-         currentCashSession: null 
-      };
-   }),
+         const totalIncome = manualIncome + salesIncome;
+         const totalExpense = manualExpense;
+
+         const expectedClose = session.system_opening_amount + totalIncome - totalExpense;
+
+         const diff = details.declared_total - expectedClose;
+
+         const closedSession: import('../types').CashRegisterSession = {
+            ...session,
+            ...details,
+            close_time: closeTime,
+            closed_by: userId,
+            status: 'CLOSED',
+            system_income: totalIncome,
+            system_expense: totalExpense,
+            system_expected_close: expectedClose,
+            difference: diff
+         };
+
+         return {
+            cashSessions: s.cashSessions.map(c => c.id === sessionId ? closedSession : c),
+            currentCashSession: null 
+         };
+      });
+   },
 
    addUser: (user) => set(s => ({ users: [...s.users, user] })),
    updateUser: (user) => set(s => {
