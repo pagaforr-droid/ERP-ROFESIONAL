@@ -1,19 +1,21 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useStore } from '../services/store';
 import { Product } from '../types';
-import { supabase } from '../services/supabase'; // <-- ADIÓS MOCK_DB
+import { supabase } from '../services/supabase'; 
 import { Search, Save, Plus, ArrowLeft, Barcode, DollarSign, Upload, Download, Truck, RefreshCw, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export const ProductManagement: React.FC = () => {
-  const {
-    categories, subcategories, brands, unitTypes, packageTypes,
-    addCategory, addSubcategory, addBrand, addUnitType, addPackageType
-  } = useStore();
-  
   // ESTADOS 100% REALES DE SUPABASE
   const [products, setProducts] = useState<Product[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
+  
+  // LISTAS DINÁMICAS (Generadas a partir de la BD real)
+  const [categories, setCategories] = useState<string[]>([]);
+  const [subcategories, setSubcategories] = useState<string[]>([]);
+  const [brands, setBrands] = useState<string[]>([]);
+  const [unitTypes, setUnitTypes] = useState<string[]>(['UND', 'BOT', 'GAL', 'LTS', 'KG']); 
+  const [packageTypes, setPackageTypes] = useState<string[]>(['CJA', 'DIS', 'PAQ', 'SACO']);
+
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -31,7 +33,20 @@ export const ProductManagement: React.FC = () => {
     setIsLoading(true);
     try {
       const { data: pData } = await supabase.from('products').select('*').order('name');
-      if (pData) setProducts(pData as Product[]);
+      if (pData) {
+         setProducts(pData as Product[]);
+         // Extraer listas únicas de la base de datos para los dropdowns
+         setCategories([...new Set(pData.map(p => p.category).filter(Boolean))].sort() as string[]);
+         setSubcategories([...new Set(pData.map(p => p.subcategory).filter(Boolean))].sort() as string[]);
+         setBrands([...new Set(pData.map(p => p.brand).filter(Boolean))].sort() as string[]);
+         
+         const dbUnits = [...new Set(pData.map(p => p.unit_type).filter(Boolean))] as string[];
+         const dbPackages = [...new Set(pData.map(p => p.package_type).filter(Boolean))] as string[];
+         
+         // Mezclamos con las básicas por si la BD está vacía
+         setUnitTypes(prev => [...new Set([...prev, ...dbUnits])].sort());
+         setPackageTypes(prev => [...new Set([...prev, ...dbPackages])].sort());
+      }
       
       const { data: sData } = await supabase.from('suppliers').select('*').order('name');
       if (sData) setSuppliers(sData);
@@ -49,7 +64,7 @@ export const ProductManagement: React.FC = () => {
 
   const initialFormState: Partial<Product> = {
     sku: '', barcode: '', name: '',
-    unit_type: 'BOT', package_type: 'CJA', package_content: 12, // Valores por defecto abreviados
+    unit_type: 'BOT', package_type: 'CJA', package_content: 12, 
     line: '', category: '', subcategory: '', brand: '',
     supplier_id: '',
     weight: 0, volume: 0, tax_igv: 18, tax_isc: 0,
@@ -77,7 +92,7 @@ export const ProductManagement: React.FC = () => {
     setViewMode('DETAIL');
   };
 
- // --- GUARDADO ESTRICTO DE PRODUCTO (100% NUBE) ---
+  // --- GUARDADO ESTRICTO DE PRODUCTO (100% NUBE) ---
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.sku || formData.sku.trim() === '') {
@@ -96,6 +111,16 @@ export const ProductManagement: React.FC = () => {
     try {
       const payload: any = { ...formData };
       
+      // BLINDAJE DE DATOS: Limpiamos espacios y forzamos mayúsculas
+      payload.sku = payload.sku?.trim().toUpperCase();
+      payload.name = payload.name?.trim().toUpperCase();
+      payload.unit_type = payload.unit_type?.trim().toUpperCase();
+      payload.package_type = payload.package_type?.trim().toUpperCase() || null;
+      payload.category = payload.category?.trim().toUpperCase() || null;
+      payload.subcategory = payload.subcategory?.trim().toUpperCase() || null;
+      payload.brand = payload.brand?.trim().toUpperCase() || null;
+      payload.line = payload.line?.trim().toUpperCase() || null;
+
       // BLINDAJE UUID: Si no hay proveedor, debe ser estrictamente null
       if (!payload.supplier_id || payload.supplier_id === '') {
          payload.supplier_id = null;
@@ -116,6 +141,12 @@ export const ProductManagement: React.FC = () => {
            setProducts(prev => [...prev, data[0] as Product]);
         }
       }
+      
+      // Actualizamos las listas locales para no tener que recargar de la BD inmediatamente
+      if (payload.category && !categories.includes(payload.category)) setCategories(prev => [...prev, payload.category].sort());
+      if (payload.subcategory && !subcategories.includes(payload.subcategory)) setSubcategories(prev => [...prev, payload.subcategory].sort());
+      if (payload.brand && !brands.includes(payload.brand)) setBrands(prev => [...prev, payload.brand].sort());
+      
       setViewMode('LIST');
     } catch (err: any) {
       alert("Error de Base de Datos: " + err.message);
@@ -124,7 +155,7 @@ export const ProductManagement: React.FC = () => {
     }
   };
 
- // --- ALTA RÁPIDA DE PROVEEDOR ---
+  // --- ALTA RÁPIDA DE PROVEEDOR ---
   const handleQuickSupplierSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSupplier.name.trim()) return;
@@ -134,7 +165,7 @@ export const ProductManagement: React.FC = () => {
        const payload = {
           id: crypto.randomUUID(),
           ruc: newSupplier.ruc || '00000000000',
-          name: newSupplier.name.toUpperCase()
+          name: newSupplier.name.trim().toUpperCase()
        };
 
        const { data, error } = await supabase.from('suppliers').insert([payload]).select();
@@ -173,7 +204,7 @@ export const ProductManagement: React.FC = () => {
         const newProductsToInsert: any[] = [];
 
         data.forEach((row: any) => {
-          const skuStr = String(row.sku || row.SKU || row.codigo || row.Codigo || '').trim();
+          const skuStr = String(row.sku || row.SKU || row.codigo || row.Codigo || '').trim().toUpperCase();
           if (!skuStr) { skippedCount++; return; }
 
           if (products.find(p => p.sku === skuStr)) { skippedCount++; return; }
@@ -200,15 +231,15 @@ export const ProductManagement: React.FC = () => {
           newProductsToInsert.push({
             id: crypto.randomUUID(),
             sku: skuStr,
-            barcode: String(row.barcode || row.Barcode || row.codigo_barras || skuStr),
-            name: String(row.name || row.Name || row.nombre || row.Nombre || 'Sin Nombre').toUpperCase(),
-            unit_type: String(row.unit_type || row.unidad || 'BOT').toUpperCase(),
-            package_type: String(row.package_type || row.empaque || 'CJA').toUpperCase(),
+            barcode: String(row.barcode || row.Barcode || row.codigo_barras || skuStr).trim(),
+            name: String(row.name || row.Name || row.nombre || row.Nombre || 'Sin Nombre').trim().toUpperCase(),
+            unit_type: String(row.unit_type || row.unidad || 'BOT').trim().toUpperCase(),
+            package_type: String(row.package_type || row.empaque || 'CJA').trim().toUpperCase(),
             package_content: factor,
-            line: String(row.line || row.linea || '').toUpperCase(),
-            category: String(row.category || row.categoria || '').toUpperCase(),
-            subcategory: String(row.subcategory || row.subcategoria || '').toUpperCase(),
-            brand: String(row.brand || row.marca || '').toUpperCase(),
+            line: String(row.line || row.linea || '').trim().toUpperCase(),
+            category: String(row.category || row.categoria || '').trim().toUpperCase(),
+            subcategory: String(row.subcategory || row.subcategoria || '').trim().toUpperCase(),
+            brand: String(row.brand || row.marca || '').trim().toUpperCase(),
             supplier_id: foundSupplierId,
             weight: Number(row.weight || row.peso || 0),
             volume: Number(row.volume || row.volumen || 0),
@@ -319,7 +350,7 @@ export const ProductManagement: React.FC = () => {
                 <input
                   className="w-full border border-slate-300 p-2.5 rounded text-sm uppercase text-slate-900 font-bold focus:ring-2 focus:ring-blue-500 outline-none"
                   value={formData.name}
-                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                  onChange={e => setFormData({ ...formData, name: e.target.value.toUpperCase() })}
                   required
                 />
               </div>
@@ -355,7 +386,11 @@ export const ProductManagement: React.FC = () => {
                         </select>
                         <button type="button" onClick={() => {
                           const val = prompt('Nueva Abreviatura Unidad Base (Ej. BOT, PAQ):');
-                          if (val) { addUnitType(val.substring(0,4).toUpperCase()); setFormData({ ...formData, unit_type: val.substring(0,4).toUpperCase() }) }
+                          if (val) {
+                             const cleanVal = val.trim().toUpperCase().substring(0,4);
+                             setUnitTypes(prev => [...new Set([...prev, cleanVal])].sort());
+                             setFormData({ ...formData, unit_type: cleanVal });
+                          }
                         }} className="bg-slate-800 text-white px-2 rounded-r hover:bg-slate-700"><Plus className="w-4 h-4" /></button>
                       </div>
                     </div>
@@ -375,7 +410,11 @@ export const ProductManagement: React.FC = () => {
                         </select>
                         <button type="button" onClick={() => {
                           const val = prompt('Nueva Abreviatura Empaque (Ej. CJA, DIS):');
-                          if (val) { addPackageType(val.substring(0,4).toUpperCase()); setFormData({ ...formData, package_type: val.substring(0,4).toUpperCase() }) }
+                          if (val) {
+                             const cleanVal = val.trim().toUpperCase().substring(0,4);
+                             setPackageTypes(prev => [...new Set([...prev, cleanVal])].sort());
+                             setFormData({ ...formData, package_type: cleanVal });
+                          }
                         }} className="bg-slate-800 text-white px-2 rounded-r hover:bg-slate-700"><Plus className="w-4 h-4" /></button>
                       </div>
                     </div>
@@ -409,7 +448,11 @@ export const ProductManagement: React.FC = () => {
                              <label className="block text-xs font-bold text-slate-600">Categoría</label>
                              <button type="button" onClick={() => {
                                const val = prompt('Nueva Categoría:');
-                               if (val) { addCategory(val.toUpperCase()); setFormData({ ...formData, category: val.toUpperCase() }) }
+                               if (val) {
+                                  const cleanVal = val.trim().toUpperCase();
+                                  setCategories(prev => [...new Set([...prev, cleanVal])].sort());
+                                  setFormData({ ...formData, category: cleanVal });
+                               }
                              }} className="bg-slate-100 text-blue-600 font-bold hover:bg-slate-200 px-2 py-0.5 rounded text-[10px]">Añadir</button>
                            </div>
                            <select className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900" value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}>
@@ -422,7 +465,11 @@ export const ProductManagement: React.FC = () => {
                              <label className="block text-xs font-bold text-slate-600">Sub-Categoría</label>
                              <button type="button" onClick={() => {
                                const val = prompt('Nueva Sub-Cat:');
-                               if (val) { addSubcategory(val.toUpperCase()); setFormData({ ...formData, subcategory: val.toUpperCase() }) }
+                               if (val) {
+                                  const cleanVal = val.trim().toUpperCase();
+                                  setSubcategories(prev => [...new Set([...prev, cleanVal])].sort());
+                                  setFormData({ ...formData, subcategory: cleanVal });
+                               }
                              }} className="bg-slate-100 text-blue-600 font-bold hover:bg-slate-200 px-2 py-0.5 rounded text-[10px]">Añadir</button>
                            </div>
                            <select className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900" value={formData.subcategory} onChange={e => setFormData({ ...formData, subcategory: e.target.value })}>
@@ -440,7 +487,7 @@ export const ProductManagement: React.FC = () => {
                       <div>
                         <label className="block text-xs font-bold text-slate-600 mb-1">Proveedor Principal</label>
                         <div className="flex">
-                           <select className="w-full border border-slate-300 p-2 rounded-l text-sm text-slate-900 font-medium bg-amber-50" value={formData.supplier_id} onChange={e => setFormData({ ...formData, supplier_id: e.target.value })}>
+                           <select className="w-full border border-slate-300 p-2 rounded-l text-sm text-slate-900 font-medium bg-amber-50" value={formData.supplier_id || ''} onChange={e => setFormData({ ...formData, supplier_id: e.target.value })}>
                              <option value="">Seleccione Proveedor...</option>
                              {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                            </select>
@@ -455,7 +502,11 @@ export const ProductManagement: React.FC = () => {
                              <label className="block text-xs font-bold text-slate-600">Marca</label>
                              <button type="button" onClick={() => {
                                const val = prompt('Nueva Marca:');
-                               if (val) { addBrand(val.toUpperCase()); setFormData({ ...formData, brand: val.toUpperCase() }) }
+                               if (val) {
+                                  const cleanVal = val.trim().toUpperCase();
+                                  setBrands(prev => [...new Set([...prev, cleanVal])].sort());
+                                  setFormData({ ...formData, brand: cleanVal });
+                               }
                              }} className="bg-slate-100 text-blue-600 font-bold hover:bg-slate-200 px-2 py-0.5 rounded text-[10px]">Añadir</button>
                            </div>
                            <select className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900" value={formData.brand} onChange={e => setFormData({ ...formData, brand: e.target.value })}>
@@ -593,7 +644,7 @@ export const ProductManagement: React.FC = () => {
         <div className="flex gap-2">
           <input type="file" ref={fileInputRef} onChange={handleImport} accept=".csv, .xlsx" className="hidden" />
           <button onClick={fetchCatalog} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-3 py-2 rounded-lg flex items-center transition-colors shadow-sm border border-slate-200" title="Sincronizar con la Nube">
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin text-blue-600' : ''}`} />
           </button>
           <button onClick={handleExport} className="bg-slate-800 hover:bg-slate-700 text-white px-4 py-2 rounded-lg flex items-center shadow-sm transition-colors text-sm font-bold">
             <Download className="w-4 h-4 mr-2" /> Exportar / Plantilla
