@@ -392,12 +392,11 @@ export const MobileOrders: React.FC = () => {
     setCartProductsCache(prev => ({...prev, [p.id]: p}));
     setSelectedProduct(p);
     
-    // MEJORA: Presentación predeterminada es la unidad mínima real del producto (No UND genérico)
+    // MEJORA: Selecciona la unidad real mínima en lugar del string genérico 'UND'
     const defaultUnit = p.unit_type || 'UND';
     setEntryUnit(defaultUnit);
     setEntryQty(1);
     
-    // MEJORA: Calcula precio automático al seleccionar
     const { price, discount } = calculateCalculatedPrice(p, defaultUnit, priceListId);
     setEntryPrice(price);
     setEntryDiscount(discount);
@@ -405,20 +404,13 @@ export const MobileOrders: React.FC = () => {
     setViewMode('PRODUCT_SELECT');
   };
 
-  const handleUnitChange = (newUnit: string) => {
-     setEntryUnit(newUnit);
-     if (selectedProduct) {
-        // MEJORA: Recalcula precio al cambiar de unidad táctilmente
-        const { price, discount } = calculateCalculatedPrice(selectedProduct, newUnit, priceListId);
-        setEntryPrice(price);
-        setEntryDiscount(discount);
-     }
-  };
-
   const handleSaveOrder = async () => {
     if (!selectedClient) return;
     if (cart.length === 0) { alert("El pedido está vacío."); return; }
     
+    // MEJORA: Escudo de confirmación nativo para evitar toques accidentales
+    if (!window.confirm(`¿Está seguro de CONFIRMAR Y CERRAR este pedido por S/ ${cartTotal.toFixed(2)}?`)) return;
+
     setIsSaving(true);
     const currentTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
@@ -502,7 +494,7 @@ export const MobileOrders: React.FC = () => {
   };
 
   // ============================================================================
-  // DERIVED UI DATA (A prueba de Nulls)
+  // DERIVED UI DATA
   // ============================================================================
   const filteredClientsList = useMemo(() => {
       if (!clientSearchTerm) return dbClients;
@@ -680,36 +672,36 @@ export const MobileOrders: React.FC = () => {
              </div>
           )}
 
-          <div className="bg-white shadow-sm p-4 sticky top-0 z-20 rounded-b-3xl">
-             <div className="flex items-start gap-3 mb-4">
-                <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-2 rounded-full mt-1 active:bg-slate-200"><ChevronLeft className="w-6 h-6 text-slate-600" /></button>
+          <div className="bg-white shadow-sm p-3 sticky top-0 z-20 rounded-b-2xl">
+             <div className="flex items-start gap-2 mb-2">
+                <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-1.5 rounded-full mt-0.5 active:bg-slate-200"><ChevronLeft className="w-5 h-5 text-slate-600" /></button>
                 <div className="flex-1">
-                   <h2 className="font-black text-xl text-slate-900 leading-tight mb-1">{selectedClient?.name}</h2>
-                   <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{selectedClient?.doc_number || '-'}</span>
+                   <h2 className="font-black text-base text-slate-900 leading-tight">{selectedClient?.name}</h2>
+                   <div className="text-xs font-bold text-slate-500 mt-0.5">{selectedClient?.doc_number || '-'}</div>
                 </div>
              </div>
              
              {isEditMode && (
-                <div className="mb-4 px-3 py-2 bg-gradient-to-r from-red-600 to-red-500 text-white font-bold rounded-xl flex justify-between items-center shadow">
-                   <span className="flex items-center text-xs"><Edit className="w-4 h-4 mr-2" /> EDITANDO: {originalOrder?.code}</span>
-                   <button onClick={handleNewOrder} className="bg-white text-red-600 font-black px-2 py-1 rounded shadow-sm text-[10px] uppercase">Descartar</button>
+                <div className="mb-3 px-3 py-2 bg-gradient-to-r from-red-600 to-red-500 text-white font-bold rounded-lg flex justify-between items-center shadow-sm">
+                   <span className="flex items-center text-xs"><Edit className="w-4 h-4 mr-2" /> MODIFICANDO: {originalOrder?.code}</span>
+                   <button onClick={handleNewOrder} className="bg-white text-red-600 font-black px-2 py-1 rounded text-[10px] uppercase">Descartar</button>
                 </div>
              )}
 
-             <div className="relative mb-4">
-                <div className={`flex items-start gap-2 p-3 bg-slate-50 border rounded-xl ${selectedClient?.branches?.length ? 'active:bg-blue-50 border-blue-200' : 'border-slate-200'}`} onClick={() => { if (selectedClient?.branches?.length) setShowBranchSelector(!showBranchSelector); }}>
-                   <MapPin className={`w-5 h-5 shrink-0 ${selectedClient?.branches?.length ? 'text-blue-600' : 'text-slate-400'}`} />
-                   <div className="flex-1 text-sm font-bold text-slate-700 leading-tight">{clientAddress || 'Sin dirección'}</div>
-                   {selectedClient?.branches?.length ? <ChevronDown className="w-5 h-5 text-blue-500" /> : null}
+             <div className="relative mb-3">
+                <div className={`flex items-center gap-2 p-2 bg-slate-50 border rounded-lg ${selectedClient?.branches?.length ? 'active:bg-blue-50 border-blue-200' : 'border-slate-200'}`} onClick={() => { if (selectedClient?.branches?.length) setShowBranchSelector(!showBranchSelector); }}>
+                   <MapPin className={`w-4 h-4 shrink-0 ${selectedClient?.branches?.length ? 'text-blue-600' : 'text-slate-400'}`} />
+                   <div className="flex-1 text-xs font-bold text-slate-700 truncate">{clientAddress || 'Sin dirección'}</div>
+                   {selectedClient?.branches?.length ? <ChevronDown className="w-4 h-4 text-blue-500" /> : null}
                 </div>
                 {showBranchSelector && selectedClient?.branches?.length && (
-                   <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-slate-200 shadow-2xl rounded-xl z-50 overflow-hidden">
-                      <div className="bg-slate-100 px-4 py-2 border-b border-slate-200 font-bold text-xs text-slate-500 uppercase">Cambiar Dirección</div>
-                      <div className="max-h-48 overflow-y-auto p-2 space-y-1">
+                   <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg z-50 overflow-hidden">
+                      <div className="bg-slate-100 px-3 py-2 border-b border-slate-200 font-bold text-[10px] text-slate-500 uppercase">Cambiar Dirección</div>
+                      <div className="max-h-48 overflow-y-auto p-1 space-y-1">
                          {[selectedClient.address, ...(selectedClient.branches || [])].filter(Boolean).map((addr, idx) => (
-                            <div key={idx} onClick={() => { setClientAddress(addr); setShowBranchSelector(false); }} className="p-3 rounded-lg active:bg-blue-50 bg-white border border-slate-50 flex items-start gap-2">
-                               <MapPin className={`w-5 h-5 shrink-0 ${clientAddress === addr ? 'text-blue-600' : 'text-slate-300'}`} />
-                               <div className={`text-sm leading-tight ${clientAddress === addr ? 'font-black text-blue-900' : 'font-bold text-slate-600'}`}>{addr}</div>
+                            <div key={idx} onClick={() => { setClientAddress(addr); setShowBranchSelector(false); }} className="p-2 rounded-lg active:bg-blue-50 bg-white flex items-center gap-2">
+                               <MapPin className={`w-4 h-4 shrink-0 ${clientAddress === addr ? 'text-blue-600' : 'text-slate-300'}`} />
+                               <div className={`text-xs ${clientAddress === addr ? 'font-black text-blue-900' : 'font-bold text-slate-600'}`}>{addr}</div>
                             </div>
                          ))}
                       </div>
@@ -718,92 +710,95 @@ export const MobileOrders: React.FC = () => {
              </div>
 
              <div className="flex gap-2">
-                <button onClick={() => setClientTab('ORDER')} className={`flex-1 py-3 text-sm font-black rounded-xl transition-all ${clientTab === 'ORDER' ? 'bg-slate-900 text-white shadow-lg' : 'bg-slate-100 text-slate-500'}`}>Pedido de Venta</button>
-                <button onClick={() => setClientTab('COLLECTION')} className={`flex-1 py-3 text-sm font-black rounded-xl transition-all flex items-center justify-center gap-1 ${clientTab === 'COLLECTION' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' : 'bg-slate-100 text-slate-500'}`}>
-                   Cobranzas {pendingBills.length > 0 && <span className="bg-white text-orange-600 px-1.5 py-0.5 rounded-full text-[10px]">{pendingBills.length}</span>}
+                <button onClick={() => setClientTab('ORDER')} className={`flex-1 py-2 text-xs font-black rounded-lg transition-all ${clientTab === 'ORDER' ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-500'}`}>Pedido</button>
+                <button onClick={() => setClientTab('COLLECTION')} className={`flex-1 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1 ${clientTab === 'COLLECTION' ? 'bg-orange-500 text-white shadow-md shadow-orange-500/30' : 'bg-slate-100 text-slate-500'}`}>
+                   Cobranzas {pendingBills.length > 0 && <span className="bg-white text-orange-600 px-1.5 py-0.5 rounded-full text-[9px]">{pendingBills.length}</span>}
                 </button>
              </div>
           </div>
 
           {clientTab === 'ORDER' && (
              <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="flex gap-2 px-4 py-3 bg-slate-50 border-b border-slate-200">
-                   <div className="flex-1 flex items-center justify-center rounded-xl text-xs font-black border bg-white text-slate-700 shadow-sm border-slate-200">
+                <div className="flex gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200">
+                   <div className="flex-1 flex items-center justify-center rounded-lg text-[10px] font-black border bg-white text-slate-700 shadow-sm border-slate-200">
                       {docType}
                    </div>
-                   <select className="flex-1 bg-white text-slate-700 px-3 py-3 rounded-xl text-xs font-black border border-slate-200 shadow-sm outline-none" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)}>
+                   <select className="flex-1 bg-white text-slate-700 px-2 py-2 rounded-lg text-[10px] font-black border border-slate-200 shadow-sm outline-none" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)}>
                       <option value="CONTADO">CONTADO</option>
                       <option value="CREDITO">CRÉDITO</option>
                    </select>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {/* MEJORA VISUAL: Lista de productos más compacta (High Density) */}
+                <div className="flex-1 overflow-y-auto p-2 space-y-2">
                    {cart.map((item, idx) => (
-                      <div key={idx} className={`bg-white border rounded-2xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-200 bg-green-50/30' : 'border-slate-200'}`}>
-                         <div className="flex justify-between items-start p-3 border-b border-slate-100">
-                            <div className="font-bold text-slate-800 text-sm pr-2 leading-tight">
-                               {item.is_bonus && <span className="bg-green-500 text-white text-[9px] px-1.5 py-0.5 rounded mr-1 uppercase">Premio</span>}
+                      <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-200 bg-green-50/30' : 'border-slate-200'}`}>
+                         <div className="flex justify-between items-center p-2 border-b border-slate-100 bg-slate-50">
+                            <div className="font-bold text-slate-800 text-xs pr-2 leading-tight truncate">
+                               {item.is_bonus && <span className="bg-green-500 text-white text-[8px] px-1 py-0.5 rounded mr-1 uppercase">Premio</span>}
                                {item.name}
                             </div>
-                            {!item.auto_promo_id && <button onClick={() => { let tempCart = cart.filter(c => c.id !== item.id); applyPromotions(tempCart, priceListId); }} className="text-slate-400 p-1"><X className="w-5 h-5" /></button>}
+                            {!item.auto_promo_id && <button onClick={() => { let tempCart = cart.filter(c => c.id !== item.id); applyPromotions(tempCart, priceListId); }} className="text-slate-400 p-1 active:text-red-500"><X className="w-4 h-4" /></button>}
                          </div>
-                         <div className="p-3 flex items-center justify-between">
+                         <div className="p-2 flex items-center justify-between">
                             {!item.is_bonus ? (
-                               <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 border border-slate-200">
-                                  <button onClick={() => handleCartQtyChange(item.id, item.quantity - 1)} className="w-10 h-10 flex items-center justify-center bg-white text-slate-600 rounded-lg shadow-sm active:scale-95"><Minus className="w-5 h-5" /></button>
-                                  <div className="w-12 text-center font-black text-slate-800 text-lg">{item.quantity}</div>
-                                  <button onClick={() => handleCartQtyChange(item.id, item.quantity + 1)} className="w-10 h-10 flex items-center justify-center bg-white text-slate-600 rounded-lg shadow-sm active:scale-95"><Plus className="w-5 h-5" /></button>
+                               <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+                                  <button onClick={() => handleCartQtyChange(item.id, item.quantity - 1)} className="w-8 h-8 flex items-center justify-center bg-white text-slate-600 rounded shadow-sm active:scale-95"><Minus className="w-4 h-4" /></button>
+                                  <div className="w-8 text-center font-black text-slate-800 text-base">{item.quantity}</div>
+                                  <button onClick={() => handleCartQtyChange(item.id, item.quantity + 1)} className="w-8 h-8 flex items-center justify-center bg-white text-slate-600 rounded shadow-sm active:scale-95"><Plus className="w-4 h-4" /></button>
                                </div>
                             ) : (
-                               <div className="font-black text-green-600 text-2xl pl-2">{item.quantity}</div>
+                               <div className="font-black text-green-600 text-xl pl-2">{item.quantity}</div>
                             )}
-                            <div className="text-right">
-                               <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">{item.unit_type}</div>
-                               <div className="font-black text-slate-900 text-xl">S/ {Number(item.total_price || 0).toFixed(2)}</div>
+                            <div className="text-right flex flex-col justify-center">
+                               <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">{item.unit_type} | S/ {item.unit_price.toFixed(2)}</div>
+                               <div className="font-black text-slate-900 text-lg leading-none">S/ {Number(item.total_price || 0).toFixed(2)}</div>
                             </div>
                          </div>
                       </div>
                    ))}
 
-                   <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full py-5 border-2 border-dashed border-blue-200 text-blue-600 bg-blue-50/50 rounded-2xl font-black flex items-center justify-center gap-2 active:bg-blue-100 transition-colors">
-                      <Plus className="w-6 h-6" /> AGREGAR PRODUCTOS
+                   <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full py-3 border-2 border-dashed border-blue-200 text-blue-600 bg-blue-50/50 rounded-xl font-black flex items-center justify-center gap-2 active:bg-blue-100 transition-colors text-sm mt-2">
+                      <Plus className="w-5 h-5" /> AGREGAR PRODUCTOS
                    </button>
                 </div>
 
-                <div className="bg-white border-t border-slate-200 p-5 sticky bottom-0">
-                   <div className="flex justify-between items-end mb-4">
-                      <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Total a Pagar</span>
-                      <span className="text-3xl font-black text-slate-900">S/ {cartTotal.toFixed(2)}</span>
+                {/* MEJORA VISUAL: Botón inferior de confirmación claro y seguro */}
+                <div className="bg-white border-t border-slate-200 p-3 sticky bottom-0 z-30 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                   <div className="flex justify-between items-center mb-3 px-1">
+                      <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Total:</span>
+                      <span className="text-2xl font-black text-slate-900">S/ {cartTotal.toFixed(2)}</span>
                    </div>
-                   <button onClick={handleSaveOrder} disabled={cart.length === 0 || isSaving} className={`w-full text-white py-5 rounded-2xl font-black text-lg shadow-xl flex justify-center gap-2 transition-transform active:scale-95 disabled:opacity-50 disabled:shadow-none ${isEditMode ? 'bg-red-600 shadow-red-600/30' : 'bg-blue-600 shadow-blue-600/30'}`}>
-                      <Save className="w-6 h-6" /> {isEditMode ? 'SOBREESCRIBIR PEDIDO' : 'GUARDAR PEDIDO'}
+                   <button onClick={handleSaveOrder} disabled={cart.length === 0 || isSaving} className={`w-full text-white py-3 rounded-xl font-black text-base shadow-lg flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 disabled:shadow-none ${isEditMode ? 'bg-red-600 shadow-red-600/30' : 'bg-slate-900 shadow-slate-900/30'}`}>
+                      {isSaving ? <Loader2 className="w-5 h-5 animate-spin"/> : <CheckCircle className="w-5 h-5" />} 
+                      {isEditMode ? 'SOBREESCRIBIR PEDIDO' : 'CONFIRMAR Y CERRAR PEDIDO'}
                    </button>
                 </div>
              </div>
           )}
 
           {clientTab === 'COLLECTION' && (
-             <div className="flex-1 overflow-auto p-4 space-y-4">
+             <div className="flex-1 overflow-auto p-3 space-y-3">
                 {pendingBills.length === 0 ? (
                    <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-center">
-                      <CheckCircle className="w-16 h-16 mb-4 text-green-200" />
-                      <p className="font-bold">Cliente sin deudas pendientes.</p>
+                      <CheckCircle className="w-12 h-12 mb-3 text-green-200" />
+                      <p className="font-bold text-sm">Cliente sin deudas pendientes.</p>
                    </div>
                 ) : (
                    pendingBills.map(bill => (
-                      <div key={bill.id} className="bg-white p-5 rounded-3xl shadow-sm border border-slate-200">
-                         <div className="flex justify-between items-start mb-6">
+                      <div key={bill.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+                         <div className="flex justify-between items-start mb-4">
                             <div>
-                               <div className="text-[10px] text-slate-400 font-black uppercase tracking-wider mb-1">{bill.document_type || 'DOC'}</div>
-                               <div className="font-mono font-black text-slate-800 text-lg">{bill.series}-{bill.number}</div>
+                               <div className="text-[9px] text-slate-400 font-black uppercase tracking-wider mb-0.5">{bill.document_type || 'DOC'}</div>
+                               <div className="font-mono font-black text-slate-800 text-base">{bill.series}-{bill.number}</div>
                             </div>
                             <div className="text-right">
-                               <div className="text-xs text-slate-400 font-bold line-through">S/ {Number(bill.total || 0).toFixed(2)}</div>
-                               <div className="text-2xl font-black text-red-600">S/ {Number(bill.balance ?? bill.total ?? 0).toFixed(2)}</div>
+                               <div className="text-[10px] text-slate-400 font-bold line-through">S/ {Number(bill.total || 0).toFixed(2)}</div>
+                               <div className="text-lg font-black text-red-600">S/ {Number(bill.balance ?? bill.total ?? 0).toFixed(2)}</div>
                             </div>
                          </div>
-                         <button onClick={() => openPaymentModal(bill)} className="w-full py-4 bg-green-500 text-white rounded-2xl font-black text-base shadow-lg shadow-green-500/30 active:scale-95 flex justify-center items-center gap-2">
-                            <Wallet className="w-5 h-5" /> COBRAR AHORA
+                         <button onClick={() => openPaymentModal(bill)} className="w-full py-3 bg-green-500 text-white rounded-xl font-black text-sm shadow-md shadow-green-500/20 active:scale-95 flex justify-center items-center gap-2">
+                            <Wallet className="w-4 h-4" /> COBRAR AHORA
                          </button>
                       </div>
                    ))
@@ -815,7 +810,6 @@ export const MobileOrders: React.FC = () => {
   }
 
   if (viewMode === 'PRODUCT_SELECT') {
-    // === MEJORA VISUAL PARA LOS BOTONES DE SELECCIÓN ===
     const minUnit = selectedProduct?.unit_type || 'UND';
     const maxUnit = selectedProduct?.package_type || 'PKG';
     const isMinSelected = entryUnit === minUnit;
@@ -824,83 +818,83 @@ export const MobileOrders: React.FC = () => {
     const minPriceObj = selectedProduct ? calculateCalculatedPrice(selectedProduct, minUnit, priceListId) : { price: 0, discount: 0 };
     const maxPriceObj = selectedProduct && selectedProduct.package_type ? calculateCalculatedPrice(selectedProduct, maxUnit, priceListId) : { price: 0, discount: 0 };
     
-    // Calculadora en vivo del importe del ítem que estás por agregar
+    // MEJORA: Calculadora en vivo del importe del ítem que estás por agregar
     const currentTotalItemPrice = (entryQty * entryPrice) * (1 - (entryDiscount / 100));
 
     return (
        <div className="h-screen flex flex-col bg-slate-50 pb-safe">
-          <div className="bg-white p-4 border-b border-slate-200 sticky top-0 z-20 rounded-b-2xl shadow-sm">
-             <div className="flex items-center gap-3 mb-4">
-                <button onClick={() => { setViewMode('CLIENT_DETAIL'); setSelectedProduct(null); }} className="bg-slate-100 p-2 rounded-full active:bg-slate-200"><ChevronLeft className="w-6 h-6 text-slate-600" /></button>
+          <div className="bg-white p-3 border-b border-slate-200 sticky top-0 z-20 rounded-b-xl shadow-sm">
+             <div className="flex items-center gap-2 mb-3">
+                <button onClick={() => { setViewMode('CLIENT_DETAIL'); setSelectedProduct(null); }} className="bg-slate-100 p-2 rounded-full active:bg-slate-200"><ChevronLeft className="w-5 h-5 text-slate-600" /></button>
                 <div className="flex-1 relative">
-                   <input autoFocus className="w-full bg-slate-100 py-3 pl-10 pr-4 rounded-xl font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Buscar por Nombre o SKU..." value={prodSearch} onChange={e => setProdSearch(e.target.value)} />
-                   <Search className="absolute left-3 top-3.5 w-5 h-5 text-slate-400" />
+                   <input autoFocus className="w-full bg-slate-100 py-2.5 pl-9 pr-3 rounded-lg font-bold text-sm text-slate-700 outline-none focus:ring-2 focus:ring-blue-500" placeholder="Buscar por Nombre o SKU..." value={prodSearch} onChange={e => setProdSearch(e.target.value)} />
+                   <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                 </div>
              </div>
-             <div className="overflow-x-auto pb-2 scrollbar-hide flex gap-2">
+             <div className="overflow-x-auto pb-1 scrollbar-hide flex gap-2">
                 {categoriesList.map(cat => (
-                   <button key={cat as string} onClick={() => setSelectedCategory(cat as string)} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-xs font-black transition-colors ${selectedCategory === cat ? 'bg-slate-900 text-white shadow-md' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>{cat}</button>
+                   <button key={cat as string} onClick={() => setSelectedCategory(cat as string)} className={`whitespace-nowrap px-4 py-1.5 rounded-lg text-[10px] font-black transition-colors ${selectedCategory === cat ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>{cat}</button>
                 ))}
              </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-3 space-y-3">
+          <div className="flex-1 overflow-y-auto p-2 space-y-2">
              {selectedProduct ? (
-                <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 animate-slide-up mt-4">
-                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{selectedProduct.sku}</div>
-                   <h3 className="text-xl font-black text-slate-800 leading-tight mb-4">{selectedProduct.name}</h3>
+                <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-100 animate-slide-up mt-2">
+                   <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{selectedProduct.sku}</div>
+                   <h3 className="text-lg font-black text-slate-800 leading-tight mb-4">{selectedProduct.name}</h3>
                    
-                   <div className="text-sm font-black text-green-700 mb-8 bg-green-50 p-4 rounded-2xl border border-green-200 flex justify-between items-center">
+                   <div className="text-xs font-black text-green-700 mb-6 bg-green-50 p-3 rounded-xl border border-green-200 flex justify-between items-center">
                       <span>DISPONIBLE EN RUTA:</span>
-                      <span className="text-lg">{selectedProduct.current_stock || 0} Und.</span>
+                      <span className="text-base">{selectedProduct.current_stock || 0} Und.</span>
                    </div>
                    
-                   <div className="flex items-center justify-between bg-slate-50 p-3 rounded-3xl mb-8 border border-slate-200 shadow-inner">
-                      <button onClick={() => setEntryQty(Math.max(1, entryQty - 1))} className="w-16 h-16 rounded-2xl bg-white shadow-md flex items-center justify-center text-3xl font-black text-slate-600 active:scale-95">-</button>
-                      <span className="text-5xl font-black text-blue-600">{entryQty}</span>
-                      <button onClick={() => setEntryQty(entryQty + 1)} className="w-16 h-16 rounded-2xl bg-white shadow-md flex items-center justify-center text-3xl font-black text-slate-600 active:scale-95">+</button>
+                   <div className="flex items-center justify-between bg-slate-50 p-2 rounded-2xl mb-6 border border-slate-200 shadow-inner">
+                      <button onClick={() => setEntryQty(Math.max(1, entryQty - 1))} className="w-14 h-14 rounded-xl bg-white shadow flex items-center justify-center text-2xl font-black text-slate-600 active:scale-95">-</button>
+                      <span className="text-4xl font-black text-blue-600">{entryQty}</span>
+                      <button onClick={() => setEntryQty(entryQty + 1)} className="w-14 h-14 rounded-xl bg-white shadow flex items-center justify-center text-2xl font-black text-slate-600 active:scale-95">+</button>
                    </div>
 
                    {/* MEJORA VISUAL: Diferenciación de colores Mínima (Azul) vs Máxima (Índigo) */}
-                   <div className="grid grid-cols-2 gap-3 mb-8">
-                      <button onClick={() => handleUnitChange(minUnit)} className={`p-4 rounded-2xl font-black flex flex-col items-center border-2 transition-all ${isMinSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-400'}`}>
-                         <span className="text-xs tracking-widest mb-1 uppercase">MÍNIMA ({minUnit})</span>
-                         <span className="text-xl">S/ {minPriceObj.price.toFixed(2)}</span>
+                   <div className="grid grid-cols-2 gap-2 mb-6">
+                      <button onClick={() => handleUnitChange(minUnit)} className={`p-3 rounded-xl font-black flex flex-col items-center border-2 transition-all ${isMinSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'}`}>
+                         <span className="text-[10px] tracking-widest mb-0.5 uppercase">MÍNIMA ({minUnit})</span>
+                         <span className="text-base">S/ {minPriceObj.price.toFixed(2)}</span>
                       </button>
                       
-                      <button onClick={() => handleUnitChange(maxUnit)} disabled={!selectedProduct.package_type} className={`p-4 rounded-2xl font-black flex flex-col items-center border-2 transition-all ${isMaxSelected ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-md' : 'border-slate-200 bg-white text-slate-400'} disabled:opacity-30 disabled:bg-slate-50`}>
-                         <span className="text-xs tracking-widest mb-1 uppercase">MÁXIMA ({maxUnit})</span>
-                         <span className="text-xl">S/ {maxPriceObj.price.toFixed(2)}</span>
+                      <button onClick={() => handleUnitChange(maxUnit)} disabled={!selectedProduct.package_type} className={`p-3 rounded-xl font-black flex flex-col items-center border-2 transition-all ${isMaxSelected ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-sm' : 'border-slate-200 bg-white text-slate-400'} disabled:opacity-30 disabled:bg-slate-50`}>
+                         <span className="text-[10px] tracking-widest mb-0.5 uppercase">MÁXIMA ({maxUnit})</span>
+                         <span className="text-base">S/ {maxPriceObj.price.toFixed(2)}</span>
                       </button>
                    </div>
 
                    {/* MEJORA VISUAL: Calculadora en vivo en el botón */}
-                   <button onClick={executeAddToCart} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-transform mb-3">
+                   <button onClick={executeAddToCart} className="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-base shadow-lg active:scale-95 transition-transform mb-2">
                       AGREGAR S/ {currentTotalItemPrice.toFixed(2)}
                    </button>
                    
-                   <button onClick={() => setSelectedProduct(null)} className="w-full py-4 text-slate-500 font-bold bg-slate-100 rounded-2xl active:bg-slate-200 transition-colors">CANCELAR</button>
+                   <button onClick={() => setSelectedProduct(null)} className="w-full py-3 text-slate-500 font-bold text-sm bg-slate-100 rounded-xl active:bg-slate-200 transition-colors">CANCELAR</button>
                 </div>
              ) : (
                 filteredProductsList.map(p => (
-                   <div key={p.id} onClick={() => handleProductClick(p)} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-center active:scale-95 transition-transform cursor-pointer">
-                      <div className="flex-1 pr-3">
-                         <div className="font-bold text-slate-800 text-sm leading-tight mb-1.5">{p.name}</div>
-                         <div className="flex gap-2 items-center">
-                            <span className="text-[10px] font-black text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded tracking-widest">{p.sku}</span>
-                            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded tracking-widest ${(p.current_stock || 0) > 0 ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>
+                   <div key={p.id} onClick={() => handleProductClick(p)} className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex justify-between items-center active:scale-95 transition-transform cursor-pointer">
+                      <div className="flex-1 pr-2">
+                         <div className="font-bold text-slate-800 text-xs leading-tight mb-1">{p.name}</div>
+                         <div className="flex gap-1.5 items-center">
+                            <span className="text-[9px] font-black text-slate-500 bg-slate-100 px-1 py-0.5 rounded tracking-widest">{p.sku}</span>
+                            <span className={`text-[9px] font-black px-1 py-0.5 rounded tracking-widest ${(p.current_stock || 0) > 0 ? 'text-green-600 bg-green-50' : 'text-red-600 bg-red-50'}`}>
                                {p.current_stock || 0} DISP
                             </span>
                          </div>
                       </div>
-                      <div className="text-right flex flex-col items-end">
-                         <div className="font-black text-blue-600 text-base mb-2">S/ {Number(p.price_unit || 0).toFixed(2)}</div>
-                         <div className="bg-slate-900 text-white rounded-full p-1.5 shadow-md"><Plus className="w-4 h-4" /></div>
+                      <div className="text-right flex flex-col items-end justify-center">
+                         <div className="font-black text-blue-600 text-sm mb-1">S/ {Number(p.price_unit || 0).toFixed(2)}</div>
+                         <div className="bg-slate-900 text-white rounded-md p-1 shadow-sm"><Plus className="w-3 h-3" /></div>
                       </div>
                    </div>
                 ))
              )}
-             {!selectedProduct && filteredProductsList.length === 0 && <div className="text-center p-8 text-slate-400 font-bold">No hay productos que coincidan.</div>}
+             {!selectedProduct && filteredProductsList.length === 0 && <div className="text-center p-6 text-slate-400 font-bold text-sm">No hay productos que coincidan.</div>}
           </div>
        </div>
     );
