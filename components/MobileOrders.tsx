@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
 import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User } from 'lucide-react';
@@ -8,7 +8,7 @@ import { supabase } from '../services/supabase';
 type ViewMode = 'SELLER_SELECT' | 'CLIENT_LIST' | 'CLIENT_DETAIL' | 'PRODUCT_SELECT';
 type ClientTab = 'ORDER' | 'COLLECTION';
 
-// === INTERFAZ DEL CARRITO (Cerebro de Escritorio) ===
+// === INTERFAZ DEL CARRITO ===
 interface CartItem {
   id: string;
   product_id: string;
@@ -27,7 +27,8 @@ interface CartItem {
 }
 
 export const MobileOrders: React.FC = () => {
-  const { users, currentUser, sellers, zones, logout } = useStore();
+  // Solo conservamos el control de sesión del usuario logueado en la PC (si aplica)
+  const { currentUser, logout } = useStore();
 
   // === ESTADOS DE NAVEGACIÓN MÓVIL ===
   const [viewMode, setViewMode] = useState<ViewMode>('SELLER_SELECT');
@@ -35,7 +36,9 @@ export const MobileOrders: React.FC = () => {
   const [listTab, setListTab] = useState<'CLIENTS' | 'HISTORY' | 'COLLECTIONS'>('CLIENTS');
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
 
-  // === ESTADOS MAESTROS (Cerebro de Escritorio) ===
+  // === ESTADOS MAESTROS (100% SUPABASE) ===
+  const [dbSellers, setDbSellers] = useState<any[]>([]); // <--- AHORA VIENEN DE SUPABASE
+  const [dbZones, setDbZones] = useState<any[]>([]);     // <--- AHORA VIENEN DE SUPABASE
   const [dbCompany, setDbCompany] = useState<any>(null);
   const [dbPriceLists, setDbPriceLists] = useState<any[]>([]);
   const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
@@ -49,6 +52,7 @@ export const MobileOrders: React.FC = () => {
   const [cartProductsCache, setCartProductsCache] = useState<Record<string, Product>>({});
   
   // === CONTEXTO DE OPERACIÓN ===
+  const [isLoadingInitial, setIsLoadingInitial] = useState(true);
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -87,15 +91,35 @@ export const MobileOrders: React.FC = () => {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
 
   // ============================================================================
-  // 1. AUTO-LOGIN Y CARGA INICIAL DE RUTA (Optimizado para Móvil)
+  // 1. CARGA INICIAL (EXTRACCIÓN DE VENDEDORES DE SUPABASE)
   // ============================================================================
   useEffect(() => {
-    if (viewMode === 'SELLER_SELECT' && currentUser?.role === 'SELLER') {
-        const matchingSeller = sellers.find(s => s.name.trim().toUpperCase() === currentUser.name.trim().toUpperCase());
-        if (matchingSeller) handleSellerSelect(matchingSeller.id);
-    }
-  }, [currentUser, sellers, viewMode]);
+    const loadInitialApp = async () => {
+        try {
+            const [sellRes, zoneRes] = await Promise.all([
+                supabase.from('sellers').select('*').eq('is_active', true).order('name'),
+                supabase.from('zones').select('*')
+            ]);
+            if (sellRes.data) setDbSellers(sellRes.data);
+            if (zoneRes.data) setDbZones(zoneRes.data);
+            
+            // Auto-login si es perfil vendedor en el sistema principal
+            if (currentUser?.role === 'SELLER' && sellRes.data) {
+                const matchingSeller = sellRes.data.find(s => s.name.trim().toUpperCase() === currentUser.name.trim().toUpperCase());
+                if (matchingSeller) handleSellerSelect(matchingSeller.id);
+            }
+        } catch (error) {
+            console.error("Error al iniciar App Móvil:", error);
+        } finally {
+            setIsLoadingInitial(false);
+        }
+    };
+    loadInitialApp();
+  }, [currentUser]);
 
+  // ============================================================================
+  // 2. CARGA DE RUTA (AL SELECCIONAR VENDEDOR)
+  // ============================================================================
   const handleSellerSelect = async (sellerId: string) => {
     if (!sellerId) return;
     setCurrentSellerId(sellerId);
@@ -105,7 +129,8 @@ export const MobileOrders: React.FC = () => {
 
     try {
         const today = new Date().toISOString().split('T')[0];
-        const sellerZoneIds = zones.filter(z => z.assigned_seller_id === sellerId).map(z => z.id);
+        // Filtramos inteligentemente usando los dbZones reales
+        const sellerZoneIds = dbZones.filter(z => z.assigned_seller_id === sellerId).map(z => z.id);
         
         let clientQuery = supabase.from('clients').select('*').eq('is_active', true);
         if (sellerZoneIds.length > 0) clientQuery = clientQuery.in('zone_id', sellerZoneIds);
@@ -156,7 +181,7 @@ export const MobileOrders: React.FC = () => {
   };
 
   // ============================================================================
-  // 2. LÓGICA MAGISTRAL DEL CARRITO (Clon Exacto del Escritorio)
+  // 3. LÓGICA MAGISTRAL DEL CARRITO Y PROMOCIONES
   // ============================================================================
   const getMultiplier = (listId: string) => {
     if (!listId) return 1;
@@ -291,7 +316,7 @@ export const MobileOrders: React.FC = () => {
 
     applyPromotions(tempCart, priceListId);
     setSelectedProduct(null); setEntryQty(1); setEntryPrice(0); setEntryDiscount(0); setEntryBonus(false);
-    setViewMode('CLIENT_DETAIL'); // Volver al carrito tras agregar
+    setViewMode('CLIENT_DETAIL'); 
   };
 
   const handleCartQtyChange = (id: string, newQty: number) => {
@@ -320,7 +345,7 @@ export const MobileOrders: React.FC = () => {
   };
 
   // ============================================================================
-  // 3. FLUJO DE VENTAS MÓVIL (Navegación y Guardado)
+  // 4. FLUJO DE VENTAS MÓVIL Y GUARDADO DE DATOS (SUPABASE)
   // ============================================================================
   const handleClientSelect = (client: Client) => {
     setIsEditMode(false); setOriginalOrder(null); setEditingOrderId(null);
@@ -398,15 +423,6 @@ export const MobileOrders: React.FC = () => {
     setViewMode('PRODUCT_SELECT');
   };
 
-  const handleUnitChange = (newUnit: string) => {
-    setEntryUnit(newUnit);
-    if (selectedProduct) {
-        const { price, discount } = calculateCalculatedPrice(selectedProduct, newUnit, priceListId);
-        setEntryPrice(price);
-        setEntryDiscount(discount);
-    }
-  };
-
   const handleSaveOrder = async () => {
     if (!selectedClient) return;
     if (cart.length === 0) { alert("El pedido está vacío."); return; }
@@ -424,7 +440,7 @@ export const MobileOrders: React.FC = () => {
       seller_id: currentSellerId || null,
       suggested_document_type: docType,
       payment_method: paymentMethod,
-      total: Number(currentTotal.toFixed(2)), // EXTRACCIÓN BLINDADA
+      total: Number(currentTotal.toFixed(2)), 
       status: 'pending', 
       delivery_address: clientAddress || null, 
       items: cart.map(c => {
@@ -448,7 +464,6 @@ export const MobileOrders: React.FC = () => {
 
       alert(isEditMode ? `¡Pedido modificado!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
       
-      // Limpiar y refrescar ruta
       setViewMode('CLIENT_LIST');
       setListTab('HISTORY');
       setCart([]);
@@ -510,6 +525,10 @@ export const MobileOrders: React.FC = () => {
   // RENDER (UI MÓVIL)
   // ============================================================================
 
+  if (isLoadingInitial) {
+     return <div className="h-screen bg-slate-900 flex items-center justify-center"><Loader2 className="w-12 h-12 text-blue-500 animate-spin" /></div>;
+  }
+
   if (viewMode === 'SELLER_SELECT') {
     return (
        <div className="h-screen bg-slate-900 p-4 flex flex-col justify-center items-center">
@@ -521,7 +540,7 @@ export const MobileOrders: React.FC = () => {
              <p className="text-slate-500 mb-8 text-sm">Seleccione su perfil de campo.</p>
              <select className="w-full p-4 border-2 border-slate-200 rounded-xl text-lg font-bold text-slate-700 bg-slate-50 focus:border-blue-500 outline-none" onChange={(e) => handleSellerSelect(e.target.value)} value={currentSellerId}>
                 <option value="">-- Seleccionar Perfil --</option>
-                {sellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {dbSellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
              </select>
           </div>
        </div>
@@ -551,7 +570,7 @@ export const MobileOrders: React.FC = () => {
              <div className="flex justify-between items-center mb-4">
                 <div>
                    <h2 className="text-xl font-black">Ruta Móvil</h2>
-                   <p className="text-sm text-blue-300 font-medium">Vendedor: {sellers.find(s=>s.id === currentSellerId)?.name}</p>
+                   <p className="text-sm text-blue-300 font-medium">Vendedor: {dbSellers.find(s=>s.id === currentSellerId)?.name}</p>
                 </div>
                 <button onClick={() => setIsExitModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full transition-colors">
                    <LogOut className="w-5 h-5 text-slate-300" />
@@ -624,7 +643,7 @@ export const MobileOrders: React.FC = () => {
     return (
        <div className="h-screen flex flex-col bg-slate-50 relative pb-safe">
           
-          {isSaving && <div className="absolute inset-0 bg-white/90 z-[100] flex flex-col items-center justify-center"><Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" /><p className="font-bold text-slate-600">Procesando en Central...</p></div>}
+          {isSaving && <div className="absolute inset-0 bg-white/90 z-[100] flex flex-col items-center justify-center"><Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" /><p className="font-bold text-slate-600">Sincronizando con Base...</p></div>}
 
           {/* PAYMENT MODAL */}
           {isPaymentModalOpen && selectedSale && (
@@ -657,7 +676,7 @@ export const MobileOrders: React.FC = () => {
 
           <div className="bg-white shadow-sm p-4 sticky top-0 z-20 rounded-b-3xl">
              <div className="flex items-start gap-3 mb-4">
-                <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-2 rounded-full mt-1 active:bg-slate-200"><ChevronLeft className="w-6 h-6 text-slate-600" /></button>
+                <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-2 rounded-full mt-1 active:bg-slate-200"><ChevronLeft className="w-5 h-5 text-slate-600" /></button>
                 <div className="flex-1">
                    <h2 className="font-black text-xl text-slate-900 leading-tight mb-1">{selectedClient?.name}</h2>
                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{selectedClient?.doc_number}</span>
