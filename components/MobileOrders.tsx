@@ -528,7 +528,7 @@ export const MobileOrders: React.FC = () => {
   const categoriesList = useMemo(() => ['TODOS', ...Array.from(new Set(dbProducts.map(p => p.category))).filter(Boolean).sort()], [dbProducts]);
 
   // ============================================================================
-  // RENDER (UI MÓVIL)
+  // RENDER (UI MÓVIL OPTIMIZADA - TOP BAR ACTION)
   // ============================================================================
 
   if (isLoadingInitial) {
@@ -680,7 +680,8 @@ export const MobileOrders: React.FC = () => {
              </div>
           )}
 
-          <div className="bg-white shadow-sm p-3 z-20 rounded-b-2xl shrink-0">
+          {/* HEADER SUPERIOR */}
+          <div className="bg-white shadow-sm p-3 z-20 shrink-0">
              <div className="flex items-start gap-2 mb-2">
                 <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-1.5 rounded-full mt-0.5 active:bg-slate-200"><ChevronLeft className="w-5 h-5 text-slate-600" /></button>
                 <div className="flex-1">
@@ -727,6 +728,8 @@ export const MobileOrders: React.FC = () => {
 
           {clientTab === 'ORDER' && (
              <div className="flex-1 flex flex-col min-h-0">
+                
+                {/* SUBHEADER: FORMA PAGO Y DOC */}
                 <div className="flex gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200 shrink-0">
                    <div className="flex-1 flex items-center justify-center rounded-lg text-[10px] font-black border bg-white text-slate-700 shadow-sm border-slate-200">
                       {docType}
@@ -737,11 +740,23 @@ export const MobileOrders: React.FC = () => {
                    </select>
                 </div>
 
-                {/* CONTENEDOR CON SCROLL PARA PRODUCTOS (HIGH DENSITY) */}
-                <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                {/* MEJORA UX: BOTÓN Y TOTAL MOVIDOS ARRIBA */}
+                <div className="bg-white p-3 border-b border-slate-200 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0 z-10">
+                   <div className="flex justify-between items-end mb-3 px-1">
+                      <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Total del Pedido:</span>
+                      <span className="text-3xl font-black text-blue-600 leading-none">S/ {cartTotal.toFixed(2)}</span>
+                   </div>
+                   <button onClick={handleSaveOrder} disabled={cart.length === 0 || isSaving} className={`w-full text-white py-3 rounded-xl font-black text-sm shadow-lg flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 disabled:shadow-none ${isEditMode ? 'bg-red-600 shadow-red-600/30' : 'bg-slate-900 shadow-slate-900/30'}`}>
+                      {isSaving ? <Loader2 className="w-5 h-5 animate-spin"/> : <CheckCircle className="w-5 h-5" />} 
+                      {isEditMode ? 'SOBREESCRIBIR PEDIDO' : 'CONFIRMAR Y ENVIAR PEDIDO'}
+                   </button>
+                </div>
+
+                {/* LISTA DE PRODUCTOS CON SCROLL INDEPENDIENTE */}
+                <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-slate-100">
                    {cart.map((item, idx) => (
-                      <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-200 bg-green-50/30' : 'border-slate-200'}`}>
-                         <div className="flex justify-between items-center p-2 border-b border-slate-100 bg-slate-50">
+                      <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-300 bg-green-50' : 'border-slate-200'}`}>
+                         <div className={`flex justify-between items-center p-2 border-b ${item.is_bonus ? 'border-green-100 bg-green-100/50' : 'border-slate-100 bg-slate-50'}`}>
                             <div className="font-bold text-slate-800 text-xs pr-2 leading-tight truncate">
                                {item.is_bonus && <span className="bg-green-500 text-white text-[8px] px-1 py-0.5 rounded mr-1 uppercase">Premio</span>}
                                {item.name}
@@ -766,20 +781,8 @@ export const MobileOrders: React.FC = () => {
                       </div>
                    ))}
 
-                   <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full py-3 border-2 border-dashed border-blue-200 text-blue-600 bg-blue-50/50 rounded-xl font-black flex items-center justify-center gap-2 active:bg-blue-100 transition-colors text-sm mt-2">
+                   <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full py-4 border-2 border-dashed border-blue-300 text-blue-700 bg-blue-50/50 rounded-xl font-black flex items-center justify-center gap-2 active:bg-blue-100 transition-colors text-sm mt-2 shadow-sm">
                       <Plus className="w-5 h-5" /> AGREGAR PRODUCTOS
-                   </button>
-                </div>
-
-                {/* CONTENEDOR RÍGIDO INFERIOR (Nunca se oculta) */}
-                <div className="shrink-0 bg-white border-t border-slate-200 p-3 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] z-30 pb-safe">
-                   <div className="flex justify-between items-center mb-3 px-1">
-                      <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Total:</span>
-                      <span className="text-2xl font-black text-slate-900">S/ {cartTotal.toFixed(2)}</span>
-                   </div>
-                   <button onClick={handleSaveOrder} disabled={cart.length === 0 || isSaving} className={`w-full text-white py-3 rounded-xl font-black text-base shadow-lg flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 disabled:shadow-none ${isEditMode ? 'bg-red-600 shadow-red-600/30' : 'bg-slate-900 shadow-slate-900/30'}`}>
-                      {isSaving ? <Loader2 className="w-5 h-5 animate-spin"/> : <CheckCircle className="w-5 h-5" />} 
-                      {isEditMode ? 'SOBREESCRIBIR PEDIDO' : 'CONFIRMAR Y ENVIAR PEDIDO'}
                    </button>
                 </div>
              </div>
