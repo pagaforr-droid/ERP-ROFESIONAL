@@ -8,7 +8,6 @@ import { supabase } from '../services/supabase';
 type ViewMode = 'SELLER_SELECT' | 'CLIENT_LIST' | 'CLIENT_DETAIL' | 'PRODUCT_SELECT';
 type ClientTab = 'ORDER' | 'COLLECTION';
 
-// === INTERFAZ DEL CARRITO ===
 interface CartItem {
   id: string;
   product_id: string;
@@ -167,9 +166,6 @@ export const MobileOrders: React.FC = () => {
     }
   };
 
-  // ============================================================================
-  // 3. LÓGICA MAGISTRAL DEL CARRITO Y PROMOCIONES (CLON DEL ESCRITORIO)
-  // ============================================================================
   const getMultiplier = (listId: string) => {
     if (!listId) return 1;
     const list = dbPriceLists.find(pl => pl.id === listId);
@@ -180,15 +176,11 @@ export const MobileOrders: React.FC = () => {
     let price = Number(p.price_unit || 0);
     let defaultDiscount = 0;
 
-    // Lógica para Caja (PKG)
     if (p.package_type && unit === p.package_type) {
-        // Usa precio específico de caja si existe, sino multiplica precio unitario
         price = p.price_package ? Number(p.price_package) : price * Number(p.package_content || 1);
     }
-    // Aplica multiplicador de Lista de Precios
     price = price * getMultiplier(listId);
 
-    // Lógica de Promociones de Precio (Descuento o Precio Fijo)
     const activePromo = dbPromos.find(promo => {
         if (!(promo.product_ids || []).includes(p.id)) return false;
         if (!isPromoValidForContext(promo, 'IN_STORE', selectedClient?.city || '', currentSellerId || currentUser?.id, currentUser?.role)) return false;
@@ -200,7 +192,6 @@ export const MobileOrders: React.FC = () => {
         if (activePromo.type === 'PERCENTAGE_DISCOUNT') defaultDiscount = Number(activePromo.value || 0);
         else if (activePromo.type === 'FIXED_PRICE') {
             let promoPrice = Number(activePromo.value || 0);
-            // Ajuste si la promo de precio fijo aplica a la unidad pero estamos vendiendo caja
             if (p.package_type && unit === p.package_type && !p.price_package) promoPrice = promoPrice * Number(p.package_content || 1);
             price = promoPrice;
         }
@@ -209,17 +200,9 @@ export const MobileOrders: React.FC = () => {
   };
 
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
-    // 1. Limpia bonificaciones automáticas previas
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
-    
-    // Función auxiliar para calcular cantidad en base (unidades)
-    const getBaseQuantity = (item: CartItem) => {
-        const p = cartProductsCache[item.product_id] || item.product_ref;
-        if (!p) return item.quantity; // Failsafe
-        return item.unit_type === p.package_type ? item.quantity * Number(p.package_content || 1) : item.quantity;
-    };
+    const getBaseQuantity = (item: CartItem) => item.unit_type === item.product_ref?.package_type ? item.quantity * Number(item.product_ref.package_content || 1) : item.quantity;
 
-    // 2. Filtra promociones válidas
     const validPromos = dbAutoPromos.filter(ap => {
       if (!isPromoValidForContext(ap, 'IN_STORE', selectedClient?.city || '', currentSellerId || currentUser?.id, currentUser?.role)) return false;
       if (ap.target_price_list_ids && ap.target_price_list_ids.length > 0 && listId) {
@@ -228,12 +211,10 @@ export const MobileOrders: React.FC = () => {
       return true;
     });
 
-    // 3. Aplica cada promoción
     validPromos.forEach(ap => {
       let applies = false;
       let multiplier = 0;
 
-      // Condición: Compra X producto
       if (ap.condition_type === 'BUY_X_PRODUCT') {
         const qtyBought = cleanCart.filter(i => {
             if (i.is_bonus) return false;
@@ -243,13 +224,11 @@ export const MobileOrders: React.FC = () => {
         }).reduce((sum, i) => sum + getBaseQuantity(i), 0); 
         if (qtyBought >= (ap.condition_amount || 1)) { applies = true; multiplier = Math.floor(qtyBought / (ap.condition_amount || 1)); }
       } 
-      // Condición: Gasta Y total
       else if (ap.condition_type === 'SPEND_Y_TOTAL') {
         const conditionItemKeys = ap.condition_product_ids || [];
         const totalSpent = cleanCart.reduce((sum, item) => (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) ? sum : sum + (item.total_price || 0), 0);
         if (totalSpent >= (ap.condition_amount || 1)) { applies = true; multiplier = Math.floor(totalSpent / (ap.condition_amount || 1)); }
       } 
-      // Condición: Gasta Y en categoría
       else if (ap.condition_type === 'SPEND_Y_CATEGORY') {
         const catSpent = cleanCart.reduce((sum, item) => {
             const p = cartProductsCache[item.product_id] || item.product_ref;
@@ -258,12 +237,10 @@ export const MobileOrders: React.FC = () => {
         if (catSpent >= (ap.condition_amount || 1)) { applies = true; multiplier = Math.floor(catSpent / (ap.condition_amount || 1)); }
       }
 
-      // 4. Agrega premio si aplica
       if (applies && multiplier > 0) {
         const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
         if (rewardProduct) {
           const rewardQty = (ap.reward_quantity || 1) * multiplier;
-          // Determina unidad real (Nombre de la unidad minima o PKG)
           const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
           const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
 
@@ -281,17 +258,14 @@ export const MobileOrders: React.FC = () => {
   const executeAddToCart = () => {
     if (!selectedProduct || entryQty <= 0) return;
 
-    // Validación de stock (Cerebro Clonado)
     const isPkgMode = entryUnit === selectedProduct.package_type;
     const conversionFactor = isPkgMode ? Number(selectedProduct.package_content || 1) : 1; 
     const requiredBaseUnits = entryQty * conversionFactor;
 
     let totalStock = selectedProduct.current_stock || 0;
     let tempCart = [...cart];
-    // Busca item existente para sumar o crear nuevo
     const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === entryUnit);
     
-    // REVERSIÓN VIRTUAL (Para Modo Edición)
     let originalReserved = 0;
     let existingQty = 0;
     if (existingIdx >= 0) {
@@ -307,7 +281,6 @@ export const MobileOrders: React.FC = () => {
         return;
     }
 
-    // Cálculo final de línea
     const gross = entryQty * entryPrice;
     const finalPrice = gross - (gross * (entryDiscount / 100));
 
@@ -323,7 +296,6 @@ export const MobileOrders: React.FC = () => {
       });
     }
 
-    // Cálculo Recurrente de Promociones
     applyPromotions(tempCart, priceListId);
     setSelectedProduct(null); setEntryQty(1); setEntryPrice(0); setEntryDiscount(0); setEntryBonus(false);
     setViewMode('CLIENT_DETAIL'); 
@@ -337,33 +309,23 @@ export const MobileOrders: React.FC = () => {
 
     const item = tempCart[itemIndex];
     const pRef = item.product_ref;
-
-    // Validación de Stock en Edición (Cerebro Clonado)
     const isPkgMode = item.unit_type === pRef.package_type;
     const conversionFactor = isPkgMode ? Number(pRef.package_content || 1) : 1; 
     const requiredBaseUnits = newQty * conversionFactor;
 
-    // Recupera stock actual de la lista maestra
     let totalStock = dbProducts.find(p => p.id === pRef.id)?.current_stock || 0;
-    // Suma la reserva original si estamos editando
     if (isEditMode && item.original_base_qty) totalStock += item.original_base_qty;
 
     if (totalStock < requiredBaseUnits && !item.is_bonus) {
         alert(`❌ Stock Insuficiente para ${pRef.name || 'Producto'}.\nDisponible: ${totalStock} unid. (Incluye reserva original)`);
-        return; // Detiene cambio de cantidad si no hay stock
+        return;
     }
 
-    // Actualiza cantidad y total de línea
     const tGross = newQty * item.unit_price;
     tempCart[itemIndex] = { ...item, quantity: newQty, total_price: tGross - (tGross * (item.discount_percent / 100)) };
-    
-    // Cálculo Recurrente de Promociones (Regalos) al editar cantidad
     applyPromotions(tempCart, priceListId);
   };
 
-  // ============================================================================
-  // 4. FLUJO DE VENTAS MÓVIL Y GUARDADO DE DATOS
-  // ============================================================================
   const handleClientSelect = (client: Client) => {
     setIsEditMode(false); setOriginalOrder(null); setEditingOrderId(null);
     setSelectedClient(client);
@@ -398,7 +360,7 @@ export const MobileOrders: React.FC = () => {
                     discount_percent: item.discount_percent || 0, total_price: item.total_price || 0,
                     is_bonus: item.is_bonus || false, auto_promo_id: item.auto_promo_id || undefined,
                     promo_name: item.auto_promo_id ? 'PROMO' : undefined, product_ref: pRef,
-                    original_base_qty: item.quantity_base || 0 // Guarda cantidad original para reversión de stock
+                    original_base_qty: item.quantity_base || 0 
                 };
             });
         }
@@ -430,7 +392,7 @@ export const MobileOrders: React.FC = () => {
     setCartProductsCache(prev => ({...prev, [p.id]: p}));
     setSelectedProduct(p);
     
-    // MEJORA: Presentación predeterminada es UNIDADES
+    // MEJORA: Presentación predeterminada es la unidad mínima real del producto (No UND genérico)
     const defaultUnit = p.unit_type || 'UND';
     setEntryUnit(defaultUnit);
     setEntryQty(1);
@@ -720,7 +682,7 @@ export const MobileOrders: React.FC = () => {
 
           <div className="bg-white shadow-sm p-4 sticky top-0 z-20 rounded-b-3xl">
              <div className="flex items-start gap-3 mb-4">
-                <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-2 rounded-full mt-1 active:bg-slate-200"><ChevronLeft className="w-5 h-5 text-slate-600" /></button>
+                <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-2 rounded-full mt-1 active:bg-slate-200"><ChevronLeft className="w-6 h-6 text-slate-600" /></button>
                 <div className="flex-1">
                    <h2 className="font-black text-xl text-slate-900 leading-tight mb-1">{selectedClient?.name}</h2>
                    <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">{selectedClient?.doc_number || '-'}</span>
@@ -853,6 +815,18 @@ export const MobileOrders: React.FC = () => {
   }
 
   if (viewMode === 'PRODUCT_SELECT') {
+    // === MEJORA VISUAL PARA LOS BOTONES DE SELECCIÓN ===
+    const minUnit = selectedProduct?.unit_type || 'UND';
+    const maxUnit = selectedProduct?.package_type || 'PKG';
+    const isMinSelected = entryUnit === minUnit;
+    const isMaxSelected = entryUnit === maxUnit;
+
+    const minPriceObj = selectedProduct ? calculateCalculatedPrice(selectedProduct, minUnit, priceListId) : { price: 0, discount: 0 };
+    const maxPriceObj = selectedProduct && selectedProduct.package_type ? calculateCalculatedPrice(selectedProduct, maxUnit, priceListId) : { price: 0, discount: 0 };
+    
+    // Calculadora en vivo del importe del ítem que estás por agregar
+    const currentTotalItemPrice = (entryQty * entryPrice) * (1 - (entryDiscount / 100));
+
     return (
        <div className="h-screen flex flex-col bg-slate-50 pb-safe">
           <div className="bg-white p-4 border-b border-slate-200 sticky top-0 z-20 rounded-b-2xl shadow-sm">
@@ -887,21 +861,24 @@ export const MobileOrders: React.FC = () => {
                       <button onClick={() => setEntryQty(entryQty + 1)} className="w-16 h-16 rounded-2xl bg-white shadow-md flex items-center justify-center text-3xl font-black text-slate-600 active:scale-95">+</button>
                    </div>
 
-                   {/* MEJORA: Botones Táctiles para selección de Unidad (Por defecto UND) */}
+                   {/* MEJORA VISUAL: Diferenciación de colores Mínima (Azul) vs Máxima (Índigo) */}
                    <div className="grid grid-cols-2 gap-3 mb-8">
-                      <button onClick={() => handleUnitChange('UND')} className={`p-4 rounded-2xl font-black flex flex-col items-center border-2 transition-all ${entryUnit === 'UND' ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-400'}`}>
-                         <span className="text-xs tracking-widest mb-1">MÍNIMA (UND)</span>
-                         <span className="text-xl">S/ {Number(selectedProduct.price_unit || 0).toFixed(2)}</span>
+                      <button onClick={() => handleUnitChange(minUnit)} className={`p-4 rounded-2xl font-black flex flex-col items-center border-2 transition-all ${isMinSelected ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-400'}`}>
+                         <span className="text-xs tracking-widest mb-1 uppercase">MÍNIMA ({minUnit})</span>
+                         <span className="text-xl">S/ {minPriceObj.price.toFixed(2)}</span>
                       </button>
-                      <button onClick={() => handleUnitChange(selectedProduct.package_type || 'PKG')} disabled={!selectedProduct.package_type} className={`p-4 rounded-2xl font-black flex flex-col items-center border-2 transition-all ${entryUnit !== 'UND' ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-md' : 'border-slate-200 bg-white text-slate-400'} disabled:opacity-30 disabled:bg-slate-50`}>
-                         <span className="text-xs tracking-widest mb-1">MÁXIMA ({selectedProduct.package_type || 'CAJA'})</span>
-                         <span className="text-xl">S/ {Number(selectedProduct.price_package || 0).toFixed(2)}</span>
+                      
+                      <button onClick={() => handleUnitChange(maxUnit)} disabled={!selectedProduct.package_type} className={`p-4 rounded-2xl font-black flex flex-col items-center border-2 transition-all ${isMaxSelected ? 'border-indigo-600 bg-indigo-50 text-indigo-700 shadow-md' : 'border-slate-200 bg-white text-slate-400'} disabled:opacity-30 disabled:bg-slate-50`}>
+                         <span className="text-xs tracking-widest mb-1 uppercase">MÁXIMA ({maxUnit})</span>
+                         <span className="text-xl">S/ {maxPriceObj.price.toFixed(2)}</span>
                       </button>
                    </div>
 
+                   {/* MEJORA VISUAL: Calculadora en vivo en el botón */}
                    <button onClick={executeAddToCart} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black text-lg shadow-xl active:scale-95 transition-transform mb-3">
-                      AGREGAR AL PEDIDO
+                      AGREGAR S/ {currentTotalItemPrice.toFixed(2)}
                    </button>
+                   
                    <button onClick={() => setSelectedProduct(null)} className="w-full py-4 text-slate-500 font-bold bg-slate-100 rounded-2xl active:bg-slate-200 transition-colors">CANCELAR</button>
                 </div>
              ) : (
