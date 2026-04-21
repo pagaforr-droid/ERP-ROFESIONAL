@@ -172,17 +172,12 @@ export const MobileOrders: React.FC = () => {
     return list ? Number(list.multiplier || list.factor || 1) : 1;
   };
 
-  // ============================================================================
-  // MATEMÁTICA ESTRICTA DE PRECIOS: BASE EN UNIDAD MÍNIMA
-  // ============================================================================
   const calculateCalculatedPrice = (p: Product, unit: string, listId: string) => {
     let baseUnitPrice = Number(p.price_unit || 0);
     let defaultDiscount = 0;
 
-    // 1. Aplicamos el factor de la lista de precios del cliente a la UNIDAD MÍNIMA
     baseUnitPrice = baseUnitPrice * getMultiplier(listId);
 
-    // 2. Buscamos si hay promociones (Descuentos o Precios Fijos)
     const activePromo = dbPromos.find(promo => {
         if (!(promo.product_ids || []).includes(p.id)) return false;
         if (!isPromoValidForContext(promo, 'IN_STORE', selectedClient?.city || '', currentSellerId || currentUser?.id, currentUser?.role)) return false;
@@ -194,12 +189,10 @@ export const MobileOrders: React.FC = () => {
         if (activePromo.type === 'PERCENTAGE_DISCOUNT') {
             defaultDiscount = Number(activePromo.value || 0);
         } else if (activePromo.type === 'FIXED_PRICE') {
-            // Si hay precio fijo unitario, reemplaza la base
             baseUnitPrice = Number(activePromo.value || 0);
         }
     }
 
-    // 3. CÁLCULO FINAL DE CAJA (Matemática pura: Unidad x Cantidad)
     let finalPrice = baseUnitPrice;
     if (p.package_type && unit.trim() === p.package_type.trim()) {
         finalPrice = baseUnitPrice * Number(p.package_content || 1);
@@ -340,7 +333,7 @@ export const MobileOrders: React.FC = () => {
     setSelectedClient(client);
     setSelectedClientId(client.id);
     setClientAddress(client.address || '');
-    setPriceListId(client.price_list_id || ''); // FIJA LA LISTA DE PRECIOS DEL CLIENTE
+    setPriceListId(client.price_list_id || '');
     setPaymentMethod((client.payment_condition || '').toUpperCase().includes('CREDIT') ? 'CREDITO' : 'CONTADO');
     setDocType((client.doc_number || '').length === 11 ? 'FACTURA' : 'BOLETA');
     setCart([]);
@@ -401,7 +394,6 @@ export const MobileOrders: React.FC = () => {
     setCartProductsCache(prev => ({...prev, [p.id]: p}));
     setSelectedProduct(p);
     
-    // Unidad mínima real del producto
     const defaultUnit = (p.unit_type || 'UND').trim();
     setEntryUnit(defaultUnit);
     setEntryQty(1);
@@ -429,7 +421,7 @@ export const MobileOrders: React.FC = () => {
     
     const currentTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
-    if (!window.confirm(`¿Está seguro de CERRAR Y ENVIAR este pedido por S/ ${currentTotal.toFixed(2)}?`)) return;
+    if (!window.confirm(`¿Está seguro de CONFIRMAR Y ENVIAR este pedido por S/ ${currentTotal.toFixed(2)}?`)) return;
 
     setIsSaving(true);
 
@@ -465,7 +457,7 @@ export const MobileOrders: React.FC = () => {
       const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
       if (error) throw error;
 
-      alert(isEditMode ? `¡Pedido modificado!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
+      alert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
       
       setViewMode('CLIENT_LIST');
       setListTab('HISTORY');
@@ -536,7 +528,7 @@ export const MobileOrders: React.FC = () => {
   const categoriesList = useMemo(() => ['TODOS', ...Array.from(new Set(dbProducts.map(p => p.category))).filter(Boolean).sort()], [dbProducts]);
 
   // ============================================================================
-  // RENDER (UI MÓVIL OPTIMIZADA)
+  // RENDER (UI MÓVIL)
   // ============================================================================
 
   if (isLoadingInitial) {
@@ -688,7 +680,7 @@ export const MobileOrders: React.FC = () => {
              </div>
           )}
 
-          <div className="bg-white shadow-sm p-3 sticky top-0 z-20 rounded-b-2xl">
+          <div className="bg-white shadow-sm p-3 z-20 rounded-b-2xl shrink-0">
              <div className="flex items-start gap-2 mb-2">
                 <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-1.5 rounded-full mt-0.5 active:bg-slate-200"><ChevronLeft className="w-5 h-5 text-slate-600" /></button>
                 <div className="flex-1">
@@ -734,8 +726,8 @@ export const MobileOrders: React.FC = () => {
           </div>
 
           {clientTab === 'ORDER' && (
-             <div className="flex-1 flex flex-col overflow-hidden">
-                <div className="flex gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200">
+             <div className="flex-1 flex flex-col min-h-0">
+                <div className="flex gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200 shrink-0">
                    <div className="flex-1 flex items-center justify-center rounded-lg text-[10px] font-black border bg-white text-slate-700 shadow-sm border-slate-200">
                       {docType}
                    </div>
@@ -745,6 +737,7 @@ export const MobileOrders: React.FC = () => {
                    </select>
                 </div>
 
+                {/* CONTENEDOR CON SCROLL PARA PRODUCTOS (HIGH DENSITY) */}
                 <div className="flex-1 overflow-y-auto p-2 space-y-2">
                    {cart.map((item, idx) => (
                       <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-200 bg-green-50/30' : 'border-slate-200'}`}>
@@ -778,14 +771,15 @@ export const MobileOrders: React.FC = () => {
                    </button>
                 </div>
 
-                <div className="bg-white border-t border-slate-200 p-3 sticky bottom-0 z-30 pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+                {/* CONTENEDOR RÍGIDO INFERIOR (Nunca se oculta) */}
+                <div className="shrink-0 bg-white border-t border-slate-200 p-3 shadow-[0_-10px_15px_-3px_rgba(0,0,0,0.05)] z-30 pb-safe">
                    <div className="flex justify-between items-center mb-3 px-1">
                       <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Total:</span>
                       <span className="text-2xl font-black text-slate-900">S/ {cartTotal.toFixed(2)}</span>
                    </div>
                    <button onClick={handleSaveOrder} disabled={cart.length === 0 || isSaving} className={`w-full text-white py-3 rounded-xl font-black text-base shadow-lg flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 disabled:shadow-none ${isEditMode ? 'bg-red-600 shadow-red-600/30' : 'bg-slate-900 shadow-slate-900/30'}`}>
                       {isSaving ? <Loader2 className="w-5 h-5 animate-spin"/> : <CheckCircle className="w-5 h-5" />} 
-                      {isEditMode ? 'SOBREESCRIBIR PEDIDO' : 'CONFIRMAR Y CERRAR PEDIDO'}
+                      {isEditMode ? 'SOBREESCRIBIR PEDIDO' : 'CONFIRMAR Y ENVIAR PEDIDO'}
                    </button>
                 </div>
              </div>
