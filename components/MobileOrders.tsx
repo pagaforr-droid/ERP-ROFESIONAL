@@ -172,18 +172,17 @@ export const MobileOrders: React.FC = () => {
     return list ? Number(list.multiplier || list.factor || 1) : 1;
   };
 
+  // ============================================================================
+  // MATEMÁTICA ESTRICTA DE PRECIOS: BASE EN UNIDAD MÍNIMA
+  // ============================================================================
   const calculateCalculatedPrice = (p: Product, unit: string, listId: string) => {
-    let price = Number(p.price_unit || 0);
+    let baseUnitPrice = Number(p.price_unit || 0);
     let defaultDiscount = 0;
 
-    // Respetar precio por caja si existe
-    if (p.package_type && unit.trim() === p.package_type.trim()) {
-        price = p.price_package ? Number(p.price_package) : price * Number(p.package_content || 1);
-    }
-    
-    // Multiplicador del cliente (Mayorista, VIP, etc.)
-    price = price * getMultiplier(listId);
+    // 1. Aplicamos el factor de la lista de precios del cliente a la UNIDAD MÍNIMA
+    baseUnitPrice = baseUnitPrice * getMultiplier(listId);
 
+    // 2. Buscamos si hay promociones (Descuentos o Precios Fijos)
     const activePromo = dbPromos.find(promo => {
         if (!(promo.product_ids || []).includes(p.id)) return false;
         if (!isPromoValidForContext(promo, 'IN_STORE', selectedClient?.city || '', currentSellerId || currentUser?.id, currentUser?.role)) return false;
@@ -192,14 +191,21 @@ export const MobileOrders: React.FC = () => {
     });
 
     if (activePromo) {
-        if (activePromo.type === 'PERCENTAGE_DISCOUNT') defaultDiscount = Number(activePromo.value || 0);
-        else if (activePromo.type === 'FIXED_PRICE') {
-            let promoPrice = Number(activePromo.value || 0);
-            if (p.package_type && unit.trim() === p.package_type.trim() && !p.price_package) promoPrice = promoPrice * Number(p.package_content || 1);
-            price = promoPrice;
+        if (activePromo.type === 'PERCENTAGE_DISCOUNT') {
+            defaultDiscount = Number(activePromo.value || 0);
+        } else if (activePromo.type === 'FIXED_PRICE') {
+            // Si hay precio fijo unitario, reemplaza la base
+            baseUnitPrice = Number(activePromo.value || 0);
         }
     }
-    return { price, discount: defaultDiscount };
+
+    // 3. CÁLCULO FINAL DE CAJA (Matemática pura: Unidad x Cantidad)
+    let finalPrice = baseUnitPrice;
+    if (p.package_type && unit.trim() === p.package_type.trim()) {
+        finalPrice = baseUnitPrice * Number(p.package_content || 1);
+    }
+
+    return { price: finalPrice, discount: defaultDiscount };
   };
 
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
@@ -395,12 +401,11 @@ export const MobileOrders: React.FC = () => {
     setCartProductsCache(prev => ({...prev, [p.id]: p}));
     setSelectedProduct(p);
     
-    // BLINDAJE: Fuerza la unidad real mínima limpiando espacios ocultos
+    // Unidad mínima real del producto
     const defaultUnit = (p.unit_type || 'UND').trim();
     setEntryUnit(defaultUnit);
     setEntryQty(1);
     
-    // Recalcula precio usando la lista de precios del cliente seleccionado
     const { price, discount } = calculateCalculatedPrice(p, defaultUnit, priceListId);
     setEntryPrice(price);
     setEntryDiscount(discount);
@@ -412,7 +417,6 @@ export const MobileOrders: React.FC = () => {
      const cleanUnit = newUnit.trim();
      setEntryUnit(cleanUnit);
      if (selectedProduct) {
-        // Al tocar caja o unidad, hereda el multiplicador de la lista del cliente
         const { price, discount } = calculateCalculatedPrice(selectedProduct, cleanUnit, priceListId);
         setEntryPrice(price);
         setEntryDiscount(discount);
@@ -425,7 +429,6 @@ export const MobileOrders: React.FC = () => {
     
     const currentTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
-    // MEJORA: Escudo de confirmación nativo
     if (!window.confirm(`¿Está seguro de CERRAR Y ENVIAR este pedido por S/ ${currentTotal.toFixed(2)}?`)) return;
 
     setIsSaving(true);
@@ -533,7 +536,7 @@ export const MobileOrders: React.FC = () => {
   const categoriesList = useMemo(() => ['TODOS', ...Array.from(new Set(dbProducts.map(p => p.category))).filter(Boolean).sort()], [dbProducts]);
 
   // ============================================================================
-  // RENDER (UI MÓVIL OPTIMIZADA - HIGH DENSITY)
+  // RENDER (UI MÓVIL OPTIMIZADA)
   // ============================================================================
 
   if (isLoadingInitial) {
@@ -656,6 +659,7 @@ export const MobileOrders: React.FC = () => {
           
           {isSaving && <div className="absolute inset-0 bg-white/90 z-[100] flex flex-col items-center justify-center"><Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" /><p className="font-bold text-slate-600">Sincronizando con Base...</p></div>}
 
+          {/* PAYMENT MODAL */}
           {isPaymentModalOpen && selectedSale && (
              <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
                 <div className="bg-white w-full rounded-t-3xl p-6 shadow-2xl animate-slide-up">
