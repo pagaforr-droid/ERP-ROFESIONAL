@@ -194,7 +194,7 @@ export const MobileOrders: React.FC = () => {
     }
 
     let finalPrice = baseUnitPrice;
-    if (p.package_type && unit.trim() === p.package_type.trim()) {
+    if (p.package_type && unit.trim().toUpperCase() === p.package_type.trim().toUpperCase()) {
         finalPrice = baseUnitPrice * Number(p.package_content || 1);
     }
 
@@ -203,7 +203,12 @@ export const MobileOrders: React.FC = () => {
 
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
-    const getBaseQuantity = (item: CartItem) => item.unit_type === item.product_ref?.package_type ? item.quantity * Number(item.product_ref.package_content || 1) : item.quantity;
+    const getBaseQuantity = (item: CartItem) => {
+       const p = cartProductsCache[item.product_id] || item.product_ref;
+       if (!p) return item.quantity;
+       const isPkgMode = item.unit_type.trim().toUpperCase() === p.package_type?.trim().toUpperCase();
+       return isPkgMode ? item.quantity * Number(p.package_content || 1) : item.quantity;
+    };
 
     const validPromos = dbAutoPromos.filter(ap => {
       if (!isPromoValidForContext(ap, 'IN_STORE', selectedClient?.city || '', currentSellerId || currentUser?.id, currentUser?.role)) return false;
@@ -241,16 +246,24 @@ export const MobileOrders: React.FC = () => {
 
       if (applies && multiplier > 0) {
         const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
+        
         if (rewardProduct) {
           const rewardQty = (ap.reward_quantity || 1) * multiplier;
           const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
-          const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
+          const factor = isPkgMode ? Number(rewardProduct.package_content || 1) : 1;
+          const requiredBaseQty = rewardQty * factor;
 
-          cleanCart.push({
-            id: crypto.randomUUID(), product_id: rewardProduct.id, sku: rewardProduct.sku, name: rewardProduct.name,
-            quantity: rewardQty, unit_type: realUnitName, unit_price: 0, discount_percent: 100, total_price: 0,
-            is_bonus: true, auto_promo_id: ap.id, promo_name: ap.name, product_ref: rewardProduct
-          });
+          // ==============================================================================
+          // EL BLINDAJE DE STOCK PARA PREMIOS (Previene que la Base de Datos colapse)
+          // ==============================================================================
+          if (rewardProduct.current_stock >= requiredBaseQty) {
+              const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
+              cleanCart.push({
+                id: crypto.randomUUID(), product_id: rewardProduct.id, sku: rewardProduct.sku, name: rewardProduct.name,
+                quantity: rewardQty, unit_type: realUnitName, unit_price: 0, discount_percent: 100, total_price: 0,
+                is_bonus: true, auto_promo_id: ap.id, promo_name: ap.name, product_ref: rewardProduct
+              });
+          }
         }
       }
     });
@@ -260,13 +273,13 @@ export const MobileOrders: React.FC = () => {
   const executeAddToCart = () => {
     if (!selectedProduct || entryQty <= 0) return;
 
-    const isPkgMode = entryUnit === selectedProduct.package_type?.trim();
+    const isPkgMode = entryUnit.trim().toUpperCase() === selectedProduct.package_type?.trim().toUpperCase();
     const conversionFactor = isPkgMode ? Number(selectedProduct.package_content || 1) : 1; 
     const requiredBaseUnits = entryQty * conversionFactor;
 
     let totalStock = selectedProduct.current_stock || 0;
     let tempCart = [...cart];
-    const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === entryUnit);
+    const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type.trim().toUpperCase() === entryUnit.trim().toUpperCase());
     
     let originalReserved = 0;
     let existingQty = 0;
@@ -279,7 +292,7 @@ export const MobileOrders: React.FC = () => {
     const totalRequiredBaseUnits = (existingQty + entryQty) * conversionFactor;
 
     if (totalStock < totalRequiredBaseUnits && !entryBonus) {
-        alert(`❌ Stock Insuficiente para ${selectedProduct.name}.\nDisponible: ${totalStock} unid. (Incluye tu reserva original)`);
+        alert(`❌ Stock Insuficiente para ${selectedProduct.name}.\nDisponible: ${totalStock} unid.`);
         return;
     }
 
@@ -293,7 +306,7 @@ export const MobileOrders: React.FC = () => {
     } else {
       tempCart.push({
         id: crypto.randomUUID(), product_id: selectedProduct.id, sku: selectedProduct.sku, name: selectedProduct.name,
-        quantity: entryQty, unit_type: entryUnit, unit_price: entryPrice, discount_percent: entryDiscount,
+        quantity: entryQty, unit_type: entryUnit.trim().toUpperCase(), unit_price: entryPrice, discount_percent: entryDiscount,
         total_price: entryBonus ? 0 : finalPrice, is_bonus: entryBonus, product_ref: selectedProduct
       });
     }
@@ -311,7 +324,7 @@ export const MobileOrders: React.FC = () => {
 
     const item = tempCart[itemIndex];
     const pRef = item.product_ref;
-    const isPkgMode = item.unit_type === pRef.package_type;
+    const isPkgMode = item.unit_type.trim().toUpperCase() === pRef.package_type?.trim().toUpperCase();
     const conversionFactor = isPkgMode ? Number(pRef.package_content || 1) : 1; 
     const requiredBaseUnits = newQty * conversionFactor;
 
@@ -319,7 +332,7 @@ export const MobileOrders: React.FC = () => {
     if (isEditMode && item.original_base_qty) totalStock += item.original_base_qty;
 
     if (totalStock < requiredBaseUnits && !item.is_bonus) {
-        alert(`❌ Stock Insuficiente para ${pRef.name || 'Producto'}.\nDisponible: ${totalStock} unid. (Incluye reserva original)`);
+        alert(`❌ Stock Insuficiente para ${pRef.name || 'Producto'}.\nDisponible: ${totalStock} unid.`);
         return;
     }
 
@@ -358,7 +371,7 @@ export const MobileOrders: React.FC = () => {
                 setCartProductsCache(prev => ({...prev, [pRef.id]: pRef}));
                 return {
                     id: item.id, product_id: item.product_id, sku: item.product_sku || pRef.sku || '', name: item.product_name || pRef.name || 'Producto',
-                    quantity: item.quantity || 1, unit_type: item.unit_type || 'UND', unit_price: item.unit_price || 0,
+                    quantity: item.quantity || 1, unit_type: (item.unit_type || 'UND').trim().toUpperCase(), unit_price: item.unit_price || 0,
                     discount_percent: item.discount_percent || 0, total_price: item.total_price || 0,
                     is_bonus: item.is_bonus || false, auto_promo_id: item.auto_promo_id || undefined,
                     promo_name: item.auto_promo_id ? 'PROMO' : undefined, product_ref: pRef,
@@ -394,7 +407,7 @@ export const MobileOrders: React.FC = () => {
     setCartProductsCache(prev => ({...prev, [p.id]: p}));
     setSelectedProduct(p);
     
-    const defaultUnit = (p.unit_type || 'UND').trim();
+    const defaultUnit = (p.unit_type || 'UND').trim().toUpperCase();
     setEntryUnit(defaultUnit);
     setEntryQty(1);
     
@@ -406,7 +419,7 @@ export const MobileOrders: React.FC = () => {
   };
 
   const handleUnitChange = (newUnit: string) => {
-     const cleanUnit = newUnit.trim();
+     const cleanUnit = newUnit.trim().toUpperCase();
      setEntryUnit(cleanUnit);
      if (selectedProduct) {
         const { price, discount } = calculateCalculatedPrice(selectedProduct, cleanUnit, priceListId);
@@ -421,7 +434,7 @@ export const MobileOrders: React.FC = () => {
     
     const currentTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
-    if (!window.confirm(`¿Está seguro de CONFIRMAR Y ENVIAR este pedido por S/ ${currentTotal.toFixed(2)}?`)) return;
+    if (!window.confirm(`¿Está seguro de CERRAR Y ENVIAR este pedido por S/ ${currentTotal.toFixed(2)}?`)) return;
 
     setIsSaving(true);
 
@@ -439,7 +452,8 @@ export const MobileOrders: React.FC = () => {
       status: 'pending', 
       delivery_address: clientAddress || null, 
       items: cart.map(c => {
-        const isPkgMode = c.unit_type === c.product_ref?.package_type?.trim();
+        // Blindaje final de unidades al guardar el JSON
+        const isPkgMode = c.unit_type.trim().toUpperCase() === c.product_ref?.package_type?.trim().toUpperCase();
         const factor = isPkgMode ? Number(c.product_ref?.package_content || 1) : 1;
         return {
           id: c.id, product_id: c.product_id, product_sku: c.sku, product_name: c.name,
@@ -528,7 +542,7 @@ export const MobileOrders: React.FC = () => {
   const categoriesList = useMemo(() => ['TODOS', ...Array.from(new Set(dbProducts.map(p => p.category))).filter(Boolean).sort()], [dbProducts]);
 
   // ============================================================================
-  // RENDER (UI MÓVIL OPTIMIZADA - TOP BAR ACTION)
+  // RENDER (UI MÓVIL OPTIMIZADA)
   // ============================================================================
 
   if (isLoadingInitial) {
@@ -740,7 +754,7 @@ export const MobileOrders: React.FC = () => {
                    </select>
                 </div>
 
-                {/* MEJORA UX: BOTÓN Y TOTAL MOVIDOS ARRIBA */}
+                {/* BOTÓN Y TOTAL MOVIDOS ARRIBA */}
                 <div className="bg-white p-3 border-b border-slate-200 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0 z-10">
                    <div className="flex justify-between items-end mb-3 px-1">
                       <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Total del Pedido:</span>
