@@ -120,14 +120,13 @@ export const MobileOrders: React.FC = () => {
         let clientQuery = supabase.from('clients').select('*').eq('is_active', true);
         if (sellerZoneIds.length > 0) clientQuery = clientQuery.in('zone_id', sellerZoneIds);
 
-        const [compRes, plRes, apRes, promRes, cliRes, prodRes, batchRes, salesRes, ordersRes, seriesRes] = await Promise.all([
+        const [compRes, plRes, apRes, promRes, cliRes, prodRes, salesRes, ordersRes, seriesRes] = await Promise.all([
             supabase.from('company_config').select('*').limit(1).maybeSingle(),
             supabase.from('price_lists').select('*').order('name'),
             supabase.from('auto_promotions').select('*').eq('is_active', true),
             supabase.from('promotions').select('*').eq('is_active', true),
             clientQuery,
             supabase.from('products').select('*').eq('is_active', true),
-            supabase.from('batches').select('*').gt('quantity_current', 0),
             supabase.from('sales').select('*').eq('payment_status', 'PENDING').eq('payment_method', 'CREDITO'),
             supabase.from('orders').select('*').eq('seller_id', sellerId).gte('created_at', today),
             supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true)
@@ -140,23 +139,12 @@ export const MobileOrders: React.FC = () => {
         if (cliRes.data) setDbClients(cliRes.data as Client[]);
         if (salesRes.data) setDbSales(salesRes.data as Sale[]);
         if (ordersRes.data) setDbOrders(ordersRes.data as Order[]);
+        if (prodRes.data) setDbProducts(prodRes.data as any[]);
         
         if (seriesRes.data && seriesRes.data.length > 0) {
             setDbSeries(seriesRes.data);
             setPedidoSeries(seriesRes.data[0].series || '');
             setPedidoNumber(String(seriesRes.data[0].current_number + 1).padStart(8, '0'));
-        }
-
-        if (prodRes.data && batchRes.data) {
-            const batchCache: Record<string, any[]> = {};
-            const enrichedProds = prodRes.data.map(p => {
-               const pBatches = batchRes.data.filter(b => b.product_id === p.id);
-               batchCache[p.id] = pBatches;
-               const stock = pBatches.reduce((sum, b) => sum + Number(b.quantity_current || 0), 0);
-               return { ...p, current_stock: stock };
-            });
-            setLoadedBatches(batchCache);
-            setDbProducts(enrichedProds as any[]);
         }
     } catch (error) {
         console.error("Error cargando maestros:", error);
@@ -172,6 +160,7 @@ export const MobileOrders: React.FC = () => {
     return list ? Number(list.multiplier || list.factor || 1) : 1;
   };
 
+  // LÓGICA DE PRECIO ESTRICTA A LA UNIDAD MÍNIMA
   const calculateCalculatedPrice = (p: Product, unit: string, listId: string) => {
     let baseUnitPrice = Number(p.price_unit || 0);
     let defaultDiscount = 0;
@@ -194,20 +183,22 @@ export const MobileOrders: React.FC = () => {
     }
 
     let finalPrice = baseUnitPrice;
-    if (p.package_type && unit.trim().toUpperCase() === p.package_type.trim().toUpperCase()) {
+    if (p.package_type && unit === p.package_type) {
         finalPrice = baseUnitPrice * Number(p.package_content || 1);
     }
 
     return { price: finalPrice, discount: defaultDiscount };
   };
 
+  // CLON EXACTO DEL ESCRITORIO
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
+
     const getBaseQuantity = (item: CartItem) => {
-       const p = cartProductsCache[item.product_id] || item.product_ref;
-       if (!p) return item.quantity;
-       const isPkgMode = item.unit_type.trim().toUpperCase() === p.package_type?.trim().toUpperCase();
-       return isPkgMode ? item.quantity * Number(p.package_content || 1) : item.quantity;
+        if (item.unit_type === item.product_ref?.package_type) {
+            return item.quantity * Number(item.product_ref.package_content || 1);
+        }
+        return item.quantity;
     };
 
     const validPromos = dbAutoPromos.filter(ap => {
@@ -225,74 +216,102 @@ export const MobileOrders: React.FC = () => {
       if (ap.condition_type === 'BUY_X_PRODUCT') {
         const qtyBought = cleanCart.filter(i => {
             if (i.is_bonus) return false;
-            if (ap.condition_product_ids && ap.condition_product_ids.length > 0) return ap.condition_product_ids.includes(i.product_id);
-            if (ap.condition_product_id) return i.product_id === ap.condition_product_id;
+            const hasList = ap.condition_product_ids && ap.condition_product_ids.length > 0;
+            const hasSingle = !!ap.condition_product_id;
+            if (hasList) return ap.condition_product_ids.includes(i.product_id);
+            if (hasSingle) return i.product_id === ap.condition_product_id;
             return true;
         }).reduce((sum, i) => sum + getBaseQuantity(i), 0); 
-        if (qtyBought >= (ap.condition_amount || 1)) { applies = true; multiplier = Math.floor(qtyBought / (ap.condition_amount || 1)); }
+        
+        if (qtyBought >= ap.condition_amount) {
+          applies = true;
+          multiplier = Math.floor(qtyBought / ap.condition_amount);
+        }
       } 
       else if (ap.condition_type === 'SPEND_Y_TOTAL') {
         const conditionItemKeys = ap.condition_product_ids || [];
-        const totalSpent = cleanCart.reduce((sum, item) => (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) ? sum : sum + (item.total_price || 0), 0);
-        if (totalSpent >= (ap.condition_amount || 1)) { applies = true; multiplier = Math.floor(totalSpent / (ap.condition_amount || 1)); }
+        const totalSpent = cleanCart.reduce((sum, item) => {
+            if (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) return sum;
+            return sum + item.total_price;
+        }, 0);
+        if (totalSpent >= ap.condition_amount) {
+          applies = true;
+          multiplier = Math.floor(totalSpent / ap.condition_amount);
+        }
       } 
       else if (ap.condition_type === 'SPEND_Y_CATEGORY') {
         const catSpent = cleanCart.reduce((sum, item) => {
             const p = cartProductsCache[item.product_id] || item.product_ref;
-            return p?.category === ap.condition_category ? sum + (item.total_price || 0) : sum;
+            if (p?.category === ap.condition_category) return sum + item.total_price;
+            return sum;
         }, 0);
-        if (catSpent >= (ap.condition_amount || 1)) { applies = true; multiplier = Math.floor(catSpent / (ap.condition_amount || 1)); }
+        if (catSpent >= ap.condition_amount) {
+            applies = true;
+            multiplier = Math.floor(catSpent / ap.condition_amount);
+        }
       }
 
       if (applies && multiplier > 0) {
         const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
-        
         if (rewardProduct) {
-          const rewardQty = (ap.reward_quantity || 1) * multiplier;
+          const rewardQty = ap.reward_quantity * multiplier;
           const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
-          const factor = isPkgMode ? Number(rewardProduct.package_content || 1) : 1;
-          const requiredBaseQty = rewardQty * factor;
+          const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
 
-          // ==============================================================================
-          // EL BLINDAJE DE STOCK PARA PREMIOS (Previene que la Base de Datos colapse)
-          // ==============================================================================
-          if (rewardProduct.current_stock >= requiredBaseQty) {
-              const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
-              cleanCart.push({
-                id: crypto.randomUUID(), product_id: rewardProduct.id, sku: rewardProduct.sku, name: rewardProduct.name,
-                quantity: rewardQty, unit_type: realUnitName, unit_price: 0, discount_percent: 100, total_price: 0,
-                is_bonus: true, auto_promo_id: ap.id, promo_name: ap.name, product_ref: rewardProduct
-              });
-          }
+          cleanCart.push({
+            id: crypto.randomUUID(),
+            product_id: rewardProduct.id,
+            sku: rewardProduct.sku,
+            name: rewardProduct.name,
+            quantity: rewardQty,
+            unit_type: realUnitName,
+            unit_price: 0,
+            discount_percent: 100,
+            total_price: 0,
+            is_bonus: true,
+            auto_promo_id: ap.id,
+            promo_name: ap.name,
+            product_ref: rewardProduct
+          });
         }
       }
     });
+
     setCart(cleanCart);
   };
 
+  // CLON EXACTO DEL ESCRITORIO
   const executeAddToCart = () => {
-    if (!selectedProduct || entryQty <= 0) return;
+    if (!selectedProduct) return;
+    if (entryQty <= 0) return;
 
-    const isPkgMode = entryUnit.trim().toUpperCase() === selectedProduct.package_type?.trim().toUpperCase();
+    const isPkgMode = entryUnit === selectedProduct.package_type;
     const conversionFactor = isPkgMode ? Number(selectedProduct.package_content || 1) : 1; 
     const requiredBaseUnits = entryQty * conversionFactor;
 
-    let totalStock = selectedProduct.current_stock || 0;
+    const availableBatches = loadedBatches[selectedProduct.id] || [];
+    let totalStock = availableBatches.length > 0 
+        ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) 
+        : Number(selectedProduct.current_stock || selectedProduct.stock || 0);
+
     let tempCart = [...cart];
-    const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type.trim().toUpperCase() === entryUnit.trim().toUpperCase());
+    const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === entryUnit);
     
     let originalReserved = 0;
     let existingQty = 0;
     if (existingIdx >= 0) {
         existingQty = tempCart[existingIdx].quantity;
-        if (isEditMode && tempCart[existingIdx].original_base_qty) originalReserved = tempCart[existingIdx].original_base_qty || 0;
+        if (isEditMode && tempCart[existingIdx].original_base_qty) {
+            originalReserved = tempCart[existingIdx].original_base_qty || 0;
+        }
     }
 
     totalStock += originalReserved; 
+
     const totalRequiredBaseUnits = (existingQty + entryQty) * conversionFactor;
 
     if (totalStock < totalRequiredBaseUnits && !entryBonus) {
-        alert(`❌ Stock Insuficiente para ${selectedProduct.name}.\nDisponible: ${totalStock} unid.`);
+        alert(`❌ Stock Insuficiente para ${selectedProduct.name}.\nDisponible: ${totalStock} unid. (Incluye tu reserva original)\nRequerido total: ${totalRequiredBaseUnits} unid.`);
         return;
     }
 
@@ -305,39 +324,63 @@ export const MobileOrders: React.FC = () => {
       tempCart[existingIdx].total_price = tGross - (tGross * (tempCart[existingIdx].discount_percent / 100));
     } else {
       tempCart.push({
-        id: crypto.randomUUID(), product_id: selectedProduct.id, sku: selectedProduct.sku, name: selectedProduct.name,
-        quantity: entryQty, unit_type: entryUnit.trim().toUpperCase(), unit_price: entryPrice, discount_percent: entryDiscount,
-        total_price: entryBonus ? 0 : finalPrice, is_bonus: entryBonus, product_ref: selectedProduct
+        id: crypto.randomUUID(),
+        product_id: selectedProduct.id,
+        sku: selectedProduct.sku,
+        name: selectedProduct.name,
+        quantity: entryQty,
+        unit_type: entryUnit,
+        unit_price: entryPrice,
+        discount_percent: entryDiscount,
+        total_price: entryBonus ? 0 : finalPrice,
+        is_bonus: entryBonus,
+        product_ref: selectedProduct
       });
     }
 
     applyPromotions(tempCart, priceListId);
-    setSelectedProduct(null); setEntryQty(1); setEntryPrice(0); setEntryDiscount(0); setEntryBonus(false);
-    setViewMode('CLIENT_DETAIL'); 
+
+    setSelectedProduct(null);
+    setProductSearch('');
+    setEntryQty(1);
+    setEntryPrice(0);
+    setEntryDiscount(0);
+    setEntryBonus(false);
+    setViewMode('CLIENT_DETAIL');
   };
 
+  // CLON EXACTO DEL ESCRITORIO
   const handleCartQtyChange = (id: string, newQty: number) => {
     if (isNaN(newQty) || newQty <= 0) return;
+    
     let tempCart = [...cart];
     const itemIndex = tempCart.findIndex(i => i.id === id);
     if (itemIndex < 0) return;
 
     const item = tempCart[itemIndex];
     const pRef = item.product_ref;
-    const isPkgMode = item.unit_type.trim().toUpperCase() === pRef.package_type?.trim().toUpperCase();
+    
+    const isPkgMode = item.unit_type === pRef.package_type;
     const conversionFactor = isPkgMode ? Number(pRef.package_content || 1) : 1; 
     const requiredBaseUnits = newQty * conversionFactor;
 
-    let totalStock = dbProducts.find(p => p.id === pRef.id)?.current_stock || 0;
-    if (isEditMode && item.original_base_qty) totalStock += item.original_base_qty;
+    const availableBatches = loadedBatches[pRef.id] || [];
+    let totalStock = availableBatches.length > 0 
+        ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) 
+        : Number(pRef.current_stock || pRef.stock || 0);
+
+    if (isEditMode && item.original_base_qty) {
+        totalStock += item.original_base_qty;
+    }
 
     if (totalStock < requiredBaseUnits && !item.is_bonus) {
-        alert(`❌ Stock Insuficiente para ${pRef.name || 'Producto'}.\nDisponible: ${totalStock} unid.`);
+        alert(`❌ Stock Insuficiente para ${pRef.name}.\nDisponible: ${totalStock} unid. (Incluye tu reserva original)\nIntentó solicitar: ${requiredBaseUnits} unid.`);
         return;
     }
 
     const tGross = newQty * item.unit_price;
     tempCart[itemIndex] = { ...item, quantity: newQty, total_price: tGross - (tGross * (item.discount_percent / 100)) };
+    
     applyPromotions(tempCart, priceListId);
   };
 
@@ -365,16 +408,41 @@ export const MobileOrders: React.FC = () => {
         const client = dbClients.find(c => c.id === order.client_id);
         
         let loadedItems: CartItem[] = [];
-        if (orderItemsData) {
+        if (orderItemsData && orderItemsData.length > 0) {
+            const pIds = [...new Set(orderItemsData.map((item: any) => item.product_id))];
+            
+            const [prodsRes, batchesRes] = await Promise.all([
+                supabase.from('products').select('*').in('id', pIds),
+                supabase.from('batches').select('*').in('product_id', pIds).gt('quantity_current', 0)
+            ]);
+
+            const prods = prodsRes.data || [];
+            const bData = batchesRes.data || [];
+
+            const batchCache: Record<string, any[]> = { ...loadedBatches };
+            const prodMap = prods.reduce((acc: any, p: any) => {
+                batchCache[p.id] = bData.filter(b => b.product_id === p.id);
+                return {...acc, [p.id]: p};
+            }, {});
+
+            setLoadedBatches(batchCache);
+
             loadedItems = orderItemsData.map((item: any) => {
-                const pRef = dbProducts.find(p => p.id === item.product_id) || {} as Product;
-                setCartProductsCache(prev => ({...prev, [pRef.id]: pRef}));
+                const pRef = prodMap[item.product_id] || dbProducts.find(p => p.id === item.product_id) || {} as Product;
                 return {
-                    id: item.id, product_id: item.product_id, sku: item.product_sku || pRef.sku || '', name: item.product_name || pRef.name || 'Producto',
-                    quantity: item.quantity || 1, unit_type: (item.unit_type || 'UND').trim().toUpperCase(), unit_price: item.unit_price || 0,
-                    discount_percent: item.discount_percent || 0, total_price: item.total_price || 0,
-                    is_bonus: item.is_bonus || false, auto_promo_id: item.auto_promo_id || undefined,
-                    promo_name: item.auto_promo_id ? 'PROMO' : undefined, product_ref: pRef,
+                    id: item.id,
+                    product_id: item.product_id,
+                    sku: item.product_sku || pRef.sku,
+                    name: item.product_name || pRef.name,
+                    quantity: item.quantity || item.quantity_presentation || item.quantity_base || 1,
+                    unit_type: item.unit_type || item.selected_unit || 'UND',
+                    unit_price: item.unit_price || 0,
+                    discount_percent: item.discount_percent || 0,
+                    total_price: item.total_price || 0,
+                    is_bonus: item.is_bonus || false,
+                    auto_promo_id: item.auto_promo_id || undefined,
+                    promo_name: item.auto_promo_id ? 'PROMO' : undefined,
+                    product_ref: pRef,
                     original_base_qty: item.quantity_base || 0 
                 };
             });
@@ -403,37 +471,51 @@ export const MobileOrders: React.FC = () => {
     } catch(e) { alert("Error al cargar pedido."); } finally { setIsLoadingData(false); }
   };
 
-  const handleProductClick = (p: Product) => {
-    setCartProductsCache(prev => ({...prev, [p.id]: p}));
-    setSelectedProduct(p);
-    
-    const defaultUnit = (p.unit_type || 'UND').trim().toUpperCase();
-    setEntryUnit(defaultUnit);
-    setEntryQty(1);
-    
-    const { price, discount } = calculateCalculatedPrice(p, defaultUnit, priceListId);
-    setEntryPrice(price);
-    setEntryDiscount(discount);
-    setEntryBonus(false);
-    setViewMode('PRODUCT_SELECT');
+  // DESCARGA LOTES EN TIEMPO REAL AL SELECCIONAR PRODUCTO PARA EVITAR LIMITE DE 1000
+  const handleProductClick = async (p: Product) => {
+    setIsLoadingData(true);
+    try {
+        const { data: bData } = await supabase.from('batches').select('*').eq('product_id', p.id).gt('quantity_current', 0);
+        const freshStock = bData ? bData.reduce((sum, b) => sum + Number(b.quantity_current || 0), 0) : Number(p.current_stock || p.stock || 0);
+        
+        const updatedProduct = { ...p, current_stock: freshStock };
+        
+        setCartProductsCache(prev => ({...prev, [p.id]: updatedProduct}));
+        setLoadedBatches(prev => ({...prev, [p.id]: bData || []}));
+        setSelectedProduct(updatedProduct);
+        
+        const defaultUnit = p.unit_type || 'UND';
+        setEntryUnit(defaultUnit);
+        setEntryQty(1);
+        
+        const { price, discount } = calculateCalculatedPrice(updatedProduct, defaultUnit, priceListId);
+        setEntryPrice(price);
+        setEntryDiscount(discount);
+        setEntryBonus(false);
+        setViewMode('PRODUCT_SELECT');
+    } catch(e) {
+        console.error(e);
+    } finally {
+        setIsLoadingData(false);
+    }
   };
 
   const handleUnitChange = (newUnit: string) => {
-     const cleanUnit = newUnit.trim().toUpperCase();
-     setEntryUnit(cleanUnit);
+     setEntryUnit(newUnit);
      if (selectedProduct) {
-        const { price, discount } = calculateCalculatedPrice(selectedProduct, cleanUnit, priceListId);
+        const { price, discount } = calculateCalculatedPrice(selectedProduct, newUnit, priceListId);
         setEntryPrice(price);
         setEntryDiscount(discount);
      }
   };
 
+  // CLON EXACTO DEL ESCRITORIO
   const handleSaveOrder = async () => {
     if (!selectedClient) return;
     if (cart.length === 0) { alert("El pedido está vacío."); return; }
-    
-    const currentTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
 
+    const currentTotal = cart.reduce((sum, item) => sum + item.total_price, 0);
+    
     if (!window.confirm(`¿Está seguro de CERRAR Y ENVIAR este pedido por S/ ${currentTotal.toFixed(2)}?`)) return;
 
     setIsSaving(true);
@@ -442,9 +524,9 @@ export const MobileOrders: React.FC = () => {
       id: isEditMode && originalOrder ? originalOrder.id : crypto.randomUUID(),
       code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${pedidoNumber}`,
       client_id: selectedClientId || null,
-      client_name: selectedClient.name || '',
-      client_doc_type: selectedClient.doc_type || 'RUC',
-      client_doc_number: selectedClient.doc_number || '',
+      client_name: selectedClient?.name || '',
+      client_doc_type: (selectedClient?.doc_number || '').length === 11 ? 'RUC' : 'DNI',
+      client_doc_number: selectedClient?.doc_number || '',
       seller_id: currentSellerId || null,
       suggested_document_type: docType,
       payment_method: paymentMethod,
@@ -452,22 +534,33 @@ export const MobileOrders: React.FC = () => {
       status: 'pending', 
       delivery_address: clientAddress || null, 
       items: cart.map(c => {
-        // Blindaje final de unidades al guardar el JSON
-        const isPkgMode = c.unit_type.trim().toUpperCase() === c.product_ref?.package_type?.trim().toUpperCase();
-        const factor = isPkgMode ? Number(c.product_ref?.package_content || 1) : 1;
+        const isPkgMode = c.unit_type === c.product_ref?.package_type;
+        const conversionFactor = isPkgMode ? Number(c.product_ref?.package_content || 1) : 1;
+        const qtyBase = c.quantity * conversionFactor;
+
         return {
-          id: c.id, product_id: c.product_id, product_sku: c.sku, product_name: c.name,
-          quantity: c.quantity, unit_type: c.unit_type, selected_unit: c.unit_type,
-          quantity_presentation: c.quantity, quantity_base: c.quantity * factor,
-          unit_price: c.unit_price, discount_percent: c.discount_percent,
-          discount_amount: (c.quantity * c.unit_price) * ((c.discount_percent || 0) / 100),
-          total_price: c.total_price, is_bonus: c.is_bonus, auto_promo_id: c.auto_promo_id || null
+          id: c.id,
+          product_id: c.product_id,
+          product_sku: c.sku,
+          product_name: c.name,
+          quantity: c.quantity,
+          unit_type: c.unit_type,
+          selected_unit: c.unit_type,
+          quantity_presentation: c.quantity,
+          quantity_base: qtyBase,
+          unit_price: c.unit_price,
+          discount_percent: c.discount_percent,
+          discount_amount: (c.quantity * c.unit_price) * (c.discount_percent / 100),
+          total_price: c.total_price,
+          is_bonus: c.is_bonus,
+          auto_promo_id: c.auto_promo_id || null
         };
       })
     };
 
     try {
       const rpcName = isEditMode ? 'update_order_transaction' : 'process_order_transaction';
+      
       const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
       if (error) throw error;
 
@@ -477,8 +570,11 @@ export const MobileOrders: React.FC = () => {
       setListTab('HISTORY');
       setCart([]);
       handleSellerSelect(currentSellerId); 
-    } catch (error: any) { alert("Error al guardar: " + error.message); } 
-    finally { setIsSaving(false); }
+    } catch (error: any) { 
+        alert("Error al guardar: " + error.message); 
+    } finally { 
+        setIsSaving(false); 
+    }
   };
 
   const handleNewOrder = () => {
@@ -540,10 +636,6 @@ export const MobileOrders: React.FC = () => {
 
   const cartTotal = cart.reduce((acc, item) => acc + Number(item.total_price || 0), 0);
   const categoriesList = useMemo(() => ['TODOS', ...Array.from(new Set(dbProducts.map(p => p.category))).filter(Boolean).sort()], [dbProducts]);
-
-  // ============================================================================
-  // RENDER (UI MÓVIL OPTIMIZADA)
-  // ============================================================================
 
   if (isLoadingInitial) {
      return <div className="h-screen bg-slate-900 flex items-center justify-center"><Loader2 className="w-12 h-12 text-blue-500 animate-spin" /></div>;
@@ -665,7 +757,6 @@ export const MobileOrders: React.FC = () => {
           
           {isSaving && <div className="absolute inset-0 bg-white/90 z-[100] flex flex-col items-center justify-center"><Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" /><p className="font-bold text-slate-600">Sincronizando con Base...</p></div>}
 
-          {/* PAYMENT MODAL */}
           {isPaymentModalOpen && selectedSale && (
              <div className="absolute inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
                 <div className="bg-white w-full rounded-t-3xl p-6 shadow-2xl animate-slide-up">
@@ -743,7 +834,6 @@ export const MobileOrders: React.FC = () => {
           {clientTab === 'ORDER' && (
              <div className="flex-1 flex flex-col min-h-0">
                 
-                {/* SUBHEADER: FORMA PAGO Y DOC */}
                 <div className="flex gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200 shrink-0">
                    <div className="flex-1 flex items-center justify-center rounded-lg text-[10px] font-black border bg-white text-slate-700 shadow-sm border-slate-200">
                       {docType}
@@ -754,7 +844,6 @@ export const MobileOrders: React.FC = () => {
                    </select>
                 </div>
 
-                {/* BOTÓN Y TOTAL MOVIDOS ARRIBA */}
                 <div className="bg-white p-3 border-b border-slate-200 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0 z-10">
                    <div className="flex justify-between items-end mb-3 px-1">
                       <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Total del Pedido:</span>
@@ -766,7 +855,6 @@ export const MobileOrders: React.FC = () => {
                    </button>
                 </div>
 
-                {/* LISTA DE PRODUCTOS CON SCROLL INDEPENDIENTE */}
                 <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-slate-100">
                    {cart.map((item, idx) => (
                       <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-300 bg-green-50' : 'border-slate-200'}`}>
@@ -835,8 +923,8 @@ export const MobileOrders: React.FC = () => {
   }
 
   if (viewMode === 'PRODUCT_SELECT') {
-    const minUnit = (selectedProduct?.unit_type || 'UND').trim();
-    const maxUnit = (selectedProduct?.package_type || 'PKG').trim();
+    const minUnit = selectedProduct?.unit_type || 'UND';
+    const maxUnit = selectedProduct?.package_type || 'PKG';
     const isMinSelected = entryUnit === minUnit;
     const isMaxSelected = entryUnit === maxUnit;
 
