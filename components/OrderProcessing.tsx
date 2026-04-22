@@ -6,11 +6,33 @@ import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckS
 import { Order, Sale, SaleItem } from '../types';
 
 export const OrderProcessing: React.FC = () => {
-   const { currentUser, sellers, clients, zones, company } = useStore();
+   const { currentUser, company } = useStore();
 
    const [orders, setOrders] = useState<Order[]>([]);
+   const [dbSellers, setDbSellers] = useState<any[]>([]);
+   const [dbClients, setDbClients] = useState<any[]>([]);
+   const [dbZones, setDbZones] = useState<any[]>([]);
+   
    const [isLoading, setIsLoading] = useState(false);
    const [hasSearched, setHasSearched] = useState(false);
+
+   useEffect(() => {
+      const loadMasterData = async () => {
+         try {
+            const [resSellers, resClients, resZones] = await Promise.all([
+               supabase.from('erp_users').select('*').eq('role', 'SELLER'),
+               supabase.from('clients').select('*'),
+               supabase.from('zones').select('*')
+            ]);
+            if (resSellers.data) setDbSellers(resSellers.data);
+            if (resClients.data) setDbClients(resClients.data);
+            if (resZones.data) setDbZones(resZones.data);
+         } catch (err) {
+            console.error("Error loading master data:", err);
+         }
+      };
+      loadMasterData();
+   }, []);
 
    const [orderToAnnul, setOrderToAnnul] = useState<string | null>(null);
 
@@ -71,7 +93,7 @@ export const OrderProcessing: React.FC = () => {
          let filtered = (data || []) as Order[];
          
          filtered = filtered.filter(o => {
-            const client = clients.find(c => c.id === o.client_id);
+            const client = dbClients.find(c => c.id === o.client_id || c.doc_number === o.client_doc_number);
             const clientZoneId = client?.zone_id || 'UNASSIGNED';
             const isFactura = (o.client_doc_number || '').length === 11;
             const docType = isFactura ? 'FACTURA' : 'BOLETA';
@@ -142,8 +164,8 @@ export const OrderProcessing: React.FC = () => {
 
       // Auto-select the first active series of each type as default
       const defaultTargets: { FACTURA?: string, BOLETA?: string } = {};
-      const activeFacturaSeries = company.series.find(s => s.type === 'FACTURA' && s.is_active);
-      const activeBoletaSeries = company.series.find(s => s.type === 'BOLETA' && s.is_active);
+      const activeFacturaSeries = company?.series?.find(s => s.type === 'FACTURA' && s.is_active);
+      const activeBoletaSeries = company?.series?.find(s => s.type === 'BOLETA' && s.is_active);
 
       if (activeFacturaSeries) defaultTargets.FACTURA = activeFacturaSeries.series;
       if (activeBoletaSeries) defaultTargets.BOLETA = activeBoletaSeries.series;
@@ -177,7 +199,7 @@ export const OrderProcessing: React.FC = () => {
 
             let address = (order as any).client_address || '';
             if (!address) {
-               const client = clients.find(c => c.id === order.client_id || c.doc_number === order.client_doc_number);
+               const client = dbClients.find(c => c.id === order.client_id || c.doc_number === order.client_doc_number);
                address = client?.address || '';
             }
 
@@ -352,7 +374,7 @@ export const OrderProcessing: React.FC = () => {
                                           value={targetSeries.FACTURA || ''}
                                           onChange={e => setTargetSeries(prev => ({ ...prev, FACTURA: e.target.value }))}
                                        >
-                                          {company.series.filter(s => s.type === 'FACTURA').map(s => (
+                                          {company?.series?.filter(s => s.type === 'FACTURA').map(s => (
                                              <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
                                           ))}
                                        </select>
@@ -374,7 +396,7 @@ export const OrderProcessing: React.FC = () => {
                                           value={targetSeries.BOLETA || ''}
                                           onChange={e => setTargetSeries(prev => ({ ...prev, BOLETA: e.target.value }))}
                                        >
-                                          {company.series.filter(s => s.type === 'BOLETA').map(s => (
+                                          {company?.series?.filter(s => s.type === 'BOLETA').map(s => (
                                              <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
                                           ))}
                                        </select>
@@ -446,14 +468,14 @@ export const OrderProcessing: React.FC = () => {
                <label className="block text-xs font-bold text-slate-600 mb-1">Filtrar por Vendedor</label>
                <select className="w-full border border-slate-300 rounded p-2 text-sm" value={filterSeller} onChange={e => setFilterSeller(e.target.value)}>
                   <option value="ALL">Todos los Vendedores</option>
-                  {sellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {dbSellers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                </select>
             </div>
             <div className="flex-1 min-w-[200px]">
                <label className="block text-xs font-bold text-slate-600 mb-1">Filtrar por Zona</label>
                <select className="w-full border border-slate-300 rounded p-2 text-sm" value={filterZone} onChange={e => setFilterZone(e.target.value)}>
                   <option value="ALL">Todas las Zonas</option>
-                  {zones.map(z => <option key={z.id} value={z.id}>{z.code} - {z.name}</option>)}
+                  {dbZones.map(z => <option key={z.id} value={z.id}>{z.code} - {z.name}</option>)}
                </select>
             </div>
             <div className="flex-1 min-w-[200px]">
@@ -537,9 +559,9 @@ export const OrderProcessing: React.FC = () => {
                      {!hasSearched ? (
                         <tr><td colSpan={8} className="p-10 text-center text-slate-400 italic">Utilice los filtros y presione "Buscar" para cargar los pedidos.</td></tr>
                      ) : orders.map(order => {
-                        const seller = sellers.find(s => s.id === order.seller_id);
-                        const client = clients.find(c => c.id === order.client_id);
-                        const zone = zones.find(z => z.id === client?.zone_id);
+                        const seller = dbSellers.find(s => s.id === order.seller_id);
+                        const client = dbClients.find(c => c.id === order.client_id || c.doc_number === order.client_doc_number);
+                        const zone = dbZones.find(z => z.id === client?.zone_id);
                         const isSelected = selectedIds.has(order.id);
 
                         return (
