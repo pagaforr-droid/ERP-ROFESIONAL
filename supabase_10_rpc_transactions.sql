@@ -18,13 +18,35 @@ RETURNS JSONB AS $$
 DECLARE
     v_order_id UUID;
     v_item JSONB;
+    v_current_number INT;
+    v_code TEXT;
+    v_series TEXT;
 BEGIN
+    -- Extract series part from the code passed from frontend, or default to P001
+    v_series := SPLIT_PART(p_order_data->>'code', '-', 1);
+    IF v_series = '' THEN
+        v_series := 'P001';
+    END IF;
+
+    -- Increment concurrent sequence for PEDIDO
+    UPDATE document_series 
+    SET current_number = current_number + 1
+    WHERE type = 'PEDIDO' AND series = v_series
+    RETURNING current_number INTO v_current_number;
+
+    IF v_current_number IS NULL THEN
+        -- Fallback to the code sent by the frontend
+        v_code := p_order_data->>'code';
+    ELSE
+        v_code := v_series || '-' || LPAD(v_current_number::text, 8, '0');
+    END IF;
+
     INSERT INTO orders (
         id, code, client_id, client_name, client_doc_type, client_doc_number,
         seller_id, suggested_document_type, payment_method, total, status, delivery_address
     ) VALUES (
         COALESCE(NULLIF(p_order_data->>'id', ''), uuid_generate_v4()::text)::uuid,
-        p_order_data->>'code',
+        v_code,
         NULLIF(p_order_data->>'client_id', '')::uuid,
         p_order_data->>'client_name',
         (p_order_data->>'client_doc_type')::doc_type,
@@ -58,7 +80,7 @@ BEGIN
         );
     END LOOP;
 
-    RETURN jsonb_build_object('success', true, 'real_code', p_order_data->>'code', 'order_id', v_order_id);
+    RETURN jsonb_build_object('success', true, 'real_code', v_code, 'order_id', v_order_id);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

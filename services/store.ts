@@ -1829,13 +1829,37 @@ export const useStore = create<AppState>((set, get) => ({
       if (error) { console.error('Supabase Error:', error); throw error; }
       set(s => ({ cashMovements: s.cashMovements.filter(cm => cm.id !== id) }));
    },
-   addExpenseCategory: (c) => set(s => ({ expenseCategories: [...s.expenseCategories, c] })),
-   updateExpenseCategory: (c) => set(s => ({ expenseCategories: s.expenseCategories.map(cat => cat.id === c.id ? c : cat) })),
-   deleteExpenseCategory: (id) => set(s => ({ expenseCategories: s.expenseCategories.filter(c => c.id !== id) })),
+   addExpenseCategory: async (c) => {
+      const { error } = await supabase.from('expense_categories').insert([c]);
+      if (error) { console.error('Supabase Error (addExpenseCategory):', error); throw error; }
+      set(s => ({ expenseCategories: [...s.expenseCategories, c] }));
+   },
+   updateExpenseCategory: async (c) => {
+      const { error } = await supabase.from('expense_categories').update(c).eq('id', c.id);
+      if (error) { console.error('Supabase Error (updateExpenseCategory):', error); throw error; }
+      set(s => ({ expenseCategories: s.expenseCategories.map(cat => cat.id === c.id ? c : cat) }));
+   },
+   deleteExpenseCategory: async (id) => {
+      const { error } = await supabase.from('expense_categories').delete().eq('id', id);
+      if (error) { console.error('Supabase Error (deleteExpenseCategory):', error); throw error; }
+      set(s => ({ expenseCategories: s.expenseCategories.filter(c => c.id !== id) }));
+   },
 
-   addScheduledTransaction: (tx) => set(s => ({ scheduledTransactions: [...s.scheduledTransactions, tx] })),
-   updateScheduledTransaction: (tx) => set(s => ({ scheduledTransactions: s.scheduledTransactions.map(t => t.id === tx.id ? tx : t) })),
-   deleteScheduledTransaction: (id) => set(s => ({ scheduledTransactions: s.scheduledTransactions.filter(t => t.id !== id) })),
+   addScheduledTransaction: async (tx) => {
+      const { error } = await supabase.from('scheduled_transactions').insert([tx]);
+      if (error) { console.error('Supabase Error (addScheduledTransaction):', error); throw error; }
+      set(s => ({ scheduledTransactions: [...s.scheduledTransactions, tx] }));
+   },
+   updateScheduledTransaction: async (tx) => {
+      const { error } = await supabase.from('scheduled_transactions').update(tx).eq('id', tx.id);
+      if (error) { console.error('Supabase Error (updateScheduledTransaction):', error); throw error; }
+      set(s => ({ scheduledTransactions: s.scheduledTransactions.map(t => t.id === tx.id ? tx : t) }));
+   },
+   deleteScheduledTransaction: async (id) => {
+      const { error } = await supabase.from('scheduled_transactions').delete().eq('id', id);
+      if (error) { console.error('Supabase Error (deleteScheduledTransaction):', error); throw error; }
+      set(s => ({ scheduledTransactions: s.scheduledTransactions.filter(t => t.id !== id) }));
+   },
 
    processScheduledTransaction: (txId, userId) => set(s => {
       const tx = s.scheduledTransactions.find(t => t.id === txId);

@@ -1,17 +1,52 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { CashMovement, ExpenseCategory, ScheduledTransaction } from '../types';
 import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, BarChart3, Briefcase, Store, Truck, Coins, Loader2 } from 'lucide-react';
+import { supabase } from '../services/supabase';
 
 type Tab = 'SESSION' | 'DASHBOARD' | 'MOVEMENTS' | 'PLANNER' | 'CONFIG';
 
 export const CashFlow: React.FC = () => {
    const store = useStore();
    const [activeTab, setActiveTab] = useState<Tab>('DASHBOARD');
+   const [isLoading, setIsLoading] = useState(true);
 
    // Filters & Global
    const [filterDateFrom, setFilterDateFrom] = useState(new Date().toISOString().split('T')[0]);
    const [filterDateTo, setFilterDateTo] = useState(new Date().toISOString().split('T')[0]);
+
+   useEffect(() => {
+      const fetchInitialData = async () => {
+         setIsLoading(true);
+         try {
+            const [sessionsRes, categoriesRes, movementsRes, scheduledRes] = await Promise.all([
+               supabase.from('cash_register_sessions').select('*').order('created_at', { ascending: false }),
+               supabase.from('expense_categories').select('*'),
+               supabase.from('cash_movements').select('*').order('date', { ascending: false }),
+               supabase.from('scheduled_transactions').select('*')
+            ]);
+            
+            const stateUpdates: any = {};
+            if (sessionsRes.data) {
+               stateUpdates.cashSessions = sessionsRes.data;
+               const openSession = sessionsRes.data.find(s => s.status === 'OPEN');
+               stateUpdates.currentCashSession = openSession || null;
+            }
+            if (categoriesRes.data) stateUpdates.expenseCategories = categoriesRes.data;
+            if (movementsRes.data) stateUpdates.cashMovements = movementsRes.data;
+            if (scheduledRes.data) stateUpdates.scheduledTransactions = scheduledRes.data;
+            
+            if (Object.keys(stateUpdates).length > 0) {
+               useStore.setState(stateUpdates);
+            }
+         } catch (error) {
+            console.error("Error fetching cash flow data:", error);
+         } finally {
+            setIsLoading(false);
+         }
+      };
+      fetchInitialData();
+   }, []);
 
    // --- DERIVED DATA ---
 
@@ -861,6 +896,16 @@ export const CashFlow: React.FC = () => {
          </div>
       );
    };
+
+   if (isLoading) {
+      return (
+         <div className="flex flex-col h-full items-center justify-center bg-slate-50">
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
+            <h2 className="text-xl font-bold text-slate-700">Cargando Flujo de Caja...</h2>
+            <p className="text-slate-500 text-sm">Sincronizando con la base de datos central</p>
+         </div>
+      );
+   }
 
    return (
       <div className="flex flex-col h-full space-y-4 font-sans text-sm">
