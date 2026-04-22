@@ -18,6 +18,9 @@ export const PrintBatch: React.FC = () => {
     // Selection
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [selectedDocsInfo, setSelectedDocsInfo] = useState<any[]>([]);
+    
+    // Modal state
+    const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
     useEffect(() => {
         setSelectedIds([]);
@@ -136,7 +139,7 @@ export const PrintBatch: React.FC = () => {
         );
 
         if (invalidGuias.length > 0) {
-           alert(`No se pueden imprimir ${invalidGuias.length} Guía(s) de Remisión porque aún no han sido aceptadas por SUNAT. Envíelas primero desde el módulo SUNAT.`);
+           setAlertMessage(`No se pueden imprimir ${invalidGuias.length} Guía(s) de Remisión porque aún no han sido aceptadas por SUNAT. Envíelas primero desde el módulo SUNAT.`);
            return;
         }
 
@@ -153,6 +156,25 @@ export const PrintBatch: React.FC = () => {
     return (
         <div className="h-full flex flex-col space-y-4 relative">
             
+            {/* --- CUSTOM ALERT MODAL --- */}
+            {alertMessage && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 text-center animate-scale-up">
+                        <div className="bg-amber-100 text-amber-500 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <X className="w-8 h-8" />
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 mb-2">Aviso</h3>
+                        <p className="text-slate-600 text-sm mb-6">{alertMessage}</p>
+                        <button 
+                            onClick={() => setAlertMessage(null)}
+                            className="w-full py-3 bg-slate-900 text-white rounded-lg font-bold shadow-lg"
+                        >
+                            Entendido
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* --- PDF NATIVE VIEWER OVERLAY --- */}
             {isPreviewOpen && (
                 <div className="fixed inset-0 bg-slate-900 z-[100] flex flex-col">

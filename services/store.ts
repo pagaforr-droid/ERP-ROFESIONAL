@@ -103,6 +103,7 @@ interface AppState {
    createCreditNote: (creditNote: Sale, originalSaleId: string, returnedItems: SaleItem[]) => void;
    createOrder: (order: Order) => void;
    updateOrder: (order: Order) => void;
+   annulOrder: (orderId: string, userId: string) => Promise<{ success: boolean; msg: string }>;
    batchProcessOrders: (orderIds: string[], targetSeries?: { FACTURA?: string, BOLETA?: string }) => void;
    reportCollection: (saleId: string, sellerId: string, amount: number) => void;
    consolidateCollections: (recordIds: string[], userId?: string, metadata?: { editPlanillaId?: string, editPlanillaCode?: string }) => Promise<void>;
@@ -121,7 +122,7 @@ interface AppState {
    updateSaleDeliveryStatus: (saleId: string, status: Sale['dispatch_status'], details?: { reason?: string; photo?: string; location?: { lat: number; lng: number } }) => void;
    updateSunatStatus: (type: 'sale' | 'dispatch', id: string, status: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED', message?: string) => void;
    processDispatchLiquidation: (liquidation: DispatchLiquidation) => void;
-   markDocumentsAsPrinted: (saleIds: string[]) => void;
+   markDocumentsAsPrinted: (saleIds: string[]) => Promise<void>;
    generateGuiasFromSales: (saleIds: string[], transporterId: string, driverId: string, vehicleId: string) => void;
 
    // Auditory and Modifications
@@ -129,6 +130,7 @@ interface AppState {
    returnItemsToKardex: (items: SaleItem[]) => void;
    updateSaleDetailed: (updatedSale: Sale, originalSale: Sale, userId: string) => { success: boolean, msg: string };
    changeSaleDocumentType: (saleId: string, newType: 'FACTURA' | 'BOLETA', userId: string) => { success: boolean, msg: string, newSale?: Sale };
+   annulSale: (saleId: string, userId: string) => Promise<{ success: boolean; msg: string }>;
    revertDispatchLiquidation: (liquidationId: string, userId: string) => { success: boolean, msg: string };
 
    // Master Data Actions
@@ -583,6 +585,42 @@ export const useStore = create<AppState>((set, get) => ({
    }),
 
    updateOrder: (order) => set(s => ({ orders: s.orders.map(o => o.id === order.id ? order : o) })),
+
+   annulOrder: async (orderId, userId) => {
+      const { data, error } = await supabase.rpc('annul_order_transaction', {
+         p_order_id: orderId,
+         p_user_id: userId
+      });
+      if (error) {
+         console.error('Supabase Error (annul_order_transaction):', error);
+         return { success: false, msg: error.message };
+      }
+      
+      set(s => {
+         const order = s.orders.find(o => o.id === orderId);
+         if (!order) return s;
+         
+         const newOrders = s.orders.map(o => o.id === orderId ? { ...o, status: 'canceled' as any } : o);
+         
+         // Remove allocations from state
+         const newBatches = [...s.batches];
+         order.items.forEach(item => {
+            item.batch_allocations?.forEach(alloc => {
+               const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
+               if (batchIndex >= 0) {
+                  newBatches[batchIndex] = {
+                     ...newBatches[batchIndex],
+                     quantity_current: newBatches[batchIndex].quantity_current + alloc.quantity
+                  };
+               }
+            });
+         });
+         
+         return { orders: newOrders, batches: newBatches };
+      });
+      
+      return data as { success: boolean, msg: string };
+   },
 
    processOrderToSale: (orderId, series, number) => {
       return { success: true, msg: 'Use procesamiento masivo' };
@@ -1343,9 +1381,18 @@ export const useStore = create<AppState>((set, get) => ({
       }
    }),
 
-   markDocumentsAsPrinted: (saleIds) => set((state) => ({
-      sales: state.sales.map(s => saleIds.includes(s.id) ? { ...s, printed: true, printed_at: new Date().toISOString() } : s)
-   })),
+   markDocumentsAsPrinted: async (saleIds) => {
+      const { error } = await supabase.rpc('mark_documents_as_printed', {
+         p_sale_ids: saleIds
+      });
+      if (error) {
+         console.error('Supabase Error (mark_documents_as_printed):', error);
+      }
+      
+      set((state) => ({
+         sales: state.sales.map(s => saleIds.includes(s.id) ? { ...s, printed: true, printed_at: new Date().toISOString() } : s)
+      }));
+   },
 
    processDispatchLiquidation: (liquidation) => set((s) => {
       let currentSeriesState = [...s.company.series];
@@ -1592,6 +1639,62 @@ export const useStore = create<AppState>((set, get) => ({
       });
       return { batches: currentBatches };
    }),
+
+   annulSale: async (saleId, userId) => {
+      const { data, error } = await supabase.rpc('annul_sale_transaction', {
+         p_sale_id: saleId,
+         p_user_id: userId
+      });
+      if (error) {
+         console.error('Supabase Error (annul_sale_transaction):', error);
+         return { success: false, msg: error.message };
+      }
+
+      set(s => {
+         const sale = s.sales.find(x => x.id === saleId);
+         if (!sale) return s;
+
+         const newSales = s.sales.map(x => x.id === saleId ? {
+            ...x,
+            status: 'canceled' as any,
+            payment_status: 'PENDING',
+            collection_status: 'NONE',
+            balance: x.total
+         } : x);
+
+         const newBatches = [...s.batches];
+         sale.items.forEach(item => {
+            item.batch_allocations?.forEach(alloc => {
+               const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
+               if (batchIndex >= 0) {
+                  newBatches[batchIndex] = {
+                     ...newBatches[batchIndex],
+                     quantity_current: newBatches[batchIndex].quantity_current + alloc.quantity
+                  };
+               }
+            });
+         });
+
+         const newHistoryEvent = {
+            id: generateUUID(),
+            sale_id: saleId,
+            action: 'ANNULLED',
+            user_id: userId,
+            details: 'Documento anulado por administrador',
+            date: new Date().toISOString()
+         };
+
+         // Find the sale again to update history
+         const finalSales = newSales.map(x => x.id === saleId ? {
+            ...x,
+            history: [...(x.history || []), newHistoryEvent]
+         } : x);
+
+         return { sales: finalSales, batches: newBatches };
+      });
+
+      return data as { success: boolean, msg: string };
+   },
 
    updateSaleDetailed: (updatedSale, originalSale, userId) => {
       let success = true;

@@ -2,8 +2,9 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Sale, LiquidationDocument } from '../types';
-import { Search, Printer, Eye, FileText, Filter, X, Calendar, Download } from 'lucide-react';
+import { Search, Printer, Eye, FileText, Filter, X, Calendar, Download, Trash2, Copy, Lock, Loader2 } from 'lucide-react';
 import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
+import { supabase } from '../services/supabase';
 
 // Normalized interface for display purposes
 interface DisplayDocument {
@@ -30,6 +31,14 @@ export const DocumentManager: React.FC = () => {
    const [searchTerm, setSearchTerm] = useState('');
 
    const [selectedDoc, setSelectedDoc] = useState<DisplayDocument | null>(null); // For Modal Detail
+   
+   // --- ACTION MODAL STATE ---
+   const [actionState, setActionState] = useState<{ type: 'ANNUL' | 'CLONE', doc: DisplayDocument } | null>(null);
+   const [adminPassword, setAdminPassword] = useState('');
+   const [cloneDocType, setCloneDocType] = useState('FACTURA');
+   const [cloneSeries, setCloneSeries] = useState('');
+   const [isProcessingAction, setIsProcessingAction] = useState(false);
+   const { currentUser, annulSale } = useStore();
 
    // --- DATA UNIFICATION ---
    const allDocuments: DisplayDocument[] = useMemo(() => {
@@ -87,6 +96,77 @@ export const DocumentManager: React.FC = () => {
       if (type === 'BOLETA') return 'bg-blue-100 text-blue-800 border-blue-200';
       if (type.includes('NOTA')) return 'bg-orange-100 text-orange-800 border-orange-200';
       return 'bg-gray-100 text-gray-800';
+   };
+
+   const openActionModal = (type: 'ANNUL' | 'CLONE', doc: DisplayDocument) => {
+      setActionState({ type, doc });
+      setAdminPassword('');
+      if (type === 'CLONE') {
+         setCloneDocType(doc.documentType);
+         const activeSeriesList = company.series.filter(s => s.type === doc.documentType && s.is_active);
+         if (activeSeriesList.length > 0) setCloneSeries(activeSeriesList[0].series);
+      }
+   };
+
+   const confirmAction = async () => {
+      if (!actionState) return;
+      if (!adminPassword) { alert('Ingrese la contraseña de administrador.'); return; }
+      
+      // Validar password Admin
+      setIsProcessingAction(true);
+      try {
+         const { data: userAuth, error: authError } = await supabase.rpc('validate_admin_password', {
+            p_password: adminPassword
+         });
+         
+         if (authError || !userAuth) {
+             throw new Error("Contraseña incorrecta o permisos insuficientes.");
+         }
+         
+         // 1. ANULAR DOCUMENTO (Común para ambos flujos)
+         const { success, msg } = await annulSale(actionState.doc.id, currentUser?.id || '');
+         if (!success) throw new Error(msg);
+         
+         if (actionState.type === 'CLONE') {
+            // 2. CREAR NUEVO DOCUMENTO CLONADO
+            const originalSale = actionState.doc.originalRef;
+            
+            const clonedSalePayload = {
+               id: crypto.randomUUID(),
+               document_type: cloneDocType,
+               series: cloneSeries,
+               number: "A_GENERAR",
+               client_id: originalSale.client_id,
+               client_name: originalSale.client_name,
+               client_ruc: originalSale.client_ruc,
+               client_address: originalSale.client_address,
+               seller_id: originalSale.seller_id,
+               payment_method: originalSale.payment_method,
+               subtotal: originalSale.subtotal,
+               igv: originalSale.igv,
+               total: originalSale.total,
+               status: 'completed',
+               items: originalSale.items.map((item: any) => ({
+                   ...item,
+                   id: crypto.randomUUID(),
+                   sale_id: undefined
+               }))
+            };
+            
+            const { error: cloneError } = await supabase.rpc('process_sale_transaction', { p_sale_data: clonedSalePayload });
+            if (cloneError) throw cloneError;
+            
+            alert(`Documento original anulado y clonado exitosamente a la serie ${cloneSeries}. Actualice la vista.`);
+         } else {
+            alert('Documento anulado con éxito. El stock ha sido restituido al Kardex.');
+         }
+         
+         setActionState(null);
+      } catch (error: any) {
+         alert("Error: " + error.message);
+      } finally {
+         setIsProcessingAction(false);
+      }
    };
 
    return (
@@ -194,6 +274,24 @@ export const DocumentManager: React.FC = () => {
                                  >
                                     <Printer className="w-4 h-4" />
                                  </button>
+                                 {currentUser?.role === 'ADMIN' && doc.originalRef?.status !== 'canceled' && (
+                                    <>
+                                       <button
+                                          onClick={() => openActionModal('CLONE', doc)}
+                                          className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors"
+                                          title="Clonar Documento"
+                                       >
+                                          <Copy className="w-4 h-4" />
+                                       </button>
+                                       <button
+                                          onClick={() => openActionModal('ANNUL', doc)}
+                                          className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                                          title="Anular Documento"
+                                       >
+                                          <Trash2 className="w-4 h-4" />
+                                       </button>
+                                    </>
+                                 )}
                               </div>
                            </td>
                         </tr>
@@ -263,6 +361,93 @@ export const DocumentManager: React.FC = () => {
                      <button onClick={() => handlePrint(selectedDoc)} className="px-4 py-2 bg-slate-900 text-white rounded hover:bg-slate-800 font-bold flex items-center">
                         <Printer className="w-4 h-4 mr-2" /> Reimprimir
                      </button>
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {/* ACTION MODAL (ANNUL/CLONE) */}
+         {actionState && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+               <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden animate-scale-up flex flex-col">
+                  <div className="p-6">
+                     <div className="flex justify-center mb-4">
+                        <div className={`p-3 rounded-full ${actionState.type === 'ANNUL' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
+                           {actionState.type === 'ANNUL' ? <Trash2 className="w-10 h-10" /> : <Copy className="w-10 h-10" />}
+                        </div>
+                     </div>
+                     <h3 className="text-xl font-black text-slate-800 text-center mb-2">
+                        {actionState.type === 'ANNUL' ? 'Anular Documento' : 'Clonar Documento'}
+                     </h3>
+                     <p className="text-slate-500 text-sm text-center mb-6">
+                        {actionState.type === 'ANNUL' 
+                           ? `Se anulará el documento ${actionState.doc.series}-${actionState.doc.number} y se retornará el stock al Kardex.`
+                           : `Se anulará el documento ${actionState.doc.series}-${actionState.doc.number} y se creará uno nuevo con la misma información.`}
+                     </p>
+
+                     {actionState.type === 'CLONE' && (
+                        <div className="mb-4 space-y-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                           <div>
+                              <label className="block text-xs font-bold text-slate-600 mb-1">Tipo de Documento Destino</label>
+                              <select 
+                                 className="w-full border border-slate-300 rounded p-2 text-sm font-bold bg-white"
+                                 value={cloneDocType}
+                                 onChange={(e) => {
+                                    const type = e.target.value;
+                                    setCloneDocType(type);
+                                    const activeSeriesList = company.series.filter(s => s.type === type && s.is_active);
+                                    if (activeSeriesList.length > 0) setCloneSeries(activeSeriesList[0].series);
+                                 }}
+                              >
+                                 <option value="FACTURA">FACTURA</option>
+                                 <option value="BOLETA">BOLETA</option>
+                              </select>
+                           </div>
+                           <div>
+                              <label className="block text-xs font-bold text-slate-600 mb-1">Serie Destino</label>
+                              <select 
+                                 className="w-full border border-slate-300 rounded p-2 text-sm font-bold bg-white"
+                                 value={cloneSeries}
+                                 onChange={(e) => setCloneSeries(e.target.value)}
+                              >
+                                 {company.series.filter(s => s.type === cloneDocType && s.is_active).map(s => (
+                                    <option key={s.id} value={s.series}>{s.series}</option>
+                                 ))}
+                              </select>
+                           </div>
+                        </div>
+                     )}
+
+                     <div className="mb-6">
+                        <label className="block text-xs font-bold text-slate-600 mb-1 flex items-center">
+                           <Lock className="w-3 h-3 mr-1" /> Contraseña de Administrador
+                        </label>
+                        <input 
+                           type="password" 
+                           className="w-full border-2 border-slate-300 p-3 rounded-lg text-center font-black tracking-widest focus:border-blue-500 outline-none"
+                           value={adminPassword}
+                           onChange={e => setAdminPassword(e.target.value)}
+                           placeholder="••••••"
+                           autoFocus
+                        />
+                     </div>
+
+                     <div className="flex gap-3">
+                        <button 
+                           onClick={() => setActionState(null)} 
+                           disabled={isProcessingAction}
+                           className="flex-1 py-3 bg-slate-100 rounded-lg font-bold text-slate-600 disabled:opacity-50"
+                        >
+                           Cancelar
+                        </button>
+                        <button 
+                           onClick={confirmAction} 
+                           disabled={isProcessingAction || !adminPassword}
+                           className={`flex-1 py-3 text-white rounded-lg font-bold shadow-lg flex justify-center items-center disabled:opacity-50 ${actionState.type === 'ANNUL' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                        >
+                           {isProcessingAction ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirmar'}
+                        </button>
+                     </div>
                   </div>
                </div>
             </div>

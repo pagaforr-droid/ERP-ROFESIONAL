@@ -1,10 +1,12 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
-import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText } from 'lucide-react';
+import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText, Trash2 } from 'lucide-react';
 
 export const OrderProcessing: React.FC = () => {
-   const { orders, sellers, batchProcessOrders, clients, zones, company } = useStore();
+   const { currentUser, orders, sellers, batchProcessOrders, clients, zones, company, annulOrder } = useStore();
+
+   const [orderToAnnul, setOrderToAnnul] = useState<string | null>(null);
 
    // Filters
    const [filterSeller, setFilterSeller] = useState('ALL');
@@ -135,6 +137,28 @@ export const OrderProcessing: React.FC = () => {
       setProcessResult(null);
    };
 
+   const confirmAnnulOrder = async () => {
+      if (!orderToAnnul) return;
+      setIsProcessing(true);
+      try {
+         const { success, msg } = await annulOrder(orderToAnnul, currentUser?.id || 'SELLER');
+         if (!success) throw new Error(msg);
+         
+         // Clear selection if it was selected
+         const newSet = new Set(selectedIds);
+         if (newSet.has(orderToAnnul)) {
+            newSet.delete(orderToAnnul);
+            setSelectedIds(newSet);
+         }
+         
+         setOrderToAnnul(null);
+      } catch (e: any) {
+         alert("Error anulando pedido: " + e.message);
+      } finally {
+         setIsProcessing(false);
+      }
+   };
+
    return (
       <div className="h-full flex flex-col space-y-4 font-sans text-sm relative">
 
@@ -257,6 +281,23 @@ export const OrderProcessing: React.FC = () => {
             </div>
          )}
 
+         {/* --- ANNUL MODAL --- */}
+         {orderToAnnul && (
+            <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+               <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 text-center animate-scale-up">
+                  <Trash2 className="w-16 h-16 text-red-500 mx-auto mb-4 bg-red-50 p-3 rounded-full" />
+                  <h3 className="text-xl font-black text-slate-800 mb-2">¿Anular Pedido?</h3>
+                  <p className="text-slate-500 text-sm mb-6">El stock reservado regresará al Kardex. Esta acción no se puede deshacer.</p>
+                  <div className="flex gap-3">
+                     <button onClick={() => setOrderToAnnul(null)} disabled={isProcessing} className="flex-1 py-3 bg-slate-100 rounded-lg font-bold text-slate-600 disabled:opacity-50">Cancelar</button>
+                     <button onClick={confirmAnnulOrder} disabled={isProcessing} className="flex-1 py-3 bg-red-600 text-white rounded-lg font-bold shadow-lg flex justify-center items-center disabled:opacity-50">
+                        {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Sí, Anular'}
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
+
          <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold text-slate-800 flex items-center">
                <FileCheck className="mr-2 text-accent" /> Procesamiento de Pedidos
@@ -342,6 +383,7 @@ export const OrderProcessing: React.FC = () => {
                         <th className="p-3 text-center">Tipo Doc</th>
                         <th className="p-3 text-right">Total</th>
                         <th className="p-3 text-center">Estado</th>
+                        {filterStatus === 'pending' && <th className="p-3 text-center">Acciones</th>}
                      </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -393,10 +435,23 @@ export const OrderProcessing: React.FC = () => {
                                     <span className="text-green-600 flex items-center justify-center font-bold text-xs">
                                        <CheckCircle className="w-3 h-3 mr-1" /> Procesado
                                     </span>
+                                 ) : order.status === 'canceled' ? (
+                                    <span className="text-red-600 font-bold text-xs bg-red-50 border border-red-100 px-2 py-1 rounded">Anulado</span>
                                  ) : (
                                     <span className="text-yellow-600 font-bold text-xs bg-yellow-50 px-2 py-1 rounded">Pendiente</span>
                                  )}
                               </td>
+                              {filterStatus === 'pending' && (
+                                 <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                                    <button 
+                                       onClick={() => setOrderToAnnul(order.id)}
+                                       className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                       title="Anular Pedido"
+                                    >
+                                       <Trash2 className="w-4 h-4" />
+                                    </button>
+                                 </td>
+                              )}
                            </tr>
                         );
                      })}
