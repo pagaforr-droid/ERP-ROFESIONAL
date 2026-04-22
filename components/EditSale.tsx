@@ -243,6 +243,18 @@ export const EditSale: React.FC = () => {
               }
           }
 
+          const itemIds = itemsToLoad.map(i => i.id).filter(Boolean);
+          const allocByItem: Record<string, any[]> = {};
+          if (itemIds.length > 0) {
+              const { data: allocData } = await supabase.from('sale_batch_allocations').select('*').in('sale_item_id', itemIds);
+              if (allocData) {
+                  allocData.forEach(a => {
+                      if (!allocByItem[a.sale_item_id]) allocByItem[a.sale_item_id] = [];
+                      allocByItem[a.sale_item_id].push(a);
+                  });
+              }
+          }
+
           let clientListId = '';
           let clientCity = '';
           if (sale.client_id) {
@@ -273,7 +285,8 @@ export const EditSale: React.FC = () => {
                   quantity_base: q_base, 
                   selected_unit: item.selected_unit || item.unit_type || 'UND',
                   is_bonus: item.is_bonus === true || item.is_bonus === 'true' || p_unit === 0,
-                  product: matchedProd 
+                  product: matchedProd,
+                  batch_allocations: allocByItem[item.id] || []
               };
           });
 
@@ -567,29 +580,84 @@ export const EditSale: React.FC = () => {
       if (!originalSale) return;
       if (cart.length === 0) { showDialog('error', 'Error', 'El comprobante no puede estar vacío.'); return; }
 
-      const seller = dbSellers.find(s => s.id === selectedSellerId);
-
-      const updatedSaleData: any = {
-         ...originalSale,
-         client_name: clientData.name || 'CLIENTE VARIOS',
-         client_ruc: clientData.doc_number || '00000000',
-         client_address: clientData.address || '',
-         seller_id: selectedSellerId || undefined,
-         client_id: selectedClientId || undefined,
-         payment_method: paymentMethod,
-         payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
-         balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
-         subtotal,
-         igv,
-         total: grandTotal,
-         items: cart, 
-         seller_name: seller ? seller.name : '',
-         previous_debt: clientCreditInfo.debt
-      };
-
       setIsSaving(true);
-
       try {
+         // 1. Fetch fresh batches for all products to recalculate allocations correctly
+         const productIds = cart.map(item => item.product_id).filter(Boolean);
+         const { data: batchesData, error: batchErr } = await supabase.from('batches')
+            .select('*')
+            .in('product_id', productIds)
+            .order('expiration_date', { ascending: true })
+            .order('created_at', { ascending: true });
+
+         if (batchErr) throw batchErr;
+
+         const batchesByProduct: Record<string, any[]> = {};
+         (batchesData || []).forEach(b => {
+            if (!batchesByProduct[b.product_id]) batchesByProduct[b.product_id] = [];
+            batchesByProduct[b.product_id].push(b);
+         });
+
+         const finalCart = cart.map(item => {
+             let needed = Number(item.quantity_base || item.quantity_presentation || 1);
+             const pBatches = batchesByProduct[item.product_id] || [];
+             const newAllocations: any[] = [];
+
+             for (const batch of pBatches) {
+                 if (needed <= 0) break;
+                 
+                 // Calculate virtual stock (current DB stock + what was originally allocated for this specific item)
+                 let virtualStock = Number(batch.quantity_current || 0);
+                 
+                 if (item.id) {
+                    const originalItem = originalSale?.items?.find((oi: any) => oi.id === item.id);
+                    if (originalItem && originalItem.batch_allocations) {
+                        const origAlloc = originalItem.batch_allocations.find((a: any) => a.batch_id === batch.id);
+                        if (origAlloc) {
+                            virtualStock += Number(origAlloc.quantity || 0);
+                        }
+                    }
+                 }
+
+                 const take = Math.min(needed, virtualStock);
+                 if (take > 0) {
+                     newAllocations.push({
+                         batch_id: batch.id,
+                         batch_code: batch.code || batch.batch_code,
+                         quantity: take
+                     });
+                     needed -= take;
+                     // Prevent double allocating the same virtual stock to another identical item if any
+                     batch.quantity_current = virtualStock - take;
+                 }
+             }
+
+             if (needed > 0 && !item.is_bonus) {
+                 throw new Error(`Stock insuficiente para ${item.product_name || 'producto'}. Faltan ${needed} unidades.`);
+             }
+
+             return { ...item, batch_allocations: newAllocations };
+         });
+
+         const seller = dbSellers.find(s => s.id === selectedSellerId);
+
+         const updatedSaleData: any = {
+            ...originalSale,
+            client_name: clientData.name || 'CLIENTE VARIOS',
+            client_ruc: clientData.doc_number || '00000000',
+            client_address: clientData.address || '',
+            seller_id: selectedSellerId || undefined,
+            client_id: selectedClientId || undefined,
+            payment_method: paymentMethod,
+            payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
+            balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
+            subtotal,
+            igv,
+            total: grandTotal,
+            items: finalCart, 
+            seller_name: seller ? seller.name : '',
+            previous_debt: clientCreditInfo.debt
+         };
          const { data, error } = await supabase.rpc('update_sale_transaction', { p_sale_data: updatedSaleData });
          if (error) throw error;
          
@@ -942,7 +1010,7 @@ export const EditSale: React.FC = () => {
                                  {item.product?.package_type ? (
                                     <select
                                        className="w-full bg-amber-50 border border-amber-300 rounded px-1 py-0.5 outline-none font-black text-amber-900"
-                                       value={item.selected_unit === 'PKG' || item.selected_unit === item.product?.package_type?.toUpperCase() ? 'PKG' : 'BASE'}
+                                       value={isItemPackage(item.selected_unit, item.product) ? 'PKG' : 'BASE'}
                                        onChange={e => handleCartItemUnitChange(index, e.target.value as 'BASE' | 'PKG')}
                                     >
                                        <option value="BASE">{item.product?.unit_type ? item.product.unit_type.toUpperCase() : 'UND'}</option>
