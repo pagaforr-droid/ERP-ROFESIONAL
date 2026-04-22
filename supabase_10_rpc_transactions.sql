@@ -30,16 +30,20 @@ BEGIN
     v_series := SPLIT_PART(p_order_data->>'code', '-', 1);
     IF v_series = '' OR v_series IS NULL THEN v_series := 'P001'; END IF;
 
+    -- Increment concurrent sequence for PEDIDO
     UPDATE document_series 
     SET current_number = current_number + 1
     WHERE type = 'PEDIDO' AND series = v_series
     RETURNING current_number INTO v_current_number;
 
     IF v_current_number IS NULL THEN
-        v_code := p_order_data->>'code'; -- Fallback
-    ELSE
-        v_code := v_series || '-' || LPAD(v_current_number::text, 8, '0');
+        -- Si la serie no existe, la creamos inicializada en 1
+        INSERT INTO document_series (type, series, current_number, is_active)
+        VALUES ('PEDIDO', v_series, 1, true)
+        RETURNING current_number INTO v_current_number;
     END IF;
+
+    v_code := v_series || '-' || LPAD(v_current_number::text, 8, '0');
 
     -- 2. Insertar Cabecera de Pedido
     INSERT INTO orders (
