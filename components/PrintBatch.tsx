@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Printer, Search, Calendar, CheckSquare, Square, FileText, X } from 'lucide-react';
-import { PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
-import { PdfDocument } from './PdfDocument';
+import { PdfEngine } from './PdfEngine';
 
 import { supabase } from '../services/supabase';
 import { Loader2 } from 'lucide-react';
@@ -13,6 +12,7 @@ export const PrintBatch: React.FC = () => {
     
     const [dbSales, setDbSales] = useState<any[]>([]);
     const [dbDispatchSheets, setDbDispatchSheets] = useState<any[]>([]);
+    const [dbCompany, setDbCompany] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(false);
 
     // Filters
@@ -126,6 +126,10 @@ export const PrintBatch: React.FC = () => {
             
             setDbDispatchSheets(dispatchData || []);
             
+            // 3. Fetch Company Config
+            const { data: compData } = await supabase.from('company_config').select('*').limit(1).maybeSingle();
+            if (compData) setDbCompany(compData);
+            
         } catch (error) {
             console.error("Error fetching docs", error);
             setAlertMessage("Error cargando documentos de la base de datos.");
@@ -174,7 +178,7 @@ export const PrintBatch: React.FC = () => {
         }
     };
 
-    const handleOpenPreview = () => {
+    const handleOpenPreview = async () => {
         // Validate SUNAT Rules before printing Guides
         const invalidGuias = selectedDocsInfo.filter(d => 
            d._isGuia && 
@@ -187,7 +191,16 @@ export const PrintBatch: React.FC = () => {
            return;
         }
 
-        setIsPreviewOpen(true);
+        setIsPrinting(true);
+        try {
+            await PdfEngine.openDocument(selectedDocsInfo, 'BATCH', dbCompany || companyInfo);
+            setIsPreviewOpen(true);
+        } catch (error) {
+            console.error(error);
+            setAlertMessage("Error generando el archivo PDF.");
+        } finally {
+            setIsPrinting(false);
+        }
     };
 
     const handleMarkAsPrinted = () => {
@@ -219,41 +232,35 @@ export const PrintBatch: React.FC = () => {
                 </div>
             )}
 
-            {/* --- PDF NATIVE VIEWER OVERLAY --- */}
+            {/* --- PDF GENERATION SUCCESS MODAL --- */}
             {isPreviewOpen && (
-                <div className="fixed inset-0 bg-slate-900 z-[100] flex flex-col">
-                    <div className="bg-slate-800 text-white p-4 flex justify-between items-center shadow-lg">
-                        <div className="flex items-center gap-3">
-                            <Printer className="w-5 h-5 text-blue-400" />
-                            <h2 className="font-bold">Vista Previa Nativa PDF ({selectedDocsInfo.length} documentos)</h2>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden flex flex-col">
+                        <div className="bg-slate-800 text-white p-4 flex justify-between items-center">
+                            <h2 className="font-bold flex items-center">
+                                <Printer className="w-5 h-5 mr-2 text-blue-400" /> Confirmar Impresión
+                            </h2>
+                            <button onClick={() => setIsPreviewOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
                         </div>
-                        <div className="flex items-center gap-3">
-                            <button 
-                                onClick={handleMarkAsPrinted}
-                                className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg text-sm font-bold transition-colors"
-                            >
-                                Marcar como Impresos (Finalizar)
-                            </button>
-                            <button 
-                                onClick={() => setIsPreviewOpen(false)}
-                                className="bg-slate-700 hover:bg-slate-600 p-2 rounded-lg text-sm font-bold transition-colors"
-                                title="Cerrar Visor"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
+                        <div className="p-6 text-center">
+                            <FileText className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                            <h3 className="text-xl font-black text-slate-800 mb-2">PDF Generado Exitosamente</h3>
+                            <p className="text-slate-600 text-sm mb-6">El documento de {selectedDocsInfo.length} páginas se ha abierto en una nueva pestaña. ¿Desea marcar estos documentos como impresos para que no vuelvan a aparecer en la bandeja de pendientes?</p>
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={() => setIsPreviewOpen(false)}
+                                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold transition-colors"
+                                >
+                                    Cerrar
+                                </button>
+                                <button 
+                                    onClick={handleMarkAsPrinted}
+                                    className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg transition-colors"
+                                >
+                                    Marcar como Impresos
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                    
-                    <div className="flex-1 w-full bg-slate-600 p-4">
-                        {selectedDocsInfo.length > 0 && (
-                            <PDFViewer width="100%" height="100%" className="border-0 rounded shadow-2xl">
-                                <PdfDocument 
-                                   data={selectedDocsInfo} 
-                                   type="BATCH" 
-                                   companyInfo={companyInfo as any} 
-                                />
-                            </PDFViewer>
-                        )}
                     </div>
                 </div>
             )}

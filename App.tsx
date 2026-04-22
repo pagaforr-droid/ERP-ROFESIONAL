@@ -180,21 +180,21 @@ export default function App() {
     return (
       <div className="mb-2">
         {isDesktopSidebarCollapsed ? (
-             <div className="h-px w-8 mx-auto my-4 bg-slate-700 opacity-50 relative group cursor-help">
-               <div className="absolute hidden group-hover:block left-full ml-4 top-1/2 -translate-y-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50 shadow-xl border border-slate-700">{title}</div>
-             </div>
+          <div className="h-px w-8 mx-auto my-4 bg-slate-700 opacity-50 relative group cursor-help">
+            <div className="absolute hidden group-hover:block left-full ml-4 top-1/2 -translate-y-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50 shadow-xl border border-slate-700">{title}</div>
+          </div>
         ) : (
-             <div className={`px-4 mt-6 mb-2 text-xs font-bold uppercase tracking-wider ${themeClasses.sectionText}`}>
-               {title}
-             </div>
+          <div className={`px-4 mt-6 mb-2 text-xs font-bold uppercase tracking-wider ${themeClasses.sectionText}`}>
+            {title}
+          </div>
         )}
         <div className="space-y-1">
-            {React.Children.map(validChildren, child => {
-                if (React.isValidElement(child)) {
-                    return React.cloneElement(child as React.ReactElement<any>, { theme });
-                }
-                return child;
-            })}
+          {React.Children.map(validChildren, child => {
+            if (React.isValidElement(child)) {
+              return React.cloneElement(child as React.ReactElement<any>, { theme });
+            }
+            return child;
+          })}
         </div>
       </div>
     );
@@ -232,13 +232,13 @@ export default function App() {
           <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 hover:text-white shrink-0 absolute right-4">
             <X className="h-6 w-6" />
           </button>
-          
-          <button 
-            onClick={() => setIsDesktopSidebarCollapsed(!isDesktopSidebarCollapsed)} 
+
+          <button
+            onClick={() => setIsDesktopSidebarCollapsed(!isDesktopSidebarCollapsed)}
             className={`hidden lg:flex absolute -right-3.5 top-1/2 -translate-y-1/2 bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 rounded-full p-1.5 shadow-lg shadow-black/20 transition-all hover:scale-110 z-50`}
             title={isDesktopSidebarCollapsed ? "Expandir menú" : "Colapsar menú"}
           >
-             {isDesktopSidebarCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+            {isDesktopSidebarCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
           </button>
         </div>
 
@@ -318,19 +318,19 @@ export default function App() {
             </div>
           ) : (
             <div className="pt-3 border-t border-slate-800 flex flex-col items-center gap-3">
-               <div 
-                 className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold shrink-0 cursor-help shadow-inner"
-                 title={`${currentUser.name} (${currentUser.role})`}
-               >
-                  {currentUser.username.substring(0, 2).toUpperCase()}
-               </div>
-               <button
-                  onClick={logout}
-                  title="Cerrar Sesión"
-                  className="w-11 h-11 flex items-center justify-center bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-600 hover:text-white rounded-lg transition-all duration-200 shadow-sm"
-               >
-                  <LogOut className="w-5 h-5" />
-               </button>
+              <div
+                className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center text-slate-300 font-bold shrink-0 cursor-help shadow-inner"
+                title={`${currentUser.name} (${currentUser.role})`}
+              >
+                {currentUser.username.substring(0, 2).toUpperCase()}
+              </div>
+              <button
+                onClick={logout}
+                title="Cerrar Sesión"
+                className="w-11 h-11 flex items-center justify-center bg-rose-500/10 border border-rose-500/20 text-rose-400 hover:bg-rose-600 hover:text-white rounded-lg transition-all duration-200 shadow-sm"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
             </div>
           )}
         </div>
