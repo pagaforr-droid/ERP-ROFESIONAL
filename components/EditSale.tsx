@@ -230,7 +230,7 @@ export const EditSale: React.FC = () => {
           }
 
           if (itemsToLoad.length === 0) {
-              alert("⚠️ ADVERTENCIA: El documento se cargó, pero el sistema no pudo encontrar el detalle. Deberá armarlo manualmente.");
+              showDialog('warning', 'Advertencia', 'El documento se cargó, pero el sistema no pudo encontrar el detalle. Deberá armarlo manualmente.');
           }
 
           const pIds = itemsToLoad.map((i: any) => i.product_id).filter(Boolean);
@@ -362,7 +362,7 @@ export const EditSale: React.FC = () => {
       const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(prod.current_stock || prod.stock || 0);
 
       if (totalStock < requiredBaseUnits) { 
-         alert(`Atención: Estás forzando stock negativo. Disponible: ${totalStock}. Continuará en modo auditoría.`); 
+         showDialog('warning', 'Atención', `Estás forzando stock negativo. Disponible: ${totalStock}. Continuará en modo auditoría.`); 
       }
 
       let remaining = requiredBaseUnits;
@@ -430,26 +430,74 @@ export const EditSale: React.FC = () => {
       const isPkg = isItemPackage(item.selected_unit, product);
       const conversionFactor = isPkg ? Number(product?.package_content || 1) : 1;
 
+      let discountPct = item.discount_percent;
+      if (field === 'pu' && newPu > 0 && item.is_bonus) {
+          discountPct = 0;
+      }
+
       updatedCart[index] = { 
           ...item, 
           quantity_presentation: newQty, 
           quantity_base: newQty * conversionFactor, 
           unit_price: newPu,
-          total_price: calculateTotal(newQty, newPu, item.discount_percent), 
+          discount_percent: discountPct,
+          total_price: calculateTotal(newQty, newPu, discountPct), 
           is_bonus: newPu === 0 
       };
       setCart(updatedCart);
    };
 
-   const setItemFree = (index: number) => {
+   const handleCartItemUnitChange = (index: number, mode: 'BASE' | 'PKG') => {
+      const updatedCart = [...cart];
+      const item = updatedCart[index];
+      const product = item.product;
+      
+      if (!product) return;
+
+      const isPkg = mode === 'PKG';
+      const realUnitName = isPkg ? (product.package_type || 'CAJA').toUpperCase() : (product.unit_type || 'UND').toUpperCase();
+      const conversionFactor = isPkg ? Number(product.package_content || 1) : 1;
+
+      const multiplier = getMultiplier();
+      let basePrice = isPkg ? Number(product.price_package || product.price_unit || 0) : Number(product.price_unit || 0);
+      const newPu = basePrice * multiplier;
+
+      updatedCart[index] = {
+          ...item,
+          selected_unit: realUnitName,
+          quantity_base: Number(item.quantity_presentation) * conversionFactor,
+          unit_price: item.is_bonus ? 0 : newPu,
+          total_price: item.is_bonus ? 0 : calculateTotal(Number(item.quantity_presentation), newPu, item.discount_percent)
+      };
+      setCart(updatedCart);
+   };
+
+   const toggleItemFree = (index: number) => {
        const updatedCart = [...cart];
-       updatedCart[index] = {
-           ...updatedCart[index],
-           unit_price: 0,
-           total_price: 0,
-           discount_percent: 100,
-           is_bonus: true
-       };
+       const item = updatedCart[index];
+       if (item.is_bonus) {
+           const product = item.product;
+           const isPkg = isItemPackage(item.selected_unit, product);
+           const multiplier = getMultiplier();
+           const basePrice = product ? (isPkg ? Number(product.price_package || product.price_unit || 0) : Number(product.price_unit || 0)) : 0;
+           const restoredPrice = basePrice * multiplier;
+           
+           updatedCart[index] = {
+               ...item,
+               unit_price: restoredPrice,
+               discount_percent: 0,
+               is_bonus: false,
+               total_price: calculateTotal(Number(item.quantity_presentation), restoredPrice, 0)
+           };
+       } else {
+           updatedCart[index] = {
+               ...item,
+               unit_price: 0,
+               total_price: 0,
+               discount_percent: 100,
+               is_bonus: true
+           };
+       }
        setCart(updatedCart);
    };
 
@@ -862,7 +910,18 @@ export const EditSale: React.FC = () => {
                                  />
                               </td>
                               <td className="p-2 w-24 text-center text-[10px] text-slate-500 font-bold uppercase">
-                                  {item.selected_unit}
+                                 {item.product?.package_type ? (
+                                    <select
+                                       className="w-full bg-amber-50 border border-amber-300 rounded px-1 py-0.5 outline-none font-black text-amber-900"
+                                       value={item.selected_unit === 'PKG' || item.selected_unit === item.product?.package_type?.toUpperCase() ? 'PKG' : 'BASE'}
+                                       onChange={e => handleCartItemUnitChange(index, e.target.value as 'BASE' | 'PKG')}
+                                    >
+                                       <option value="BASE">{item.product?.unit_type ? item.product.unit_type.toUpperCase() : 'UND'}</option>
+                                       <option value="PKG">{item.product.package_type.toUpperCase()}</option>
+                                    </select>
+                                 ) : (
+                                    item.selected_unit
+                                 )}
                               </td>
                               <td className="p-2 w-20 text-right font-bold">
                                  <input
@@ -874,8 +933,8 @@ export const EditSale: React.FC = () => {
                               </td>
                               <td className="p-2 w-24 text-right font-bold text-slate-900 text-sm">S/ {Number(item.total_price || 0).toFixed(2)}</td>
                               <td className="p-2 w-20 text-center">
-                                 <button type="button" onClick={() => setItemFree(index)} className="bg-orange-100 border border-orange-300 text-orange-700 px-2 py-1 rounded text-[10px] font-bold hover:bg-orange-200 transition-colors" title="Poner en Precio Cero (Regalo)">
-                                    <Gift className="w-3 h-3 inline mr-1" /> GRATIS
+                                 <button type="button" onClick={() => toggleItemFree(index)} className={`px-2 py-1 rounded text-[10px] font-bold transition-colors ${item.is_bonus ? 'bg-red-100 border border-red-300 text-red-700 hover:bg-red-200' : 'bg-orange-100 border border-orange-300 text-orange-700 hover:bg-orange-200'}`} title={item.is_bonus ? "Deshacer Regalo" : "Poner en Precio Cero (Regalo)"}>
+                                    <Gift className="w-3 h-3 inline mr-1" /> {item.is_bonus ? 'COBRAR' : 'GRATIS'}
                                  </button>
                               </td>
                               <td className="p-2 w-8 text-right">
