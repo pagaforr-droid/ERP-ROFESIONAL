@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
-import { Truck, CheckCircle, Package, Calendar, User, FileText, Printer, X, Activity, MapPin, AlertTriangle, PlayCircle } from 'lucide-react';
-import { Sale, Product } from '../types';
+import { supabase } from '../services/supabase';
+import { Truck, CheckCircle, Package, Calendar, User, FileText, Printer, X, Activity, MapPin, AlertTriangle, PlayCircle, Trash2 } from 'lucide-react';
+import { Sale, Product, DispatchSheet } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfEngine } from './PdfEngine';
@@ -13,7 +14,11 @@ interface ExtendedSale extends Sale {
 }
 
 export const Dispatch: React.FC = () => {
-   const { sales, vehicles, createDispatch, updateSaleStatus, drivers, clients, zones, sellers, products, suppliers, company, currentUser, dispatchSheets } = useStore();
+   const { vehicles, drivers, clients, zones, sellers, products, suppliers, company, currentUser } = useStore();
+
+   const [sales, setSales] = useState<Sale[]>([]);
+   const [dispatchSheets, setDispatchSheets] = useState<DispatchSheet[]>([]);
+   const [isLoading, setIsLoading] = useState(true);
 
    const [activeTab, setActiveTab] = useState<'PROGRAMAR' | 'EN_RUTA'>('PROGRAMAR');
    const [filterDeliveryMode, setFilterDeliveryMode] = useState<'ALL' | 'REGULAR' | 'EXPRESS_MISMO_DIA'>('ALL');
@@ -30,6 +35,55 @@ export const Dispatch: React.FC = () => {
    // --- EDIT MODE STATE ---
    const [editMode, setEditMode] = useState(false);
    const [editingDispatchId, setEditingDispatchId] = useState<string | null>(null);
+
+   // --- DATA FETCHING ---
+   const fetchData = async () => {
+      setIsLoading(true);
+      try {
+         // Fetch pending sales
+         const { data: salesData, error: salesError } = await supabase
+            .from('sales')
+            .select(`
+               *,
+               items:sale_items(*)
+            `)
+            .in('dispatch_status', ['pending', 'assigned']); // Need assigned for editing
+
+         if (salesError) throw salesError;
+
+         // Fetch active dispatches
+         const { data: dispatchData, error: dispatchError } = await supabase
+            .from('dispatch_sheets')
+            .select('*')
+            .eq('status', 'in_transit');
+
+         if (dispatchError) throw dispatchError;
+
+         // Fetch dispatch_sales to populate sale_ids
+         const { data: dsSalesData, error: dsSalesError } = await supabase
+            .from('dispatch_sales')
+            .select('*');
+
+         if (dsSalesError) throw dsSalesError;
+
+         const finalDispatches = (dispatchData || []).map(d => ({
+            ...d,
+            sale_ids: dsSalesData?.filter(ds => ds.dispatch_sheet_id === d.id).map(ds => ds.sale_id) || []
+         })) as DispatchSheet[];
+
+         setSales((salesData || []) as Sale[]);
+         setDispatchSheets(finalDispatches);
+      } catch (error: any) {
+         console.error('Error fetching dispatch data:', error);
+         alert('Error cargando datos de despacho: ' + error.message);
+      } finally {
+         setIsLoading(false);
+      }
+   };
+
+   useEffect(() => {
+      fetchData();
+   }, []);
 
    // --- DATA PREPARATION ---
 
@@ -125,15 +179,39 @@ export const Dispatch: React.FC = () => {
    const confirmDispatch = async () => {
       if (!selectedVehicleId) { alert("Seleccione un vehículo primero."); return; }
 
-      if (editMode && editingDispatchId) {
-         useStore.getState().updateDispatch(editingDispatchId, {
-            vehicle_id: selectedVehicleId,
-            sale_ids: selectedSaleIds
-         });
-         alert("¡Hoja de Ruta actualizada exitosamente!");
-      } else {
-         setIsSaving(true);
-         try {
+      setIsSaving(true);
+      try {
+         if (editMode && editingDispatchId) {
+            // Edit Mode via JS Client
+            const dispatch = dispatchSheets.find(d => d.id === editingDispatchId);
+            if (!dispatch) throw new Error("Hoja de ruta no encontrada localmente.");
+
+            // 1. Get old sales
+            const oldSaleIds = dispatch.sale_ids;
+            const removedSaleIds = oldSaleIds.filter(id => !selectedSaleIds.includes(id));
+            const addedSaleIds = selectedSaleIds.filter(id => !oldSaleIds.includes(id));
+
+            // 2. Update removed sales to pending
+            if (removedSaleIds.length > 0) {
+               await supabase.from('sales').update({ dispatch_status: 'pending' }).in('id', removedSaleIds);
+               await supabase.from('dispatch_sales').delete().eq('dispatch_sheet_id', editingDispatchId).in('sale_id', removedSaleIds);
+            }
+
+            // 3. Update added sales to assigned
+            if (addedSaleIds.length > 0) {
+               await supabase.from('sales').update({ dispatch_status: 'assigned' }).in('id', addedSaleIds);
+               const newDsSales = addedSaleIds.map(id => ({ dispatch_sheet_id: editingDispatchId, sale_id: id }));
+               await supabase.from('dispatch_sales').insert(newDsSales);
+            }
+
+            // 4. Update dispatch vehicle if changed
+            if (dispatch.vehicle_id !== selectedVehicleId) {
+               await supabase.from('dispatch_sheets').update({ vehicle_id: selectedVehicleId }).eq('id', editingDispatchId);
+            }
+
+            alert("¡Hoja de Ruta actualizada exitosamente!");
+            await fetchData();
+         } else {
              const dispatchData = {
                 id: crypto.randomUUID(),
                 series: selectedSeries,
@@ -143,25 +221,49 @@ export const Dispatch: React.FC = () => {
                 sale_ids: selectedSaleIds
              };
 
-             const { data, error } = await import('../services/supabase').then(m => m.supabase.rpc('process_dispatch_transaction', { p_dispatch_data: dispatchData }));
+             const { data, error } = await supabase.rpc('process_dispatch_transaction', { p_dispatch_data: dispatchData });
              if (error) throw error;
 
              if (data && data.success) {
                  alert(`¡Hoja de Ruta creada! Código: ${data.real_code}`);
-                 window.location.reload(); 
+                 await fetchData();
              }
-         } catch (error: any) {
-             alert("Error al guardar en Supabase: " + error.message);
-         } finally {
-             setIsSaving(false);
          }
+      } catch (error: any) {
+          alert("Error al guardar en Supabase: " + error.message);
+      } finally {
+          setIsSaving(false);
+          setSelectedSaleIds([]);
+          setSelectedVehicleId('');
+          setShowPickingList(false);
+          setEditMode(false);
+          setEditingDispatchId(null);
       }
+   };
 
-      setSelectedSaleIds([]);
-      setSelectedVehicleId('');
-      setShowPickingList(false);
-      setEditMode(false);
-      setEditingDispatchId(null);
+   const annulDispatch = async (dispatchId: string) => {
+      if (!confirm('¿Está seguro de que desea anular esta Hoja de Ruta? Todas las ventas asociadas volverán a estar pendientes.')) return;
+      
+      try {
+         const dispatch = dispatchSheets.find(d => d.id === dispatchId);
+         if (!dispatch) return;
+
+         // 1. Update sales dispatch_status back to pending
+         if (dispatch.sale_ids.length > 0) {
+            await supabase.from('sales').update({ dispatch_status: 'pending' }).in('id', dispatch.sale_ids);
+         }
+
+         // 2. Delete dispatch_sales links
+         await supabase.from('dispatch_sales').delete().eq('dispatch_sheet_id', dispatchId);
+
+         // 3. Delete or update dispatch status to canceled
+         await supabase.from('dispatch_sheets').update({ status: 'canceled' }).eq('id', dispatchId);
+
+         alert('Hoja de Ruta anulada correctamente.');
+         await fetchData();
+      } catch (error: any) {
+         alert('Error anulando Hoja de Ruta: ' + error.message);
+      }
    };
 
    const enterEditMode = (dispatch: import('../types').DispatchSheet) => {
@@ -600,8 +702,9 @@ export const Dispatch: React.FC = () => {
                      <button onClick={() => setShowPickingList(false)} className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded font-bold flex items-center">
                         <X className="w-4 h-4 mr-2" /> Cerrar
                      </button>
-                     <button onClick={confirmDispatch} className={`${editMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'} text-white px-8 py-2 rounded font-bold shadow-lg flex items-center`}>
-                        <CheckCircle className="w-4 h-4 mr-2" /> {editMode ? 'GUARDAR CAMBIOS' : 'CONFIRMAR Y CREAR RUTA'}
+                     <button onClick={confirmDispatch} disabled={isSaving} className={`${editMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'} text-white px-8 py-2 rounded font-bold shadow-lg flex items-center disabled:opacity-50`}>
+                        {isSaving ? <Activity className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+                        {editMode ? 'GUARDAR CAMBIOS' : 'CONFIRMAR Y CREAR RUTA'}
                      </button>
                   </div>
                </div>
@@ -1157,7 +1260,14 @@ export const Dispatch: React.FC = () => {
                                     }}
                                     className="flex-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold py-2 rounded transition-colors flex items-center justify-center"
                                   >
-                                    <Printer className="w-3 h-3 mr-1" /> Imprimir Docs
+                                    <Printer className="w-3 h-3 mr-1" /> Imprimir
+                                  </button>
+                                  <button
+                                    onClick={() => annulDispatch(ds.id)}
+                                    className="bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 text-xs font-bold px-3 py-2 rounded transition-colors flex items-center justify-center"
+                                    title="Anular Hoja de Ruta"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
                                   </button>
                                </div>
                             </div>

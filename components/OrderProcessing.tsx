@@ -1,17 +1,29 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
+import { supabase } from '../services/supabase';
 import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText, Trash2 } from 'lucide-react';
+import { Order, Sale, SaleItem } from '../types';
 
 export const OrderProcessing: React.FC = () => {
-   const { currentUser, orders, sellers, batchProcessOrders, clients, zones, company, annulOrder } = useStore();
+   const { currentUser, sellers, clients, zones, company } = useStore();
+
+   const [orders, setOrders] = useState<Order[]>([]);
+   const [isLoading, setIsLoading] = useState(false);
+   const [hasSearched, setHasSearched] = useState(false);
 
    const [orderToAnnul, setOrderToAnnul] = useState<string | null>(null);
 
    // Filters
+   const [startDate, setStartDate] = useState(() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      return d.toISOString().split('T')[0];
+   });
+   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
    const [filterSeller, setFilterSeller] = useState('ALL');
    const [filterZone, setFilterZone] = useState('ALL');
-   const [filterStatus, setFilterStatus] = useState<'pending' | 'processed' | 'rejected'>('pending');
+   const [filterStatus, setFilterStatus] = useState<'pending' | 'processed' | 'canceled'>('pending');
    const [filterDocType, setFilterDocType] = useState<'ALL' | 'FACTURA' | 'BOLETA'>('ALL');
    const [filterDeliveryMode, setFilterDeliveryMode] = useState<'ALL' | 'REGULAR' | 'EXPRESS_MISMO_DIA'>('ALL');
 
@@ -26,21 +38,62 @@ export const OrderProcessing: React.FC = () => {
    // Target Series
    const [targetSeries, setTargetSeries] = useState<{ FACTURA?: string, BOLETA?: string }>({});
 
-   // Filter Logic
-   const filteredOrders = orders.filter(o => {
-      const client = clients.find(c => c.id === o.client_id);
-      const clientZoneId = client?.zone_id || 'UNASSIGNED';
-      const isFactura = (o.client_doc_number || '').length === 11;
-      const docType = isFactura ? 'FACTURA' : 'BOLETA';
+   // Fetch Logic
+   const handleSearch = async () => {
+      setIsLoading(true);
+      setHasSearched(true);
+      setSelectedIds(new Set());
+      setOrders([]);
+      
+      try {
+         let query = supabase
+            .from('orders')
+            .select(`
+               *,
+               items:order_items(*)
+            `)
+            .gte('created_at', `${startDate}T00:00:00.000Z`)
+            .lte('created_at', `${endDate}T23:59:59.999Z`);
 
-      const matchSeller = filterSeller === 'ALL' || o.seller_id === filterSeller;
-      const matchZone = filterZone === 'ALL' || clientZoneId === filterZone;
-      const matchStatus = o.status === filterStatus;
-      const matchDocType = filterDocType === 'ALL' || docType === filterDocType;
-      const matchDeliveryMode = filterDeliveryMode === 'ALL' || o.delivery_mode === filterDeliveryMode;
+         if (filterSeller !== 'ALL') {
+            query = query.eq('seller_id', filterSeller);
+         }
+         
+         if (filterStatus !== 'ALL') {
+            query = query.eq('status', filterStatus);
+         }
 
-      return matchSeller && matchZone && matchStatus && matchDocType && matchDeliveryMode;
-   });
+         const { data, error } = await query;
+         
+         if (error) throw error;
+         
+         // Client side filtering for Zone, DocType, DeliveryMode
+         let filtered = (data || []) as Order[];
+         
+         filtered = filtered.filter(o => {
+            const client = clients.find(c => c.id === o.client_id);
+            const clientZoneId = client?.zone_id || 'UNASSIGNED';
+            const isFactura = (o.client_doc_number || '').length === 11;
+            const docType = isFactura ? 'FACTURA' : 'BOLETA';
+      
+            const matchZone = filterZone === 'ALL' || clientZoneId === filterZone;
+            const matchDocType = filterDocType === 'ALL' || docType === filterDocType;
+            const matchDeliveryMode = filterDeliveryMode === 'ALL' || o.delivery_mode === filterDeliveryMode;
+      
+            return matchZone && matchDocType && matchDeliveryMode;
+         });
+         
+         // Sort
+         filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+         
+         setOrders(filtered);
+      } catch (e: any) {
+         console.error("Error fetching orders:", e);
+         alert("Error al cargar pedidos: " + e.message);
+      } finally {
+         setIsLoading(false);
+      }
+   };
 
    // --- SELECTION HANDLERS ---
    const handleToggleSelect = (id: string) => {
@@ -51,10 +104,10 @@ export const OrderProcessing: React.FC = () => {
    };
 
    const handleSelectAll = () => {
-      if (selectedIds.size === filteredOrders.length && filteredOrders.length > 0) {
+      if (selectedIds.size === orders.length && orders.length > 0) {
          setSelectedIds(new Set());
       } else {
-         setSelectedIds(new Set(filteredOrders.map(o => o.id)));
+         setSelectedIds(new Set(orders.map(o => o.id)));
       }
    };
 
@@ -104,28 +157,98 @@ export const OrderProcessing: React.FC = () => {
    const executeProcess = async () => {
       setIsProcessing(true);
 
-      // Capture summary before processing (as status change removes them from list)
       const summary = processSummary;
+      let successCount = 0;
 
       try {
-         // UI Delay for feedback
-         await new Promise(resolve => setTimeout(resolve, 1500));
+         const selectedOrders = orders.filter(o => selectedIds.has(o.id));
+         
+         // Sort orders to process them systematically
+         selectedOrders.sort((a, b) => {
+            if (a.seller_id < b.seller_id) return -1;
+            if (a.seller_id > b.seller_id) return 1;
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+         });
 
-         // Action
-         batchProcessOrders(Array.from(selectedIds), targetSeries);
+         for (const order of selectedOrders) {
+            const ruc = order.client_doc_number || '';
+            const docType = ruc.length === 11 ? 'FACTURA' : 'BOLETA';
+            const seriesStr = targetSeries[docType as 'FACTURA' | 'BOLETA'] || (docType === 'FACTURA' ? 'F001' : 'B001');
 
-         // Update Local State for Result View
+            let address = (order as any).client_address || '';
+            if (!address) {
+               const client = clients.find(c => c.id === order.client_id || c.doc_number === order.client_doc_number);
+               address = client?.address || '';
+            }
+
+            // Build Sale Payload
+            const saleSubtotal = order.total / 1.18;
+            const saleIgv = order.total - saleSubtotal;
+
+            const salePayload: Partial<Sale> = {
+               id: crypto.randomUUID(),
+               document_type: docType as any,
+               series: seriesStr,
+               payment_method: order.payment_method,
+               payment_status: 'PENDING',
+               collection_status: 'NONE',
+               client_id: order.client_id,
+               client_name: order.client_name,
+               client_ruc: order.client_doc_number,
+               client_address: address,
+               subtotal: saleSubtotal,
+               igv: saleIgv,
+               total: order.total,
+               balance: order.total,
+               status: 'completed',
+               dispatch_status: 'pending',
+               delivery_mode: order.delivery_mode, 
+               sunat_status: 'PENDING',
+               origin_order_id: order.id,
+               seller_id: order.seller_id,
+               items: order.items.map(item => ({
+                  product_id: item.product_id,
+                  product_name: item.product_name,
+                  selected_unit: item.unit_type === 'COMBO' ? 'UND' : item.unit_type,
+                  quantity_presentation: item.quantity,
+                  quantity_base: item.quantity_base || item.quantity, // fallback
+                  unit_price: item.unit_price,
+                  total_price: item.total_price,
+                  discount_percent: item.discount_percent || 0,
+                  discount_amount: item.discount_amount || 0,
+                  is_bonus: item.is_bonus || false,
+                  auto_promo_id: item.auto_promo_id,
+                  // we omit batch_allocations initially or fetch them if needed. 
+                  // If the order already has them, we can pass them:
+                  batch_allocations: (item as any).batch_allocations || []
+               })) as any
+            };
+
+            // Process Sale Transaction in Supabase
+            const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: salePayload });
+            
+            if (error) {
+               console.error("Error processing order:", order.id, error);
+               // Continue to next order even if one fails
+               continue;
+            }
+
+            // Update order status
+            await supabase.from('orders').update({ status: 'processed' }).eq('id', order.id);
+            successCount++;
+         }
+
          setProcessResult({
             facturas: summary?.facturas || 0,
             boletas: summary?.boletas || 0
          });
 
-         // Clear selection immediately
          setSelectedIds(new Set());
+         handleSearch(); // Refresh list
 
-      } catch (error) {
+      } catch (error: any) {
          console.error("Error processing orders:", error);
-         alert("Ocurrió un error al procesar.");
+         alert("Ocurrió un error al procesar masivamente: " + error.message);
          setIsConfirmOpen(false);
       } finally {
          setIsProcessing(false);
@@ -141,10 +264,14 @@ export const OrderProcessing: React.FC = () => {
       if (!orderToAnnul) return;
       setIsProcessing(true);
       try {
-         const { success, msg } = await annulOrder(orderToAnnul, currentUser?.id || 'SELLER');
-         if (!success) throw new Error(msg);
+         const { data, error } = await supabase.rpc('annul_order_transaction', {
+            p_order_id: orderToAnnul,
+            p_user_id: currentUser?.id || 'SELLER'
+         });
+
+         if (error) throw error;
+         if (!data || !data.success) throw new Error(data?.msg || 'Error desconocido');
          
-         // Clear selection if it was selected
          const newSet = new Set(selectedIds);
          if (newSet.has(orderToAnnul)) {
             newSet.delete(orderToAnnul);
@@ -152,6 +279,7 @@ export const OrderProcessing: React.FC = () => {
          }
          
          setOrderToAnnul(null);
+         handleSearch(); // Refresh data
       } catch (e: any) {
          alert("Error anulando pedido: " + e.message);
       } finally {
@@ -306,7 +434,15 @@ export const OrderProcessing: React.FC = () => {
 
          {/* FILTER BAR */}
          <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 flex flex-wrap gap-4 items-end">
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-[140px]">
+               <label className="block text-xs font-bold text-slate-600 mb-1">Fecha Desde</label>
+               <input type="date" className="w-full border border-slate-300 rounded p-2 text-sm" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            </div>
+            <div className="flex-1 min-w-[140px]">
+               <label className="block text-xs font-bold text-slate-600 mb-1">Fecha Hasta</label>
+               <input type="date" className="w-full border border-slate-300 rounded p-2 text-sm" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </div>
+            <div className="flex-1 min-w-[180px]">
                <label className="block text-xs font-bold text-slate-600 mb-1">Filtrar por Vendedor</label>
                <select className="w-full border border-slate-300 rounded p-2 text-sm" value={filterSeller} onChange={e => setFilterSeller(e.target.value)}>
                   <option value="ALL">Todos los Vendedores</option>
@@ -336,13 +472,24 @@ export const OrderProcessing: React.FC = () => {
                   <option value="EXPRESS_MISMO_DIA">Fuera de Ruta (Mismo día)</option>
                </select>
             </div>
-            <div className="w-40">
+            <div className="w-32">
                <label className="block text-xs font-bold text-slate-600 mb-1">Estado</label>
                <select className="w-full border border-slate-300 rounded p-2 text-sm bg-slate-50" value={filterStatus} onChange={e => setFilterStatus(e.target.value as any)}>
+                  <option value="ALL">Todos</option>
                   <option value="pending">Pendientes</option>
                   <option value="processed">Procesados</option>
+                  <option value="canceled">Anulados</option>
                </select>
             </div>
+            
+            <button
+               type="button"
+               onClick={handleSearch}
+               disabled={isLoading}
+               className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg disabled:opacity-50 flex items-center transition-all min-w-[120px] justify-center active:scale-95"
+            >
+               {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Search className="w-5 h-5 mr-2" /> Buscar</>}
+            </button>
 
             {filterStatus === 'pending' && (
                <button
@@ -367,7 +514,7 @@ export const OrderProcessing: React.FC = () => {
                   </button>
                )}
                <span className="text-xs text-slate-500 font-medium">
-                  {filteredOrders.length} pedidos encontrados
+                  {orders.length} pedidos encontrados
                </span>
             </div>
 
@@ -387,7 +534,9 @@ export const OrderProcessing: React.FC = () => {
                      </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                     {filteredOrders.map(order => {
+                     {!hasSearched ? (
+                        <tr><td colSpan={8} className="p-10 text-center text-slate-400 italic">Utilice los filtros y presione "Buscar" para cargar los pedidos.</td></tr>
+                     ) : orders.map(order => {
                         const seller = sellers.find(s => s.id === order.seller_id);
                         const client = clients.find(c => c.id === order.client_id);
                         const zone = zones.find(z => z.id === client?.zone_id);
@@ -455,7 +604,7 @@ export const OrderProcessing: React.FC = () => {
                            </tr>
                         );
                      })}
-                     {filteredOrders.length === 0 && (
+                     {hasSearched && orders.length === 0 && (
                         <tr><td colSpan={8} className="p-10 text-center text-slate-400 italic">No hay pedidos que coincidan con los filtros.</td></tr>
                      )}
                   </tbody>
