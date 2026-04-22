@@ -56,6 +56,7 @@ export const EditSale: React.FC = () => {
    const [selectedSellerId, setSelectedSellerId] = useState('');
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
    const [showBranchSelector, setShowBranchSelector] = useState(false);
+   const [selectedClientFull, setSelectedClientFull] = useState<Client | null>(null);
 
    useEffect(() => {
        const fetchMasters = async () => {
@@ -250,6 +251,7 @@ export const EditSale: React.FC = () => {
                   clientListId = cData.price_list_id || '';
                   clientCity = cData.city || '';
                   checkClientCredit(sale.client_id, cData.credit_limit || 0);
+                  setSelectedClientFull(cData);
               }
           }
 
@@ -503,6 +505,7 @@ export const EditSale: React.FC = () => {
 
    const selectClient = async (c: Client) => {
       setSelectedClientId(c.id);
+      setSelectedClientFull(c);
       let autoSellerId = '';
       if (c.zone_id) { const zone = dbZones.find(z => z.id === c.zone_id); if (zone && zone.assigned_seller_id) { autoSellerId = zone.assigned_seller_id; } }
       setSelectedSellerId(autoSellerId);
@@ -736,66 +739,92 @@ export const EditSale: React.FC = () => {
 
          {/* === CLIENT SECTION === */}
          <div className="flex items-start gap-2 mb-2">
-            <div className="flex-1 grid grid-cols-12 gap-1 bg-slate-100 p-1.5 rounded border border-slate-200 relative">
-               <div className="col-span-2 relative">
-                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Cambiar Cliente (Cod / Buscar)</label>
-                  <div className="relative">
-                     <Search className="absolute left-1 top-1 w-3 h-3 text-slate-400" />
-                     <input
-                        className="w-full pl-5 pr-1 py-0.5 border border-slate-300 rounded text-slate-900 font-bold focus:bg-yellow-50"
-                        placeholder="RUC o Nombre..."
-                        value={clientSearch}
-                        onChange={e => { setClientSearch(e.target.value); setShowClientSuggestions(true); }}
-                        onFocus={() => setShowClientSuggestions(true)}
-                        onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
-                     />
-                     {isSearchingClient && <Loader2 className="absolute right-1 top-1 w-3 h-3 text-blue-500 animate-spin" />}
-                     {showClientSuggestions && clientSearch && searchedClients.length > 0 && (
-                        <div className="absolute top-full left-0 w-[400px] bg-white border border-slate-400 shadow-xl z-50 max-h-48 overflow-auto">
-                           {searchedClients.map(c => (
-                              <div key={c.id} onMouseDown={() => selectClient(c)} className="p-2 hover:bg-blue-100 cursor-pointer border-b border-slate-100">
-                                 <div className="font-bold text-slate-800">{c.name}</div>
-                                 <div className="text-[10px] text-slate-500">{c.doc_number} | {c.address}</div>
+            <div className="flex-1 flex flex-col gap-1 bg-slate-100 p-1.5 rounded border border-slate-200 relative">
+               <div className="grid grid-cols-12 gap-1 w-full">
+                  <div className="col-span-2 relative">
+                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Cambiar Cliente (Cod / Buscar)</label>
+                     <div className="relative">
+                        <Search className="absolute left-1 top-1 w-3 h-3 text-slate-400" />
+                        <input
+                           className="w-full pl-5 pr-1 py-0.5 border border-slate-300 rounded text-slate-900 font-bold focus:bg-yellow-50"
+                           placeholder="RUC o Nombre..."
+                           value={clientSearch}
+                           onChange={e => { setClientSearch(e.target.value); setShowClientSuggestions(true); }}
+                           onFocus={() => setShowClientSuggestions(true)}
+                           onBlur={() => setTimeout(() => setShowClientSuggestions(false), 200)}
+                        />
+                        {isSearchingClient && <Loader2 className="absolute right-1 top-1 w-3 h-3 text-blue-500 animate-spin" />}
+                        {showClientSuggestions && clientSearch && searchedClients.length > 0 && (
+                           <div className="absolute top-full left-0 w-[400px] bg-white border border-slate-400 shadow-xl z-50 max-h-48 overflow-auto">
+                              {searchedClients.map(c => (
+                                 <div key={c.id} onMouseDown={() => selectClient(c)} className="p-2 hover:bg-blue-100 cursor-pointer border-b border-slate-100">
+                                    <div className="font-bold text-slate-800">{c.name}</div>
+                                    <div className="text-[10px] text-slate-500">{c.doc_number} | {c.address}</div>
+                                 </div>
+                              ))}
+                           </div>
+                        )}
+                     </div>
+                  </div>
+                  <div className="col-span-4">
+                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Razón Social</label>
+                     <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800" value={clientData.name} onChange={e => setClientData({ ...clientData, name: e.target.value })} />
+                  </div>
+                  <div className="col-span-2">
+                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">RUC/DNI</label>
+                     <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-slate-50 text-slate-800 font-mono" value={clientData.doc_number} onChange={e => setClientData({ ...clientData, doc_number: e.target.value })} />
+                  </div>
+                  
+                  {/* BOTÓN MÁGICO DE ACTUALIZACIÓN DE PRECIOS */}
+                  <div className="col-span-2">
+                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Lista Precio Sugerida</label>
+                     <div className="flex gap-1">
+                        <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800" value={clientData.price_list_id} onChange={e => setClientData({ ...clientData, price_list_id: e.target.value })}>
+                           <option value="">-- General --</option>
+                           {dbPriceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
+                        </select>
+                        <button
+                           type="button"
+                           onClick={handleUpdatePricesFromList}
+                           className="bg-amber-100 border border-amber-300 text-amber-700 px-1.5 rounded hover:bg-amber-200 transition-colors flex items-center justify-center shadow-sm"
+                           title="Recalcular todos los precios según esta lista"
+                        >
+                           <RefreshCw className="w-3.5 h-3.5" />
+                        </button>
+                     </div>
+                  </div>
+
+                  <div className="col-span-2">
+                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Forma Pago</label>
+                     <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 font-bold" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)}>
+                        <option value="CONTADO">CONTADO</option>
+                        <option value="CREDITO">CRÉDITO</option>
+                     </select>
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-12 gap-1 w-full mt-1">
+                  <div className="col-span-12 relative">
+                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Dirección de Entrega / Sucursal</label>
+                     <div className="flex relative">
+                        <MapPin className="w-3 h-3 text-slate-400 absolute left-1.5 top-1.5 pointer-events-none" />
+                        <input className="w-full pl-6 border border-slate-300 rounded-l px-1 py-0.5 bg-white text-slate-800 text-[11px]" value={clientData.address || ''} onChange={e => setClientData({ ...clientData, address: e.target.value })} />
+                        {selectedClientFull?.branches && selectedClientFull.branches.length > 0 && (
+                           <button onClick={() => setShowBranchSelector(!showBranchSelector)} className="bg-blue-100 border border-l-0 border-blue-300 rounded-r px-3 text-blue-700 hover:bg-blue-200 transition-colors font-bold text-[10px] flex items-center">
+                              SUCURSALES <ChevronDown className="w-3 h-3 ml-1" />
+                           </button>
+                        )}
+                     </div>
+                     {showBranchSelector && selectedClientFull?.branches && (
+                        <div className="absolute top-full left-0 w-full bg-white border border-slate-400 shadow-xl z-50 max-h-48 overflow-auto rounded-b mt-0.5">
+                           {[selectedClientFull.address, ...selectedClientFull.branches].filter(Boolean).map((addr, i) => (
+                              <div key={i} onClick={() => { setClientData({ ...clientData, address: addr }); setShowBranchSelector(false); }} className="p-2 border-b border-slate-100 hover:bg-blue-50 cursor-pointer text-[11px] text-slate-700 font-medium">
+                                 <MapPin className="w-3 h-3 inline mr-1 text-blue-500" /> {addr}
                               </div>
                            ))}
                         </div>
                      )}
                   </div>
-               </div>
-               <div className="col-span-4">
-                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Razón Social</label>
-                  <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800" value={clientData.name} onChange={e => setClientData({ ...clientData, name: e.target.value })} />
-               </div>
-               <div className="col-span-2">
-                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">RUC/DNI</label>
-                  <input className="w-full border border-slate-300 rounded px-1 py-0.5 bg-slate-50 text-slate-800 font-mono" value={clientData.doc_number} onChange={e => setClientData({ ...clientData, doc_number: e.target.value })} />
-               </div>
-               
-               {/* BOTÓN MÁGICO DE ACTUALIZACIÓN DE PRECIOS */}
-               <div className="col-span-2">
-                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Lista Precio Sugerida</label>
-                  <div className="flex gap-1">
-                     <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800" value={clientData.price_list_id} onChange={e => setClientData({ ...clientData, price_list_id: e.target.value })}>
-                        <option value="">-- General --</option>
-                        {dbPriceLists.map(pl => <option key={pl.id} value={pl.id}>{pl.name}</option>)}
-                     </select>
-                     <button
-                        type="button"
-                        onClick={handleUpdatePricesFromList}
-                        className="bg-amber-100 border border-amber-300 text-amber-700 px-1.5 rounded hover:bg-amber-200 transition-colors flex items-center justify-center shadow-sm"
-                        title="Recalcular todos los precios según esta lista"
-                     >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                     </button>
-                  </div>
-               </div>
-
-               <div className="col-span-2">
-                  <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Forma Pago</label>
-                  <select className="w-full border border-slate-300 rounded px-1 py-0.5 bg-white text-slate-800 font-bold" value={paymentMethod} onChange={(e: any) => setPaymentMethod(e.target.value)}>
-                     <option value="CONTADO">CONTADO</option>
-                     <option value="CREDITO">CRÉDITO</option>
-                  </select>
                </div>
             </div>
          </div>
