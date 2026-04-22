@@ -12,6 +12,7 @@ export const OrderProcessing: React.FC = () => {
    const [dbSellers, setDbSellers] = useState<any[]>([]);
    const [dbClients, setDbClients] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
+   const [dbSeries, setDbSeries] = useState<any[]>([]);
    
    const [isLoading, setIsLoading] = useState(false);
    const [hasSearched, setHasSearched] = useState(false);
@@ -19,14 +20,16 @@ export const OrderProcessing: React.FC = () => {
    useEffect(() => {
       const loadMasterData = async () => {
          try {
-            const [resSellers, resClients, resZones] = await Promise.all([
+            const [resSellers, resClients, resZones, resSeries] = await Promise.all([
                supabase.from('sellers').select('*'),
                supabase.from('clients').select('*'),
-               supabase.from('zones').select('*')
+               supabase.from('zones').select('*'),
+               supabase.from('document_series').select('*')
             ]);
             if (resSellers.data) setDbSellers(resSellers.data);
             if (resClients.data) setDbClients(resClients.data);
             if (resZones.data) setDbZones(resZones.data);
+            if (resSeries.data) setDbSeries(resSeries.data);
          } catch (err) {
             console.error("Error loading master data:", err);
          }
@@ -164,8 +167,8 @@ export const OrderProcessing: React.FC = () => {
 
       // Auto-select the first active series of each type as default
       const defaultTargets: { FACTURA?: string, BOLETA?: string } = {};
-      const activeFacturaSeries = company?.series?.find(s => s.type === 'FACTURA' && s.is_active);
-      const activeBoletaSeries = company?.series?.find(s => s.type === 'BOLETA' && s.is_active);
+      const activeFacturaSeries = dbSeries.find(s => s.type === 'FACTURA' && s.is_active);
+      const activeBoletaSeries = dbSeries.find(s => s.type === 'BOLETA' && s.is_active);
 
       if (activeFacturaSeries) defaultTargets.FACTURA = activeFacturaSeries.series;
       if (activeBoletaSeries) defaultTargets.BOLETA = activeBoletaSeries.series;
@@ -374,7 +377,7 @@ export const OrderProcessing: React.FC = () => {
                                           value={targetSeries.FACTURA || ''}
                                           onChange={e => setTargetSeries(prev => ({ ...prev, FACTURA: e.target.value }))}
                                        >
-                                          {company?.series?.filter(s => s.type === 'FACTURA').map(s => (
+                                          {dbSeries.filter(s => s.type === 'FACTURA').map(s => (
                                              <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
                                           ))}
                                        </select>
@@ -396,7 +399,7 @@ export const OrderProcessing: React.FC = () => {
                                           value={targetSeries.BOLETA || ''}
                                           onChange={e => setTargetSeries(prev => ({ ...prev, BOLETA: e.target.value }))}
                                        >
-                                          {company?.series?.filter(s => s.type === 'BOLETA').map(s => (
+                                          {dbSeries.filter(s => s.type === 'BOLETA').map(s => (
                                              <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
                                           ))}
                                        </select>
