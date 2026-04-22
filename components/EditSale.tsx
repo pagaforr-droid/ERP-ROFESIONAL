@@ -246,7 +246,7 @@ export const EditSale: React.FC = () => {
           const itemIds = itemsToLoad.map(i => i.id).filter(Boolean);
           const allocByItem: Record<string, any[]> = {};
           if (itemIds.length > 0) {
-              const { data: allocData } = await supabase.from('sale_batch_allocations').select('*').in('sale_item_id', itemIds);
+              const { data: allocData } = await supabase.from('batch_allocations').select('*').in('sale_item_id', itemIds);
               if (allocData) {
                   allocData.forEach(a => {
                       if (!allocByItem[a.sale_item_id]) allocByItem[a.sale_item_id] = [];
