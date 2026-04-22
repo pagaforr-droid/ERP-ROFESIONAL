@@ -18,29 +18,30 @@ RETURNS JSONB AS $$
 DECLARE
     v_order_id UUID;
     v_item JSONB;
+    v_order_item_id UUID;
+    v_batch RECORD;
+    v_qty_needed INT;
+    v_qty_allocated INT;
     v_current_number INT;
     v_code TEXT;
     v_series TEXT;
 BEGIN
-    -- Extract series part from the code passed from frontend, or default to P001
+    -- 1. Generar Código Correlativo Concurrente
     v_series := SPLIT_PART(p_order_data->>'code', '-', 1);
-    IF v_series = '' THEN
-        v_series := 'P001';
-    END IF;
+    IF v_series = '' OR v_series IS NULL THEN v_series := 'P001'; END IF;
 
-    -- Increment concurrent sequence for PEDIDO
     UPDATE document_series 
     SET current_number = current_number + 1
     WHERE type = 'PEDIDO' AND series = v_series
     RETURNING current_number INTO v_current_number;
 
     IF v_current_number IS NULL THEN
-        -- Fallback to the code sent by the frontend
-        v_code := p_order_data->>'code';
+        v_code := p_order_data->>'code'; -- Fallback
     ELSE
         v_code := v_series || '-' || LPAD(v_current_number::text, 8, '0');
     END IF;
 
+    -- 2. Insertar Cabecera de Pedido
     INSERT INTO orders (
         id, code, client_id, client_name, client_doc_type, client_doc_number,
         seller_id, suggested_document_type, payment_method, total, status, delivery_address
@@ -59,6 +60,7 @@ BEGIN
         p_order_data->>'delivery_address'
     ) RETURNING id INTO v_order_id;
     
+    -- 3. Procesar Items y Asignar Lotes (FIFO)
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_order_data->'items')
     LOOP
         INSERT INTO order_items (
@@ -77,7 +79,35 @@ BEGIN
             NULLIF(v_item->>'auto_promo_id', '')::uuid,
             COALESCE((v_item->>'discount_percent')::numeric, 0),
             COALESCE((v_item->>'discount_amount')::numeric, 0)
-        );
+        ) RETURNING id INTO v_order_item_id;
+
+        -- Lógica de Descuento de Stock (FIFO)
+        v_qty_needed := COALESCE((v_item->>'quantity_base')::int, (v_item->>'quantity')::int);
+        
+        -- Solo descontar si no es un regalo o si el negocio lo requiere (aquí descontamos todo lo que pide stock)
+        FOR v_batch IN 
+            SELECT id, code, quantity_current 
+            FROM batches 
+            WHERE product_id = (v_item->>'product_id')::uuid AND quantity_current > 0
+            ORDER BY expiration_date ASC, created_at ASC
+        LOOP
+            IF v_qty_needed <= 0 THEN EXIT; END IF;
+
+            v_qty_allocated := LEAST(v_qty_needed, v_batch.quantity_current);
+
+            INSERT INTO batch_allocations (
+                order_item_id, batch_id, batch_code, quantity
+            ) VALUES (
+                v_order_item_id, v_batch.id, v_batch.code, v_qty_allocated
+            );
+
+            v_qty_needed := v_qty_needed - v_qty_allocated;
+        END LOOP;
+
+        IF v_qty_needed > 0 THEN
+            RAISE EXCEPTION 'Stock insuficiente para el producto %: faltan % unidades', v_item->>'product_name', v_qty_needed;
+        END IF;
+
     END LOOP;
 
     RETURN jsonb_build_object('success', true, 'real_code', v_code, 'order_id', v_order_id);
@@ -91,7 +121,12 @@ RETURNS JSONB AS $$
 DECLARE
     v_order_id UUID := (p_order_data->>'id')::uuid;
     v_item JSONB;
+    v_order_item_id UUID;
+    v_batch RECORD;
+    v_qty_needed INT;
+    v_qty_allocated INT;
 BEGIN
+    -- 1. Actualizar Cabecera
     UPDATE orders SET
         client_id = NULLIF(p_order_data->>'client_id', '')::uuid,
         client_name = p_order_data->>'client_name',
@@ -104,9 +139,10 @@ BEGIN
         updated_at = NOW()
     WHERE id = v_order_id;
 
-    -- Borramos hijos antiguos
+    -- 2. Borrar hijos antiguos (Esto restaura stock automáticamente vía ON DELETE CASCADE + Trigger)
     DELETE FROM order_items WHERE order_id = v_order_id;
 
+    -- 3. Insertar nuevos items y re-asignar lotes (FIFO)
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_order_data->'items')
     LOOP
         INSERT INTO order_items (
@@ -125,7 +161,34 @@ BEGIN
             NULLIF(v_item->>'auto_promo_id', '')::uuid,
             COALESCE((v_item->>'discount_percent')::numeric, 0),
             COALESCE((v_item->>'discount_amount')::numeric, 0)
-        );
+        ) RETURNING id INTO v_order_item_id;
+
+        -- Lógica de Descuento de Stock (FIFO)
+        v_qty_needed := COALESCE((v_item->>'quantity_base')::int, (v_item->>'quantity')::int);
+        
+        FOR v_batch IN 
+            SELECT id, code, quantity_current 
+            FROM batches 
+            WHERE product_id = (v_item->>'product_id')::uuid AND quantity_current > 0
+            ORDER BY expiration_date ASC, created_at ASC
+        LOOP
+            IF v_qty_needed <= 0 THEN EXIT; END IF;
+
+            v_qty_allocated := LEAST(v_qty_needed, v_batch.quantity_current);
+
+            INSERT INTO batch_allocations (
+                order_item_id, batch_id, batch_code, quantity
+            ) VALUES (
+                v_order_item_id, v_batch.id, v_batch.code, v_qty_allocated
+            );
+
+            v_qty_needed := v_qty_needed - v_qty_allocated;
+        END LOOP;
+
+        IF v_qty_needed > 0 THEN
+            RAISE EXCEPTION 'Stock insuficiente para el producto % en la actualización: faltan % unidades', v_item->>'product_name', v_qty_needed;
+        END IF;
+
     END LOOP;
 
     RETURN jsonb_build_object('success', true, 'real_code', p_order_data->>'code', 'order_id', v_order_id);
