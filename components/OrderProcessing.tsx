@@ -20,7 +20,7 @@ export const OrderProcessing: React.FC = () => {
       const loadMasterData = async () => {
          try {
             const [resSellers, resClients, resZones] = await Promise.all([
-               supabase.from('erp_users').select('*').eq('role', 'SELLER'),
+               supabase.from('sellers').select('*'),
                supabase.from('clients').select('*'),
                supabase.from('zones').select('*')
             ]);
@@ -531,7 +531,7 @@ export const OrderProcessing: React.FC = () => {
             <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center gap-4">
                {filterStatus === 'pending' && (
                   <button onClick={handleSelectAll} className="flex items-center text-sm font-bold text-slate-700 hover:text-blue-600">
-                     {selectedIds.size > 0 && selectedIds.size === filteredOrders.length ? <CheckSquare className="w-5 h-5 mr-1 text-blue-600" /> : <Square className="w-5 h-5 mr-1 text-slate-400" />}
+                     {selectedIds.size > 0 && selectedIds.size === orders.length ? <CheckSquare className="w-5 h-5 mr-1 text-blue-600" /> : <Square className="w-5 h-5 mr-1 text-slate-400" />}
                      Seleccionar Todo
                   </button>
                )}
