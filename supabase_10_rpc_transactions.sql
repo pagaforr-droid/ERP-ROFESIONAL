@@ -11,6 +11,8 @@ DROP FUNCTION IF EXISTS public.update_order_transaction(json);
 DROP FUNCTION IF EXISTS public.update_order_transaction(jsonb);
 DROP FUNCTION IF EXISTS public.process_sale_transaction(json);
 DROP FUNCTION IF EXISTS public.process_sale_transaction(jsonb);
+DROP FUNCTION IF EXISTS public.process_dispatch_transaction(jsonb);
+DROP FUNCTION IF EXISTS public.process_credit_note_transaction(jsonb);
 
 -- 1. PROCESAR NUEVO PEDIDO VÍA MOBILE ORDERS O ADVANCED ENTRY
 CREATE OR REPLACE FUNCTION public.process_order_transaction(p_order_data JSONB)
@@ -288,5 +290,149 @@ BEGIN
     END LOOP;
 
     RETURN jsonb_build_object('success', true, 'real_number', LPAD(v_current_number::text, 8, '0'), 'sale_id', v_sale_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- 4. PROCESAR HOJA DE RUTA (DESPACHO) Y CORRELATIVO GUÍA
+CREATE OR REPLACE FUNCTION public.process_dispatch_transaction(p_dispatch_data JSONB)
+RETURNS JSONB AS $$
+DECLARE
+    v_dispatch_id UUID;
+    v_sale_id TEXT;
+    v_current_number INT;
+    v_code TEXT;
+    v_series TEXT;
+BEGIN
+    -- 1. Obtener Correlativo de GUÍA
+    v_series := COALESCE(p_dispatch_data->>'series', 'G001');
+    
+    UPDATE document_series 
+    SET current_number = current_number + 1
+    WHERE type = 'GUIA' AND series = v_series
+    RETURNING current_number INTO v_current_number;
+    
+    IF v_current_number IS NULL THEN
+        -- Crear serie si no existe
+        INSERT INTO document_series (type, series, current_number, is_active)
+        VALUES ('GUIA', v_series, 1, true)
+        RETURNING current_number INTO v_current_number;
+    END IF;
+
+    v_code := v_series || '-' || LPAD(v_current_number::text, 8, '0');
+
+    -- 2. Insertar Hoja de Ruta
+    INSERT INTO dispatch_sheets (
+        id, code, vehicle_id, status, date
+    ) VALUES (
+        COALESCE(NULLIF(p_dispatch_data->>'id', ''), uuid_generate_v4()::text)::uuid,
+        v_code,
+        (p_dispatch_data->>'vehicle_id')::uuid,
+        COALESCE(p_dispatch_data->>'status', 'pending')::dispatch_status,
+        (p_dispatch_data->>'date')::date
+    ) RETURNING id INTO v_dispatch_id;
+
+    -- 3. Vincular Ventas
+    FOR v_sale_id IN SELECT jsonb_array_elements_text(p_dispatch_data->'sale_ids')
+    LOOP
+        INSERT INTO dispatch_sales (dispatch_sheet_id, sale_id)
+        VALUES (v_dispatch_id, v_sale_id::uuid);
+        
+        -- Actualizar estado de la venta
+        UPDATE sales SET dispatch_status = 'assigned' WHERE id = v_sale_id::uuid;
+    END LOOP;
+
+    RETURN jsonb_build_object('success', true, 'real_code', v_code, 'dispatch_id', v_dispatch_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+
+-- 5. PROCESAR NOTA DE CRÉDITO Y RESTITUIR STOCK
+CREATE OR REPLACE FUNCTION public.process_credit_note_transaction(p_nc_data JSONB)
+RETURNS JSONB AS $$
+DECLARE
+    v_nc_id UUID;
+    v_item JSONB;
+    v_batch JSONB;
+    v_nc_item_id UUID;
+    v_current_number INT;
+    v_code TEXT;
+BEGIN
+    -- 1. Correlativo Nota de Crédito
+    UPDATE document_series 
+    SET current_number = current_number + 1
+    WHERE type = 'NOTA_CREDITO' AND series = p_nc_data->>'series'
+    RETURNING current_number INTO v_current_number;
+    
+    IF v_current_number IS NULL THEN
+        INSERT INTO document_series (type, series, current_number, is_active)
+        VALUES ('NOTA_CREDITO', p_nc_data->>'series', 1, true)
+        RETURNING current_number INTO v_current_number;
+    END IF;
+
+    v_code := LPAD(v_current_number::text, 8, '0');
+
+    -- 2. Insertar Nota de Crédito (en tabla sales)
+    INSERT INTO sales (
+        id, document_type, series, number, payment_method, payment_status, 
+        client_name, client_ruc, client_address, client_id, subtotal, igv, total,
+        status, dispatch_status, sunat_status, observation
+    ) VALUES (
+        COALESCE(NULLIF(p_nc_data->>'id', ''), uuid_generate_v4()::text)::uuid,
+        'NOTA_CREDITO',
+        p_nc_data->>'series',
+        v_code,
+        'CONTADO',
+        'PAID',
+        p_nc_data->>'client_name',
+        p_nc_data->>'client_ruc',
+        p_nc_data->>'client_address',
+        NULLIF(p_nc_data->>'client_id', '')::uuid,
+        (p_nc_data->>'subtotal')::numeric,
+        (p_nc_data->>'igv')::numeric,
+        (p_nc_data->>'total')::numeric,
+        'completed',
+        'delivered',
+        'PENDING',
+        p_nc_data->>'observation'
+    ) RETURNING id INTO v_nc_id;
+
+    -- 3. Procesar Items y RESTITUIR STOCK (vía batch_allocations negativo)
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_nc_data->'items')
+    LOOP
+        INSERT INTO sale_items (
+            sale_id, product_id, product_sku, product_name, selected_unit,
+            quantity_presentation, quantity_base, unit_price, total_price, is_bonus
+        ) VALUES (
+            v_nc_id,
+            (v_item->>'product_id')::uuid,
+            v_item->>'product_sku',
+            v_item->>'product_name',
+            v_item->>'selected_unit',
+            (v_item->>'quantity_presentation')::int,
+            (v_item->>'quantity_base')::int,
+            (v_item->>'unit_price')::numeric,
+            (v_item->>'total_price')::numeric,
+            COALESCE((v_item->>'is_bonus')::boolean, false)
+        ) RETURNING id INTO v_nc_item_id;
+
+        -- Restituir stock insertando la misma asignación pero con signo NEGATIVO
+        -- El trigger reduce_batch_stock hará: stock = stock - (-qty) => stock + qty
+        IF (v_item->'batch_allocations') IS NOT NULL THEN
+            FOR v_batch IN SELECT * FROM jsonb_array_elements(v_item->'batch_allocations')
+            LOOP
+                INSERT INTO batch_allocations (
+                    sale_item_id, batch_id, batch_code, quantity
+                ) VALUES (
+                    v_nc_item_id,
+                    (v_batch->>'batch_id')::uuid,
+                    v_batch->>'batch_code',
+                    -((v_batch->>'quantity')::int) -- NEGATIVO PARA RESTITUIR
+                );
+            END LOOP;
+        END IF;
+    END LOOP;
+
+    RETURN jsonb_build_object('success', true, 'real_number', v_code);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

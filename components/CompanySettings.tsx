@@ -317,11 +317,12 @@ export const CompanySettings: React.FC = () => {
               </div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex-1">
-               <table className="w-full text-left text-sm border-collapse">
-                 <thead className="bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-wider border-b border-slate-200">
-                   <tr>
-                     <th className="p-4">Tipo Comprobante</th>
+            <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex-1 flex flex-col">
+               <div className="overflow-y-auto max-h-[50vh]">
+                 <table className="w-full text-left text-sm border-collapse">
+                   <thead className="bg-slate-100 text-slate-600 font-black text-xs uppercase tracking-wider border-b border-slate-200 sticky top-0 z-10">
+                     <tr>
+                       <th className="p-4">Tipo Comprobante</th>
                      <th className="p-4 w-32 text-center">Serie</th>
                      <th className="p-4 w-40 text-center">Correlativo Actual</th>
                      <th className="p-4 w-32 text-center">Estado</th>
@@ -381,6 +382,7 @@ export const CompanySettings: React.FC = () => {
                    ))}
                  </tbody>
                </table>
+               </div>
             </div>
 
             <div className="flex justify-end mt-6">

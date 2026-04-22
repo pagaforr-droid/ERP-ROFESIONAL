@@ -23,6 +23,9 @@ export const Dispatch: React.FC = () => {
    const [showPickingList, setShowPickingList] = useState(false);
    const [activePrintTab, setActivePrintTab] = useState<'picking' | 'sellers' | 'guia'>('picking');
    const [isPrinting, setIsPrinting] = useState(false);
+   const [isSaving, setIsSaving] = useState(false);
+   const [dbSeries, setDbSeries] = useState<any[]>([]);
+   const [selectedSeries, setSelectedSeries] = useState('');
 
    // --- EDIT MODE STATE ---
    const [editMode, setEditMode] = useState(false);
@@ -104,12 +107,22 @@ export const Dispatch: React.FC = () => {
       }
    };
 
-   const handleGenerateRoute = () => {
+   const handleGenerateRoute = async () => {
       if (selectedSaleIds.length === 0) return;
+      
+      // Cargar series de Guía Reales
+      try {
+          const { data } = await import('../services/supabase').then(m => m.supabase.from('document_series').select('*').eq('type', 'GUIA').eq('is_active', true));
+          if (data && data.length > 0) {
+              setDbSeries(data);
+              setSelectedSeries(data[0].series);
+          }
+      } catch (e) { console.error(e); }
+
       setShowPickingList(true);
    };
 
-   const confirmDispatch = () => {
+   const confirmDispatch = async () => {
       if (!selectedVehicleId) { alert("Seleccione un vehículo primero."); return; }
 
       if (editMode && editingDispatchId) {
@@ -119,16 +132,29 @@ export const Dispatch: React.FC = () => {
          });
          alert("¡Hoja de Ruta actualizada exitosamente!");
       } else {
-         createDispatch({
-            id: crypto.randomUUID(),
-            code: 'TBD', // Let the store auto-generate it using the active GUIA series
-            vehicle_id: selectedVehicleId,
-            status: 'in_transit',
-            date: new Date().toISOString(),
-            sale_ids: selectedSaleIds
-         });
-         updateSaleStatus(selectedSaleIds, 'assigned');
-         alert("¡Hoja de Ruta creada! El inventario ha sido comprometido para despacho.");
+         setIsSaving(true);
+         try {
+             const dispatchData = {
+                id: crypto.randomUUID(),
+                series: selectedSeries,
+                vehicle_id: selectedVehicleId,
+                status: 'in_transit',
+                date: new Date().toISOString().split('T')[0],
+                sale_ids: selectedSaleIds
+             };
+
+             const { data, error } = await import('../services/supabase').then(m => m.supabase.rpc('process_dispatch_transaction', { p_dispatch_data: dispatchData }));
+             if (error) throw error;
+
+             if (data && data.success) {
+                 alert(`¡Hoja de Ruta creada! Código: ${data.real_code}`);
+                 window.location.reload(); 
+             }
+         } catch (error: any) {
+             alert("Error al guardar en Supabase: " + error.message);
+         } finally {
+             setIsSaving(false);
+         }
       }
 
       setSelectedSaleIds([]);
@@ -530,7 +556,19 @@ export const Dispatch: React.FC = () => {
                   </div>
 
                   {/* View Toggles */}
-                  <div className="flex bg-slate-900 rounded p-1">
+                  <div className="flex bg-slate-900 rounded p-1 items-center gap-2">
+                     <div className="flex bg-slate-800 rounded p-1 mr-2 border border-slate-700">
+                        <label className="text-[10px] font-bold text-slate-400 mr-2 uppercase self-center ml-1">Serie Guía:</label>
+                        <select 
+                            className="bg-slate-900 text-white text-xs font-bold border-none outline-none rounded px-2 py-1"
+                            value={selectedSeries}
+                            onChange={(e) => setSelectedSeries(e.target.value)}
+                        >
+                            {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
+                            {dbSeries.length === 0 && <option value="G001">G001 (Auto)</option>}
+                        </select>
+                     </div>
+
                      <button
                         onClick={() => setActivePrintTab('picking')}
                         className={`px-4 py-1.5 rounded text-sm font-bold ${activePrintTab === 'picking' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}

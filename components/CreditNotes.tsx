@@ -15,6 +15,20 @@ export const CreditNotes: React.FC = () => {
     const [returnQuantities, setReturnQuantities] = useState<Record<string, { qty: number, unit: 'UND' | 'PKG' }>>({});
 
     const [generatedNC, setGeneratedNC] = useState<Sale | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
+    const [dbSeries, setDbSeries] = useState<any[]>([]);
+    const [selectedSeries, setSelectedSeries] = useState('');
+
+    React.useEffect(() => {
+        const fetchSeries = async () => {
+            const { data } = await import('../services/supabase').then(m => m.supabase.from('document_series').select('*').eq('type', 'NOTA_CREDITO').eq('is_active', true));
+            if (data && data.length > 0) {
+                setDbSeries(data);
+                setSelectedSeries(data[0].series);
+            }
+        };
+        fetchSeries();
+    }, []);
 
     const handleSearch = () => {
         if (!searchTerm) return;
@@ -107,47 +121,52 @@ export const CreditNotes: React.FC = () => {
     const returnSubtotal = returnGrandTotal / (1 + (company.igv_percent / 100));
     const returnIgv = returnGrandTotal - returnSubtotal;
 
-    const handleGenerateNC = () => {
+    const handleGenerateNC = async () => {
         if (!originalSale) return;
         if (returnedItemsList.length === 0) {
             alert('Debe devolver al menos un producto mayor a cero para generar la Nota de Crédito.');
             return;
         }
 
-        const confirm = window.confirm(`¿Está seguro de generar una NOTA DE CRÉDITO por un valor de S/ ${returnGrandTotal.toFixed(2)} que afectará a la ${originalSale.document_type} ${originalSale.series}-${originalSale.number}?`);
-        if (!confirm) return;
-
-        const correlative = getNextDocumentNumber('NOTA_CREDITO');
-        if (!correlative) {
+        if (!selectedSeries) {
             alert('No hay una serie de Nota de Crédito activa en Configuración.');
             return;
         }
 
-        const newNC: Sale = {
-            id: crypto.randomUUID(),
-            document_type: 'NOTA_CREDITO', // Ensure this matches types.ts DocumentSeries
-            series: correlative.series,
-            number: correlative.number,
-            payment_method: 'CONTADO', // N/A effectively
-            client_id: originalSale.client_id,
-            client_name: originalSale.client_name,
-            client_ruc: originalSale.client_ruc,
-            client_address: originalSale.client_address,
-            subtotal: returnSubtotal,
-            igv: returnIgv,
-            total: returnGrandTotal,
-            status: 'completed',
-            dispatch_status: 'delivered', // already resolved
-            created_at: new Date().toISOString(),
-            items: returnedItemsList,
-            sunat_status: 'PENDING',
-            observation: `Devolución referente a ${originalSale.document_type} ${originalSale.series}-${originalSale.number}`
-        };
+        const confirm = window.confirm(`¿Está seguro de generar una NOTA DE CRÉDITO que afectará a la ${originalSale.document_type} ${originalSale.series}-${originalSale.number}?`);
+        if (!confirm) return;
 
-        createCreditNote(newNC, originalSale.id, returnedItemsList);
-        // Show preview immediately using PDF Generator
-        generateMassiveInvoicePDF(company, [newNC]);
-        alert('¡Nota de Crédito generada y Kardex actualizado con éxito!');
+        setIsSaving(true);
+        try {
+            const ncPayload = {
+                id: crypto.randomUUID(),
+                series: selectedSeries,
+                client_id: originalSale.client_id,
+                client_name: originalSale.client_name,
+                client_ruc: originalSale.client_ruc,
+                client_address: originalSale.client_address,
+                subtotal: returnSubtotal,
+                igv: returnIgv,
+                total: returnGrandTotal,
+                observation: `Devolución referente a ${originalSale.document_type} ${originalSale.series}-${originalSale.number}`,
+                items: returnedItemsList
+            };
+
+            const { data, error } = await import('../services/supabase').then(m => m.supabase.rpc('process_credit_note_transaction', { p_nc_data: ncPayload }));
+            if (error) throw error;
+
+            if (data && data.success) {
+                const finalNC = { ...ncPayload, number: data.real_number } as Sale;
+                setGeneratedNC(finalNC);
+                generateMassiveInvoicePDF(company, [finalNC]);
+                alert(`¡Nota de Crédito ${selectedSeries}-${data.real_number} generada con éxito!`);
+                window.location.reload();
+            }
+        } catch (e: any) {
+            alert("Error al generar NC: " + e.message);
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     return (
@@ -278,9 +297,22 @@ export const CreditNotes: React.FC = () => {
 
                     {/* Totals & Submit */}
                     <div className="bg-indigo-50 border border-indigo-100 rounded p-4 flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-indigo-800">
-                            <ShieldAlert className="w-5 h-5" />
-                            <span className="text-xs font-medium">La nota de crédito afectará el saldo del comprobante y devolverá el stock disponible al Kardex inmediatamente.</span>
+                        <div className="flex items-center gap-4 text-indigo-800">
+                            <div className="flex flex-col">
+                                <label className="text-[10px] font-bold text-indigo-400 uppercase mb-1">Serie NC:</label>
+                                <select 
+                                    className="bg-white border border-indigo-200 rounded px-2 py-1 font-bold text-indigo-700 outline-none"
+                                    value={selectedSeries}
+                                    onChange={(e) => setSelectedSeries(e.target.value)}
+                                >
+                                    {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
+                                    {dbSeries.length === 0 && <option value="NC01">NC01 (Auto)</option>}
+                                </select>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <ShieldAlert className="w-5 h-5" />
+                                <span className="text-xs font-medium">La nota de crédito afectará el saldo del comprobante y devolverá el stock disponible al Kardex inmediatamente.</span>
+                            </div>
                         </div>
 
                         <div className="flex items-center gap-6">

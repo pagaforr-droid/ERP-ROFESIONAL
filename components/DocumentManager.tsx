@@ -22,7 +22,9 @@ interface DisplayDocument {
 }
 
 export const DocumentManager: React.FC = () => {
-   const { sales, dispatchLiquidations, company } = useStore();
+   const { dispatchLiquidations, company } = useStore();
+   const [dbDocuments, setDbDocuments] = useState<any[]>([]);
+   const [isLoading, setIsLoading] = useState(false);
 
    // --- STATE ---
    const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
@@ -44,8 +46,8 @@ export const DocumentManager: React.FC = () => {
    const allDocuments: DisplayDocument[] = useMemo(() => {
       const docs: DisplayDocument[] = [];
 
-      // 1. Process Sales (Facturas & Boletas)
-      sales.forEach(sale => {
+      // 1. Process DB Documents (Facturas & Boletas)
+      dbDocuments.forEach(sale => {
          docs.push({
             id: sale.id,
             source: 'SALE',
@@ -56,17 +58,45 @@ export const DocumentManager: React.FC = () => {
             clientName: sale.client_name,
             clientDoc: sale.client_ruc,
             total: sale.total,
-            items: sale.items,
+            items: sale.items || [],
             originalRef: sale
          });
       });
 
-      // Credit Notes are now correctly registered as Sales in the state, 
-      // so we don't need to manually read from `dispatchLiquidations` here anymore.
-
       // Sort by Date Descending
       return docs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-   }, [sales, dispatchLiquidations]);
+   }, [dbDocuments, dispatchLiquidations]);
+
+   // --- DB FETCH LOGIC ---
+   const fetchDocuments = async () => {
+       setIsLoading(true);
+       try {
+           let query = supabase.from('sales').select('*, items:sale_items(*)').neq('status', 'canceled');
+           
+           if (dateFrom) query = query.gte('created_at', `${dateFrom}T00:00:00`);
+           if (dateTo) query = query.lte('created_at', `${dateTo}T23:59:59`);
+           
+           if (filterType !== 'ALL') {
+               if (filterType === 'NOTA_CREDITO') query = query.eq('document_type', 'NOTA DE CREDITO');
+               else query = query.eq('document_type', filterType);
+           }
+           
+           const { data, error } = await query;
+           if (error) throw error;
+           
+           setDbDocuments(data || []);
+       } catch (error) {
+           console.error("Error fetching docs", error);
+           alert("Error cargando documentos de la base de datos.");
+       } finally {
+           setIsLoading(false);
+       }
+   };
+
+   // Fetch initial data on mount
+   React.useEffect(() => {
+       fetchDocuments();
+   }, []);
 
    // --- FILTERING ---
    const filteredDocs = allDocuments.filter(d => {
@@ -162,6 +192,7 @@ export const DocumentManager: React.FC = () => {
          }
          
          setActionState(null);
+         fetchDocuments(); // Refresh data from Supabase
       } catch (error: any) {
          alert("Error: " + error.message);
       } finally {
@@ -219,6 +250,16 @@ export const DocumentManager: React.FC = () => {
                         onChange={e => setSearchTerm(e.target.value)}
                      />
                   </div>
+               </div>
+               <div>
+                  <button 
+                     onClick={fetchDocuments} 
+                     disabled={isLoading}
+                     className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm flex items-center transition-colors disabled:opacity-50 h-[38px]"
+                  >
+                     {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
+                     Buscar en BD
+                  </button>
                </div>
             </div>
          </div>

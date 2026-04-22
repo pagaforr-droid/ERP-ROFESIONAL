@@ -4,9 +4,16 @@ import { Printer, Search, Calendar, CheckSquare, Square, FileText, X } from 'luc
 import { PDFViewer, PDFDownloadLink } from '@react-pdf/renderer';
 import { PdfDocument } from './PdfDocument';
 
+import { supabase } from '../services/supabase';
+import { Loader2 } from 'lucide-react';
+
 export const PrintBatch: React.FC = () => {
-    const { sales, dispatchSheets, company, markDocumentsAsPrinted, products, clients } = useStore();
+    const { company, markDocumentsAsPrinted, products, clients } = useStore();
     const companyInfo = company;
+    
+    const [dbSales, setDbSales] = useState<any[]>([]);
+    const [dbDispatchSheets, setDbDispatchSheets] = useState<any[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
 
     // Filters
     const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
@@ -33,14 +40,14 @@ export const PrintBatch: React.FC = () => {
 
     // --- FILTER LOGIC ---
     const allDocuments = useMemo(() => {
-        const mappedSales = sales.map(s => ({ ...s, _isGuia: false, date: s.created_at.split('T')[0] }));
+        const mappedSales = dbSales.map(s => ({ ...s, _isGuia: false, date: s.created_at.split('T')[0] }));
         
-        const mappedGuias = dispatchSheets.map(d => {
+        const mappedGuias = dbDispatchSheets.map(d => {
            // Aggregate items for Guia
            let guiaItems: any[] = [];
            let totalWeight = 0;
            
-           const dSales = sales.filter(s => d.sale_ids.includes(s.id));
+           const dSales = dbSales.filter(s => d.sale_ids.includes(s.id));
            dSales.forEach(sale => {
               sale.items.forEach(item => {
                  const prod = products.find(p => p.id === item.product_id);
@@ -93,7 +100,44 @@ export const PrintBatch: React.FC = () => {
         });
         
         return [...mappedSales, ...mappedGuias];
-    }, [sales, dispatchSheets, products]);
+    }, [dbSales, dbDispatchSheets, products]);
+
+    // --- DB FETCH LOGIC ---
+    const fetchDocuments = async () => {
+        setIsLoading(true);
+        try {
+            // 1. Fetch Sales
+            let salesQuery = supabase.from('sales').select('*, items:sale_items(*)').neq('status', 'canceled');
+            if (dateFrom) salesQuery = salesQuery.gte('created_at', `${dateFrom}T00:00:00`);
+            if (dateTo) salesQuery = salesQuery.lte('created_at', `${dateTo}T23:59:59`);
+            
+            const { data: salesData, error: salesError } = await salesQuery;
+            if (salesError) throw salesError;
+            
+            setDbSales(salesData || []);
+
+            // 2. Fetch Dispatch Sheets
+            let dispatchQuery = supabase.from('dispatch_sheets').select('*');
+            if (dateFrom) dispatchQuery = dispatchQuery.gte('date', `${dateFrom}`);
+            if (dateTo) dispatchQuery = dispatchQuery.lte('date', `${dateTo}`);
+            
+            const { data: dispatchData, error: dispatchError } = await dispatchQuery;
+            if (dispatchError) throw dispatchError;
+            
+            setDbDispatchSheets(dispatchData || []);
+            
+        } catch (error) {
+            console.error("Error fetching docs", error);
+            setAlertMessage("Error cargando documentos de la base de datos.");
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Fetch initial data on mount
+    useEffect(() => {
+        fetchDocuments();
+    }, []);
 
     const filteredDocs = allDocuments.filter(s => {
         const date = s.date;
@@ -274,6 +318,16 @@ export const PrintBatch: React.FC = () => {
                                 onChange={e => setSearchTerm(e.target.value)}
                             />
                         </div>
+                    </div>
+                    <div>
+                        <button 
+                            onClick={fetchDocuments} 
+                            disabled={isLoading}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm flex items-center transition-colors disabled:opacity-50 h-[38px]"
+                        >
+                            {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Search className="w-4 h-4 mr-2" />}
+                            Buscar en BD
+                        </button>
                     </div>
                 </div>
             </div>
