@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { ShoppingBag, Plus, Trash2, Calendar, DollarSign, Package, CheckSquare, Save, CreditCard, AlertTriangle, Search, FileText, Loader2, XCircle, CheckCircle, Clock, Edit, List } from 'lucide-react';
 import { PurchaseItem, Purchase, Product } from '../types';
-import { supabase, USE_MOCK_DB } from '../services/supabase';
+import { supabase } from '../services/supabase';
+import { calculateBaseQuantity } from '../utils/productUtils';
 
 // Simple Toast Component
 interface ToastProps {
@@ -35,45 +36,43 @@ const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
 
 export const Purchases: React.FC = () => {
   const store = useStore();
-  const { createPurchase, updatePurchase, addPurchasePayment, currentUser } = store;
+  const { currentUser } = store;
   
   const [activeTab, setActiveTab] = useState<'FORM' | 'LIST'>('LIST');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: 'error' | 'success' | 'warning' }>>([]);
 
-  // === SUPABASE STATE (INYECCIÓN DE DATOS DE LA NUBE) ===
-  const [realProducts, setRealProducts] = useState<Product[]>([]);
-  const [realSuppliers, setRealSuppliers] = useState<any[]>([]);
-  const [realWarehouses, setRealWarehouses] = useState<any[]>([]);
-  const [realPurchases, setRealPurchases] = useState<Purchase[]>([]);
+  // === CUSTOM MODAL STATE ===
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<(() => void) | null>(null);
+  const [confirmMessage, setConfirmMessage] = useState('');
+
+  // === SUPABASE STATE ===
+  const [products, setProducts] = useState<Product[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!USE_MOCK_DB) {
-        try {
-          const [pRes, sRes, wRes, purRes] = await Promise.all([
-            supabase.from('products').select('*'),
-            supabase.from('suppliers').select('*'),
-            supabase.from('warehouses').select('*'),
-            supabase.from('purchases').select('*, items:purchase_items(*)').order('issue_date', { ascending: false })
-          ]);
-          if (pRes.data) setRealProducts(pRes.data as Product[]);
-          if (sRes.data) setRealSuppliers(sRes.data);
-          if (wRes.data) setRealWarehouses(wRes.data);
-          if (purRes.data) setRealPurchases(purRes.data as Purchase[]);
-        } catch (error) {
-          console.error("Error fetching Supabase data:", error);
-        }
+      try {
+        const [pRes, sRes, wRes, purRes] = await Promise.all([
+          supabase.from('products').select('*'),
+          supabase.from('suppliers').select('*'),
+          supabase.from('warehouses').select('*'),
+          supabase.from('purchases').select('*, items:purchase_items(*)').order('issue_date', { ascending: false })
+        ]);
+        if (pRes.data) setProducts(pRes.data as Product[]);
+        if (sRes.data) setSuppliers(sRes.data);
+        if (wRes.data) setWarehouses(wRes.data);
+        if (purRes.data) setPurchases(purRes.data as Purchase[]);
+      } catch (error) {
+        console.error("Error fetching Supabase data:", error);
       }
     };
     fetchData();
   }, [activeTab]);
-
-  const products = USE_MOCK_DB ? store.products : realProducts;
-  const suppliers = USE_MOCK_DB ? store.suppliers : realSuppliers;
-  const warehouses = USE_MOCK_DB ? store.warehouses : realWarehouses;
-  const purchases = USE_MOCK_DB ? store.purchases : realPurchases;
 
   // === PAYMENT MODAL STATE ===
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -90,8 +89,9 @@ export const Purchases: React.FC = () => {
 
   // === HEADER STATE ===
   const [supplierId, setSupplierId] = useState('');
-  const [warehouseId, setWarehouseId] = useState(warehouses[0]?.id || '');
+  const [warehouseId, setWarehouseId] = useState(''); // Se seteará al cargar si hay data
   const [docType, setDocType] = useState('FACTURA');
+  const [docSeries, setDocSeries] = useState(''); // NEW
   const [docNumber, setDocNumber] = useState('');
   
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
@@ -101,8 +101,10 @@ export const Purchases: React.FC = () => {
   const [dueDate, setDueDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [currency, setCurrency] = useState<'PEN'|'USD'>('PEN');
-  const [exchangeRate, setExchangeRate] = useState(3.750); // Mock
+  const [exchangeRate, setExchangeRate] = useState(3.750); // Tipo de cambio referencial
   const [observation, setObservation] = useState('');
+  const [percepcion, setPercepcion] = useState<number>(0); // NEW
+  const [detraccion, setDetraccion] = useState<number>(0); // NEW
   
   const [calculateByTotal, setCalculateByTotal] = useState(false); // UI Toggle logic
   const [pricesIncludeIgv, setPricesIncludeIgv] = useState(true); // Input cost behavior
@@ -312,8 +314,7 @@ export const Purchases: React.FC = () => {
     const p = products.find(x => x.id === selectedProduct);
     if (!p) return;
 
-    const factor = unitType === 'PKG' ? (p.package_content || 1) : 1;
-    const baseQty = Number(quantity) * factor;
+    const { conversionFactor: factor, quantityBase: baseQty } = calculateBaseQuantity(p, unitType, quantity);
     
     let unitPrice = 0; 
     let unitValue = 0;
@@ -365,9 +366,14 @@ export const Purchases: React.FC = () => {
     if (cart.length === 0) { showToast("El carrito de compras está vacío.", "error"); return; }
 
     if (!editingId) {
-      const isDuplicate = purchases.some(p => p.supplier_id === supplierId && p.document_type === docType && p.document_number === docNumber);
+      const isDuplicate = purchases.some(p => 
+          p.supplier_id === supplierId && 
+          p.document_type === docType && 
+          p.document_series === docSeries &&
+          p.document_number === docNumber
+      );
       if (isDuplicate) {
-        showToast("Ya existe una compra registrada con este Proveedor, Tipo y Número de Documento.", "error");
+        showToast("Ya existe una compra registrada con este Proveedor, Tipo, Serie y Número de Documento.", "error");
         return;
       }
     }
@@ -383,60 +389,27 @@ export const Purchases: React.FC = () => {
     const supplier = suppliers.find(s => s.id === supplierId);
 
     try {
-      if (USE_MOCK_DB) {
-        const purchaseData: Purchase = {
-          id: editingId || crypto.randomUUID(),
-          supplier_id: supplier!.id,
-          supplier_name: supplier!.name,
-          warehouse_id: warehouseId,
-          document_type: docType,
-          document_number: docNumber,
-          issue_date: issueDate,
-          entry_date: entryDate,
-          due_date: dueDate,
-          accounting_date: accountingDate,
-          observation: observation,
-          currency: currency,
-          exchange_rate: exchangeRate,
-          subtotal: subtotal,
-          igv: igv,
-          total: total,
-          payment_status: status,
-          items: cart
-        };
-
-        if (editingId) {
-          const success = updatePurchase(purchaseData);
-          if (success) {
-            showToast("Compra actualizada (Mock).", "success");
-          } else {
-            showToast("Error actualizando (Mock).", "error");
-          }
-        } else {
-          createPurchase(purchaseData);
-          showToast(status === 'PAID' ? "Compra registrada y PAGADA." : "Compra registrada como PENDIENTE.", "success");
-        }
-        resetForm();
-        setActiveTab('LIST');
-      } else {
         // --- LÓGICA SUPABASE NATIVA ---
         const purchaseHeader = {
           supplier_id: supplier!.id,
           supplier_name: supplier!.name, 
           warehouse_id: warehouseId || null,
           document_type: docType,
+          document_series: docSeries.toUpperCase(),
           document_number: docNumber,
           issue_date: issueDate,
-          entry_date: entryDate,         // <--- AÑADIDO: FECHA DE INGRESO
-          accounting_date: accountingDate, // <--- AÑADIDO: FECHA CONTABLE
+          entry_date: entryDate,         // FECHA DE INGRESO
+          accounting_date: accountingDate, // FECHA CONTABLE
           due_date: dueDate,
           currency: currency,
           subtotal: subtotal,
           igv: igv,
           total: total,
+          percepcion: percepcion,
+          detraccion: detraccion,
           payment_status: status,
           observation: observation,
-          balance: status === 'PAID' ? 0 : total
+          balance: status === 'PAID' ? 0 : total + percepcion
         };
 
         if (editingId) {
@@ -494,7 +467,6 @@ export const Purchases: React.FC = () => {
         
         resetForm();
         setActiveTab('LIST');
-      }
     } catch (err: any) {
       showToast("Error de BD: " + err.message, "error");
     } finally {
@@ -503,7 +475,8 @@ export const Purchases: React.FC = () => {
   };
 
   const resetForm = () => {
-    setCart([]); setDocNumber(''); setSupplierId(''); setObservation('');
+    setCart([]); setDocSeries(''); setDocNumber(''); setSupplierId(''); setObservation('');
+    setPercepcion(0); setDetraccion(0);
     setEditingId(null);
     setIssueDate(new Date().toISOString().split('T')[0]);
   };
@@ -513,7 +486,10 @@ export const Purchases: React.FC = () => {
     setSupplierId(p.supplier_id);
     setWarehouseId(p.warehouse_id);
     setDocType(p.document_type);
+    setDocSeries(p.document_series || '');
     setDocNumber(p.document_number);
+    setPercepcion(p.percepcion || 0);
+    setDetraccion(p.detraccion || 0);
     setIssueDate(p.issue_date);
     setEntryDate(p.entry_date || p.issue_date);
     setAccountingDate(p.accounting_date || p.issue_date);
@@ -549,18 +525,6 @@ export const Purchases: React.FC = () => {
 
     setIsProcessing(true);
     try {
-      if (USE_MOCK_DB) {
-        addPurchasePayment(
-          paymentPurchase.id, 
-          {
-            amount: Number(paymentAmount),
-            date: paymentDate,
-            method: paymentMethod,
-            reference: paymentReference
-          }, 
-          currentUser ? currentUser.id : 'ADMIN'
-        );
-      } else {
         // LÓGICA SUPABASE PARA PAGOS Y CAJA
         const paymentId = crypto.randomUUID();
         
@@ -593,7 +557,6 @@ export const Purchases: React.FC = () => {
            balance: newBalance,
            payment_status: newStatus
         }).eq('id', paymentPurchase.id);
-      }
       
       showToast(`Pago de S/ ${paymentAmount} registrado en Caja`, 'success');
       setShowPaymentModal(false);
@@ -610,8 +573,8 @@ export const Purchases: React.FC = () => {
   const sumTotalImport = cart.reduce((acc, item) => acc + item.total_cost, 0); 
   const sumIgv = sumTotalImport - sumTotalValue;
 
-  const isDuplicateDoc = !editingId && supplierId && docNumber && docType 
-    ? purchases.some(p => p.supplier_id === supplierId && p.document_type === docType && p.document_number === docNumber) 
+  const isDuplicateDoc = !editingId && supplierId && docNumber && docType && docSeries
+    ? purchases.some(p => p.supplier_id === supplierId && p.document_type === docType && p.document_series === docSeries && p.document_number === docNumber) 
     : false;
 
   return (
@@ -634,7 +597,14 @@ export const Purchases: React.FC = () => {
       {/* --- TABS --- */}
       <div className="flex space-x-1 bg-slate-200 p-1 rounded-t-lg w-fit">
         <button 
-          onClick={() => { if(!editingId) setActiveTab('LIST'); else if(confirm("Salir de edición?")) { resetForm(); setActiveTab('LIST'); } }}
+          onClick={() => { 
+              if(!editingId) setActiveTab('LIST'); 
+              else {
+                  setConfirmMessage("¿Estás seguro que deseas salir de la edición? Los cambios no guardados se perderán.");
+                  setConfirmAction(() => () => { resetForm(); setActiveTab('LIST'); });
+                  setShowConfirmModal(true);
+              } 
+          }}
           className={`px-4 py-2 rounded font-bold flex items-center ${activeTab === 'LIST' ? 'bg-white shadow text-blue-700' : 'text-slate-600 hover:bg-slate-300'}`}
         >
           <List className="w-4 h-4 mr-2" /> Historial Compras
@@ -766,10 +736,12 @@ export const Purchases: React.FC = () => {
               </div>
               <div className="flex flex-col relative justify-center">
                   <div className="flex items-center gap-2">
-                      <label className="font-bold text-slate-700">Nro:</label>
-                      <input className={`border ${isDuplicateDoc ? 'border-red-500 ring-2 ring-red-200 bg-red-50 text-red-900' : 'border-slate-300'} p-1 rounded w-32 font-bold`} value={docNumber} onChange={e => setDocNumber(e.target.value)} placeholder="F001-00001" />
+                      <label className="font-bold text-slate-700">Serie y Nro:</label>
+                      <input className="border border-slate-300 p-1 rounded w-16 font-bold uppercase text-center" value={docSeries} onChange={e => setDocSeries(e.target.value)} placeholder="F001" maxLength={4} />
+                      <span className="text-slate-400 font-bold">-</span>
+                      <input className={`border ${isDuplicateDoc ? 'border-red-500 ring-2 ring-red-200 bg-red-50 text-red-900' : 'border-slate-300'} p-1 rounded w-32 font-bold`} value={docNumber} onChange={e => setDocNumber(e.target.value)} placeholder="00000001" />
                   </div>
-                  {isDuplicateDoc && <span className="absolute top-[80%] mt-1 left-8 text-[10px] text-red-600 font-bold whitespace-nowrap bg-red-50 border border-red-200 px-1 rounded shadow-sm z-10 animate-fade-in-down">⚠️ Documento ya existe</span>}
+                  {isDuplicateDoc && <span className="absolute top-[80%] mt-1 left-20 text-[10px] text-red-600 font-bold whitespace-nowrap bg-red-50 border border-red-200 px-1 rounded shadow-sm z-10 animate-fade-in-down">⚠️ Documento ya existe</span>}
               </div>
               <div className="flex items-center gap-2">
                   <label className="font-bold text-slate-700">Moneda:</label>
@@ -821,13 +793,24 @@ export const Purchases: React.FC = () => {
               </div>
             </div>
             
-            {/* Obs & Checks */}
-            <div className="flex items-center gap-4 border-t border-slate-100 pt-2">
-                <div className="flex-1 flex items-center gap-2">
+            {/* Obs, Checks & Taxes */}
+            <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 pt-2">
+                <div className="flex-1 flex items-center gap-2 min-w-[200px]">
                   <label className="font-bold text-slate-700 w-16">Glosa/Obs:</label>
                   <input className="flex-1 border border-slate-300 p-1 rounded" value={observation} onChange={e => setObservation(e.target.value)} />
                 </div>
-                <div className="flex gap-4">
+                
+                <div className="flex items-center gap-2">
+                  <label className="font-bold text-slate-700 text-[10px]">Percepción S/:</label>
+                  <input type="number" step="0.01" className="border border-slate-300 p-1 rounded w-20 text-right text-blue-700 font-bold" value={percepcion || ''} onChange={e => setPercepcion(Number(e.target.value))} placeholder="0.00" />
+                </div>
+                
+                <div className="flex items-center gap-2">
+                  <label className="font-bold text-slate-700 text-[10px]">Detracción S/:</label>
+                  <input type="number" step="0.01" className="border border-slate-300 p-1 rounded w-20 text-right text-orange-700 font-bold" value={detraccion || ''} onChange={e => setDetraccion(Number(e.target.value))} placeholder="0.00" />
+                </div>
+
+                <div className="flex gap-4 ml-auto">
                   <label className="flex items-center text-slate-700 cursor-pointer select-none">
                       <input type="checkbox" className="mr-1" checked={pricesIncludeIgv} onChange={e => setPricesIncludeIgv(e.target.checked)} />
                       Precios incluyen IGV
@@ -1087,9 +1070,21 @@ export const Purchases: React.FC = () => {
                     <span className="text-slate-600 font-bold">IGV (18%):</span>
                     <span className="font-mono">{sumIgv.toFixed(2)}</span>
                   </div>
+                  {percepcion > 0 && (
+                  <div className="flex justify-between mb-1 text-blue-700">
+                    <span className="font-bold">Percepción:</span>
+                    <span className="font-mono">{percepcion.toFixed(2)}</span>
+                  </div>
+                  )}
+                  {detraccion > 0 && (
+                  <div className="flex justify-between mb-1 text-orange-700">
+                    <span className="font-bold">Detracción (Info):</span>
+                    <span className="font-mono">-{detraccion.toFixed(2)}</span>
+                  </div>
+                  )}
                   <div className="flex justify-between mt-2 pt-2 border-t border-slate-200 text-sm">
-                    <span className="text-slate-800 font-bold">TOTAL FINAL:</span>
-                    <span className="font-bold text-slate-900 font-mono">{sumTotalImport.toFixed(2)}</span>
+                    <span className="text-slate-800 font-bold">TOTAL A PAGAR:</span>
+                    <span className="font-bold text-slate-900 font-mono">{(sumTotalImport + percepcion).toFixed(2)}</span>
                   </div>
               </div>
           </div>
@@ -1160,6 +1155,34 @@ export const Purchases: React.FC = () => {
               >
                 {isProcessing ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <CheckCircle className="w-5 h-5 mr-2" />}
                 Confirmar Pago
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* === CONFIRM MODAL === */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-slate-900/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-lg shadow-2xl p-6 max-w-sm w-full text-center border-t-4 border-yellow-500 animate-scale-up">
+            <AlertTriangle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+            <h3 className="text-xl font-extrabold text-slate-800 mb-2">¿Estás seguro?</h3>
+            <p className="text-sm text-slate-600 mb-6">{confirmMessage}</p>
+            <div className="flex justify-center gap-3">
+              <button 
+                onClick={() => setShowConfirmModal(false)}
+                className="px-5 py-2.5 bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold rounded shadow-sm transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => {
+                  if (confirmAction) confirmAction();
+                  setShowConfirmModal(false);
+                }}
+                className="px-5 py-2.5 bg-yellow-500 text-white hover:bg-yellow-600 font-bold rounded shadow-sm transition-colors"
+              >
+                Sí, continuar
               </button>
             </div>
           </div>

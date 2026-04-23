@@ -581,6 +581,7 @@ export interface Purchase {
 
   // Document Info
   document_type: string; // FACTURA, GUIA
+  document_series?: string; // e.g., F001
   document_number: string;
 
   // Dates
@@ -599,6 +600,9 @@ export interface Purchase {
   subtotal: number; // Base Imponible
   igv: number;      // Impuesto
   total: number;    // Total Final
+
+  percepcion?: number; // NEW: Amount perceived
+  detraccion?: number; // NEW: Amount detracted
 
   payment_status: 'PAID' | 'PENDING';
   collection_status?: 'NONE' | 'PARTIAL' | 'COLLECTED'; 
