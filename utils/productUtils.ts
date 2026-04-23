@@ -5,10 +5,12 @@ import { Product, BatchAllocation, Batch } from '../types';
  */
 export const isPackageUnit = (unitName: string, product: Product): boolean => {
     if (!unitName || !product) return false;
-    const cleanUnit = unitName.trim().toUpperCase();
     
-    if (cleanUnit === 'PKG' || cleanUnit === 'CJA' || cleanUnit === 'CAJA') return true;
-    if (product.package_type && cleanUnit === product.package_type.trim().toUpperCase()) return true;
+    // Extraer solo el nombre de la unidad, ignorando el factor de conversión si existe (ej. "CAJ / 12" -> "CAJ")
+    const baseUnitName = unitName.split('/')[0].trim().toUpperCase();
+    
+    if (baseUnitName === 'PKG' || baseUnitName === 'CJA' || baseUnitName === 'CAJA') return true;
+    if (product.package_type && baseUnitName === product.package_type.trim().toUpperCase()) return true;
     
     return false;
 };

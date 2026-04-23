@@ -257,7 +257,8 @@ export const MobileOrders: React.FC = () => {
             if (rewardProduct) {
                const rewardQty = ap.reward_quantity * multiplier;
                const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
-               const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
+               const conversionFactor = isPkgMode ? Number(rewardProduct.package_content || 1) : 1;
+               const realUnitName = isPkgMode ? `${(rewardProduct.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(rewardProduct.unit_type || 'UND').toUpperCase()} / 1`;
 
                cleanCart.push({
                   id: crypto.randomUUID(),
@@ -288,6 +289,7 @@ export const MobileOrders: React.FC = () => {
       const isPkgMode = entryUnit === selectedProduct.package_type;
       const conversionFactor = isPkgMode ? Number(selectedProduct.package_content || 1) : 1;
       const requiredBaseUnits = entryQty * conversionFactor;
+      const formattedUnitName = `${entryUnit} / ${conversionFactor}`;
 
       const availableBatches = loadedBatches[selectedProduct.id] || [];
 
@@ -297,7 +299,7 @@ export const MobileOrders: React.FC = () => {
          : Number(selectedProduct.current_stock || 0);
 
       let tempCart = [...cart];
-      const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === entryUnit);
+      const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === formattedUnitName);
 
       let originalReserved = 0;
       let existingQty = 0;
@@ -331,7 +333,7 @@ export const MobileOrders: React.FC = () => {
             sku: selectedProduct.sku,
             name: selectedProduct.name,
             quantity: entryQty,
-            unit_type: entryUnit,
+            unit_type: formattedUnitName,
             unit_price: entryPrice,
             discount_percent: entryDiscount,
             total_price: entryBonus ? 0 : finalPrice,

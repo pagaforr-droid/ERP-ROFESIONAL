@@ -203,7 +203,8 @@ export const NewSale: React.FC = () => {
 
    const isItemPackage = (itemUnitName: string, prod: any) => {
        if (!prod || !itemUnitName) return false;
-       return itemUnitName.toUpperCase() === (prod.package_type || '').toUpperCase() || itemUnitName.toUpperCase() === 'PKG' || itemUnitName.toUpperCase() === 'CJA';
+       const baseUnitName = itemUnitName.split('/')[0].trim().toUpperCase();
+       return baseUnitName === (prod.package_type || '').toUpperCase() || baseUnitName === 'PKG' || baseUnitName === 'CJA' || baseUnitName === 'CAJA';
    };
 
    const calculateTotal = (qty: number, price: number, discPct: number) => { 
@@ -395,7 +396,7 @@ export const NewSale: React.FC = () => {
       const conversionFactor = isPkgMode ? Number(prod.package_content || 1) : 1;
       const requiredBaseUnits = quantity * conversionFactor;
       
-      const realUnitName = isPkgMode ? (prod.package_type || 'CAJA').toUpperCase() : (prod.unit_type || 'UND').toUpperCase();
+      const realUnitName = isPkgMode ? `${(prod.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(prod.unit_type || 'UND').toUpperCase()} / 1`;
       
       const availableBatches = loadedBatches[prod.id] || [];
       const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(prod.current_stock || prod.stock || 0);
@@ -588,7 +589,7 @@ export const NewSale: React.FC = () => {
                const isPkgMode = ap.reward_unit_type === 'PKG';
                const conversionFactor = isPkgMode ? Number(rewardProd.package_content || 1) : 1;
                
-               const realUnitName = isPkgMode ? (rewardProd.package_type || 'CAJA').toUpperCase() : (rewardProd.unit_type || 'UND').toUpperCase();
+               const realUnitName = isPkgMode ? `${(rewardProd.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(rewardProd.unit_type || 'UND').toUpperCase()} / 1`;
 
                newCart.push({ id: crypto.randomUUID(), sale_id: '', product_id: rewardProd.id, product_sku: rewardProd.sku, product_name: rewardProd.name, quantity_base: rewardQty * conversionFactor, batch_allocations: [], quantity: rewardQty, quantity_presentation: rewardQty, unit_price: 0, discount_percent: 100, discount_amount: 0, total_price: 0, selected_unit: realUnitName, is_bonus: true, auto_promo_id: ap.id, product: rewardProd } as any);
             }

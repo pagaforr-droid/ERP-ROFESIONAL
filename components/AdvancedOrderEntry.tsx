@@ -366,7 +366,8 @@ export const AdvancedOrderEntry: React.FC = () => {
         if (rewardProduct) {
           const rewardQty = ap.reward_quantity * multiplier;
           const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
-          const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
+          const conversionFactor = isPkgMode ? Number(rewardProduct.package_content || 1) : 1;
+          const realUnitName = isPkgMode ? `${(rewardProduct.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(rewardProduct.unit_type || 'UND').toUpperCase()} / 1`;
 
           cleanCart.push({
             id: crypto.randomUUID(),
@@ -401,8 +402,12 @@ export const AdvancedOrderEntry: React.FC = () => {
         ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) 
         : Number(selectedProduct.current_stock || selectedProduct.stock || 0);
 
+    const isPkgMode = entryUnit === selectedProduct.package_type;
+    const conversionFactor = isPkgMode ? Number(selectedProduct.package_content || 1) : 1;
+    const formattedUnitName = `${entryUnit} / ${conversionFactor}`;
+
     let tempCart = [...cart];
-    const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === entryUnit);
+    const existingIdx = tempCart.findIndex(i => i.product_id === selectedProduct.id && !i.is_bonus && !i.auto_promo_id && i.unit_type === formattedUnitName);
     
     let originalReserved = 0;
     let existingQty = 0;
@@ -436,7 +441,7 @@ export const AdvancedOrderEntry: React.FC = () => {
         sku: selectedProduct.sku,
         name: selectedProduct.name,
         quantity: entryQty,
-        unit_type: entryUnit,
+        unit_type: formattedUnitName,
         unit_price: entryPrice,
         discount_percent: entryDiscount,
         total_price: entryBonus ? 0 : finalPrice,

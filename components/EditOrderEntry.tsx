@@ -122,7 +122,8 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
         if (rewardProduct) {
           const rewardQty = ap.reward_quantity * multiplier;
           const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
-          const realUnitName = isPkgMode ? (rewardProduct.package_type || 'CAJA').toUpperCase() : (rewardProduct.unit_type || 'UND').toUpperCase();
+          const conversionFactor = isPkgMode ? Number(rewardProduct.package_content || 1) : 1;
+          const realUnitName = isPkgMode ? `${(rewardProduct.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(rewardProduct.unit_type || 'UND').toUpperCase()} / 1`;
 
           cleanCart.push({
             id: crypto.randomUUID(),

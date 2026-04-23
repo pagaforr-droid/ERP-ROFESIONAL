@@ -152,7 +152,8 @@ export const EditSale: React.FC = () => {
 
    const isItemPackage = (itemUnitName: string, prod: any) => {
        if (!prod || !itemUnitName) return false;
-       return itemUnitName.toUpperCase() === (prod.package_type || '').toUpperCase() || itemUnitName.toUpperCase() === 'PKG' || itemUnitName.toUpperCase() === 'CJA';
+       const baseUnitName = itemUnitName.split('/')[0].trim().toUpperCase();
+       return baseUnitName === (prod.package_type || '').toUpperCase() || baseUnitName === 'PKG' || baseUnitName === 'CJA' || baseUnitName === 'CAJA';
    };
 
    // --- CALCULATIONS ---
@@ -369,7 +370,8 @@ export const EditSale: React.FC = () => {
       if (quantity <= 0) { showDialog('warning', 'Aviso', "Cantidad inválida"); return; }
       
       const prod = selectedProduct as any;
-      const realUnitName = unitMode === 'PKG' ? (prod.package_type || 'CAJA').toUpperCase() : (prod.unit_type || 'UND').toUpperCase();
+      const conversionFactor = unitMode === 'PKG' ? Number(prod.package_content || 1) : 1;
+      const realUnitName = unitMode === 'PKG' ? `${(prod.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(prod.unit_type || 'UND').toUpperCase()} / 1`;
       
       const { quantityBase: requiredBaseUnits } = calculateBaseQuantity(prod, realUnitName, quantity);
       
@@ -463,7 +465,8 @@ export const EditSale: React.FC = () => {
       
       if (!product) return;
 
-      const realUnitName = mode === 'PKG' ? (product.package_type || 'CAJA').toUpperCase() : (product.unit_type || 'UND').toUpperCase();
+      const conversionFactor = mode === 'PKG' ? Number(product.package_content || 1) : 1;
+      const realUnitName = mode === 'PKG' ? `${(product.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(product.unit_type || 'UND').toUpperCase()} / 1`;
       const { quantityBase: requiredBaseUnits } = calculateBaseQuantity(product, realUnitName, Number(item.quantity_presentation));
 
       const multiplier = getMultiplier();
