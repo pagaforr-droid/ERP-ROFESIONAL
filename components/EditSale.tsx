@@ -3,6 +3,7 @@ import { useStore } from '../services/store';
 import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion, Batch } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle, AlertOctagon, Gift, Edit3, MapPin, Zap, RefreshCw } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { allocateBatchesFIFO, calculateBaseQuantity } from '../utils/productUtils';
 import { PdfEngine } from './PdfEngine';
 
 const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
@@ -368,10 +369,9 @@ export const EditSale: React.FC = () => {
       if (quantity <= 0) { showDialog('warning', 'Aviso', "Cantidad inválida"); return; }
       
       const prod = selectedProduct as any;
-      const isPkgMode = unitMode === 'PKG';
-      const conversionFactor = isPkgMode ? Number(prod.package_content || 1) : 1;
-      const requiredBaseUnits = quantity * conversionFactor;
-      const realUnitName = isPkgMode ? (prod.package_type || 'CAJA').toUpperCase() : (prod.unit_type || 'UND').toUpperCase();
+      const realUnitName = unitMode === 'PKG' ? (prod.package_type || 'CAJA').toUpperCase() : (prod.unit_type || 'UND').toUpperCase();
+      
+      const { quantityBase: requiredBaseUnits } = calculateBaseQuantity(prod, realUnitName, quantity);
       
       const availableBatches = loadedBatches[prod.id] || [];
       const totalStock = availableBatches.length > 0 ? availableBatches.reduce((acc, b) => acc + Number(b.quantity_current || 0), 0) : Number(prod.current_stock || prod.stock || 0);
@@ -380,30 +380,25 @@ export const EditSale: React.FC = () => {
          showDialog('warning', 'Atención', `Estás forzando stock negativo. Disponible: ${totalStock}. Continuará en modo auditoría.`); 
       }
 
-      let remaining = requiredBaseUnits;
-      const selectedBatches: BatchAllocation[] = [];
-      for (const batch of availableBatches) {
-         if (remaining <= 0) break;
-         const take = Math.min(remaining, Number(batch.quantity_current || 0));
-         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
-         remaining -= take;
-      }
+      const selectedBatches = allocateBatchesFIFO(requiredBaseUnits, availableBatches);
 
       const existingItemIndex = cart.findIndex(item => item.product_id === prod.id && item.selected_unit === realUnitName);
 
       if (existingItemIndex >= 0) {
          const existing = cart[existingItemIndex];
          const newQty = Number(existing.quantity_presentation || 0) + quantity;
+         const newBaseQty = Number(existing.quantity_base || 0) + requiredBaseUnits;
          const newPrice = calculateTotal(newQty, unitPrice, 0); 
          const newCart = [...cart];
          newCart[existingItemIndex] = { 
             ...existing, 
             quantity_presentation: newQty, 
-            quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty, 
+            quantity_base: newBaseQty, 
             total_price: newPrice, 
             unit_price: unitPrice, 
             product: prod, 
-            batch_allocations: [] 
+            // 🚨 FIX: Re-alocamos los lotes
+            batch_allocations: allocateBatchesFIFO(newBaseQty, availableBatches) 
          };
          setCart(newCart);
          resetEntryForm();
@@ -442,8 +437,7 @@ export const EditSale: React.FC = () => {
       if (isNaN(newPu) || newPu < 0) newPu = 0;
 
       const product = item.product;
-      const isPkg = isItemPackage(item.selected_unit, product);
-      const conversionFactor = isPkg ? Number(product?.package_content || 1) : 1;
+      const { quantityBase: requiredBaseUnits } = calculateBaseQuantity(product, item.selected_unit, newQty);
 
       let discountPct = item.discount_percent;
       if (field === 'pu' && newPu > 0 && item.is_bonus) {
@@ -453,7 +447,7 @@ export const EditSale: React.FC = () => {
       updatedCart[index] = { 
           ...item, 
           quantity_presentation: newQty, 
-          quantity_base: newQty * conversionFactor, 
+          quantity_base: requiredBaseUnits, 
           unit_price: newPu,
           discount_percent: discountPct,
           total_price: calculateTotal(newQty, newPu, discountPct), 
@@ -469,18 +463,17 @@ export const EditSale: React.FC = () => {
       
       if (!product) return;
 
-      const isPkg = mode === 'PKG';
-      const realUnitName = isPkg ? (product.package_type || 'CAJA').toUpperCase() : (product.unit_type || 'UND').toUpperCase();
-      const conversionFactor = isPkg ? Number(product.package_content || 1) : 1;
+      const realUnitName = mode === 'PKG' ? (product.package_type || 'CAJA').toUpperCase() : (product.unit_type || 'UND').toUpperCase();
+      const { quantityBase: requiredBaseUnits } = calculateBaseQuantity(product, realUnitName, Number(item.quantity_presentation));
 
       const multiplier = getMultiplier();
-      let basePrice = isPkg ? Number(product.price_package || product.price_unit || 0) : Number(product.price_unit || 0);
+      let basePrice = mode === 'PKG' ? Number(product.price_package || product.price_unit || 0) : Number(product.price_unit || 0);
       const newPu = basePrice * multiplier;
 
       updatedCart[index] = {
           ...item,
           selected_unit: realUnitName,
-          quantity_base: Number(item.quantity_presentation) * conversionFactor,
+          quantity_base: requiredBaseUnits,
           unit_price: item.is_bonus ? 0 : newPu,
           total_price: item.is_bonus ? 0 : calculateTotal(Number(item.quantity_presentation), newPu, item.discount_percent)
       };

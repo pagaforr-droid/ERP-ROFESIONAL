@@ -3,6 +3,7 @@ import { useStore } from '../services/store';
 import { Product, Order, AutoPromotion } from '../types';
 import { Save, X, RefreshCw, Trash2, Loader2, Edit } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { calculateBaseQuantity } from '../utils/productUtils';
 
 interface EditOrderProps {
   orderId: string;
@@ -151,9 +152,7 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
     
     // Preparar el payload mapeando los campos para que la BD no se queje
     const itemsPayload = cart.map(c => {
-        const isPkgMode = c.unit_type === c.product_ref?.package_type;
-        const conversionFactor = isPkgMode ? Number(c.product_ref?.package_content || 1) : 1;
-        const qtyBase = c.quantity * conversionFactor;
+        const { quantityBase: qtyBase } = calculateBaseQuantity(c.product_ref, c.unit_type, c.quantity);
 
         return {
             id: c.id,

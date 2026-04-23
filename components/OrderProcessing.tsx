@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { supabase } from '../services/supabase';
 import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText, Trash2 } from 'lucide-react';
+import { calculateBaseQuantity } from '../utils/productUtils';
 import { Order, Sale, SaleItem } from '../types';
 
 export const OrderProcessing: React.FC = () => {
@@ -231,22 +232,32 @@ export const OrderProcessing: React.FC = () => {
                sunat_status: 'PENDING',
                origin_order_id: order.id,
                seller_id: order.seller_id,
-               items: order.items.map(item => ({
-                  product_id: item.product_id,
-                  product_name: item.product_name,
-                  selected_unit: item.unit_type === 'COMBO' ? 'UND' : item.unit_type,
-                  quantity_presentation: item.quantity,
-                  quantity_base: item.quantity_base || item.quantity, // fallback
-                  unit_price: item.unit_price,
-                  total_price: item.total_price,
-                  discount_percent: item.discount_percent || 0,
-                  discount_amount: item.discount_amount || 0,
-                  is_bonus: item.is_bonus || false,
-                  auto_promo_id: item.auto_promo_id,
-                  // we omit batch_allocations initially or fetch them if needed. 
-                  // If the order already has them, we can pass them:
-                  batch_allocations: (item as any).batch_allocations || []
-               })) as any
+               items: order.items.map(item => {
+                  const productRef = dbProducts.find(p => p.id === item.product_id);
+                  let finalBaseQty = item.quantity_base || item.quantity;
+                  
+                  if (productRef) {
+                      const { quantityBase } = calculateBaseQuantity(productRef, item.unit_type, item.quantity);
+                      finalBaseQty = quantityBase;
+                  }
+
+                  return {
+                     product_id: item.product_id,
+                     product_name: item.product_name,
+                     selected_unit: item.unit_type === 'COMBO' ? 'UND' : item.unit_type,
+                     quantity_presentation: item.quantity,
+                     quantity_base: finalBaseQty, 
+                     unit_price: item.unit_price,
+                     total_price: item.total_price,
+                     discount_percent: item.discount_percent || 0,
+                     discount_amount: item.discount_amount || 0,
+                     is_bonus: item.is_bonus || false,
+                     auto_promo_id: item.auto_promo_id,
+                     // we omit batch_allocations initially or fetch them if needed. 
+                     // If the order already has them, we can pass them:
+                     batch_allocations: (item as any).batch_allocations || []
+                  };
+               }) as any
             };
 
             // Process Sale Transaction in Supabase

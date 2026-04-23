@@ -3,6 +3,7 @@ import { useStore } from '../services/store';
 import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion, Batch } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
+import { allocateBatchesFIFO } from '../utils/productUtils';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
 
@@ -401,14 +402,8 @@ export const NewSale: React.FC = () => {
 
       if (totalStock < requiredBaseUnits) { showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid.\nRequerido: ${requiredBaseUnits} unid.`); return; }
 
-      let remaining = requiredBaseUnits;
-      const selectedBatches: BatchAllocation[] = [];
-      for (const batch of availableBatches) {
-         if (remaining <= 0) break;
-         const take = Math.min(remaining, Number(batch.quantity_current || 0));
-         selectedBatches.push({ batch_id: batch.id, batch_code: batch.code, quantity: take });
-         remaining -= take;
-      }
+      // 🚨 FIX: Re-alocamos los lotes calculando nuevamente las unidades requeridas
+      const selectedBatches = allocateBatchesFIFO(requiredBaseUnits, availableBatches);
 
       let initialNewCart = [...cart];
       const existingItemIndex = initialNewCart.findIndex(item => item.product_id === prod.id && item.selected_unit === realUnitName && !item.is_bonus && !item.auto_promo_id);
@@ -417,14 +412,41 @@ export const NewSale: React.FC = () => {
          showDialog('confirm', 'Sumar Cantidad', `El producto "${prod.name}" ya existe en la lista con la misma presentación.\n¿Desea sumar la cantidad?`, () => {
             const existing = initialNewCart[existingItemIndex];
             const newQty = Number(existing.quantity_presentation || 0) + quantity;
+            const newBaseQty = isPkgMode ? newQty * Number(prod.package_content || 1) : newQty;
             const newPrice = calculateTotal(newQty, unitPrice, discountPercent);
-            initialNewCart[existingItemIndex] = { ...existing, quantity_presentation: newQty, quantity_base: isPkgMode ? newQty * Number(prod.package_content || 1) : newQty, total_price: newPrice, discount_percent: discountPercent, discount_amount: (newQty * unitPrice) * (discountPercent / 100), batch_allocations: [], product: prod };
+            
+            initialNewCart[existingItemIndex] = { 
+               ...existing, 
+               quantity_presentation: newQty, 
+               quantity_base: newBaseQty, 
+               total_price: newPrice, 
+               discount_percent: discountPercent, 
+               discount_amount: (newQty * unitPrice) * (discountPercent / 100), 
+               product: prod, 
+               batch_allocations: allocateBatchesFIFO(newBaseQty, availableBatches) 
+            };
             applyAutoPromotions(initialNewCart, true);
             resetEntryForm();
          });
          return;
       } else {
-         initialNewCart.push({ id: crypto.randomUUID(), sale_id: '', product_id: prod.id, product_sku: prod.sku, product_name: prod.name, selected_unit: realUnitName, quantity_presentation: quantity, quantity_base: requiredBaseUnits, unit_price: unitPrice, total_price: calculateTotal(quantity, unitPrice, discountPercent), discount_percent: discountPercent, discount_amount: (quantity * unitPrice) * (discountPercent / 100), is_bonus: isBonus, batch_allocations: [], product: prod });
+         initialNewCart.push({ 
+            id: crypto.randomUUID(), 
+            sale_id: '', 
+            product_id: prod.id, 
+            product_sku: prod.sku, 
+            product_name: prod.name, 
+            selected_unit: realUnitName, 
+            quantity_presentation: quantity, 
+            quantity_base: requiredBaseUnits, 
+            unit_price: unitPrice, 
+            total_price: calculateTotal(quantity, unitPrice, discountPercent), 
+            discount_percent: discountPercent, 
+            discount_amount: (quantity * unitPrice) * (discountPercent / 100), 
+            is_bonus: isBonus, 
+            batch_allocations: selectedBatches, 
+            product: prod 
+         });
          applyAutoPromotions(initialNewCart, true);
          resetEntryForm();
       }
@@ -450,7 +472,16 @@ export const NewSale: React.FC = () => {
 
       const updatedCart = [...cart];
       const newPrice = calculateTotal(newQty, Number(item.unit_price || 0), Number(item.discount_percent || 0));
-      updatedCart[index] = { ...item, quantity_presentation: newQty, quantity_base: requiredBaseUnits, total_price: newPrice, discount_amount: (newQty * Number(item.unit_price || 0)) * (Number(item.discount_percent || 0) / 100), batch_allocations: [], product: product };
+      
+      updatedCart[index] = { 
+          ...item, 
+          quantity_presentation: newQty, 
+          quantity_base: requiredBaseUnits, 
+          total_price: newPrice, 
+          discount_amount: (newQty * Number(item.unit_price || 0)) * (Number(item.discount_percent || 0) / 100), 
+          batch_allocations: allocateBatchesFIFO(requiredBaseUnits, availableBatches), 
+          product: product 
+      };
       applyAutoPromotions(updatedCart, true);
    };
 

@@ -3,6 +3,7 @@ import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Edit, Lock } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
+import { calculateBaseQuantity } from '../utils/productUtils';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
 
@@ -393,9 +394,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     if (!selectedProduct) return;
     if (entryQty <= 0) return;
 
-    const isPkgMode = entryUnit === selectedProduct.package_type;
-    const conversionFactor = isPkgMode ? Number(selectedProduct.package_content || 1) : 1; 
-    const requiredBaseUnits = entryQty * conversionFactor;
+    const { quantityBase: requiredBaseUnits } = calculateBaseQuantity(selectedProduct, entryUnit, entryQty);
 
     const availableBatches = loadedBatches[selectedProduct.id] || [];
     let totalStock = availableBatches.length > 0 
@@ -484,9 +483,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     const item = tempCart[itemIndex];
     const pRef = item.product_ref;
     
-    const isPkgMode = item.unit_type === pRef.package_type;
-    const conversionFactor = isPkgMode ? Number(pRef.package_content || 1) : 1; 
-    const requiredBaseUnits = newQty * conversionFactor;
+    const { quantityBase: requiredBaseUnits } = calculateBaseQuantity(pRef, item.unit_type, newQty);
 
     const availableBatches = loadedBatches[pRef.id] || [];
     let totalStock = availableBatches.length > 0 
