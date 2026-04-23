@@ -695,19 +695,29 @@ export const MobileOrders: React.FC = () => {
    }, [dbProducts, prodSearch, selectedCategory]);
 
    const pendingBills = useMemo(() => {
-      if (!selectedClient) return [];
-      return dbSales.filter(s => s.client_id === selectedClient.id).sort((a, b) => {
-         const getSafeTime = (dateVal: any) => {
-            if (!dateVal) return 0;
-            const safeStr = typeof dateVal === 'string' ? dateVal.replace(' ', 'T') : dateVal;
-            const time = new Date(safeStr).getTime();
-            return isNaN(time) ? 0 : time;
-         };
-         return getSafeTime(a.created_at) - getSafeTime(b.created_at);
-      });
+      try {
+         if (!selectedClient) return [];
+         return (dbSales || []).filter(s => s && s.client_id === selectedClient.id).sort((a, b) => {
+            const getSafeTime = (dateVal: any) => {
+               try {
+                  if (!dateVal) return 0;
+                  const safeStr = typeof dateVal === 'string' ? dateVal.replace(' ', 'T') : String(dateVal);
+                  const time = new Date(safeStr).getTime();
+                  return isNaN(time) ? 0 : time;
+               } catch(e) { return 0; }
+            };
+            return getSafeTime(a?.created_at) - getSafeTime(b?.created_at);
+         });
+      } catch (e) {
+         console.error("Error in pendingBills:", e);
+         return [];
+      }
    }, [dbSales, selectedClient]);
 
-   const cartTotal = cart.reduce((acc, item) => acc + Number(item.total_price || 0), 0);
+   let cartTotal = 0;
+   try {
+      cartTotal = (cart || []).reduce((acc, item) => acc + Number(item?.total_price || 0), 0);
+   } catch(e) { console.error("Error in cartTotal", e); }
    const categoriesList = useMemo(() => ['TODOS', ...Array.from(new Set(dbProducts.map(p => p.category))).filter(Boolean).sort()], [dbProducts]);
 
    if (isLoadingInitial) {
@@ -893,8 +903,8 @@ export const MobileOrders: React.FC = () => {
                <div className="flex items-start gap-2 mb-2">
                   <button onClick={() => { setViewMode('CLIENT_LIST'); handleSellerSelect(currentSellerId); }} className="bg-slate-100 p-1.5 rounded-full mt-0.5 active:bg-slate-200"><ChevronLeft className="w-5 h-5 text-slate-600" /></button>
                   <div className="flex-1">
-                     <h2 className="font-black text-base text-slate-900 leading-tight">{selectedClient?.name}</h2>
-                     <div className="text-xs font-bold text-slate-500 mt-0.5">{selectedClient?.doc_number || '-'}</div>
+                     <h2 className="font-black text-base text-slate-900 leading-tight">{String(selectedClient?.name || 'Cliente sin nombre')}</h2>
+                     <div className="text-xs font-bold text-slate-500 mt-0.5">{String(selectedClient?.doc_number || '-')}</div>
                   </div>
                </div>
 
@@ -1005,8 +1015,8 @@ export const MobileOrders: React.FC = () => {
                         <div key={bill.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                            <div className="flex justify-between items-start mb-4">
                               <div>
-                                 <div className="text-[9px] text-slate-400 font-black uppercase tracking-wider mb-0.5">{bill.document_type || 'DOC'}</div>
-                                 <div className="font-mono font-black text-slate-800 text-base">{bill.series}-{bill.number}</div>
+                                 <div className="text-[9px] text-slate-400 font-black uppercase tracking-wider mb-0.5">{String(bill.document_type || 'DOC')}</div>
+                                 <div className="font-mono font-black text-slate-800 text-base">{String(bill.series || '')}-{String(bill.number || '')}</div>
                               </div>
                               <div className="text-right">
                                  <div className="text-[10px] text-slate-400 font-bold line-through">S/ {Number(bill.total || 0).toFixed(2)}</div>
