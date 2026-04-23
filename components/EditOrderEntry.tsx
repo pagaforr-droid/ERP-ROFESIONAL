@@ -101,10 +101,8 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
     let cleanCart = currentCart.filter(item => !item.auto_promo_id);
     
     const getBaseQuantity = (item: any) => {
-        if (item.unit_type === item.product_ref?.package_type) {
-            return item.quantity * Number(item.product_ref.package_content || 1);
-        }
-        return item.quantity;
+        const conversionFactor = Number((item.unit_type || '').split('/')[1]) || 1;
+        return item.quantity * conversionFactor;
     };
 
     const validPromos = dbAutoPromos.filter(ap => ap.is_active);
