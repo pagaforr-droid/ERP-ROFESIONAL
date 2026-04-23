@@ -848,6 +848,11 @@ export const MobileOrders: React.FC = () => {
    }
 
    if (viewMode === 'CLIENT_DETAIL') {
+      if (!selectedClient) return null;
+      
+      const hasBranches = Array.isArray(selectedClient.branches) && selectedClient.branches.length > 0;
+      const branchList = Array.isArray(selectedClient.branches) ? selectedClient.branches : [];
+
       return (
          <div className="h-screen flex flex-col bg-slate-50 relative pb-safe">
 
@@ -901,17 +906,17 @@ export const MobileOrders: React.FC = () => {
                )}
 
                <div className="relative mb-3">
-                  <div className={`flex items-center gap-2 p-2 bg-slate-50 border rounded-lg ${Array.isArray(selectedClient?.branches) && selectedClient!.branches.length ? 'active:bg-blue-50 border-blue-200' : 'border-slate-200'}`} onClick={() => { if (Array.isArray(selectedClient?.branches) && selectedClient!.branches.length) setShowBranchSelector(!showBranchSelector); }}>
-                     <MapPin className={`w-4 h-4 shrink-0 ${Array.isArray(selectedClient?.branches) && selectedClient!.branches.length ? 'text-blue-600' : 'text-slate-400'}`} />
+                  <div className={`flex items-center gap-2 p-2 bg-slate-50 border rounded-lg ${hasBranches ? 'active:bg-blue-50 border-blue-200' : 'border-slate-200'}`} onClick={() => { if (hasBranches) setShowBranchSelector(!showBranchSelector); }}>
+                     <MapPin className={`w-4 h-4 shrink-0 ${hasBranches ? 'text-blue-600' : 'text-slate-400'}`} />
                      <div className="flex-1 text-xs font-bold text-slate-700 truncate">{clientAddress || 'Sin dirección'}</div>
-                     {Array.isArray(selectedClient?.branches) && selectedClient!.branches.length ? <ChevronDown className="w-4 h-4 text-blue-500" /> : null}
+                     {hasBranches ? <ChevronDown className="w-4 h-4 text-blue-500" /> : null}
                   </div>
-                  {showBranchSelector && Array.isArray(selectedClient?.branches) && selectedClient!.branches.length > 0 && (
+                  {showBranchSelector && hasBranches && (
                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg z-50 overflow-hidden">
                         <div className="bg-slate-100 px-3 py-2 border-b border-slate-200 font-bold text-[10px] text-slate-500 uppercase">Cambiar Dirección</div>
                         <div className="max-h-48 overflow-y-auto p-1 space-y-1">
-                           {[selectedClient!.address, ...selectedClient!.branches].filter(Boolean).map((addr, idx) => (
-                              <div key={idx} onClick={() => { setClientAddress(addr); setShowBranchSelector(false); }} className="p-2 rounded-lg active:bg-blue-50 bg-white flex items-center gap-2">
+                           {[selectedClient.address, ...branchList].filter(Boolean).map((addr, idx) => (
+                              <div key={idx} onClick={() => { setClientAddress(String(addr)); setShowBranchSelector(false); }} className="p-2 rounded-lg active:bg-blue-50 bg-white flex items-center gap-2">
                                  <MapPin className={`w-4 h-4 shrink-0 ${clientAddress === addr ? 'text-blue-600' : 'text-slate-300'}`} />
                                  <div className={`text-xs ${clientAddress === addr ? 'font-black text-blue-900' : 'font-bold text-slate-600'}`}>{addr}</div>
                               </div>
