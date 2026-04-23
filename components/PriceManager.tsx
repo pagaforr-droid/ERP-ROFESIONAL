@@ -128,10 +128,11 @@ export const PriceManager: React.FC = () => {
         const matchSearch = searchTerm === '' || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase());
         return matchSup && matchCat && matchSearch;
      }).map(p => {
-        const cost = p.last_cost || 0;
+        // Importe Unitario (con IGV) = Valor Unitario (last_cost, sin IGV) * 1.18
+        const costWithIgv = p.last_cost ? p.last_cost * 1.18 : 0;
         
-        // 1. CÁLCULO DIRECTO: Costo de Presentación Mínima + Margen% = NUEVO PRECIO BASE UNIDAD
-        const newBasePriceUnit = cost * (1 + (targetMargin / 100));
+        // 1. CÁLCULO DIRECTO: Costo de Presentación Mínima (con IGV) + Margen% = NUEVO PRECIO BASE UNIDAD
+        const newBasePriceUnit = costWithIgv * (1 + (targetMargin / 100));
         
         // 2. CÁLCULO CAJA: Precio Unidad * Contenido (Cálculo exacto, sin descuentos ocultos)
         const content = p.package_content || 1;
@@ -143,10 +144,10 @@ export const PriceManager: React.FC = () => {
         // 4. IMPACTO / ALERTAS DE AUMENTO DE COSTO
         const priceChange = p.price_unit > 0 ? ((newBasePriceUnit - p.price_unit) / p.price_unit) * 100 : 0;
         
-        // Evaluamos el margen actual con el precio vigente en tienda
-        const currentMargin = cost > 0 ? ((p.price_unit - cost) / cost) * 100 : 0;
+        // Evaluamos el margen actual con el precio vigente en tienda (usando el costo con IGV)
+        const currentMargin = costWithIgv > 0 ? ((p.price_unit - costWithIgv) / costWithIgv) * 100 : 0;
         // Alerta si el margen actual cayó por debajo del 10% (indica un alza del costo reciente)
-        const hasCostAlert = currentMargin < 10 && cost > 0;
+        const hasCostAlert = currentMargin < 10 && costWithIgv > 0;
 
         return {
            ...p,
@@ -156,7 +157,8 @@ export const PriceManager: React.FC = () => {
            finalPriceInList: projectedListPrice, 
            priceChange,
            currentMargin,
-           hasCostAlert
+           hasCostAlert,
+           costWithIgv
         };
      });
   }, [products, selectedSupplier, selectedCategory, searchTerm, targetMargin, currentListFactor]);
@@ -368,7 +370,7 @@ export const PriceManager: React.FC = () => {
       p.category || '-',
       p.unit_type,
       p.package_content.toString(),
-      `S/ ${p.last_cost.toFixed(2)}`,
+      `S/ ${(p.last_cost * 1.18).toFixed(3)}`,
       `S/ ${p.price_unit.toFixed(2)}`,
       ...priceLists.map(l => `S/ ${p.listPrices[l.name].toFixed(2)}`)
     ]);
@@ -401,7 +403,7 @@ export const PriceManager: React.FC = () => {
         'MARCA': p.brand || '-',
         'UNIDAD DE MEDIDA': p.unit_type,
         'FACTOR DE CAJA': p.package_content,
-        'COSTO ÚLTIMA COMPRA (S/)': p.last_cost,
+        'COSTO ÚLTIMA COMPRA (S/)': Number((p.last_cost * 1.18).toFixed(3)),
         'PRECIO BASE TIENDA (S/)': p.price_unit,
         'PRECIO CAJA CERRADA (S/)': p.price_package,
       };
@@ -578,7 +580,7 @@ export const PriceManager: React.FC = () => {
                                     <span className="text-slate-300 font-bold text-xs">-</span>
                                   )}
                                </td>
-                               <td className="p-4 text-right text-slate-500 font-bold bg-slate-50/30">S/ {p.last_cost.toFixed(2)}</td>
+                               <td className="p-4 text-right text-slate-500 font-bold bg-slate-50/30">S/ {p.costWithIgv.toFixed(3)}</td>
                                <td className="p-4 text-right font-black text-slate-700">S/ {p.currentBasePrice.toFixed(2)}</td>
                                
                                <td className="p-4 text-right border-l border-emerald-100 bg-emerald-50/20">
@@ -1004,7 +1006,7 @@ export const PriceManager: React.FC = () => {
                                   <div className="font-black text-slate-600">{p.unit_type}</div>
                                   <div className="text-[10px] font-bold text-slate-400 mt-0.5">Factor: {p.package_content}</div>
                                </td>
-                               <td className="p-4 text-right font-bold text-slate-500">S/ {p.last_cost.toFixed(2)}</td>
+                               <td className="p-4 text-right font-bold text-slate-500">S/ {(p.last_cost * 1.18).toFixed(3)}</td>
                                <td className="p-4 text-right font-black text-emerald-700 bg-emerald-50/30">S/ {p.price_unit.toFixed(2)}</td>
                                {priceLists.map(l => (
                                   <td key={l.id} className="p-4 text-right font-black text-blue-700 bg-blue-50/10 border-l border-slate-50">
