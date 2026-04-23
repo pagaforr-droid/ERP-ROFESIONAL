@@ -106,10 +106,10 @@ export const MobileOrders: React.FC = () => {
             if (sellRes.data) setDbSellers(sellRes.data);
             if (zoneRes.data) setDbZones(zoneRes.data);
 
-            if (currentUser?.role === 'SELLER' && sellRes.data) {
-               const matchingSeller = sellRes.data.find(s => (s.name || '').trim().toUpperCase() === (currentUser.name || '').trim().toUpperCase());
-               if (matchingSeller) handleSellerSelect(matchingSeller.id);
-            }
+             if (currentUser?.role === 'SELLER' && sellRes.data) {
+                const matchingSeller = sellRes.data.find(s => String(s.name || '').trim().toUpperCase() === String(currentUser.name || '').trim().toUpperCase());
+                if (matchingSeller) handleSellerSelect(matchingSeller.id);
+             }
          } catch (error) {
             console.error("Error al iniciar App Móvil:", error);
          } finally {
@@ -267,7 +267,7 @@ export const MobileOrders: React.FC = () => {
                const rewardQty = ap.reward_quantity * multiplier;
                const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
                const conversionFactor = isPkgMode ? Number(rewardProduct.package_content || 1) : 1;
-               const realUnitName = isPkgMode ? `${(rewardProduct.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(rewardProduct.unit_type || 'UND').toUpperCase()} / 1`;
+               const realUnitName = isPkgMode ? `${String(rewardProduct.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${String(rewardProduct.unit_type || 'UND').toUpperCase()} / 1`;
 
                cleanCart.push({
                   id: generateUUID(),
@@ -403,10 +403,18 @@ export const MobileOrders: React.FC = () => {
       setIsEditMode(false); setOriginalOrder(null); setEditingOrderId(null);
       setSelectedClient(client);
       setSelectedClientId(client.id);
-      setClientAddress(client.address || '');
+      
+      const safeAddress = client.address ? String(client.address) : '';
+      setClientAddress(safeAddress);
+      
       setPriceListId(client.price_list_id || '');
-      setPaymentMethod((client.payment_condition || '').toUpperCase().includes('CREDIT') ? 'CREDITO' : 'CONTADO');
-      setDocType((client.doc_number || '').length === 11 ? 'FACTURA' : 'BOLETA');
+      
+      const safePaymentCond = String(client.payment_condition || '').toUpperCase();
+      setPaymentMethod(safePaymentCond.includes('CREDIT') ? 'CREDITO' : 'CONTADO');
+      
+      const safeDocNum = String(client.doc_number || '');
+      setDocType(safeDocNum.length === 11 ? 'FACTURA' : 'BOLETA');
+      
       setCart([]);
       setClientTab('ORDER');
       setViewMode('CLIENT_DETAIL');
@@ -676,9 +684,11 @@ export const MobileOrders: React.FC = () => {
    }, [dbClients, clientSearchTerm]);
 
    const filteredProductsList = useMemo(() => {
-      const term = prodSearch.toLowerCase();
+      const term = String(prodSearch || '').toLowerCase();
       return dbProducts.filter(p => {
-         const matchesSearch = (p.name || '').toLowerCase().includes(term) || (p.sku || '').toLowerCase().includes(term);
+         const pName = String(p.name || '').toLowerCase();
+         const pSku = String(p.sku || '').toLowerCase();
+         const matchesSearch = pName.includes(term) || pSku.includes(term);
          const matchesCategory = selectedCategory === 'TODOS' || p.category === selectedCategory;
          return matchesSearch && matchesCategory;
       });
