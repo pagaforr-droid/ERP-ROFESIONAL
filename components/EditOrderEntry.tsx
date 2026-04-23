@@ -44,10 +44,20 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
       }
       
       if (itemsRes.data && prodsRes.data) {
-        const mappedCart = itemsRes.data.map(item => ({
-          ...item,
-          product_ref: prodsRes.data.find(p => p.id === item.product_id) || {}
-        }));
+        const mappedCart = itemsRes.data.map((item: any) => {
+          const pRef = prodsRes.data.find(p => p.id === item.product_id) || {};
+          const loadedUnitType = item.unit_type || item.selected_unit || 'UND';
+          const conversionFactor = Number(loadedUnitType.split('/')[1]) || 1;
+          const rawQuantity = item.quantity || item.quantity_presentation || item.quantity_base || 1;
+          
+          return {
+            ...item,
+            quantity: rawQuantity / conversionFactor,
+            unit_type: loadedUnitType,
+            product_ref: pRef,
+            original_base_qty: rawQuantity
+          };
+        });
         setCart(mappedCart);
       }
 
@@ -153,14 +163,15 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
     
     // Preparar el payload mapeando los campos para que la BD no se queje
     const itemsPayload = cart.map(c => {
-        const { quantityBase: qtyBase } = calculateBaseQuantity(c.product_ref, c.unit_type, c.quantity);
+        const conversionFactor = Number((c.unit_type || '').split('/')[1]) || 1;
+        const qtyBase = c.quantity * conversionFactor;
 
         return {
             id: c.id,
             product_id: c.product_id,
             product_sku: c.product_sku || c.sku,
             product_name: c.product_name || c.name,
-            quantity: c.quantity,
+            quantity: qtyBase,
             quantity_presentation: c.quantity,
             quantity_base: qtyBase,
             unit_type: c.unit_type,

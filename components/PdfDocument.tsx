@@ -172,11 +172,18 @@ const ItemsTable = ({ data, isFactura }: { data: any, isFactura: boolean }) => (
         const pu = item.unit_price ?? item.price ?? 0;
         const total = item.total_price !== undefined ? Number(item.total_price).toFixed(2) : (qty * pu).toFixed(2);
         
-        // CORRECCIÓN: Determinamos dinámicamente si es empaque o unidad base y formamos CJAx12 / BOTx1
-        const isPkg = item.selected_unit === item.product?.package_type || item.selected_unit === 'CJA' || item.selected_unit === 'PKG';
-        const content = isPkg ? (item.product?.package_content || 1) : 1;
-        const shortUnit = (item.selected_unit || 'UND').substring(0, 4).toUpperCase();
-        const formattedUm = `${shortUnit}x${content}`;
+        let formattedUm = 'UNDX1';
+        if (item.selected_unit && item.selected_unit.includes('/')) {
+            const parts = item.selected_unit.split('/');
+            const baseName = parts[0].trim().substring(0, 3).toUpperCase();
+            const factor = parts[1].trim();
+            formattedUm = `${baseName}X${factor}`;
+        } else {
+            const isPkg = item.selected_unit === item.product?.package_type || item.selected_unit === 'CJA' || item.selected_unit === 'PKG';
+            const content = isPkg ? (item.product?.package_content || 1) : 1;
+            const shortUnit = (item.selected_unit || 'UND').substring(0, 3).toUpperCase();
+            formattedUm = `${shortUnit}X${content}`;
+        }
 
         return (
           <View key={i} style={styles.tableRowItem}>
@@ -392,11 +399,18 @@ const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any
            const name = item.product?.name || item.name || item.product_name || 'Producto';
            const qty = item.quantity_presentation ?? item.quantity ?? item.quantity_base ?? 0;
            
-           // Formato dinámico para la guía
-           const isPkg = item.selected_unit === item.product?.package_type || item.selected_unit === 'CJA' || item.selected_unit === 'PKG';
-           const content = isPkg ? (item.product?.package_content || 1) : 1;
-           const shortUnit = (item.selected_unit || 'UND').substring(0, 4).toUpperCase();
-           const formattedUm = `${shortUnit}x${content}`;
+           let formattedUm = 'UNDX1';
+           if (item.selected_unit && item.selected_unit.includes('/')) {
+               const parts = item.selected_unit.split('/');
+               const baseName = parts[0].trim().substring(0, 3).toUpperCase();
+               const factor = parts[1].trim();
+               formattedUm = `${baseName}X${factor}`;
+           } else {
+               const isPkg = item.selected_unit === item.product?.package_type || item.selected_unit === 'CJA' || item.selected_unit === 'PKG';
+               const content = isPkg ? (item.product?.package_content || 1) : 1;
+               const shortUnit = (item.selected_unit || 'UND').substring(0, 3).toUpperCase();
+               formattedUm = `${shortUnit}X${content}`;
+           }
 
            return (
               <View key={i} style={styles.tableRowItem}>

@@ -435,13 +435,17 @@ export const MobileOrders: React.FC = () => {
 
             loadedItems = orderItemsData.map((item: any) => {
                const pRef = prodMap[item.product_id] || dbProducts.find(p => p.id === item.product_id) || {} as Product;
+               const loadedUnitType = item.unit_type || item.selected_unit || 'UND';
+               const conversionFactor = Number(loadedUnitType.split('/')[1]) || 1;
+               const rawQuantity = item.quantity || item.quantity_presentation || item.quantity_base || 1;
+               
                return {
                   id: item.id,
                   product_id: item.product_id,
                   sku: item.product_sku || pRef.sku,
                   name: item.product_name || pRef.name,
-                  quantity: item.quantity || item.quantity_presentation || item.quantity_base || 1,
-                  unit_type: item.unit_type || item.selected_unit || 'UND',
+                  quantity: rawQuantity / conversionFactor,
+                  unit_type: loadedUnitType,
                   unit_price: item.unit_price || 0,
                   discount_percent: item.discount_percent || 0,
                   total_price: item.total_price || 0,
@@ -449,7 +453,7 @@ export const MobileOrders: React.FC = () => {
                   auto_promo_id: item.auto_promo_id || undefined,
                   promo_name: item.auto_promo_id ? 'PROMO' : undefined,
                   product_ref: pRef,
-                  original_base_qty: item.quantity_base || 0
+                  original_base_qty: rawQuantity
                };
             });
          }
@@ -546,8 +550,7 @@ export const MobileOrders: React.FC = () => {
          status: 'pending',
          delivery_address: clientAddress || null,
          items: cart.map(c => {
-            const isPkgMode = c.unit_type === c.product_ref?.package_type;
-            const conversionFactor = isPkgMode ? Number(c.product_ref?.package_content || 1) : 1;
+            const conversionFactor = Number((c.unit_type || '').split('/')[1]) || 1;
             const qtyBase = c.quantity * conversionFactor;
 
             return {
@@ -555,7 +558,7 @@ export const MobileOrders: React.FC = () => {
                product_id: c.product_id,
                product_sku: c.sku,
                product_name: c.name,
-               quantity: c.quantity,
+               quantity: qtyBase,
                unit_type: c.unit_type,
                selected_unit: c.unit_type,
                quantity_presentation: c.quantity,

@@ -243,16 +243,25 @@ export const generateMassiveInvoicePDF = (company: CompanyConfig, sales: Sale[])
             // por eso la vista previa funciona (porque jala del caché), pero el generador masivo
             // a veces solo recibe el string 'UND' o 'PKG'. Lo forzamos a leer el objeto si existe.
             let um = item.selected_unit === 'PKG' ? 'CJA' : 'UND';
-            if (item.selected_unit === 'PKG' && item.product?.package_type) {
-                um = item.product.package_type;
-            } else if (item.selected_unit === 'UND' && item.product?.base_unit) {
-                um = item.product.base_unit;
+            if (item.selected_unit && item.selected_unit.includes('/')) {
+                const parts = item.selected_unit.split('/');
+                const baseName = parts[0].trim().substring(0, 3).toUpperCase();
+                const factor = parts[1].trim();
+                um = `${baseName}X${factor}`;
+            } else {
+                if (item.selected_unit === 'PKG' && item.product?.package_type) {
+                    um = item.product.package_type.substring(0, 3).toUpperCase() + 'X' + (item.product.package_content || 1);
+                } else if (item.selected_unit === 'UND' && item.product?.unit_type) {
+                    um = item.product.unit_type.substring(0, 3).toUpperCase() + 'X1';
+                } else {
+                    um = um.substring(0, 3).toUpperCase();
+                }
             }
 
             return [
                 item.product_sku,
                 item.quantity_presentation.toString(),
-                um.substring(0, 3).toUpperCase(), // Forzamos max 3 letras (BOT, CJA, UND) para que no rompa la tabla
+                um,
                 `${item.product_name.toUpperCase()} ${item.is_bonus ? '- BONIFICACION' : ''}`,
                 Number(item.unit_price || 0).toFixed(2),
                 item.discount_amount > 0 ? Number(item.discount_amount).toFixed(2) : '',
