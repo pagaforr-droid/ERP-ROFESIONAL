@@ -25,6 +25,17 @@ interface CartItem {
    original_base_qty?: number;
 }
 
+const generateUUID = () => {
+   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+       return crypto.randomUUID();
+   }
+   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+       const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+       return v.toString(16);
+   });
+};
+
+
 export const MobileOrders: React.FC = () => {
    const { currentUser, logout, annulOrder } = useStore();
 
@@ -259,7 +270,7 @@ export const MobileOrders: React.FC = () => {
                const realUnitName = isPkgMode ? `${(rewardProduct.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(rewardProduct.unit_type || 'UND').toUpperCase()} / 1`;
 
                cleanCart.push({
-                  id: crypto.randomUUID(),
+                  id: generateUUID(),
                   product_id: rewardProduct.id,
                   sku: rewardProduct.sku,
                   name: rewardProduct.name,
@@ -326,7 +337,7 @@ export const MobileOrders: React.FC = () => {
          tempCart[existingIdx].total_price = tGross - (tGross * (tempCart[existingIdx].discount_percent / 100));
       } else {
          tempCart.push({
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             product_id: selectedProduct.id,
             sku: selectedProduct.sku,
             name: selectedProduct.name,
@@ -535,7 +546,7 @@ export const MobileOrders: React.FC = () => {
       setIsSaving(true);
 
       const orderPayload = {
-         id: isEditMode && originalOrder ? originalOrder.id : crypto.randomUUID(),
+         id: isEditMode && originalOrder ? originalOrder.id : generateUUID(),
          code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${pedidoNumber}`,
          client_id: selectedClientId || null,
          client_name: selectedClient?.name || '',
@@ -654,8 +665,14 @@ export const MobileOrders: React.FC = () => {
 
    const filteredClientsList = useMemo(() => {
       if (!clientSearchTerm) return dbClients;
-      const term = clientSearchTerm.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-      return dbClients.filter(c => (c.name || '').toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(term) || (c.doc_number || '').includes(term));
+      let term = clientSearchTerm.toLowerCase();
+      try { term = term.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); } catch(e) {}
+      
+      return dbClients.filter(c => {
+         let name = (c.name || '').toLowerCase();
+         try { name = name.normalize("NFD").replace(/[\u0300-\u036f]/g, ""); } catch(e) {}
+         return name.includes(term) || (c.doc_number || '').includes(term);
+      });
    }, [dbClients, clientSearchTerm]);
 
    const filteredProductsList = useMemo(() => {
@@ -669,7 +686,15 @@ export const MobileOrders: React.FC = () => {
 
    const pendingBills = useMemo(() => {
       if (!selectedClient) return [];
-      return dbSales.filter(s => s.client_id === selectedClient.id).sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+      return dbSales.filter(s => s.client_id === selectedClient.id).sort((a, b) => {
+         const getSafeTime = (dateVal: any) => {
+            if (!dateVal) return 0;
+            const safeStr = typeof dateVal === 'string' ? dateVal.replace(' ', 'T') : dateVal;
+            const time = new Date(safeStr).getTime();
+            return isNaN(time) ? 0 : time;
+         };
+         return getSafeTime(a.created_at) - getSafeTime(b.created_at);
+      });
    }, [dbSales, selectedClient]);
 
    const cartTotal = cart.reduce((acc, item) => acc + Number(item.total_price || 0), 0);
@@ -866,16 +891,16 @@ export const MobileOrders: React.FC = () => {
                )}
 
                <div className="relative mb-3">
-                  <div className={`flex items-center gap-2 p-2 bg-slate-50 border rounded-lg ${selectedClient?.branches?.length ? 'active:bg-blue-50 border-blue-200' : 'border-slate-200'}`} onClick={() => { if (selectedClient?.branches?.length) setShowBranchSelector(!showBranchSelector); }}>
-                     <MapPin className={`w-4 h-4 shrink-0 ${selectedClient?.branches?.length ? 'text-blue-600' : 'text-slate-400'}`} />
+                  <div className={`flex items-center gap-2 p-2 bg-slate-50 border rounded-lg ${Array.isArray(selectedClient?.branches) && selectedClient!.branches.length ? 'active:bg-blue-50 border-blue-200' : 'border-slate-200'}`} onClick={() => { if (Array.isArray(selectedClient?.branches) && selectedClient!.branches.length) setShowBranchSelector(!showBranchSelector); }}>
+                     <MapPin className={`w-4 h-4 shrink-0 ${Array.isArray(selectedClient?.branches) && selectedClient!.branches.length ? 'text-blue-600' : 'text-slate-400'}`} />
                      <div className="flex-1 text-xs font-bold text-slate-700 truncate">{clientAddress || 'Sin dirección'}</div>
-                     {selectedClient?.branches?.length ? <ChevronDown className="w-4 h-4 text-blue-500" /> : null}
+                     {Array.isArray(selectedClient?.branches) && selectedClient!.branches.length ? <ChevronDown className="w-4 h-4 text-blue-500" /> : null}
                   </div>
-                  {showBranchSelector && selectedClient?.branches?.length && (
+                  {showBranchSelector && Array.isArray(selectedClient?.branches) && selectedClient!.branches.length > 0 && (
                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 shadow-xl rounded-lg z-50 overflow-hidden">
                         <div className="bg-slate-100 px-3 py-2 border-b border-slate-200 font-bold text-[10px] text-slate-500 uppercase">Cambiar Dirección</div>
                         <div className="max-h-48 overflow-y-auto p-1 space-y-1">
-                           {[selectedClient.address, ...(selectedClient.branches || [])].filter(Boolean).map((addr, idx) => (
+                           {[selectedClient!.address, ...selectedClient!.branches].filter(Boolean).map((addr, idx) => (
                               <div key={idx} onClick={() => { setClientAddress(addr); setShowBranchSelector(false); }} className="p-2 rounded-lg active:bg-blue-50 bg-white flex items-center gap-2">
                                  <MapPin className={`w-4 h-4 shrink-0 ${clientAddress === addr ? 'text-blue-600' : 'text-slate-300'}`} />
                                  <div className={`text-xs ${clientAddress === addr ? 'font-black text-blue-900' : 'font-bold text-slate-600'}`}>{addr}</div>
