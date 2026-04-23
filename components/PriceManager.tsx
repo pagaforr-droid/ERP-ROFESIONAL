@@ -142,12 +142,13 @@ export const PriceManager: React.FC = () => {
         const projectedListPrice = newBasePriceUnit * currentListFactor;
 
         // 4. IMPACTO / ALERTAS DE AUMENTO DE COSTO
+        const isNew = p.price_unit === 0;
         const priceChange = p.price_unit > 0 ? ((newBasePriceUnit - p.price_unit) / p.price_unit) * 100 : 0;
         
         // Evaluamos el margen actual con el precio vigente en tienda (usando el costo con IGV)
-        const currentMargin = costWithIgv > 0 ? ((p.price_unit - costWithIgv) / costWithIgv) * 100 : 0;
-        // Alerta si el margen actual cayó por debajo del 10% (indica un alza del costo reciente)
-        const hasCostAlert = currentMargin < 10 && costWithIgv > 0;
+        const currentMargin = costWithIgv > 0 && p.price_unit > 0 ? ((p.price_unit - costWithIgv) / costWithIgv) * 100 : 0;
+        // Alerta si el margen actual cayó por debajo del 10% (indica un alza del costo reciente) y no es nuevo
+        const hasCostAlert = currentMargin < 10 && costWithIgv > 0 && p.price_unit > 0;
 
         return {
            ...p,
@@ -156,6 +157,7 @@ export const PriceManager: React.FC = () => {
            calculatedPackagePrice: newBasePricePackage,
            finalPriceInList: projectedListPrice, 
            priceChange,
+           isNew,
            currentMargin,
            hasCostAlert,
            costWithIgv
@@ -590,14 +592,20 @@ export const PriceManager: React.FC = () => {
                                   </div>
                                </td>
                                <td className="p-4 text-center">
-                                  <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border shadow-sm flex items-center justify-center w-20 mx-auto ${
-                                     p.priceChange > 0 ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
-                                     p.priceChange < 0 ? 'bg-red-100 text-red-700 border-red-200' : 
-                                     'bg-slate-100 text-slate-500 border-slate-200'
-                                  }`}>
-                                     {p.priceChange > 0 ? <TrendingUp className="w-3 h-3 mr-1"/> : (p.priceChange < 0 ? <TrendingDown className="w-3 h-3 mr-1"/> : null)}
-                                     {p.priceChange > 0 ? '+' : ''}{p.priceChange.toFixed(1)}%
-                                  </span>
+                                  {p.isNew ? (
+                                    <span className="text-[10px] font-black px-3 py-1 rounded-full border shadow-sm bg-blue-100 text-blue-700 border-blue-200">
+                                       NUEVO
+                                    </span>
+                                  ) : (
+                                    <span className={`text-[10px] font-black px-2.5 py-1 rounded-full border shadow-sm flex items-center justify-center w-20 mx-auto ${
+                                       p.priceChange > 0 ? 'bg-emerald-100 text-emerald-700 border-emerald-200' : 
+                                       p.priceChange < 0 ? 'bg-red-100 text-red-700 border-red-200' : 
+                                       'bg-slate-100 text-slate-500 border-slate-200'
+                                    }`}>
+                                       {p.priceChange > 0 ? <TrendingUp className="w-3 h-3 mr-1"/> : (p.priceChange < 0 ? <TrendingDown className="w-3 h-3 mr-1"/> : null)}
+                                       {p.priceChange > 0 ? '+' : ''}{p.priceChange.toFixed(1)}%
+                                    </span>
+                                  )}
                                </td>
 
                                {selectedTargetList !== 'BASE' && (
@@ -614,37 +622,37 @@ export const PriceManager: React.FC = () => {
                    </table>
                 </div>
 
-                {selectedIds.size > 0 && (
-                   <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-auto min-w-[500px] bg-slate-900/95 backdrop-blur-md text-white p-5 rounded-2xl shadow-2xl flex items-center justify-between gap-6 animate-fade-in-up border border-slate-700 z-30">
-                      <div className="flex items-center">
-                         <div className="bg-gradient-to-br from-emerald-400 to-emerald-600 text-slate-900 font-black text-xl w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-inner border border-emerald-300/50">
-                            {selectedIds.size}
-                         </div>
-                         <div>
-                            <p className="text-sm font-black uppercase tracking-widest text-slate-200">Lote en Memoria</p>
-                            <p className="text-[11px] text-emerald-400 font-bold tracking-wide">Listos para inyección SQL</p>
-                         </div>
-                      </div>
-                      
-                      <div className="flex gap-3">
-                         <button 
-                           onClick={() => setSelectedIds(new Set())}
-                           className="px-5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 text-sm font-bold transition-all border border-transparent hover:border-slate-700"
-                           disabled={isSaving}
-                         >
-                            Cancelar
-                         </button>
-                         <button 
-                           onClick={handleApplyPrices}
-                           disabled={isSaving}
-                           className="bg-emerald-500 hover:bg-emerald-400 text-slate-900 px-6 py-2.5 rounded-xl font-black shadow-lg shadow-emerald-500/30 flex items-center transition-all disabled:opacity-50 hover:shadow-emerald-500/50 hover:-translate-y-0.5"
-                         >
-                            {isSaving ? <Loader2 className="w-5 h-5 mr-2 animate-spin"/> : <Save className="w-5 h-5 mr-2" />}
-                            {isSaving ? 'INJECTANDO...' : 'FIJAR PRECIOS'}
-                         </button>
-                      </div>
-                   </div>
-                )}
+                    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-auto min-w-[500px] bg-slate-900/95 backdrop-blur-md text-white p-5 rounded-2xl shadow-2xl flex items-center justify-between gap-6 animate-fade-in-up border border-slate-700 z-30 transition-all">
+                       <div className="flex items-center">
+                          <div className={`font-black text-xl w-12 h-12 rounded-xl flex items-center justify-center mr-4 shadow-inner border transition-colors ${selectedIds.size > 0 ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-slate-900 border-emerald-300/50' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
+                             {selectedIds.size}
+                          </div>
+                          <div>
+                             <p className={`text-sm font-black uppercase tracking-widest ${selectedIds.size > 0 ? 'text-slate-200' : 'text-slate-500'}`}>Lote en Memoria</p>
+                             <p className={`text-[11px] font-bold tracking-wide ${selectedIds.size > 0 ? 'text-emerald-400' : 'text-slate-600'}`}>
+                                {selectedIds.size > 0 ? 'Listos para inyección SQL' : 'Selecciona productos para aplicar precios'}
+                             </p>
+                          </div>
+                       </div>
+                       
+                       <div className="flex gap-3">
+                          <button 
+                            onClick={() => setSelectedIds(new Set())}
+                            className="px-5 py-2.5 rounded-xl text-slate-300 hover:text-white hover:bg-slate-800 text-sm font-bold transition-all border border-transparent hover:border-slate-700 disabled:opacity-50"
+                            disabled={isSaving || selectedIds.size === 0}
+                          >
+                             Cancelar
+                          </button>
+                          <button 
+                            onClick={handleApplyPrices}
+                            disabled={isSaving || selectedIds.size === 0}
+                            className={`px-6 py-2.5 rounded-xl font-black flex items-center transition-all ${selectedIds.size > 0 ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-900 shadow-lg shadow-emerald-500/30 hover:shadow-emerald-500/50 hover:-translate-y-0.5' : 'bg-slate-800 text-slate-500'}`}
+                          >
+                             {isSaving ? <Loader2 className="w-5 h-5 mr-2 animate-spin"/> : <Save className="w-5 h-5 mr-2" />}
+                             {isSaving ? 'INYECTANDO...' : 'FIJAR PRECIOS'}
+                          </button>
+                       </div>
+                    </div>
              </div>
           )}
 
