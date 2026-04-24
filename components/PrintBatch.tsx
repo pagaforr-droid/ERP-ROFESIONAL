@@ -9,7 +9,7 @@ import { Loader2 } from 'lucide-react';
 export const PrintBatch: React.FC = () => {
     const { company, markDocumentsAsPrinted, products, clients } = useStore();
     const companyInfo = company;
-    
+
     const [dbSales, setDbSales] = useState<any[]>([]);
     const [dbDispatchSheets, setDbDispatchSheets] = useState<any[]>([]);
     const [dbCompany, setDbCompany] = useState<any>(null);
@@ -25,7 +25,7 @@ export const PrintBatch: React.FC = () => {
     // Selection
     const [selectedIds, setSelectedIds] = useState<string[]>([]);
     const [selectedDocsInfo, setSelectedDocsInfo] = useState<any[]>([]);
-    
+
     // Modal state
     const [alertMessage, setAlertMessage] = useState<string | null>(null);
 
@@ -41,64 +41,64 @@ export const PrintBatch: React.FC = () => {
     // --- FILTER LOGIC ---
     const allDocuments = useMemo(() => {
         const mappedSales = dbSales.map(s => ({ ...s, _isGuia: false, date: s.created_at.split('T')[0] }));
-        
+
         const mappedGuias = dbDispatchSheets.map(d => {
-           // Aggregate items for Guia
-           let guiaItems: any[] = [];
-           let totalWeight = 0;
-           
-           const dSales = dbSales.filter(s => d.sale_ids.includes(s.id));
-           dSales.forEach(sale => {
-              sale.items.forEach(item => {
-                 const prod = products.find(p => p.id === item.product_id);
-                 const existingItem = guiaItems.find(gi => gi.product_id === item.product_id);
-                 if (existingItem) {
-                    existingItem.quantity += item.quantity_base;
-                 } else {
-                    guiaItems.push({
-                       product_id: item.product_id,
-                       product: prod,
-                       quantity: item.quantity_base,
-                       unit_price: 0,
-                    });
-                 }
-              });
-           });
+            // Aggregate items for Guia
+            let guiaItems: any[] = [];
+            let totalWeight = 0;
 
-           const isConsolidated = d.sale_ids.length > 1;
-           const firstSale = dSales.length > 0 ? dSales[0] : null;
+            const dSales = dbSales.filter(s => d.sale_ids.includes(s.id));
+            dSales.forEach(sale => {
+                sale.items.forEach(item => {
+                    const prod = products.find(p => p.id === item.product_id);
+                    const existingItem = guiaItems.find(gi => gi.product_id === item.product_id);
+                    if (existingItem) {
+                        existingItem.quantity += item.quantity_base;
+                    } else {
+                        guiaItems.push({
+                            product_id: item.product_id,
+                            product: prod,
+                            quantity: item.quantity_base,
+                            unit_price: 0,
+                        });
+                    }
+                });
+            });
 
-           let clientName = 'Documentos Itinerantes';
-           let clientId = '';
-           let deliveryAddress = '';
-           let refDoc = '';
-           
-           if (!isConsolidated && firstSale) {
-               clientName = firstSale.client_name || 'Cliente Genérico';
-               clientId = firstSale.client_id || '';
-               deliveryAddress = firstSale.client_address || ''; // Corrected to client_address
-               refDoc = `${firstSale.document_type} ${firstSale.series}-${firstSale.number}`;
-           }
+            const isConsolidated = d.sale_ids.length > 1;
+            const firstSale = dSales.length > 0 ? dSales[0] : null;
 
-           return { 
-               ...d, 
-               _isGuia: true, 
-               document_type: 'GUIA', 
-               client_name: clientName,
-               client_id: clientId,
-               delivery_address: deliveryAddress,
-               ref_doc: refDoc,
-               guide_transporter_id: firstSale?.guide_transporter_id || '',
-               guide_driver_id: firstSale?.guide_driver_id || '',
-               guide_vehicle_id: firstSale?.guide_vehicle_id || d.vehicle_id || '',
-               items: guiaItems,
-               total: 0,
-               series: d.code.split('-')[0] || 'T001',
-               number: d.code.split('-')[1] || '000000',
-               date: d.date.split('T')[0]
-           };
+            let clientName = 'Documentos Itinerantes';
+            let clientId = '';
+            let deliveryAddress = '';
+            let refDoc = '';
+
+            if (!isConsolidated && firstSale) {
+                clientName = firstSale.client_name || 'Cliente Genérico';
+                clientId = firstSale.client_id || '';
+                deliveryAddress = firstSale.client_address || ''; // Corrected to client_address
+                refDoc = `${firstSale.document_type} ${firstSale.series}-${firstSale.number}`;
+            }
+
+            return {
+                ...d,
+                _isGuia: true,
+                document_type: 'GUIA',
+                client_name: clientName,
+                client_id: clientId,
+                delivery_address: deliveryAddress,
+                ref_doc: refDoc,
+                guide_transporter_id: firstSale?.guide_transporter_id || '',
+                guide_driver_id: firstSale?.guide_driver_id || '',
+                guide_vehicle_id: firstSale?.guide_vehicle_id || d.vehicle_id || '',
+                items: guiaItems,
+                total: 0,
+                series: d.code.split('-')[0] || 'T001',
+                number: d.code.split('-')[1] || '000000',
+                date: d.date.split('T')[0]
+            };
         });
-        
+
         return [...mappedSales, ...mappedGuias];
     }, [dbSales, dbDispatchSheets, products]);
 
@@ -110,13 +110,13 @@ export const PrintBatch: React.FC = () => {
             let salesQuery = supabase.from('sales').select('*, items:sale_items(*)').neq('status', 'canceled');
             if (dateFrom) salesQuery = salesQuery.gte('created_at', `${dateFrom}T00:00:00`);
             if (dateTo) salesQuery = salesQuery.lte('created_at', `${dateTo}T23:59:59`);
-            
+
             // Fetch Sellers to inject seller_name
             const { data: sellersData } = await supabase.from('sellers').select('*');
 
             const { data: salesData, error: salesError } = await salesQuery;
             if (salesError) throw salesError;
-            
+
             const mappedSalesData = (salesData || []).map(sale => {
                 const sellerObj = sellersData?.find(s => s.id === sale.seller_id);
                 return { ...sale, seller_name: sellerObj ? sellerObj.name : (sale.seller_name || '') };
@@ -128,16 +128,16 @@ export const PrintBatch: React.FC = () => {
             let dispatchQuery = supabase.from('dispatch_sheets').select('*');
             if (dateFrom) dispatchQuery = dispatchQuery.gte('date', `${dateFrom}`);
             if (dateTo) dispatchQuery = dispatchQuery.lte('date', `${dateTo}`);
-            
+
             const { data: dispatchData, error: dispatchError } = await dispatchQuery;
             if (dispatchError) throw dispatchError;
-            
+
             setDbDispatchSheets(dispatchData || []);
-            
+
             // 3. Fetch Company Config
             const { data: compData } = await supabase.from('company_config').select('*').limit(1).maybeSingle();
             if (compData) setDbCompany(compData);
-            
+
         } catch (error) {
             console.error("Error fetching docs", error);
             setAlertMessage("Error cargando documentos de la base de datos.");
@@ -154,7 +154,7 @@ export const PrintBatch: React.FC = () => {
     const filteredDocs = allDocuments.filter(s => {
         const date = s.date;
         const matchesDate = date >= dateFrom && date <= dateTo;
-        
+
         // Handle Guia Document Type
         let matchesType = false;
         if (docType === 'ALL') matchesType = true;
@@ -163,7 +163,7 @@ export const PrintBatch: React.FC = () => {
         else if (docType === 'NOTA_CREDITO' && s.document_type === 'NOTA DE CREDITO') matchesType = true;
 
         const matchesPrintStatus = printStatusFilter === 'PENDING' ? !s.printed : s.printed;
-        
+
         const matchesSearch = s.client_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             s.number?.includes(searchTerm) ||
             s.series?.includes(searchTerm);
@@ -188,15 +188,15 @@ export const PrintBatch: React.FC = () => {
 
     const handleOpenPreview = async () => {
         // Validate SUNAT Rules before printing Guides
-        const invalidGuias = selectedDocsInfo.filter(d => 
-           d._isGuia && 
-           !(d.type === 'GUIA_CONSOLIDADA') && // Consolidated allowed
-           (d.sunat_status !== 'ACCEPTED') // Must be accepted otherwise
+        const invalidGuias = selectedDocsInfo.filter(d =>
+            d._isGuia &&
+            !(d.type === 'GUIA_CONSOLIDADA') && // Consolidated allowed
+            (d.sunat_status !== 'ACCEPTED') // Must be accepted otherwise
         );
 
         if (invalidGuias.length > 0) {
-           setAlertMessage(`No se pueden imprimir ${invalidGuias.length} Guía(s) de Remisión porque aún no han sido aceptadas por SUNAT. Envíelas primero desde el módulo SUNAT.`);
-           return;
+            setAlertMessage(`No se pueden imprimir ${invalidGuias.length} Guía(s) de Remisión porque aún no han sido aceptadas por SUNAT. Envíelas primero desde el módulo SUNAT.`);
+            return;
         }
 
         setIsPrinting(true);
@@ -220,7 +220,7 @@ export const PrintBatch: React.FC = () => {
 
     return (
         <div className="h-full flex flex-col space-y-4 relative">
-            
+
             {/* --- CUSTOM ALERT MODAL --- */}
             {alertMessage && (
                 <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
@@ -230,7 +230,7 @@ export const PrintBatch: React.FC = () => {
                         </div>
                         <h3 className="text-xl font-black text-slate-800 mb-2">Aviso</h3>
                         <p className="text-slate-600 text-sm mb-6">{alertMessage}</p>
-                        <button 
+                        <button
                             onClick={() => setAlertMessage(null)}
                             className="w-full py-3 bg-slate-900 text-white rounded-lg font-bold shadow-lg"
                         >
@@ -255,13 +255,13 @@ export const PrintBatch: React.FC = () => {
                             <h3 className="text-xl font-black text-slate-800 mb-2">PDF Generado Exitosamente</h3>
                             <p className="text-slate-600 text-sm mb-6">El documento de {selectedDocsInfo.length} páginas se ha abierto en una nueva pestaña. ¿Desea marcar estos documentos como impresos para que no vuelvan a aparecer en la bandeja de pendientes?</p>
                             <div className="flex gap-3">
-                                <button 
+                                <button
                                     onClick={() => setIsPreviewOpen(false)}
                                     className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold transition-colors"
                                 >
                                     Cerrar
                                 </button>
-                                <button 
+                                <button
                                     onClick={handleMarkAsPrinted}
                                     className="flex-1 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg transition-colors"
                                 >
@@ -335,8 +335,8 @@ export const PrintBatch: React.FC = () => {
                         </div>
                     </div>
                     <div>
-                        <button 
-                            onClick={fetchDocuments} 
+                        <button
+                            onClick={fetchDocuments}
                             disabled={isLoading}
                             className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm flex items-center transition-colors disabled:opacity-50 h-[38px]"
                         >
@@ -396,13 +396,13 @@ export const PrintBatch: React.FC = () => {
                                         {s.client_name}
                                     </td>
                                     <td className="p-3 text-center">
-                                       {s.sunat_status === 'ACCEPTED' ? (
-                                           <span className="text-green-600 font-bold text-[10px]"><FileText className="w-3 h-3 inline mr-1" />ACEPTADO</span>
-                                       ) : s._isGuia && s.type !== 'GUIA_CONSOLIDADA' ? (
-                                           <span className="text-red-500 font-bold text-[10px]">REQUERIDO</span>
-                                       ) : (
-                                           <span className="text-slate-400 font-bold text-[10px]">PENDIENTE</span>
-                                       )}
+                                        {s.sunat_status === 'ACCEPTED' ? (
+                                            <span className="text-green-600 font-bold text-[10px]"><FileText className="w-3 h-3 inline mr-1" />ACEPTADO</span>
+                                        ) : s._isGuia && s.type !== 'GUIA_CONSOLIDADA' ? (
+                                            <span className="text-red-500 font-bold text-[10px]">REQUERIDO</span>
+                                        ) : (
+                                            <span className="text-slate-400 font-bold text-[10px]">PENDIENTE</span>
+                                        )}
                                     </td>
                                     <td className="p-3 text-center">
                                         {s.printed ? (
