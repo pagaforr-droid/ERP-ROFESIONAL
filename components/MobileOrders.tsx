@@ -721,12 +721,12 @@ export const MobileOrders: React.FC = () => {
 
    const renderContent = () => {
    if (isLoadingInitial) {
-      return <div className="h-screen bg-slate-900 flex items-center justify-center"><Loader2 className="w-12 h-12 text-blue-500 animate-spin" /></div>;
+      return <div className="h-[100dvh] bg-slate-900 flex items-center justify-center"><Loader2 className="w-12 h-12 text-blue-500 animate-spin" /></div>;
    }
 
    if (viewMode === 'SELLER_SELECT') {
       return (
-         <div className="h-screen bg-slate-900 p-4 flex flex-col justify-center items-center">
+         <div className="h-[100dvh] bg-slate-900 p-4 flex flex-col justify-center items-center">
             <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-md text-center border-t-4 border-blue-500">
                <div className="bg-blue-50 w-24 h-24 mx-auto rounded-full flex items-center justify-center mb-6 shadow-inner">
                   <User className="w-12 h-12 text-blue-600" />
@@ -744,7 +744,7 @@ export const MobileOrders: React.FC = () => {
 
    if (viewMode === 'CLIENT_LIST') {
       return (
-         <div className="h-screen flex flex-col bg-slate-50 relative pb-safe">
+         <div className="h-[100dvh] flex flex-col bg-slate-50 relative pb-safe">
             {isLoadingData && <div className="absolute inset-0 bg-white/80 z-50 flex items-center justify-center"><Loader2 className="w-10 h-10 text-blue-600 animate-spin" /></div>}
 
             {isExitModalOpen && (
@@ -864,7 +864,7 @@ export const MobileOrders: React.FC = () => {
       const branchList = Array.isArray(selectedClient.branches) ? selectedClient.branches : [];
 
       return (
-         <div className="h-screen flex flex-col bg-slate-50 relative pb-safe">
+         <div className="h-[100dvh] flex flex-col bg-slate-50 relative pb-safe">
 
             {isSaving && <div className="absolute inset-0 bg-white/90 z-[100] flex flex-col items-center justify-center"><Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" /><p className="font-bold text-slate-600">Sincronizando con Base...</p></div>}
 
@@ -971,7 +971,7 @@ export const MobileOrders: React.FC = () => {
                      </button>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-2 space-y-1.5 bg-slate-100">
+                  <div className="flex-1 overflow-y-auto p-2 pb-12 space-y-1.5 bg-slate-100">
                      {cart.map((item, idx) => (
                         <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-300 bg-green-50' : 'border-slate-200'}`}>
                            <div className={`flex justify-between items-center p-2 border-b ${item.is_bonus ? 'border-green-100 bg-green-100/50' : 'border-slate-100 bg-slate-50'}`}>
@@ -1048,7 +1048,7 @@ export const MobileOrders: React.FC = () => {
       const currentTotalItemPrice = (entryQty * entryPrice) * (1 - (entryDiscount / 100));
 
       return (
-         <div className="h-screen flex flex-col bg-slate-50 pb-safe">
+         <div className="h-[100dvh] flex flex-col bg-slate-50 pb-safe">
             <div className="bg-white p-3 border-b border-slate-200 sticky top-0 z-20 rounded-b-xl shadow-sm">
                <div className="flex items-center gap-2 mb-3">
                   <button onClick={() => { setViewMode('CLIENT_DETAIL'); setSelectedProduct(null); }} className="bg-slate-100 p-2 rounded-full active:bg-slate-200"><ChevronLeft className="w-5 h-5 text-slate-600" /></button>
