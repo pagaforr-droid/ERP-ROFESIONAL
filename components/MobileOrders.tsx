@@ -966,6 +966,9 @@ export const MobileOrders: React.FC = () => {
                         {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
                         {isEditMode ? 'SOBREESCRIBIR PEDIDO' : 'CONFIRMAR Y ENVIAR PEDIDO'}
                      </button>
+                     <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full mt-2.5 py-3 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-xl font-black flex items-center justify-center gap-2 active:bg-indigo-100 transition-colors text-sm shadow-sm">
+                        <Plus className="w-5 h-5" /> AGREGAR PRODUCTOS
+                     </button>
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-2 space-y-1.5 bg-slate-100">
