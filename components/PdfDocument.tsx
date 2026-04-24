@@ -166,7 +166,7 @@ const ItemsTable = ({ data, isFactura }: { data: any, isFactura: boolean }) => (
     </View>
     <View style={{ flex: 1 }}>
       {(data.items || []).map((item: any, i: number) => {
-        const sku = item.product?.sku || item.product_id?.substring(0, 8) || item.product_sku || item.sku || '001';
+        const sku = item.product?.sku || item.product_sku || item.sku || item.product_id?.substring(0, 8) || '001';
         const name = item.product?.name || item.name || item.product_name || 'Producto';
         const qty = item.quantity_presentation ?? item.quantity ?? item.quantity_base ?? 0;
         const pu = item.unit_price ?? item.price ?? 0;
@@ -406,7 +406,7 @@ const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any
           <Text style={[styles.th, styles.tableColWeight]}>PESO</Text>
         </View>
         {(data.items || []).map((item: any, i: number) => {
-           const sku = item.product?.sku || item.product_id?.substring(0,8) || item.sku || '001';
+           const sku = item.product?.sku || item.product_sku || item.sku || item.product_id?.substring(0,8) || '001';
            const name = item.product?.name || item.name || item.product_name || 'Producto';
            const qty = item.quantity_presentation ?? item.quantity ?? item.quantity_base ?? 0;
            
