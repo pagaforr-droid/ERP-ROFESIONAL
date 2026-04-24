@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
-import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User, ArrowRight, Edit, Minus } from 'lucide-react';
+import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User, ArrowRight, Edit, Minus, Eye, ShoppingCart } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
 
@@ -1125,12 +1125,12 @@ export const MobileOrders: React.FC = () => {
 
                <div className="flex-1 overflow-y-auto p-2 pb-[200px] space-y-1.5 bg-slate-100">
                      {cart.map((item, idx) => (
-                        <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-300 bg-green-50' : item.name.includes('(Duplicado)') ? 'border-orange-300 bg-orange-50' : 'border-slate-200'}`}>
-                           <div className={`flex justify-between items-center p-2 border-b ${item.is_bonus ? 'border-green-100 bg-green-100/50' : item.name.includes('(Duplicado)') ? 'border-orange-200 bg-orange-100/50' : 'border-slate-100 bg-slate-50'}`}>
+                        <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-300 bg-green-50' : String(item.name || '').includes('(Duplicado)') ? 'border-orange-300 bg-orange-50' : 'border-slate-200'}`}>
+                           <div className={`flex justify-between items-center p-2 border-b ${item.is_bonus ? 'border-green-100 bg-green-100/50' : String(item.name || '').includes('(Duplicado)') ? 'border-orange-200 bg-orange-100/50' : 'border-slate-100 bg-slate-50'}`}>
                               <div className="font-bold text-slate-800 text-[11px] pr-2 leading-tight truncate">
                                  {item.is_bonus && <span className="bg-green-500 text-white text-[8px] px-1 py-0.5 rounded mr-1 uppercase">Premio</span>}
-                                 {item.name.includes('(Duplicado)') && <span className="bg-orange-500 text-white text-[8px] px-1 py-0.5 rounded mr-1 uppercase">x2</span>}
-                                 {item.name.replace(' (Duplicado)', '')}
+                                 {String(item.name || '').includes('(Duplicado)') && <span className="bg-orange-500 text-white text-[8px] px-1 py-0.5 rounded mr-1 uppercase">x2</span>}
+                                 {String(item.name || '').replace(' (Duplicado)', '')}
                               </div>
                               {!item.auto_promo_id && <button onClick={() => { let tempCart = cart.filter(c => c.id !== item.id); applyPromotions(tempCart, priceListId); }} className="text-slate-400 p-1 active:text-red-500"><X className="w-4 h-4" /></button>}
                            </div>
