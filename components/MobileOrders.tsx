@@ -99,7 +99,7 @@ export const MobileOrders: React.FC = () => {
    // --- SYSTEM NATIVE MODALS ---
    const [systemAlert, setSystemAlert] = useState<{ show: boolean, message: string, type?: 'info'|'error'|'success', title?: string }>({ show: false, message: '' });
    const [systemConfirm, setSystemConfirm] = useState<{ show: boolean, message: string, onConfirm: () => void, title?: string }>({ show: false, message: '', onConfirm: () => {} });
-   const [duplicateToast, setDuplicateToast] = useState<string | null>(null);
+   
 
    useEffect(() => {
       const loadInitialApp = async () => {
@@ -337,8 +337,7 @@ export const MobileOrders: React.FC = () => {
       const finalPrice = gross - (gross * (entryDiscount / 100));
 
       if (existingIdx >= 0) {
-         setDuplicateToast('El producto ya estaba en el pedido. Cantidad actualizada.');
-         setTimeout(() => setDuplicateToast(null), 3000);
+         setSystemAlert({ show: true, message: 'Producto duplicado: ¡Este producto ya estaba en el pedido! La cantidad ha sido sumada exitosamente.', type: 'error', title: 'Producto Actualizado' });
          tempCart[existingIdx].quantity += entryQty;
          const tGross = tempCart[existingIdx].quantity * tempCart[existingIdx].unit_price;
          tempCart[existingIdx].total_price = tGross - (tGross * (tempCart[existingIdx].discount_percent / 100));
@@ -864,7 +863,7 @@ export const MobileOrders: React.FC = () => {
       const branchList = Array.isArray(selectedClient.branches) ? selectedClient.branches : [];
 
       return (
-         <div className="h-[100dvh] flex flex-col bg-slate-50 relative pb-safe">
+         <div className="h-[100dvh] flex flex-col bg-slate-50 relative pb-safe overflow-hidden">
 
             {isSaving && <div className="absolute inset-0 bg-white/90 z-[100] flex flex-col items-center justify-center"><Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" /><p className="font-bold text-slate-600">Sincronizando con Base...</p></div>}
 
