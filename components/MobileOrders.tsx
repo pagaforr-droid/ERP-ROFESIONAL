@@ -957,54 +957,25 @@ export const MobileOrders: React.FC = () => {
                      </select>
                   </div>
 
-                  <div className="bg-white p-3 border-b border-slate-200 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] shrink-0 z-10">
-                     <div className="flex justify-between items-end mb-3 px-1">
-                        <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Total del Pedido:</span>
-                        <span className="text-3xl font-black text-blue-600 leading-none">S/ {cartTotal.toFixed(2)}</span>
-                     </div>
-                     <button onClick={() => setShowReviewModal(true)} disabled={cart.length === 0 || isSaving}  className={`w-full text-white py-3 rounded-xl font-black text-sm shadow-lg flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 disabled:shadow-none ${isEditMode ? 'bg-red-600 shadow-red-600/30' : 'bg-slate-900 shadow-slate-900/30'}`}>
-                        
-                        {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
-                        {isEditMode ? 'SOBREESCRIBIR PEDIDO' : 'CONFIRMAR Y ENVIAR PEDIDO'}
-                     
-                     </button>
-                     <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full mt-2.5 py-3 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-xl font-black flex items-center justify-center gap-2 active:bg-indigo-100 transition-colors text-sm shadow-sm">
-                        <Plus className="w-5 h-5" /> AGREGAR PRODUCTOS
-                     </button>
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto p-2 pb-[200px] space-y-1.5 bg-slate-100">
-                     {cart.map((item, idx) => (
-                        <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-300 bg-green-50' : 'border-slate-200'}`}>
-                           <div className={`flex justify-between items-center p-2 border-b ${item.is_bonus ? 'border-green-100 bg-green-100/50' : 'border-slate-100 bg-slate-50'}`}>
-                              <div className="font-bold text-slate-800 text-[11px] pr-2 leading-tight truncate">
-                                 {item.is_bonus && <span className="bg-green-500 text-white text-[8px] px-1 py-0.5 rounded mr-1 uppercase">Premio</span>}
-                                 {item.name}
-                              </div>
-                              {!item.auto_promo_id && <button onClick={() => { let tempCart = cart.filter(c => c.id !== item.id); applyPromotions(tempCart, priceListId); }} className="text-slate-400 p-1 active:text-red-500"><X className="w-4 h-4" /></button>}
-                           </div>
-                           <div className="p-1 flex items-center justify-between">
-                              {!item.is_bonus ? (
-                                 <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                                    <button onClick={() => handleCartQtyChange(item.id, item.quantity - 1)} className="w-7 h-7 flex items-center justify-center bg-white text-slate-600 rounded shadow-sm active:scale-95"><Minus className="w-4 h-4" /></button>
-                                    <div className="w-7 text-center font-black text-sm text-slate-800 text-base">{item.quantity}</div>
-                                    <button onClick={() => handleCartQtyChange(item.id, item.quantity + 1)} className="w-7 h-7 flex items-center justify-center bg-white text-slate-600 rounded shadow-sm active:scale-95"><Plus className="w-4 h-4" /></button>
-                                 </div>
-                              ) : (
-                                 <div className="font-black text-green-600 text-xl pl-2">{item.quantity}</div>
-                              )}
-                              <div className="text-right flex flex-col justify-center">
-                                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">{item.unit_type} | S/ {item.unit_price.toFixed(2)}</div>
-                                 <div className="font-black text-slate-900 text-base leading-none">S/ {Number(item.total_price || 0).toFixed(2)}</div>
-                              </div>
-                           </div>
+                                    <div className="flex-1 bg-slate-100 p-4 flex flex-col items-center justify-center text-center">
+                     <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 max-w-sm w-full animate-fade-in-up">
+                        <div className="bg-blue-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                           <ShoppingCart className="w-8 h-8 text-blue-600" />
                         </div>
-                     ))}
-
-                     
+                        <h3 className="text-lg font-black text-slate-800 mb-1">Carrito Activo</h3>
+                        <p className="text-slate-500 text-sm font-bold mb-6">
+                           Tienes <span className="text-blue-600">{cart.length}</span> productos agregados por un total de <span className="text-blue-600">S/ {cartTotal.toFixed(2)}</span>
+                        </p>
+                        <button onClick={() => setShowReviewModal(true)} disabled={cart.length === 0} className="w-full mb-3 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black shadow-lg shadow-blue-600/30 active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none">
+                           <Eye className="w-5 h-5" /> REVISAR Y EDITAR CARRITO
+                        </button>
+                        <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full py-3 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-xl font-black flex items-center justify-center gap-2 active:bg-indigo-100 transition-colors text-sm shadow-sm">
+                           <Plus className="w-5 h-5" /> AGREGAR NUEVO PRODUCTO
+                        </button>
+                     </div>
                   </div>
-               </div>
-            )}
+            </div>
+         )}
 
             {clientTab === 'COLLECTION' && (
                <div className="flex-1 overflow-auto p-3 space-y-3">
