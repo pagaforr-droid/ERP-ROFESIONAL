@@ -100,6 +100,8 @@ export const MobileOrders: React.FC = () => {
    const [systemAlert, setSystemAlert] = useState<{ show: boolean, message: string, type?: 'info'|'error'|'success', title?: string }>({ show: false, message: '' });
    const [showReviewModal, setShowReviewModal] = useState(false);
    const [systemConfirm, setSystemConfirm] = useState<{ show: boolean, message: string, onConfirm: () => void, title?: string }>({ show: false, message: '', onConfirm: () => {} });
+   const [showOrdersModal, setShowOrdersModal] = useState(false);
+   const [selectedOrderActions, setSelectedOrderActions] = useState<Order | null>(null);
    
 
    useEffect(() => {
@@ -762,7 +764,7 @@ export const MobileOrders: React.FC = () => {
             )}
 
             {orderToAnnul && (
-               <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+               <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
                   <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 text-center animate-fade-in-up">
                      <Trash2 className="w-16 h-16 text-red-500 mx-auto mb-4 bg-red-50 p-3 rounded-full" />
                      <h3 className="text-xl font-black text-slate-800 mb-2">¿Anular Pedido?</h3>
@@ -792,8 +794,8 @@ export const MobileOrders: React.FC = () => {
                   <button onClick={() => setListTab('CLIENTS')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center transition-all ${listTab === 'CLIENTS' ? 'bg-blue-600 text-white shadow' : 'text-slate-400'}`}>
                      <User className="w-4 h-4 mr-2" /> Clientes
                   </button>
-                  <button onClick={() => setListTab('HISTORY')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center transition-all ${listTab === 'HISTORY' ? 'bg-blue-600 text-white shadow' : 'text-slate-400'}`}>
-                     <Clock className="w-4 h-4 mr-2" /> Pedidos
+                  <button onClick={() => setShowOrdersModal(true)} className="flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center transition-all text-slate-400 active:bg-slate-700">
+                     <Clock className="w-4 h-4 mr-2" /> Mis Pedidos
                   </button>
                </div>
 
@@ -828,30 +830,7 @@ export const MobileOrders: React.FC = () => {
                })}
                {listTab === 'CLIENTS' && filteredClientsList.length === 0 && <div className="text-center p-8 text-slate-400">Sin resultados en la ruta.</div>}
 
-               {listTab === 'HISTORY' && dbOrders.map(o => (
-                  <div key={o.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                     <div className="flex justify-between items-start mb-2">
-                        <div className="bg-slate-100 text-slate-600 text-xs font-mono font-bold px-2 py-1 rounded">{o.code}</div>
-                        <span className="font-black text-slate-900 text-lg">S/ {Number(o.total || 0).toFixed(2)}</span>
-                     </div>
-                     <h3 className="font-bold text-slate-700 text-sm mb-3">{o.client_name}</h3>
-                     {o.status === 'pending' ? (
-                        <div className="flex gap-2">
-                           <button onClick={() => handleEditOrder(o)} className="flex-1 bg-blue-50 text-blue-700 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center transition-colors hover:bg-blue-100">
-                              <Edit className="w-4 h-4 mr-1" /> Editar
-                           </button>
-                           <button onClick={() => setOrderToAnnul(o)} className="flex-1 bg-red-50 text-red-700 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center transition-colors hover:bg-red-100">
-                              <Trash2 className="w-4 h-4 mr-1" /> Anular
-                           </button>
-                        </div>
-                     ) : o.status === 'canceled' ? (
-                        <div className="text-center text-xs font-bold text-red-600 bg-red-50 py-2 rounded-xl border border-red-100">ANULADO</div>
-                     ) : (
-                        <div className="text-center text-xs font-bold text-green-600 bg-green-50 py-2 rounded-xl">YA PROCESADO</div>
-                     )}
-                  </div>
-               ))}
-               {listTab === 'HISTORY' && dbOrders.length === 0 && <div className="text-center p-8 text-slate-400">No hay pedidos generados hoy.</div>}
+
             </div>
          </div>
       );
@@ -1103,6 +1082,84 @@ export const MobileOrders: React.FC = () => {
    return (
       <>
          {renderContent()}
+
+         {/* --- ORDERS FULL SCREEN MODAL --- */}
+         {showOrdersModal && (
+            <div className="fixed inset-0 z-[100] flex flex-col bg-slate-50 animate-fade-in-up">
+               <div className="bg-slate-900 text-white p-4 shrink-0 shadow-lg z-20 flex justify-between items-center">
+                  <div>
+                     <h2 className="text-xl font-black mb-1">Pedidos del Día</h2>
+                     <p className="text-sm text-slate-300">Toca un pedido para opciones</p>
+                  </div>
+                  <button onClick={() => setShowOrdersModal(false)} className="bg-slate-800 p-2 rounded-full active:bg-slate-700">
+                     <X className="w-5 h-5 text-slate-300" />
+                  </button>
+               </div>
+               
+               <div className="flex-1 overflow-y-auto p-4 pb-[120px] space-y-3">
+                  {dbOrders.map(o => (
+                     <div key={o.id} onClick={() => { if(o.status === 'pending') setSelectedOrderActions(o); }} className={`bg-white p-4 rounded-2xl shadow-sm border border-slate-100 ${o.status === 'pending' ? 'active:scale-95 transition-transform cursor-pointer' : 'opacity-70'}`}>
+                        <div className="flex justify-between items-start mb-2">
+                           <div className="bg-slate-100 text-slate-600 text-xs font-mono font-bold px-2 py-1 rounded">{o.code}</div>
+                           <span className="font-black text-slate-900 text-lg">S/ {Number(o.total || 0).toFixed(2)}</span>
+                        </div>
+                        <h3 className="font-bold text-slate-700 text-sm mb-3">{o.client_name}</h3>
+                        
+                        {o.status === 'pending' ? (
+                           <div className="flex items-center text-blue-600 text-xs font-bold">
+                              <span>Toque para opciones</span>
+                              <ChevronDown className="w-4 h-4 ml-1" />
+                           </div>
+                        ) : o.status === 'canceled' ? (
+                           <div className="text-left text-xs font-bold text-red-600">ANULADO</div>
+                        ) : (
+                           <div className="text-left text-xs font-bold text-green-600">PROCESADO</div>
+                        )}
+                     </div>
+                  ))}
+                  {dbOrders.length === 0 && (
+                     <div className="text-center p-8 text-slate-400 flex flex-col items-center">
+                        <Clock className="w-12 h-12 mb-3 text-slate-200" />
+                        <p className="font-bold">No hay pedidos generados hoy.</p>
+                     </div>
+                  )}
+               </div>
+            </div>
+         )}
+
+         {/* --- ORDERS ACTION BOTTOM SHEET --- */}
+         {selectedOrderActions && (
+            <div className="fixed inset-0 z-[150] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4" onClick={() => setSelectedOrderActions(null)}>
+               <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-slide-up" onClick={e => e.stopPropagation()}>
+                  <div className="flex justify-between items-start mb-4">
+                     <div>
+                        <div className="text-xs text-slate-400 font-black uppercase tracking-widest">{selectedOrderActions.code}</div>
+                        <h3 className="text-lg font-black text-slate-800 leading-tight mt-1 truncate">{selectedOrderActions.client_name}</h3>
+                     </div>
+                     <button onClick={() => setSelectedOrderActions(null)} className="bg-slate-100 p-2 rounded-full"><X className="w-4 h-4 text-slate-500" /></button>
+                  </div>
+                  
+                  <div className="space-y-3">
+                     <button onClick={() => { 
+                           handleEditOrder(selectedOrderActions); 
+                           setSelectedOrderActions(null); 
+                           setShowOrdersModal(false); 
+                        }} 
+                        className="w-full py-4 bg-blue-50 text-blue-700 rounded-2xl font-black flex items-center justify-center gap-2 active:bg-blue-100 transition-colors">
+                        <Edit className="w-5 h-5" /> MODIFICAR PEDIDO
+                     </button>
+                     
+                     <button onClick={() => { 
+                           setOrderToAnnul(selectedOrderActions); 
+                           setSelectedOrderActions(null); 
+                        }} 
+                        className="w-full py-4 bg-red-50 text-red-700 rounded-2xl font-black flex items-center justify-center gap-2 active:bg-red-100 transition-colors">
+                        <Trash2 className="w-5 h-5" /> ANULAR PEDIDO
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
 
          
          {/* --- INTERACTIVE REVIEW MODAL --- */}
