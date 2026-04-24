@@ -96,6 +96,11 @@ export const MobileOrders: React.FC = () => {
    const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
    const [paymentAmount, setPaymentAmount] = useState<number>(0);
 
+   // --- SYSTEM NATIVE MODALS ---
+   const [systemAlert, setSystemAlert] = useState<{ show: boolean, message: string, type?: 'info'|'error'|'success', title?: string }>({ show: false, message: '' });
+   const [systemConfirm, setSystemConfirm] = useState<{ show: boolean, message: string, onConfirm: () => void, title?: string }>({ show: false, message: '', onConfirm: () => {} });
+   const [duplicateToast, setDuplicateToast] = useState<string | null>(null);
+
    useEffect(() => {
       const loadInitialApp = async () => {
          try {
@@ -162,7 +167,7 @@ export const MobileOrders: React.FC = () => {
          }
       } catch (error) {
          console.error("Error cargando maestros:", error);
-         alert("Error de conexión al cargar la ruta.");
+         setSystemAlert({ show: true, message: 'Error de conexión al cargar la ruta.', type: 'error' });
       } finally {
          setIsLoadingData(false);
       }
@@ -324,7 +329,7 @@ export const MobileOrders: React.FC = () => {
       const totalRequiredBaseUnits = (existingQty + entryQty) * conversionFactor;
 
       if (totalStock < totalRequiredBaseUnits && !entryBonus) {
-         alert(`❌ Stock Insuficiente para ${selectedProduct.name}.\nDisponible: ${totalStock} unid. (Incluye tu reserva original)\nRequerido total: ${totalRequiredBaseUnits} unid.`);
+         setSystemAlert({ show: true, message: 'Stock Insuficiente para ' + selectedProduct.name + '.\nDisponible: ' + totalStock + ' unid.\nRequerido total: ' + totalRequiredBaseUnits + ' unid.', type: 'error' });
          return;
       }
 
@@ -332,6 +337,8 @@ export const MobileOrders: React.FC = () => {
       const finalPrice = gross - (gross * (entryDiscount / 100));
 
       if (existingIdx >= 0) {
+         setDuplicateToast('El producto ya estaba en el pedido. Cantidad actualizada.');
+         setTimeout(() => setDuplicateToast(null), 3000);
          tempCart[existingIdx].quantity += entryQty;
          const tGross = tempCart[existingIdx].quantity * tempCart[existingIdx].unit_price;
          tempCart[existingIdx].total_price = tGross - (tGross * (tempCart[existingIdx].discount_percent / 100));
@@ -389,7 +396,7 @@ export const MobileOrders: React.FC = () => {
       }
 
       if (totalStock < requiredBaseUnits && !item.is_bonus) {
-         alert(`❌ Stock Insuficiente para ${pRef.name}.\nDisponible: ${totalStock} unid. (Incluye tu reserva original)\nIntentó solicitar: ${requiredBaseUnits} unid.`);
+         setSystemAlert({ show: true, message: 'Stock Insuficiente para ' + pRef.name + '.\nDisponible: ' + totalStock + ' unid.\nIntentó solicitar: ' + requiredBaseUnits + ' unid.', type: 'error' });
          return;
       }
 
@@ -422,7 +429,7 @@ export const MobileOrders: React.FC = () => {
    };
 
    const handleEditOrder = async (order: Order) => {
-      if (order.status !== 'pending') { alert("Solo editables los pedidos pendientes."); return; }
+      if (order.status !== 'pending') { setSystemAlert({ show: true, message: 'Solo editables los pedidos pendientes.', type: 'error' }); return; }
       setIsLoadingData(true);
       try {
          const { data: orderItemsData, error } = await supabase.from('order_items').select(`*`).eq('order_id', order.id);
@@ -495,7 +502,7 @@ export const MobileOrders: React.FC = () => {
          setCart(loadedItems);
          setClientTab('ORDER');
          setViewMode('CLIENT_DETAIL');
-      } catch (e) { alert("Error al cargar pedido."); } finally { setIsLoadingData(false); }
+      } catch (e) { setSystemAlert({ show: true, message: 'Error al cargar pedido.', type: 'error' }); } finally { setIsLoadingData(false); }
    };
 
    const handleProductClick = async (p: Product) => {
@@ -506,7 +513,7 @@ export const MobileOrders: React.FC = () => {
 
          if (error) {
             console.error("Error crítico leyendo lotes:", error);
-            alert("Error de conexión validando el stock en tiempo real.");
+            setSystemAlert({ show: true, message: 'Error de conexión validando el stock en tiempo real.', type: 'error' });
             return;
          }
 
@@ -545,76 +552,68 @@ export const MobileOrders: React.FC = () => {
 
    const handleSaveOrder = async () => {
       if (!selectedClient) return;
-      if (cart.length === 0) { alert("El pedido está vacío."); return; }
+      if (cart.length === 0) { setSystemAlert({ show: true, message: "El pedido está vacío.", type: "error" }); return; }
 
       const currentTotal = cart.reduce((sum, item) => sum + item.total_price, 0);
 
-      if (!window.confirm(`¿Está seguro de CERRAR Y ENVIAR este pedido por S/ ${currentTotal.toFixed(2)}?`)) return;
-
-      setIsSaving(true);
-
-      const orderPayload = {
-         id: isEditMode && originalOrder ? originalOrder.id : generateUUID(),
-         code: isEditMode && originalOrder ? originalOrder.code : `${pedidoSeries}-${pedidoNumber}`,
-         client_id: selectedClientId || null,
-         client_name: selectedClient?.name || '',
-         client_doc_type: (selectedClient?.doc_number || '').length === 11 ? 'RUC' : 'DNI',
-         client_doc_number: selectedClient?.doc_number || '',
-         seller_id: currentSellerId || null,
-         suggested_document_type: docType,
-         payment_method: paymentMethod,
-         total: Number(currentTotal.toFixed(2)),
-         status: 'pending',
-         delivery_address: clientAddress || null,
-         items: cart.map(c => {
-            const conversionFactor = Number((c.unit_type || '').split('/')[1]) || 1;
-            const qtyBase = c.quantity * conversionFactor;
-
-            return {
-               id: c.id,
-               product_id: c.product_id,
-               product_sku: c.sku,
-               product_name: c.name,
-               quantity: qtyBase,
-               unit_type: c.unit_type,
-               selected_unit: c.unit_type,
-               quantity_presentation: c.quantity,
-               quantity_base: qtyBase,
-               unit_price: c.unit_price,
-               discount_percent: c.discount_percent,
-               discount_amount: (c.quantity * c.unit_price) * (c.discount_percent / 100),
-               total_price: c.total_price,
-               is_bonus: c.is_bonus,
-               auto_promo_id: c.auto_promo_id || null
+      setSystemConfirm({
+         show: true,
+         title: isEditMode ? 'Sobreescribir Pedido' : 'Enviar Pedido',
+         message: '¿Está seguro de CERRAR Y ENVIAR este pedido por S/ ' + currentTotal.toFixed(2) + '?',
+         onConfirm: async () => {
+            setIsSaving(true);
+            const orderPayload = {
+               id: isEditMode && originalOrder ? originalOrder.id : generateUUID(),
+               code: isEditMode && originalOrder ? originalOrder.code : pedidoSeries + '-' + pedidoNumber,
+               client_id: selectedClientId || null,
+               client_name: selectedClient?.name || '',
+               client_doc_type: (selectedClient?.doc_number || '').length === 11 ? 'RUC' : 'DNI',
+               client_doc_number: selectedClient?.doc_number || '',
+               seller_id: currentSellerId || null,
+               suggested_document_type: docType,
+               payment_method: paymentMethod,
+               total: Number(currentTotal.toFixed(2)),
+               status: 'pending',
+               delivery_address: clientAddress || null,
+               items: cart.map(c => {
+                  const conversionFactor = Number((c.unit_type || '').split('/')[1]) || 1;
+                  const qtyBase = c.quantity * conversionFactor;
+                  return {
+                     id: c.id,
+                     product_id: c.product_id,
+                     product_sku: c.sku,
+                     product_name: c.name,
+                     quantity: qtyBase,
+                     unit_type: c.unit_type,
+                     selected_unit: c.unit_type,
+                     quantity_presentation: c.quantity,
+                     quantity_base: qtyBase,
+                     unit_price: c.unit_price,
+                     discount_percent: c.discount_percent,
+                     discount_amount: (c.quantity * c.unit_price) * (c.discount_percent / 100),
+                     total_price: c.total_price,
+                     is_bonus: c.is_bonus,
+                     auto_promo_id: c.auto_promo_id || null
+                  };
+               })
             };
-         })
-      };
 
-      try {
-         const rpcName = isEditMode ? 'update_order_transaction' : 'process_order_transaction';
-
-         // 🔥 CORRECCIÓN 5: Inspección del payload y captura de errores crudos de PostgreSQL
-         console.log(`📦 PAYLOAD ENVIADO AL RPC (${rpcName}):`, JSON.stringify(orderPayload, null, 2));
-
-         const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
-
-         if (error) {
-            console.error("🔥 EL BACKEND RECHAZÓ EL PEDIDO:", error);
-            throw error;
+            try {
+               const rpcName = isEditMode ? 'update_order_transaction' : 'process_order_transaction';
+               const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
+               if (error) throw error;
+               setSystemAlert({ show: true, message: isEditMode ? '¡Pedido modificado con éxito!' : ('¡Pedido guardado! Código: ' + (data?.real_code || pedidoNumber)), type: 'success' });
+               setViewMode('CLIENT_LIST');
+               setListTab('HISTORY');
+               setCart([]);
+               handleSellerSelect(currentSellerId);
+            } catch (error: any) {
+               setSystemAlert({ show: true, message: 'Error al guardar: ' + (error.message || JSON.stringify(error)), type: 'error' });
+            } finally {
+               setIsSaving(false);
+            }
          }
-
-         alert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
-
-         setViewMode('CLIENT_LIST');
-         setListTab('HISTORY');
-         setCart([]);
-         handleSellerSelect(currentSellerId);
-      } catch (error: any) {
-         // Mostrará el error exacto que arroje PostgreSQL en vez de fallar en silencio
-         alert("Error al guardar: " + (error.message || JSON.stringify(error)));
-      } finally {
-         setIsSaving(false);
-      }
+      });
    };
 
    const handleNewOrder = () => {
@@ -628,7 +627,7 @@ export const MobileOrders: React.FC = () => {
    const confirmPayment = async () => {
       if (!selectedSale || paymentAmount <= 0) return;
       const currentBalance = selectedSale.balance !== undefined && selectedSale.balance !== null ? selectedSale.balance : selectedSale.total;
-      if (paymentAmount > currentBalance) { alert("El monto supera el saldo."); return; }
+      if (paymentAmount > currentBalance) { setSystemAlert({ show: true, message: 'El monto supera el saldo.', type: 'error' }); return; }
 
       setIsSaving(true);
       try {
@@ -636,10 +635,10 @@ export const MobileOrders: React.FC = () => {
             p_sale_id: selectedSale.id, p_seller_id: currentSellerId, p_amount: paymentAmount
          });
          if (error) throw error;
-         alert("Cobro reportado a central.");
+         setSystemAlert({ show: true, message: 'Cobro reportado a central.', type: 'success' });
          setIsPaymentModalOpen(false); setPaymentAmount(0); setSelectedSale(null);
          handleSellerSelect(currentSellerId);
-      } catch (e: any) { alert("Error reportando cobro: " + e.message); }
+      } catch (e: any) { setSystemAlert({ show: true, message: 'Error reportando cobro: ' + e.message, type: 'error' }); }
       finally { setIsSaving(false); }
    };
 
@@ -659,7 +658,7 @@ export const MobileOrders: React.FC = () => {
          setDbOrders(prev => prev.map(o => o.id === orderToAnnul.id ? { ...o, status: 'canceled' as any } : o));
          setOrderToAnnul(null);
       } catch (e: any) {
-         alert("Error anulando pedido: " + e.message);
+         setSystemAlert({ show: true, message: 'Error anulando pedido: ' + e.message, type: 'error' });
       } finally {
          setIsSaving(false);
       }
@@ -720,6 +719,7 @@ export const MobileOrders: React.FC = () => {
    } catch(e) { console.error("Error in cartTotal", e); }
    const categoriesList = useMemo(() => ['TODOS', ...Array.from(new Set(dbProducts.map(p => p.category))).filter(Boolean).sort()], [dbProducts]);
 
+   const renderContent = () => {
    if (isLoadingInitial) {
       return <div className="h-screen bg-slate-900 flex items-center justify-center"><Loader2 className="w-12 h-12 text-blue-500 animate-spin" /></div>;
    }
@@ -968,37 +968,35 @@ export const MobileOrders: React.FC = () => {
                      </button>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-2 space-y-2 bg-slate-100">
+                  <div className="flex-1 overflow-y-auto p-2 space-y-1.5 bg-slate-100">
                      {cart.map((item, idx) => (
                         <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-300 bg-green-50' : 'border-slate-200'}`}>
                            <div className={`flex justify-between items-center p-2 border-b ${item.is_bonus ? 'border-green-100 bg-green-100/50' : 'border-slate-100 bg-slate-50'}`}>
-                              <div className="font-bold text-slate-800 text-xs pr-2 leading-tight truncate">
+                              <div className="font-bold text-slate-800 text-[11px] pr-2 leading-tight truncate">
                                  {item.is_bonus && <span className="bg-green-500 text-white text-[8px] px-1 py-0.5 rounded mr-1 uppercase">Premio</span>}
                                  {item.name}
                               </div>
                               {!item.auto_promo_id && <button onClick={() => { let tempCart = cart.filter(c => c.id !== item.id); applyPromotions(tempCart, priceListId); }} className="text-slate-400 p-1 active:text-red-500"><X className="w-4 h-4" /></button>}
                            </div>
-                           <div className="p-2 flex items-center justify-between">
+                           <div className="p-1 flex items-center justify-between">
                               {!item.is_bonus ? (
                                  <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
-                                    <button onClick={() => handleCartQtyChange(item.id, item.quantity - 1)} className="w-8 h-8 flex items-center justify-center bg-white text-slate-600 rounded shadow-sm active:scale-95"><Minus className="w-4 h-4" /></button>
-                                    <div className="w-8 text-center font-black text-slate-800 text-base">{item.quantity}</div>
-                                    <button onClick={() => handleCartQtyChange(item.id, item.quantity + 1)} className="w-8 h-8 flex items-center justify-center bg-white text-slate-600 rounded shadow-sm active:scale-95"><Plus className="w-4 h-4" /></button>
+                                    <button onClick={() => handleCartQtyChange(item.id, item.quantity - 1)} className="w-7 h-7 flex items-center justify-center bg-white text-slate-600 rounded shadow-sm active:scale-95"><Minus className="w-4 h-4" /></button>
+                                    <div className="w-7 text-center font-black text-sm text-slate-800 text-base">{item.quantity}</div>
+                                    <button onClick={() => handleCartQtyChange(item.id, item.quantity + 1)} className="w-7 h-7 flex items-center justify-center bg-white text-slate-600 rounded shadow-sm active:scale-95"><Plus className="w-4 h-4" /></button>
                                  </div>
                               ) : (
                                  <div className="font-black text-green-600 text-xl pl-2">{item.quantity}</div>
                               )}
                               <div className="text-right flex flex-col justify-center">
                                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">{item.unit_type} | S/ {item.unit_price.toFixed(2)}</div>
-                                 <div className="font-black text-slate-900 text-lg leading-none">S/ {Number(item.total_price || 0).toFixed(2)}</div>
+                                 <div className="font-black text-slate-900 text-base leading-none">S/ {Number(item.total_price || 0).toFixed(2)}</div>
                               </div>
                            </div>
                         </div>
                      ))}
 
-                     <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full py-4 border-2 border-dashed border-blue-300 text-blue-700 bg-blue-50/50 rounded-xl font-black flex items-center justify-center gap-2 active:bg-blue-100 transition-colors text-sm mt-2 shadow-sm">
-                        <Plus className="w-5 h-5" /> AGREGAR PRODUCTOS
-                     </button>
+                     
                   </div>
                </div>
             )}
@@ -1063,7 +1061,7 @@ export const MobileOrders: React.FC = () => {
                </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-2">
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
                {selectedProduct ? (
                   <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-100 animate-slide-up mt-2">
                      <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{selectedProduct.sku}</div>
@@ -1124,4 +1122,53 @@ export const MobileOrders: React.FC = () => {
    }
 
    return null;
+   };
+
+   return (
+      <>
+         {renderContent()}
+
+         {/* --- SYSTEM NATIVE MODALS --- */}
+         {systemAlert.show && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+               <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 text-center animate-fade-in-up border border-slate-100">
+                  <div className={"mx-auto mb-4 p-3 rounded-full inline-flex " + (systemAlert.type === 'success' ? 'bg-green-50 text-green-500' : systemAlert.type === 'info' ? 'bg-amber-50 text-amber-500' : 'bg-red-50 text-red-500')}>
+                     {systemAlert.type === 'success' ? <CheckCircle className="w-12 h-12" /> : systemAlert.type === 'info' ? <div className="w-12 h-12 flex items-center justify-center text-4xl font-black">!</div> : <X className="w-12 h-12" />}
+                  </div>
+                  <h3 className="text-xl font-black text-slate-800 mb-2">{systemAlert.title || (systemAlert.type === 'success' ? 'Éxito' : systemAlert.type === 'info' ? 'Atención' : 'Error')}</h3>
+                  <p className="text-slate-500 text-sm mb-6 whitespace-pre-wrap">{systemAlert.message}</p>
+                  <button onClick={() => setSystemAlert({ show: false, message: '' })} className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold shadow-lg active:scale-95 transition-transform">Entendido</button>
+               </div>
+            </div>
+         )}
+
+         {systemConfirm.show && (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6">
+               <div className="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 text-center animate-fade-in-up border border-slate-100">
+                  <div className="mx-auto mb-4 p-3 rounded-full inline-flex bg-blue-50 text-blue-500">
+                     <CheckCircle className="w-12 h-12" />
+                  </div>
+                  <h3 className="text-xl font-black text-slate-800 mb-2">{systemConfirm.title || 'Confirmar Acción'}</h3>
+                  <p className="text-slate-500 text-sm mb-6 whitespace-pre-wrap">{systemConfirm.message}</p>
+                  <div className="flex gap-3">
+                     <button onClick={() => setSystemConfirm({ show: false, message: '', onConfirm: () => {} })} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold active:scale-95 transition-transform">Cancelar</button>
+                     <button onClick={() => { systemConfirm.onConfirm(); setSystemConfirm({ show: false, message: '', onConfirm: () => {} }); }} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg active:scale-95 transition-transform">Confirmar</button>
+                  </div>
+               </div>
+            </div>
+         )}
+         
+         {duplicateToast && (
+            <div className="fixed top-4 left-4 right-4 z-[300] animate-fade-in-down pointer-events-none">
+               <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-xl shadow-lg flex items-start gap-3 max-w-md mx-auto">
+                  <div className="text-red-500 mt-0.5"><CheckCircle className="w-5 h-5" /></div>
+                  <div>
+                     <h4 className="font-bold text-red-800 text-sm">Item Duplicado</h4>
+                     <p className="text-red-600 text-xs mt-0.5 font-medium">{duplicateToast}</p>
+                  </div>
+               </div>
+            </div>
+         )}
+      </>
+   );
 };
