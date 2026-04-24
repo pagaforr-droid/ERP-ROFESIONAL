@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useStore } from '../services/store';
 import { PriceList, Seller, Product } from '../types';
 import { supabase } from '../services/supabase';
 import { 
@@ -27,6 +28,9 @@ const Notification = ({ msg, type, onClose }: { msg: string, type: 'success' | '
 );
 
 export const PriceManager: React.FC = () => {
+  const { currentUser } = useStore();
+  const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERADMIN';
+
   const [activeTab, setActiveTab] = useState<Tab>('CALCULATOR');
 
   // --- ESTADOS DE BASE DE DATOS (100% SUPABASE) ---
@@ -70,6 +74,24 @@ export const PriceManager: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
   const [notification, setNotification] = useState<{msg: string, type: 'success'|'error'} | null>(null);
+  
+  const [manualPrices, setManualPrices] = useState<Record<string, number>>({});
+
+  const handleManualPriceChange = (id: string, val: string) => {
+    if (val === '') {
+      setManualPrices(prev => {
+        const next = {...prev};
+        delete next[id];
+        return next;
+      });
+    } else {
+      const numVal = Number(val);
+      if (!isNaN(numVal) && numVal >= 0) {
+        setManualPrices(prev => ({...prev, [id]: numVal}));
+        setSelectedIds(prev => new Set(prev).add(id));
+      }
+    }
+  };
 
   // --- TAB 2: PRICELIST STATE ---
   const [editingList, setEditingList] = useState<Partial<PriceList> | null>(null);
@@ -132,7 +154,8 @@ export const PriceManager: React.FC = () => {
         const costWithIgv = p.last_cost ? p.last_cost * 1.18 : 0;
         
         // 1. CÁLCULO DIRECTO: Costo de Presentación Mínima (con IGV) + Margen% = NUEVO PRECIO BASE UNIDAD
-        const newBasePriceUnit = costWithIgv * (1 + (targetMargin / 100));
+        // O utilizar el precio manual sobreescrito por el administrador
+        const newBasePriceUnit = manualPrices[p.id] !== undefined ? manualPrices[p.id] : (costWithIgv * (1 + (targetMargin / 100)));
         
         // 2. CÁLCULO CAJA: Precio Unidad * Contenido (Cálculo exacto, sin descuentos ocultos)
         const content = p.package_content || 1;
@@ -239,6 +262,7 @@ export const PriceManager: React.FC = () => {
         
         setNotification({ msg: `Se inyectaron exitosamente los nuevos precios bases en ${updates.length} productos.`, type: 'success' });
         setSelectedIds(new Set());
+        setManualPrices({});
      } catch (error: any) {
         setNotification({ msg: `Error de Base de Datos: ${error.message}`, type: 'error' });
      } finally {
@@ -586,7 +610,19 @@ export const PriceManager: React.FC = () => {
                                <td className="p-4 text-right font-black text-slate-700">S/ {p.currentBasePrice.toFixed(2)}</td>
                                
                                <td className="p-4 text-right border-l border-emerald-100 bg-emerald-50/20">
-                                  <div className="font-black text-emerald-700 text-base">S/ {p.calculatedBasePrice.toFixed(2)}</div>
+                                  {isAdmin ? (
+                                      <div className="flex justify-end items-center">
+                                          <span className="font-black text-emerald-700 mr-1">S/</span>
+                                          <input 
+                                              type="number" step="0.01" min="0"
+                                              className="w-24 text-right bg-white border border-emerald-300 rounded px-2 py-1 font-black text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-inner"
+                                              value={manualPrices[p.id] !== undefined ? manualPrices[p.id] : p.calculatedBasePrice.toFixed(2)}
+                                              onChange={e => handleManualPriceChange(p.id, e.target.value)}
+                                          />
+                                      </div>
+                                  ) : (
+                                      <div className="font-black text-emerald-700 text-base">S/ {p.calculatedBasePrice.toFixed(2)}</div>
+                                  )}
                                   <div className="text-[10px] text-emerald-600 font-bold mt-1 tracking-wide">
                                      CAJA ({p.package_content}u): <span className="font-black">S/ {p.calculatedPackagePrice.toFixed(2)}</span>
                                   </div>

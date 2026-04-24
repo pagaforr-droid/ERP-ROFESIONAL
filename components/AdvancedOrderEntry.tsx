@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
-import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Edit, Lock } from 'lucide-react';
+import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Edit, Lock, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { calculateBaseQuantity } from '../utils/productUtils';
 import { supabase } from '../services/supabase';
@@ -26,10 +26,21 @@ interface CartItem {
 
 export const AdvancedOrderEntry: React.FC = () => {
   const { users, currentUser } = useStore();
+  const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'SUPERADMIN';
 
   const clientInputRef = useRef<HTMLInputElement>(null);
   const productInputRef = useRef<HTMLInputElement>(null);
   const qtyInputRef = useRef<HTMLInputElement>(null);
+  const addBtnRef = useRef<HTMLButtonElement>(null);
+
+  const [dialog, setDialog] = useState<{ isOpen: boolean; type: 'success' | 'error' | 'warning' | 'confirm' | 'info'; title: string; message: string; onConfirm?: () => void }>({
+      isOpen: false, type: 'info', title: '', message: ''
+  });
+
+  const showDialog = (type: 'success' | 'error' | 'warning' | 'confirm' | 'info', title: string, message: string, onConfirm?: () => void) => {
+      setDialog({ isOpen: true, type, title, message, onConfirm });
+  };
+  const closeDialog = () => setDialog(prev => ({ ...prev, isOpen: false }));
 
   const [dbCompany, setDbCompany] = useState<any>(null);
   const [dbSellers, setDbSellers] = useState<any[]>([]);
@@ -133,6 +144,23 @@ export const AdvancedOrderEntry: React.FC = () => {
         setPedidoNumber(String(current.current_number + 1).padStart(8, '0'));
     }
   };
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (dialog.isOpen || showAdminAuthModal.isOpen || isSearchModalOpen || showHistoryModal.isOpen) return;
+      if (e.key === 'F2') {
+        e.preventDefault();
+        handleNewOrder();
+      } else if (e.key === 'F10') {
+        e.preventDefault();
+        if (cart.length > 0 && clientName && !isSaving) {
+          handleSaveOrder();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [cart, clientName, isSaving, dialog.isOpen, showAdminAuthModal.isOpen, isSearchModalOpen, showHistoryModal.isOpen]);
 
   const getMultiplier = (listId: string) => {
     if (!listId) return 1;
@@ -280,7 +308,13 @@ export const AdvancedOrderEntry: React.FC = () => {
   const handleQtyKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
         e.preventDefault();
-        executeAddToCart();
+        if (isAdmin) {
+            const el = document.getElementById('entryPriceInput');
+            if (el) el.focus();
+            else executeAddToCart();
+        } else {
+            executeAddToCart();
+        }
     }
   };
 
@@ -421,7 +455,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     const totalRequiredBaseUnits = (existingQty + entryQty) * conversionFactor;
 
     if (totalStock < totalRequiredBaseUnits && !entryBonus) {
-        alert(`❌ Stock Insuficiente para ${selectedProduct.name}.\nDisponible: ${totalStock} unid. (Incluye tu reserva original)\nRequerido total: ${totalRequiredBaseUnits} unid.`);
+        showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid. (Incluye tu reserva original)\nRequerido total: ${totalRequiredBaseUnits} unid.`);
         return;
     }
 
@@ -463,7 +497,8 @@ export const AdvancedOrderEntry: React.FC = () => {
     let tempCart = cart.map(item => {
       if (item.is_bonus || item.auto_promo_id) return item;
       const pRef = item.product_ref;
-      const { price, discount } = calculateCalculatedPrice(pRef, item.unit_type, priceListId);
+      const pureUnit = (item.unit_type || '').split('/')[0].trim();
+      const { price, discount } = calculateCalculatedPrice(pRef, pureUnit, priceListId);
       const tGross = item.quantity * price;
       return {
         ...item,
@@ -473,7 +508,37 @@ export const AdvancedOrderEntry: React.FC = () => {
       };
     });
     applyPromotions(tempCart, priceListId);
-    alert("Precios del carrito actualizados según lista y unidades configuradas.");
+    showDialog('success', 'Precios Actualizados', "Precios del carrito actualizados según la lista oficial y unidades configuradas.");
+  };
+
+  const handleInlinePriceChange = (id: string, newPriceStr: string) => {
+    if (!isAdmin) return;
+    const newPrice = Number(newPriceStr);
+    if (isNaN(newPrice) || newPrice < 0) return;
+
+    let tempCart = [...cart];
+    const itemIndex = tempCart.findIndex(i => i.id === id);
+    if (itemIndex < 0) return;
+
+    const item = tempCart[itemIndex];
+    const tGross = item.quantity * newPrice;
+    tempCart[itemIndex] = { ...item, unit_price: newPrice, total_price: tGross - (tGross * (item.discount_percent / 100)) };
+    applyPromotions(tempCart, priceListId);
+  };
+
+  const handleInlineDiscountChange = (id: string, newDiscStr: string) => {
+    if (!isAdmin) return;
+    const newDisc = Number(newDiscStr);
+    if (isNaN(newDisc) || newDisc < 0 || newDisc > 100) return;
+
+    let tempCart = [...cart];
+    const itemIndex = tempCart.findIndex(i => i.id === id);
+    if (itemIndex < 0) return;
+
+    const item = tempCart[itemIndex];
+    const tGross = item.quantity * item.unit_price;
+    tempCart[itemIndex] = { ...item, discount_percent: newDisc, total_price: tGross - (tGross * (newDisc / 100)) };
+    applyPromotions(tempCart, priceListId);
   };
 
   const handleCartQtyChange = (id: string, newQty: number) => {
@@ -498,7 +563,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     }
 
     if (totalStock < requiredBaseUnits && !item.is_bonus) {
-        alert(`❌ Stock Insuficiente para ${pRef.name}.\nDisponible: ${totalStock} unid. (Incluye tu reserva original)\nIntentó solicitar: ${requiredBaseUnits} unid.`);
+        showDialog('error', 'Stock Insuficiente', `Disponible: ${totalStock} unid. (Incluye tu reserva original)\nIntentó solicitar: ${requiredBaseUnits} unid.`);
         return;
     }
 
@@ -615,7 +680,7 @@ export const AdvancedOrderEntry: React.FC = () => {
         setCart(loadedItems); 
         setIsSearchModalOpen(false);
     } catch (err: any) {
-        alert('Error al cargar pedido para edición: ' + err.message);
+        showDialog('error', 'Error', 'Error al cargar pedido para edición: ' + err.message);
     } finally {
         setIsSaving(false);
     }
@@ -646,13 +711,13 @@ export const AdvancedOrderEntry: React.FC = () => {
     try { 
       const { PdfEngine } = await import('./PdfEngine');
       await PdfEngine.openDocument(tempOrder as unknown as Sale, docType, dbCompany); 
-    } catch (err) { alert('Error generando la vista previa.'); }
+    } catch (err) { showDialog('error', 'Error', 'Error generando la vista previa.'); }
   };
 
   const handleSaveOrder = async () => {
-    if (!clientName) { alert("Debe ingresar un cliente."); clientInputRef.current?.focus(); return; }
-    if (cart.length === 0) { alert("El pedido no puede estar vacío."); productInputRef.current?.focus(); return; }
-    if (!pedidoSeries && !isEditMode) { alert("Configure una serie para PEDIDO en ajustes."); return; }
+    if (!clientName) { showDialog('warning', 'Faltan Datos', "Debe ingresar un cliente."); clientInputRef.current?.focus(); return; }
+    if (cart.length === 0) { showDialog('warning', 'Faltan Datos', "El pedido no puede estar vacío."); productInputRef.current?.focus(); return; }
+    if (!pedidoSeries && !isEditMode) { showDialog('error', 'Error de Configuración', "Configure una serie para PEDIDO en ajustes."); return; }
 
     setIsSaving(true);
     
@@ -704,10 +769,10 @@ export const AdvancedOrderEntry: React.FC = () => {
       const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
       if (error) throw error;
 
-      alert(isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
+      showDialog('success', 'Éxito', isEditMode ? `¡Pedido modificado con éxito!` : `¡Pedido guardado! Código: ${data?.real_code || pedidoNumber}`);
       handleNewOrder();
     } catch (error: any) { 
-        alert("Error al guardar: " + error.message);
+        showDialog('error', 'Error al guardar', error.message);
     } finally { 
         setIsSaving(false); 
     }
@@ -719,7 +784,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       showAdminAuthModal.action();
       setShowAdminAuthModal({ isOpen: false, action: () => {}, targetName: '' });
       setAdminPwd('');
-    } else { alert("Contraseña incorrecta."); }
+    } else { showDialog('error', 'Denegado', "Contraseña incorrecta."); }
   };
 
   return (
@@ -731,6 +796,42 @@ export const AdvancedOrderEntry: React.FC = () => {
             <h2 className="text-2xl font-black text-white tracking-widest">PROCESANDO PEDIDO...</h2>
             <p className="text-blue-200 font-medium mt-2">Asegurando y reservando stock</p>
         </div>
+      )}
+
+      {/* CUSTOM DIALOG */}
+      {dialog.isOpen && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+              <div className="bg-white rounded-lg shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                  <div className={`p-4 border-b flex items-center gap-3 ${dialog.type === 'error' ? 'bg-red-50 text-red-700' : dialog.type === 'success' ? 'bg-green-50 text-green-700' : dialog.type === 'confirm' ? 'bg-blue-50 text-blue-700' : dialog.type === 'warning' ? 'bg-orange-50 text-orange-700' : 'bg-slate-50 text-slate-700'}`}>
+                      {dialog.type === 'error' && <AlertTriangle className="w-6 h-6 text-red-500" />}
+                      {dialog.type === 'warning' && <AlertTriangle className="w-6 h-6 text-orange-500" />}
+                      {dialog.type === 'success' && <ShieldCheck className="w-6 h-6 text-green-500" />}
+                      {dialog.type === 'confirm' && <HelpCircle className="w-6 h-6 text-blue-500" />}
+                      {dialog.type === 'info' && <CheckCircle2 className="w-6 h-6 text-slate-500" />}
+                      <h3 className="font-bold text-lg">{dialog.title}</h3>
+                  </div>
+                  <div className="p-6 text-slate-700 text-sm whitespace-pre-wrap leading-relaxed">
+                      {dialog.message}
+                  </div>
+                  <div className="p-4 bg-slate-50 border-t flex justify-end gap-3">
+                      {dialog.type === 'confirm' && (
+                          <button type="button" onClick={closeDialog} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded shadow-sm transition-colors">
+                              Cancelar
+                          </button>
+                      )}
+                      <button
+                          type="button"
+                          onClick={() => {
+                              if (dialog.onConfirm) dialog.onConfirm();
+                              closeDialog();
+                          }}
+                          className={`px-5 py-2.5 font-bold rounded shadow-sm text-white transition-colors ${dialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' : dialog.type === 'success' ? 'bg-green-600 hover:bg-green-700' : dialog.type === 'warning' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'}`}
+                      >
+                          {dialog.type === 'confirm' ? 'Confirmar' : 'Aceptar'}
+                      </button>
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* CABECERA PRINCIPAL REORGANIZADA */}
@@ -942,25 +1043,44 @@ export const AdvancedOrderEntry: React.FC = () => {
             <label className="block text-[10px] font-bold text-slate-500 mb-1">Precio Unit.</label>
             <div className="relative">
                 <input 
+                    id="entryPriceInput"
                     type="number" 
-                    className="w-full py-1.5 pl-2 pr-6 border border-slate-300 rounded text-right text-sm font-bold bg-slate-100 text-slate-500 outline-none cursor-not-allowed" 
-                    readOnly 
-                    value={entryPrice.toFixed(2)} 
+                    className={`w-full py-1.5 pl-2 pr-6 border border-slate-300 rounded text-right text-sm font-bold bg-slate-100 ${isAdmin ? 'text-slate-800 focus:ring-2 focus:ring-blue-500' : 'text-slate-500 cursor-not-allowed'} outline-none`}
+                    readOnly={!isAdmin} 
+                    value={entryPrice} 
+                    onChange={e => setEntryPrice(Number(e.target.value))}
+                    onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const el = document.getElementById('entryDiscountInput');
+                            if (el) el.focus();
+                            else executeAddToCart();
+                        }
+                    }}
                 />
-                <Lock className="absolute right-2 top-2 w-3 h-3 text-slate-400" />
+                {!isAdmin && <Lock className="absolute right-2 top-2 w-3 h-3 text-slate-400" />}
             </div>
           </div>
 
-          <div className="w-20">
+          <div className="w-20 relative">
             <label className="block text-[10px] font-bold text-slate-500 mb-1 text-right">% Dsc</label>
             <div className="relative">
                 <input 
+                    id="entryDiscountInput"
                     type="number" 
-                    className="w-full py-1.5 pl-2 pr-5 border border-slate-300 rounded text-right text-sm font-bold bg-slate-100 text-slate-500 outline-none cursor-not-allowed" 
-                    readOnly 
+                    className={`w-full py-1.5 pl-2 pr-5 border border-slate-300 rounded text-right text-sm font-bold bg-slate-100 ${isAdmin ? 'text-slate-800 focus:ring-2 focus:ring-blue-500' : 'text-slate-500 cursor-not-allowed'} outline-none`}
+                    readOnly={!isAdmin} 
                     value={entryDiscount} 
+                    onChange={e => setEntryDiscount(Number(e.target.value))}
+                    onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            addBtnRef.current?.focus();
+                            executeAddToCart();
+                        }
+                    }}
                 />
-                <Lock className="absolute right-1 top-2 w-3 h-3 text-slate-400" />
+                {!isAdmin && <Lock className="absolute right-1 top-2 w-3 h-3 text-slate-400" />}
             </div>
           </div>
 
@@ -974,7 +1094,7 @@ export const AdvancedOrderEntry: React.FC = () => {
             </label>
           </div>
 
-          <button onClick={() => { if(entryBonus) setShowAdminAuthModal({isOpen: true, action: executeAddToCart, targetName: 'Autorizar Regalo'}); else executeAddToCart(); }} disabled={!selectedProduct} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded shadow disabled:opacity-50 transition-colors">
+          <button ref={addBtnRef} onClick={() => { if(entryBonus) setShowAdminAuthModal({isOpen: true, action: executeAddToCart, targetName: 'Autorizar Regalo'}); else executeAddToCart(); }} disabled={!selectedProduct} className="bg-blue-600 hover:bg-blue-700 text-white p-2 rounded shadow disabled:opacity-50 transition-colors">
             <Plus className="w-5 h-5" />
           </button>
         </div>
@@ -1019,8 +1139,30 @@ export const AdvancedOrderEntry: React.FC = () => {
                     )}
                   </td>
                   <td className="p-2 text-center font-bold text-slate-500 uppercase">{item.unit_type}</td>
-                  <td className="p-2 text-right font-medium">S/ {item.unit_price.toFixed(2)}</td>
-                  <td className="p-2 text-right text-slate-500">{item.discount_percent > 0 ? `${item.discount_percent}%` : '-'}</td>
+                  <td className="p-2 text-right font-medium">
+                      {!item.is_bonus && isAdmin ? (
+                          <input 
+                              type="number" min="0" step="0.01"
+                              className="w-20 text-right bg-white border border-slate-300 rounded px-1 py-1 font-bold outline-none focus:ring-1 focus:ring-blue-500"
+                              value={item.unit_price}
+                              onChange={e => handleInlinePriceChange(item.id, e.target.value)}
+                          />
+                      ) : (
+                          `S/ ${item.unit_price.toFixed(2)}`
+                      )}
+                  </td>
+                  <td className="p-2 text-right text-slate-500">
+                      {!item.is_bonus && isAdmin ? (
+                          <input 
+                              type="number" min="0" max="100" step="1"
+                              className="w-14 text-right bg-white border border-slate-300 rounded px-1 py-1 font-bold outline-none focus:ring-1 focus:ring-blue-500"
+                              value={item.discount_percent}
+                              onChange={e => handleInlineDiscountChange(item.id, e.target.value)}
+                          />
+                      ) : (
+                          item.discount_percent > 0 ? `${item.discount_percent}%` : '-'
+                      )}
+                  </td>
                   <td className="p-2 text-right font-black text-slate-900 text-sm">S/ {item.total_price.toFixed(2)}</td>
                   <td className="p-2 text-center">
                     <button onClick={() => {
