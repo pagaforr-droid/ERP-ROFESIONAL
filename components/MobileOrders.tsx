@@ -98,6 +98,7 @@ export const MobileOrders: React.FC = () => {
 
    // --- SYSTEM NATIVE MODALS ---
    const [systemAlert, setSystemAlert] = useState<{ show: boolean, message: string, type?: 'info'|'error'|'success', title?: string }>({ show: false, message: '' });
+   const [showReviewModal, setShowReviewModal] = useState(false);
    const [systemConfirm, setSystemConfirm] = useState<{ show: boolean, message: string, onConfirm: () => void, title?: string }>({ show: false, message: '', onConfirm: () => {} });
    
 
@@ -961,9 +962,11 @@ export const MobileOrders: React.FC = () => {
                         <span className="text-slate-500 font-bold uppercase text-xs tracking-widest">Total del Pedido:</span>
                         <span className="text-3xl font-black text-blue-600 leading-none">S/ {cartTotal.toFixed(2)}</span>
                      </div>
-                     <button onClick={handleSaveOrder} disabled={cart.length === 0 || isSaving} className={`w-full text-white py-3 rounded-xl font-black text-sm shadow-lg flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 disabled:shadow-none ${isEditMode ? 'bg-red-600 shadow-red-600/30' : 'bg-slate-900 shadow-slate-900/30'}`}>
+                     <button onClick={() => setShowReviewModal(true)} disabled={cart.length === 0 || isSaving}  className={`w-full text-white py-3 rounded-xl font-black text-sm shadow-lg flex justify-center items-center gap-2 transition-transform active:scale-95 disabled:opacity-50 disabled:shadow-none ${isEditMode ? 'bg-red-600 shadow-red-600/30' : 'bg-slate-900 shadow-slate-900/30'}`}>
+                        
                         {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
                         {isEditMode ? 'SOBREESCRIBIR PEDIDO' : 'CONFIRMAR Y ENVIAR PEDIDO'}
+                     
                      </button>
                      <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full mt-2.5 py-3 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-xl font-black flex items-center justify-center gap-2 active:bg-indigo-100 transition-colors text-sm shadow-sm">
                         <Plus className="w-5 h-5" /> AGREGAR PRODUCTOS
@@ -1129,6 +1132,69 @@ export const MobileOrders: React.FC = () => {
    return (
       <>
          {renderContent()}
+
+         
+         {/* --- INTERACTIVE REVIEW MODAL --- */}
+         {showReviewModal && (
+            <div className="fixed inset-0 z-[150] flex flex-col bg-slate-50 animate-fade-in-up">
+               <div className="bg-slate-900 text-white p-4 shrink-0 shadow-lg z-20">
+                  <h2 className="text-xl font-black mb-1">Revisión Final</h2>
+                  <p className="text-sm text-slate-300">Verifica o edita las cantidades antes de enviar.</p>
+               </div>
+               
+               <div className="bg-white p-3 border-b border-slate-200 shrink-0 shadow-sm z-10 flex justify-between items-center">
+                  <div>
+                     <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">Total:</div>
+                     <div className="text-3xl font-black text-blue-600 leading-none">S/ {cartTotal.toFixed(2)}</div>
+                  </div>
+                  <div className="text-right">
+                     <div className="text-xs font-bold text-slate-500">{cart.length} productos</div>
+                  </div>
+               </div>
+
+               <div className="flex-1 overflow-y-auto p-2 pb-[200px] space-y-1.5 bg-slate-100">
+                     {cart.map((item, idx) => (
+                        <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-300 bg-green-50' : item.name.includes('(Duplicado)') ? 'border-orange-300 bg-orange-50' : 'border-slate-200'}`}>
+                           <div className={`flex justify-between items-center p-2 border-b ${item.is_bonus ? 'border-green-100 bg-green-100/50' : item.name.includes('(Duplicado)') ? 'border-orange-200 bg-orange-100/50' : 'border-slate-100 bg-slate-50'}`}>
+                              <div className="font-bold text-slate-800 text-[11px] pr-2 leading-tight truncate">
+                                 {item.is_bonus && <span className="bg-green-500 text-white text-[8px] px-1 py-0.5 rounded mr-1 uppercase">Premio</span>}
+                                 {item.name.includes('(Duplicado)') && <span className="bg-orange-500 text-white text-[8px] px-1 py-0.5 rounded mr-1 uppercase">x2</span>}
+                                 {item.name.replace(' (Duplicado)', '')}
+                              </div>
+                              {!item.auto_promo_id && <button onClick={() => { let tempCart = cart.filter(c => c.id !== item.id); applyPromotions(tempCart, priceListId); }} className="text-slate-400 p-1 active:text-red-500"><X className="w-4 h-4" /></button>}
+                           </div>
+                           <div className="p-1 flex items-center justify-between">
+                              {!item.is_bonus ? (
+                                 <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 border border-slate-200">
+                                    <button onClick={() => handleCartQtyChange(item.id, item.quantity - 1)} className="w-7 h-7 flex items-center justify-center bg-white text-slate-600 rounded shadow-sm active:scale-95"><Minus className="w-4 h-4" /></button>
+                                    <div className="w-7 text-center font-black text-sm text-slate-800 text-base">{item.quantity}</div>
+                                    <button onClick={() => handleCartQtyChange(item.id, item.quantity + 1)} className="w-7 h-7 flex items-center justify-center bg-white text-slate-600 rounded shadow-sm active:scale-95"><Plus className="w-4 h-4" /></button>
+                                 </div>
+                              ) : (
+                                 <div className="font-black text-green-600 text-xl pl-2">{item.quantity}</div>
+                              )}
+                              <div className="text-right flex flex-col justify-center">
+                                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-0.5">{item.unit_type} | S/ {item.unit_price.toFixed(2)}</div>
+                                 <div className="font-black text-slate-900 text-base leading-none">S/ {Number(item.total_price || 0).toFixed(2)}</div>
+                              </div>
+                           </div>
+                        </div>
+                     ))}
+               </div>
+
+               <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-slate-200 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-20 pb-safe">
+                  <div className="flex gap-3 max-w-md mx-auto">
+                     <button onClick={() => setShowReviewModal(false)} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black active:scale-95 transition-transform flex items-center justify-center gap-2">
+                        <ChevronLeft className="w-5 h-5" /> Volver
+                     </button>
+                     <button onClick={() => { setShowReviewModal(false); handleSaveOrder(); }} disabled={cart.length === 0 || isSaving} className={`flex-1 py-4 text-white rounded-2xl font-black shadow-lg flex justify-center items-center gap-2 active:scale-95 transition-transform ${isEditMode ? 'bg-red-600 shadow-red-600/30' : 'bg-green-600 shadow-green-600/30'}`}>
+                        {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+                        ENVIAR
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
 
          {/* --- SYSTEM NATIVE MODALS --- */}
          {systemAlert.show && (
