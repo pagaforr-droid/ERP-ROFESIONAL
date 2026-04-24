@@ -218,6 +218,11 @@ const FacturaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: a
   const base = total / 1.18;
   const balanceDue = Number(data.previous_debt || 0);
 
+  // Formato QR SUNAT: RUC | TIPO_DOC | SERIE | NUMERO | IGV | TOTAL | FECHA | TIPO_DOC_CLIENTE | NUM_DOC_CLIENTE | HASH | FIRMA
+  const docDate = (data.created_at || data.date || new Date().toISOString()).split('T')[0];
+  const qrData = `${companyInfo.ruc || '20000000001'}|01|${data.series || 'F001'}|${data.number || '00000000'}|${igv.toFixed(2)}|${total.toFixed(2)}|${docDate}|6|${data.client_ruc || data.client_id || '00000000'}|HASH|FIRMA`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
+
   return (
     <View style={styles.halfPage}>
       <View style={styles.headerRow}>
@@ -241,7 +246,7 @@ const FacturaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: a
       {/* Contenedor de Totales */}
       <View style={styles.facturaTotalsContainer}>
         <View style={styles.qrSection}>
-           <View style={styles.qrBox}><Text style={styles.qrText}>QR</Text></View>
+           <PdfImage source={{ uri: qrUrl, method: 'GET' }} style={{ width: 35, height: 35, margin: 1 }} />
         </View>
 
         <View style={styles.totalsGrid}>
@@ -290,6 +295,12 @@ const BoletaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: an
   const code = data.code || `${data.series || 'B001'}-${data.number || '00000000'}`;
   const balanceDue = Number(data.previous_debt || 0);
 
+  const total = Number(data.total || 0);
+  const igv = total - (total / 1.18);
+  const docDate = (data.created_at || data.date || new Date().toISOString()).split('T')[0];
+  const qrData = `${companyInfo.ruc || '20000000001'}|03|${data.series || 'B001'}|${data.number || '00000000'}|${igv.toFixed(2)}|${total.toFixed(2)}|${docDate}|1|${data.client_ruc || data.client_id || '00000000'}|HASH|FIRMA`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
+
   return (
     <View style={{ flex: 1, flexDirection: 'column', height: '48%', justifyContent: 'space-between' }}>
       <View style={[styles.headerRow, { marginBottom: 10 }]}>
@@ -320,7 +331,7 @@ const BoletaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: an
 
       <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 5 }}>
         <View style={{ flexDirection: 'column', alignItems: 'center' }}>
-           <View style={[styles.qrBox, { width: 40, height: 35 }]}><Text style={styles.qrText}>QR CODE</Text></View>
+           <PdfImage source={{ uri: qrUrl, method: 'GET' }} style={{ width: 40, height: 40, margin: 1 }} />
         </View>
         <View style={{ flex: 1, alignItems: 'center' }}><Text style={[styles.legalText, { marginTop: 0 }]}>Representación impresa del comprobante de pago electrónico.</Text></View>
       </View>

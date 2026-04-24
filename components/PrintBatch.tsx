@@ -111,10 +111,18 @@ export const PrintBatch: React.FC = () => {
             if (dateFrom) salesQuery = salesQuery.gte('created_at', `${dateFrom}T00:00:00`);
             if (dateTo) salesQuery = salesQuery.lte('created_at', `${dateTo}T23:59:59`);
             
+            // Fetch Sellers to inject seller_name
+            const { data: sellersData } = await supabase.from('sellers').select('*');
+
             const { data: salesData, error: salesError } = await salesQuery;
             if (salesError) throw salesError;
             
-            setDbSales(salesData || []);
+            const mappedSalesData = (salesData || []).map(sale => {
+                const sellerObj = sellersData?.find(s => s.id === sale.seller_id);
+                return { ...sale, seller_name: sellerObj ? sellerObj.name : (sale.seller_name || '') };
+            });
+
+            setDbSales(mappedSalesData);
 
             // 2. Fetch Dispatch Sheets
             let dispatchQuery = supabase.from('dispatch_sheets').select('*');
