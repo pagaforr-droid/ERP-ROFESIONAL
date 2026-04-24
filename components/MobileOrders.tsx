@@ -1160,17 +1160,6 @@ export const MobileOrders: React.FC = () => {
             </div>
          )}
          
-         {duplicateToast && (
-            <div className="fixed top-4 left-4 right-4 z-[300] animate-fade-in-down pointer-events-none">
-               <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-xl shadow-lg flex items-start gap-3 max-w-md mx-auto">
-                  <div className="text-red-500 mt-0.5"><CheckCircle className="w-5 h-5" /></div>
-                  <div>
-                     <h4 className="font-bold text-red-800 text-sm">Item Duplicado</h4>
-                     <p className="text-red-600 text-xs mt-0.5 font-medium">{duplicateToast}</p>
-                  </div>
-               </div>
-            </div>
-         )}
       </>
    );
 };
