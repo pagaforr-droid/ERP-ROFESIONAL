@@ -810,7 +810,7 @@ export const MobileOrders: React.FC = () => {
                )}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 overflow-y-auto p-4 pb-[200px] space-y-3">
                {listTab === 'CLIENTS' && filteredClientsList.map(c => {
                   const debt = dbSales.filter(s => s.client_id === c.id && s.payment_status === 'PENDING').reduce((sum, s) => sum + Number(s.balance ?? s.total ?? 0), 0);
                   return (
@@ -973,7 +973,7 @@ export const MobileOrders: React.FC = () => {
                      </button>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto p-2 pb-12 space-y-1.5 bg-slate-100">
+                  <div className="flex-1 overflow-y-auto p-2 pb-[200px] space-y-1.5 bg-slate-100">
                      {cart.map((item, idx) => (
                         <div key={idx} className={`bg-white border rounded-xl overflow-hidden shadow-sm ${item.is_bonus ? 'border-green-300 bg-green-50' : 'border-slate-200'}`}>
                            <div className={`flex justify-between items-center p-2 border-b ${item.is_bonus ? 'border-green-100 bg-green-100/50' : 'border-slate-100 bg-slate-50'}`}>
@@ -1066,7 +1066,7 @@ export const MobileOrders: React.FC = () => {
                </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+            <div className="flex-1 overflow-y-auto p-2 pb-[200px] space-y-1.5">
                {selectedProduct ? (
                   <div className="bg-white p-5 rounded-2xl shadow-lg border border-slate-100 animate-slide-up mt-2">
                      <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">{selectedProduct.sku}</div>
