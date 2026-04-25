@@ -114,7 +114,7 @@ export const DispatchLiquidationComp: React.FC = () => {
 
    const dispatchSales = useMemo(() => getSalesForDispatch(), [selectedDispatch, sales, extraSaleIds]);
    const pendingDispatches = useMemo(() => dispatchSheets.filter(d => d.status !== 'completed'), [dispatchSheets]);
-   const liquidatedDispatches = useMemo(() => dispatchLiquidations.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [dispatchLiquidations]);
+   const liquidatedDispatches = useMemo(() => [...dispatchLiquidations].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [dispatchLiquidations]);
 
    const startLiquidation = (ds: DispatchSheet) => {
       setSelectedDispatch(ds);
