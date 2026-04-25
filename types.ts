@@ -718,6 +718,7 @@ export type ViewState =
   | 'reports'
   | 'accounting-reports'
   | 'kardex'
+  | 'system-maintenance'
   | 'users'
   | 'attendance'
   | 'clients'

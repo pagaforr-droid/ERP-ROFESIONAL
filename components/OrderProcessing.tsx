@@ -305,8 +305,13 @@ export const OrderProcessing: React.FC = () => {
                continue; // Move to the next order
             }
 
-            // Update order status only if ALL chunks were successfully processed
-            await supabase.from('orders').update({ status: 'processed' }).eq('id', order.id);
+            // Purga Inmediata (Decisión Arquitectónica):
+            // Desvincular ventas generadas del pedido para evitar errores de Foreign Key
+            await supabase.from('sales').update({ origin_order_id: null }).eq('origin_order_id', order.id);
+            // Eliminar los detalles del pedido
+            await supabase.from('order_items').delete().eq('order_id', order.id);
+            // Eliminar el pedido original para purgar el sistema
+            await supabase.from('orders').delete().eq('id', order.id);
          }
 
          setProcessResult({

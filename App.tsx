@@ -32,7 +32,8 @@ import { CreditNotes } from './components/CreditNotes';
 import { QuotaManager } from './components/QuotaManager';
 import { AccountingReports } from './components/AccountingReports';
 import { Login } from './components/Login';
-import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight, FileSpreadsheet, ChevronLeft, ChevronRight, Edit3 } from 'lucide-react';
+import { SystemMaintenance } from './components/SystemMaintenance';
+import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight, FileSpreadsheet, ChevronLeft, ChevronRight, Edit3, HardDrive } from 'lucide-react';
 import { ViewState } from './types';
 import { useStore } from './services/store';
 
@@ -84,7 +85,7 @@ type ThemeKey = keyof typeof COLOR_THEMES;
 
 export default function App() {
   // AÑADIDO 'edit-sale' A LOS TIPOS DE VISTA POSIBLES
-  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale'>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'system-maintenance'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
   const { company, currentUser, logout } = useStore();
@@ -143,6 +144,7 @@ export default function App() {
       case 'promo-manager': return <PromoManager />;
       case 'price-manager': return <PriceManager />;
       case 'virtual-store': return <VirtualStore />;
+      case 'system-maintenance': return <SystemMaintenance />;
       default: return <Dashboard />;
     }
   };
@@ -280,6 +282,7 @@ export default function App() {
             <NavItem view="accounting-reports" icon={FileSpreadsheet} label="Reportes Contables" />
             <NavItem view="quota-manager" icon={ClipboardList} label="Gestión de Cuotas" />
             <NavItem view="users" icon={Shield} label="Usuarios & Permisos" />
+            <NavItem view="system-maintenance" icon={HardDrive} label="Mantenimiento DB" />
             <NavItem view="personnel-management" icon={Users} label="RRHH y Planilla" />
             <NavItem view="attendance" icon={Clock} label="Control Asistencia" />
           </Section>
