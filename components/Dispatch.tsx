@@ -1464,10 +1464,10 @@ export const Dispatch: React.FC = () => {
                         </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-100">
-                        {dispatchSheets.filter(d => d.status !== 'in_transit').length === 0 ? (
+                        {dispatchSheets.length === 0 ? (
                            <tr><td colSpan={6} className="p-8 text-center text-slate-400 font-medium">No hay historial de planillas disponible.</td></tr>
                         ) : (
-                           dispatchSheets.filter(d => d.status !== 'in_transit').map(ds => {
+                           dispatchSheets.map(ds => {
                               const v = vehicles.find(x => x.id === ds.vehicle_id);
                               const d = drivers.find(x => x.id === v?.driver_id);
                               return (
