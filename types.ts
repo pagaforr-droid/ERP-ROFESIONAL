@@ -565,6 +565,7 @@ export interface DispatchLiquidation {
   total_voided: number;
   total_returns_value: number;
   documents: LiquidationDocument[];
+  status?: 'PROCESADO' | 'COMPLETADO' | string;
 }
 
 export interface PurchasePayment {

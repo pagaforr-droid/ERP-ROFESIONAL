@@ -165,6 +165,50 @@ export const DispatchLiquidationComp: React.FC = () => {
       setProcessedDocs(prev => ({ ...prev, [sale.id]: doc }));
    };
 
+   const handleAbonoChange = (sale: Sale, amountStr: string) => {
+      let val = parseFloat(amountStr);
+      if (isNaN(val)) val = 0;
+      if (val < 0) val = 0;
+      if (val > sale.total) val = sale.total; // Can't pay more than total
+
+      const currentStatus = processedDocs[sale.id];
+      // If it's already voided or partial return, maybe block it or just allow?
+      // Best to allow overriding but reset to PAID/CREDIT hybrid state.
+      
+      const doc: LiquidationDocument = {
+         sale_id: sale.id,
+         action: val >= sale.total ? 'PAID' : (val === 0 ? 'CREDIT' : 'PAID'), // Mixed state is basically PAID with partial credit
+         amount_collected: val,
+         amount_credit: sale.total - val,
+         amount_void: 0,
+         amount_credit_note: 0,
+         returned_items: []
+      };
+      setProcessedDocs(prev => ({ ...prev, [sale.id]: doc }));
+   };
+
+   const markAllAsPaid = () => {
+      if (!confirm('¿Marcar TODOS los documentos pendientes como cobrados en su totalidad?')) return;
+      
+      const updated: Record<string, LiquidationDocument> = { ...processedDocs };
+      dispatchSales.forEach(sale => {
+         const status = updated[sale.id];
+         // Only modify if it hasn't been voided or partially returned
+         if (status && status.action !== 'VOID' && status.action !== 'PARTIAL_RETURN') {
+            updated[sale.id] = {
+               sale_id: sale.id,
+               action: 'PAID',
+               amount_collected: sale.total,
+               amount_credit: 0,
+               amount_void: 0,
+               amount_credit_note: 0,
+               returned_items: []
+            };
+         }
+      });
+      setProcessedDocs(updated);
+   };
+
    const openVoidModal = (saleId: string) => {
       setTargetSaleId(saleId);
       setVoidReason('');
@@ -806,140 +850,121 @@ export const DispatchLiquidationComp: React.FC = () => {
                   <p className="text-sm text-slate-500">{dispatchSales.length} documentos asignados</p>
                </div>
                <div className="flex gap-2">
+                  <button onClick={markAllAsPaid} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold shadow flex items-center">
+                     <CheckCircle className="w-4 h-4 mr-2" /> Cobrar Todo
+                  </button>
                   <button
                      onClick={() => { setExtraDocSearch(''); setActiveModal('ADD_EXTRA'); }}
                      className="bg-slate-100 text-slate-700 px-4 py-2 border border-slate-300 rounded font-bold shadow-sm hover:bg-slate-200 flex items-center"
                   >
-                     <Plus className="w-4 h-4 mr-2" /> Agregar Documento
+                     <Plus className="w-4 h-4 mr-2" /> Agregar Doc
                   </button>
                   <button onClick={() => setCurrentStep('SUMMARY')} className="bg-green-600 text-white px-6 py-2 rounded font-bold shadow hover:bg-green-700 flex items-center">
-                     Siguiente: Resumen <ArrowRight className="w-4 h-4 ml-2" />
+                     Siguiente <ArrowRight className="w-4 h-4 ml-2" />
                   </button>
                </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-2 space-y-2">
-               {dispatchSales.map(sale => {
-                  const status = processedDocs[sale.id];
-                  if (!status) return null; // Safety check
+            <div className="flex-1 overflow-auto bg-white">
+               <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-800 text-white sticky top-0 z-10 font-bold text-[11px]">
+                     <tr>
+                        <th className="p-3 uppercase">Documento</th>
+                        <th className="p-3 uppercase">Cliente</th>
+                        <th className="p-3 uppercase text-right">Total</th>
+                        <th className="p-3 uppercase text-center w-32">Abono (S/)</th>
+                        <th className="p-3 uppercase text-right">Saldo</th>
+                        <th className="p-3 uppercase text-center">Forma Pago</th>
+                        <th className="p-3 uppercase text-center">Acciones Rápidas</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                     {dispatchSales.map(sale => {
+                        const status = processedDocs[sale.id];
+                        if (!status) return null;
 
-                  return (
-                     <div key={sale.id} className={`bg-white p-2.5 rounded-lg shadow-sm border-l-4 flex flex-col gap-1.5 ${status.action === 'PAID' ? 'border-green-500' :
-                        status.action === 'CREDIT' ? 'border-blue-500' :
-                           status.action === 'VOID' ? 'border-red-500' : 'border-orange-500'
-                        }`}>
-                        {/* Top Row: Info */}
-                        <div className="flex justify-between items-start">
-                           <div>
-                              <div className="font-bold text-slate-800 text-base flex items-center gap-2 leading-tight">
+                        const isVoid = status.action === 'VOID';
+                        const isPartial = status.action === 'PARTIAL_RETURN';
+                        const saldo = sale.total - status.amount_collected - status.amount_credit_note; // Adjusted saldo logic
+
+                        return (
+                           <tr key={sale.id} className={`hover:bg-slate-50 transition-colors ${isVoid ? 'opacity-60 bg-red-50' : isPartial ? 'bg-orange-50/40' : ''}`}>
+                              <td className="p-3 font-mono text-slate-700 text-xs">
+                                 {sale.document_type.substring(0, 2)}/{sale.series}-{sale.number}
+                                 {extraSaleIds.includes(sale.id) && <span className="block text-[9px] text-blue-600 font-bold uppercase mt-0.5">Agregado Manual</span>}
+                              </td>
+                              <td className="p-3 text-slate-800 font-bold text-[11px] max-w-[180px] truncate" title={sale.client_name}>
                                  {sale.client_name}
-                                 {extraSaleIds.includes(sale.id) && (
-                                    <span className="text-[9px] bg-blue-100 text-blue-800 px-1 py-0.5 rounded uppercase">AGREGADO MANUALMENTE</span>
+                              </td>
+                              <td className="p-3 text-right font-bold text-slate-900 text-xs">
+                                 {sale.total.toFixed(2)}
+                              </td>
+                              <td className="p-2 text-center">
+                                 <input
+                                    type="number"
+                                    min="0"
+                                    step="0.10"
+                                    disabled={isVoid || isPartial}
+                                    className="w-20 border border-slate-300 rounded px-2 py-1 text-right font-bold text-sm focus:ring-2 focus:ring-blue-500 disabled:bg-transparent disabled:border-transparent disabled:text-slate-500 outline-none"
+                                    value={status.amount_collected}
+                                    onChange={(e) => handleAbonoChange(sale, e.target.value)}
+                                 />
+                              </td>
+                              <td className="p-3 text-right font-bold text-xs">
+                                 {isVoid ? '-' : Math.max(0, saldo).toFixed(2)}
+                                 {isPartial && <div className="text-[9px] text-orange-600 block leading-none mt-0.5">NC: {status.amount_credit_note.toFixed(2)}</div>}
+                              </td>
+                              <td className="p-3 text-center">
+                                 {isVoid ? (
+                                    <span className="px-2 py-0.5 text-[9px] font-bold bg-red-100 text-red-800 rounded">ANULADO</span>
+                                 ) : isPartial ? (
+                                    <span className="px-2 py-0.5 text-[9px] font-bold bg-orange-100 text-orange-800 rounded">SALDO {status.balance_payment_method}</span>
+                                 ) : status.action === 'PAID' ? (
+                                    <span className="px-2 py-0.5 text-[9px] font-bold bg-green-100 text-green-800 rounded">CONTADO</span>
+                                 ) : (
+                                    <span className="px-2 py-0.5 text-[9px] font-bold bg-blue-100 text-blue-800 rounded">CRÉDITO</span>
                                  )}
-                              </div>
-                              <div className="text-slate-500 text-xs font-mono flex items-center gap-2 mt-0.5">
-                                 {sale.document_type} {sale.series}-{sale.number}
-                                 {status.action !== 'VOID' && status.action !== 'PAID' && (
+                              </td>
+                              <td className="p-2 text-center">
+                                 <div className="flex justify-center gap-1">
                                     <button
-                                       onClick={() => openChangeTypeModal(sale.id)}
-                                       className="text-[10px] text-blue-600 hover:underline flex items-center ml-1"
+                                       title="Cobrar Totalidad"
+                                       disabled={isVoid || isPartial}
+                                       onClick={() => handleQuickAction(sale, 'PAID')}
+                                       className={`p-1.5 rounded border transition-colors disabled:opacity-30 ${status.action === 'PAID' && !isPartial && !isVoid ? 'bg-green-600 text-white border-green-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-green-50 hover:text-green-600'}`}
                                     >
-                                       Cambiar Tipo
+                                       <DollarSign className="w-3.5 h-3.5" />
                                     </button>
-                                 )}
-                              </div>
-                           </div>
-                           <div className="text-right">
-                              <div className="font-bold text-lg text-slate-900 leading-tight">S/ {(sale.total || 0).toFixed(2)}</div>
-                              <div className="text-[10px] font-bold text-slate-400">{sale.payment_method}</div>
-                           </div>
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex gap-1.5 bg-slate-50 p-1.5 rounded justify-between items-center flex-wrap mt-0.5">
-                           <div className="flex gap-1.5">
-                              <button
-                                 onClick={() => handleQuickAction(sale, 'PAID')}
-                                 className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center border transition-all ${status.action === 'PAID' ? 'bg-green-600 text-white border-green-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-green-50'}`}
-                              >
-                                 <DollarSign className="w-3 h-3 mr-1" /> COBRADO
-                              </button>
-                              <button
-                                 onClick={() => handleQuickAction(sale, 'CREDIT')}
-                                 className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center border transition-all ${status.action === 'CREDIT' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50'}`}
-                              >
-                                 <CreditCard className="w-3 h-3 mr-1" /> CRÉDITO
-                              </button>
-                           </div>
-                           <div className="flex gap-1.5">
-                              <button
-                                 onClick={() => openPartialModal(sale.id)}
-                                 className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center border transition-all ${status.action === 'PARTIAL_RETURN' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-600 border-slate-300 hover:bg-orange-50'}`}
-                              >
-                                 <AlertTriangle className="w-3 h-3 mr-1" /> PARCIAL (NC)
-                              </button>
-                              <button
-                                 onClick={() => openVoidModal(sale.id)}
-                                 className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center border transition-all ${status.action === 'VOID' ? 'bg-red-600 text-white border-red-600' : 'bg-white text-slate-600 border-slate-300 hover:bg-red-50'}`}
-                              >
-                                 <Ban className="w-3 h-3 mr-1" /> ANULAR
-                              </button>
-                           </div>
-                        </div>
-
-                        {/* Contextual Status Info */}
-                        {status.action === 'PARTIAL_RETURN' && (
-                           <div className="text-xs bg-orange-50 text-orange-900 p-2 rounded border border-orange-200 flex justify-between items-center">
-                              <span>
-                                 <span className="font-bold block text-red-600">Devolución (NC): S/ {status.amount_credit_note.toFixed(2)}</span>
-                                 <span className="text-[10px] text-slate-500">{status.credit_note_series}</span>
-                              </span>
-                              <span className="text-right">
-                                 <span className="font-bold block">Saldo {status.balance_payment_method}:</span>
-                                 <span className="text-lg font-bold">S/ {(status.amount_collected + status.amount_credit).toFixed(2)}</span>
-                              </span>
-                           </div>
-                        )}
-                        {status.action === 'VOID' && (
-                           <div className="text-xs bg-red-50 text-red-900 p-2 rounded border border-red-200">
-                              <span className="font-bold">ANULADO - Motivo:</span> {status.reason}
-                           </div>
-                        )}
-
-                        {/* MOBILE DELIVERY EVIDENCE */}
-                        {(sale.delivery_reason || sale.delivery_photo || sale.delivery_location) && (
-                           <div className="text-xs bg-blue-50/50 p-2 rounded border border-blue-100 mt-1">
-                              <div className="font-bold text-blue-900 mb-1 flex items-center">
-                                 <FileText className="w-3 h-3 mr-1" /> Evidencia de Reparto Móvil ({(sale.dispatch_status || '').toUpperCase()})
-                              </div>
-                              {sale.delivery_reason && (
-                                 <p className="text-slate-700 italic border-l-2 border-blue-300 pl-2 mb-2">"{sale.delivery_reason}"</p>
-                              )}
-                              <div className="flex gap-2">
-                                 {sale.delivery_photo && (
                                     <button
-                                       onClick={() => { setPhotoTargetUrl(sale.delivery_photo || null); setActiveModal('PHOTO'); }}
-                                       className="bg-white border border-slate-300 px-2 py-1 rounded shadow-sm text-slate-700 flex items-center hover:bg-slate-50 transition-colors"
+                                       title="Pasar a Crédito Total"
+                                       disabled={isVoid || isPartial}
+                                       onClick={() => handleQuickAction(sale, 'CREDIT')}
+                                       className={`p-1.5 rounded border transition-colors disabled:opacity-30 ${status.action === 'CREDIT' && !isPartial && !isVoid ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50 hover:text-blue-600'}`}
                                     >
-                                       <ImageIcon className="w-3 h-3 mr-1 text-blue-500" /> Ver Foto Adjunta
+                                       <CreditCard className="w-3.5 h-3.5" />
                                     </button>
-                                 )}
-                                 {sale.delivery_location && (
-                                    <a
-                                       href={`https://www.google.com/maps/search/?api=1&query=${sale.delivery_location.lat},${sale.delivery_location.lng}`}
-                                       target="_blank"
-                                       rel="noreferrer"
-                                       className="bg-white border border-slate-300 px-2 py-1 rounded shadow-sm text-slate-700 flex items-center hover:bg-slate-50 transition-colors"
+                                    <button
+                                       title="Devolución Parcial (Nota de Crédito por Ítems)"
+                                       disabled={isVoid}
+                                       onClick={() => openPartialModal(sale.id)}
+                                       className={`p-1.5 rounded border transition-colors disabled:opacity-30 ${isPartial ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-orange-50 hover:text-orange-600'}`}
                                     >
-                                       <MapPin className="w-3 h-3 mr-1 text-red-500" /> Ver Mapa GPS
-                                    </a>
-                                 )}
-                              </div>
-                           </div>
-                        )}
-                     </div>
-                  );
-               })}
+                                       <Package className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                       title="Anular Documento Completo"
+                                       onClick={() => openVoidModal(sale.id)}
+                                       className={`p-1.5 rounded border transition-colors ${isVoid ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-red-50 hover:text-red-600'}`}
+                                    >
+                                       <Ban className="w-3.5 h-3.5" />
+                                    </button>
+                                 </div>
+                              </td>
+                           </tr>
+                        );
+                     })}
+                  </tbody>
+               </table>
             </div>
             {/* --- MODAL: VOID CONFIRMATION --- */}
             {activeModal === 'VOID' && (
