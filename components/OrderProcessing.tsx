@@ -63,6 +63,7 @@ export const OrderProcessing: React.FC = () => {
    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
    const [isProcessing, setIsProcessing] = useState(false);
    const [processResult, setProcessResult] = useState<{ facturas: number, boletas: number } | null>(null);
+   const [ordersPendingPurge, setOrdersPendingPurge] = useState<string[]>([]);
 
    // Max Items Limits
    const [maxItemsFactura, setMaxItemsFactura] = useState<number>(() => {
@@ -232,7 +233,7 @@ export const OrderProcessing: React.FC = () => {
                 itemChunks.push(items.slice(i, i + maxItems));
             }
 
-            let hasError = false;
+            let successfullyProcessed: string[] = [];
 
             for (const chunk of itemChunks) {
                // Calculate chunk totals dynamically
@@ -305,22 +306,15 @@ export const OrderProcessing: React.FC = () => {
                continue; // Move to the next order
             }
 
-            // Purga Inmediata (Decisión Arquitectónica):
-            // Desvincular ventas generadas del pedido para evitar errores de Foreign Key
-            await supabase.from('sales').update({ origin_order_id: null }).eq('origin_order_id', order.id);
-            // Eliminar los detalles del pedido
-            await supabase.from('order_items').delete().eq('order_id', order.id);
-            // Eliminar el pedido original para purgar el sistema
-            await supabase.from('orders').delete().eq('id', order.id);
+            successfullyProcessed.push(order.id);
          }
 
          setProcessResult({
             facturas: summary?.facturas || 0,
             boletas: summary?.boletas || 0
          });
-
-         setSelectedIds(new Set());
-         handleSearch(); // Refresh list
+         
+         setOrdersPendingPurge(successfullyProcessed);
 
       } catch (error: any) {
          console.error("Error processing orders:", error);
@@ -334,6 +328,28 @@ export const OrderProcessing: React.FC = () => {
    const closeAndReset = () => {
       setIsConfirmOpen(false);
       setProcessResult(null);
+      setOrdersPendingPurge([]);
+   };
+
+   const handlePurge = async () => {
+      if (ordersPendingPurge.length === 0) {
+         closeAndReset();
+         return;
+      }
+      setIsProcessing(true);
+      try {
+         await supabase.from('sales').update({ origin_order_id: null }).in('origin_order_id', ordersPendingPurge);
+         await supabase.from('order_items').delete().in('order_id', ordersPendingPurge);
+         await supabase.from('orders').delete().in('id', ordersPendingPurge);
+         
+         setSelectedIds(new Set());
+         handleSearch();
+      } catch (err) {
+         console.error("Purge error:", err);
+      } finally {
+         setIsProcessing(false);
+         closeAndReset();
+      }
    };
 
    const confirmAnnulOrder = async () => {
@@ -399,11 +415,15 @@ export const OrderProcessing: React.FC = () => {
                                  <div className="text-[10px] font-bold text-purple-600 uppercase">Boletas</div>
                               </div>
                            </div>
+                           <p className="text-slate-700 font-bold mt-6 text-sm bg-amber-50 p-3 rounded border border-amber-200">
+                              Procedemos a eliminar los pedidos originales para mantener el sistema ligero.
+                           </p>
                            <button
-                              onClick={closeAndReset}
-                              className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-slate-800 mt-4"
+                              onClick={handlePurge}
+                              disabled={isProcessing}
+                              className="w-full bg-slate-900 text-white py-3 rounded-lg font-bold shadow-lg hover:bg-slate-800 mt-4 disabled:opacity-50"
                            >
-                              Cerrar y Continuar
+                              {isProcessing ? 'Eliminando...' : 'Adelante'}
                            </button>
                         </div>
                      ) : (
