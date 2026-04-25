@@ -193,20 +193,25 @@ export const Dispatch: React.FC = () => {
 
             // 2. Update removed sales to pending
             if (removedSaleIds.length > 0) {
-               await supabase.from('sales').update({ dispatch_status: 'pending' }).in('id', removedSaleIds);
-               await supabase.from('dispatch_sales').delete().eq('dispatch_sheet_id', editingDispatchId).in('sale_id', removedSaleIds);
+               const { error: err1 } = await supabase.from('sales').update({ dispatch_status: 'pending' }).in('id', removedSaleIds);
+               if (err1) throw err1;
+               const { error: err2 } = await supabase.from('dispatch_sales').delete().eq('dispatch_sheet_id', editingDispatchId).in('sale_id', removedSaleIds);
+               if (err2) throw err2;
             }
 
             // 3. Update added sales to assigned
             if (addedSaleIds.length > 0) {
-               await supabase.from('sales').update({ dispatch_status: 'assigned' }).in('id', addedSaleIds);
+               const { error: err3 } = await supabase.from('sales').update({ dispatch_status: 'assigned' }).in('id', addedSaleIds);
+               if (err3) throw err3;
                const newDsSales = addedSaleIds.map(id => ({ dispatch_sheet_id: editingDispatchId, sale_id: id }));
-               await supabase.from('dispatch_sales').insert(newDsSales);
+               const { error: err4 } = await supabase.from('dispatch_sales').insert(newDsSales);
+               if (err4) throw err4;
             }
 
             // 4. Update dispatch vehicle if changed
             if (dispatch.vehicle_id !== selectedVehicleId) {
-               await supabase.from('dispatch_sheets').update({ vehicle_id: selectedVehicleId }).eq('id', editingDispatchId);
+               const { error: err5 } = await supabase.from('dispatch_sheets').update({ vehicle_id: selectedVehicleId }).eq('id', editingDispatchId);
+               if (err5) throw err5;
             }
 
             alert("¡Hoja de Ruta actualizada exitosamente!");
@@ -1140,15 +1145,16 @@ export const Dispatch: React.FC = () => {
 
                   <div className="flex-1 overflow-auto border border-slate-200 rounded">
                      <table className="w-full text-left text-sm whitespace-nowrap">
-                        <thead className="bg-slate-50 text-slate-600 sticky top-0 shadow-sm">
+                        <thead className="bg-slate-100 text-slate-700 sticky top-0 shadow-sm z-10 text-[10px] uppercase font-black">
                            <tr>
-                              <th className="p-2 border-b"><input type="checkbox" onChange={handleSelectAll} checked={selectedSaleIds.length === sortedSales.length && sortedSales.length > 0} className="w-4 h-4" /></th>
-                              <th className="p-2 border-b">Documento</th>
-                              <th className="p-2 border-b">Cliente</th>
-                              <th className="p-2 border-b">Zona</th>
-                              <th className="p-2 border-b">Vendedor</th>
-                              <th className="p-2 border-b text-right">Peso</th>
-                              <th className="p-2 border-b text-right">Importe</th>
+                              <th className="py-1.5 px-2 border-b w-8 text-center"><input type="checkbox" onChange={handleSelectAll} checked={selectedSaleIds.length === sortedSales.length && sortedSales.length > 0} className="w-3.5 h-3.5 align-middle" /></th>
+                              <th className="py-1.5 px-2 border-b">Documento</th>
+                              <th className="py-1.5 px-2 border-b">Hora Proc.</th>
+                              <th className="py-1.5 px-2 border-b">Cliente</th>
+                              <th className="py-1.5 px-2 border-b">Zona</th>
+                              <th className="py-1.5 px-2 border-b">Vendedor</th>
+                              <th className="py-1.5 px-2 border-b text-right">Peso</th>
+                              <th className="py-1.5 px-2 border-b text-right">Importe</th>
                            </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -1158,19 +1164,22 @@ export const Dispatch: React.FC = () => {
                               sortedSales.map(sale => {
                                  const isSelected = selectedSaleIds.includes(sale.id);
                                  return (
-                                    <tr key={sale.id} className={`hover:bg-slate-50 transition-colors cursor-pointer ${isSelected ? 'bg-indigo-50 hover:bg-indigo-100' : ''}`} onClick={() => handleToggleSale(sale.id)}>
-                                       <td className="p-2"><input type="checkbox" checked={isSelected} readOnly className="w-4 h-4 cursor-pointer" /></td>
-                                       <td className="p-2 font-bold text-slate-700">
+                                    <tr key={sale.id} className={`hover:bg-slate-100 transition-colors cursor-pointer border-b border-slate-100 ${isSelected ? 'bg-indigo-50 hover:bg-indigo-100' : ''}`} onClick={() => handleToggleSale(sale.id)}>
+                                       <td className="py-1 px-2 text-center"><input type="checkbox" checked={isSelected} readOnly className="w-3.5 h-3.5 cursor-pointer align-middle" /></td>
+                                       <td className="py-1 px-2 font-black text-slate-800 text-[11px] whitespace-nowrap">
                                           {sale.document_type.substring(0, 3)} {sale.series}-{sale.number}
                                           {sale.delivery_mode === 'EXPRESS_MISMO_DIA' && (
-                                             <span className="block text-[9px] bg-red-100 text-red-700 font-bold px-1 py-0.5 rounded uppercase mt-0.5 w-max">Fuera de Ruta</span>
+                                             <span className="block text-[8px] bg-red-100 text-red-700 font-bold px-1 py-0.5 rounded uppercase mt-0 w-max">Fuera de Ruta</span>
                                           )}
                                        </td>
-                                       <td className="p-2 text-slate-700 truncate max-w-[200px]" title={sale.client_name}>{sale.client_name}</td>
-                                       <td className="p-2 text-slate-500 text-xs font-semibold">{sale.zoneName}</td>
-                                       <td className="p-2 text-slate-500 text-xs">{sale.sellerName.split(' ')[0]}</td>
-                                       <td className="p-2 text-right font-medium text-slate-600">{sale.totalWeight > 0 ? `${sale.totalWeight.toFixed(1)} Kg` : '-'}</td>
-                                       <td className="p-2 text-right font-bold text-emerald-600">S/ {sale.total.toFixed(2)}</td>
+                                       <td className="py-1 px-2 text-slate-600 font-bold text-[10px]">
+                                          {new Date(sale.created_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                       </td>
+                                       <td className="py-1 px-2 text-slate-700 truncate max-w-[180px] font-bold text-[10px]" title={sale.client_name}>{sale.client_name}</td>
+                                       <td className="py-1 px-2 text-slate-500 font-bold text-[9px] uppercase">{sale.zoneName}</td>
+                                       <td className="py-1 px-2 text-slate-500 font-bold text-[9px] uppercase">{sale.sellerName.split(' ')[0]}</td>
+                                       <td className="py-1 px-2 text-right font-bold text-slate-600 text-[10px]">{sale.totalWeight > 0 ? `${sale.totalWeight.toFixed(1)} Kg` : '-'}</td>
+                                       <td className="py-1 px-2 text-right font-black text-emerald-700 text-[11px]">S/ {sale.total.toFixed(2)}</td>
                                     </tr>
                                  );
                               })
