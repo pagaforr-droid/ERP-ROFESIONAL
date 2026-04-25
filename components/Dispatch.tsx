@@ -255,14 +255,15 @@ export const Dispatch: React.FC = () => {
              const real_code = `RUT-${String(count).padStart(4, '0')}`;
 
              // 1. Insert into dispatch_sheets
-             const { error: err1 } = await supabase.from('dispatch_sheets').insert({
+             const { data: insDs, error: err1 } = await supabase.from('dispatch_sheets').insert({
                 id: dispatchId,
                 code: real_code,
                 vehicle_id: selectedVehicleId,
                 status: 'in_transit',
                 date: new Date().toISOString().split('T')[0]
-             });
+             }).select();
              if (err1) throw err1;
+             if (!insDs || insDs.length === 0) throw new Error("Supabase RLS bloqueó silenciosamente la creación de la planilla (dispatch_sheets). Ejecuta el SQL de permisos.");
 
              // 2. Update sales dispatch_status
              if (selectedSaleIds.length > 0) {
@@ -274,8 +275,9 @@ export const Dispatch: React.FC = () => {
                 
                 // 3. Insert into dispatch_sales
                 const dsSales = selectedSaleIds.map(id => ({ dispatch_sheet_id: dispatchId, sale_id: id }));
-                const { error: err3 } = await supabase.from('dispatch_sales').insert(dsSales);
+                const { data: insSales, error: err3 } = await supabase.from('dispatch_sales').insert(dsSales).select();
                 if (err3) throw err3;
+                if (!insSales || insSales.length === 0) throw new Error("Supabase RLS bloqueó silenciosamente el vínculo de los documentos (dispatch_sales). Ejecuta el SQL de permisos.");
              }
 
              alert(`¡Hoja de Ruta creada! Código: ${real_code}`);
@@ -308,8 +310,9 @@ export const Dispatch: React.FC = () => {
          }
 
          // 2. Delete dispatch_sales links
-         const { error: err1 } = await supabase.from('dispatch_sales').delete().eq('dispatch_sheet_id', dispatchId);
+         const { data: delDs, error: err1 } = await supabase.from('dispatch_sales').delete().eq('dispatch_sheet_id', dispatchId).select();
          if (err1) throw err1;
+         if (!delDs || delDs.length === 0) throw new Error("Bloqueo de seguridad: No se pudo eliminar los vínculos (dispatch_sales). Ejecuta el SQL.");
 
          // 3. Delete or update dispatch status to canceled
          const { data: up2, error: err2 } = await supabase.from('dispatch_sheets').update({ status: 'canceled' }).eq('id', dispatchId).select();
