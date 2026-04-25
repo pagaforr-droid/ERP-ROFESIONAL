@@ -34,17 +34,19 @@ export const DispatchLiquidationComp: React.FC = () => {
    const [dispatchLiquidations, setDispatchLiquidations] = useState<DispatchLiquidation[]>([]);
    const [sales, setSales] = useState<Sale[]>([]);
    const [products, setProducts] = useState<import('../types').Product[]>([]);
+   const [sellers, setSellers] = useState<any[]>([]);
    const [isLoadingData, setIsLoadingData] = useState(true);
 
    const fetchData = async () => {
       setIsLoadingData(true);
       try {
-         const [dsRes, dlRes, salesRes, prodRes, dsSalesRes] = await Promise.all([
+         const [dsRes, dlRes, salesRes, prodRes, dsSalesRes, sellersRes] = await Promise.all([
             supabase.from('dispatch_sheets').select('*'),
             supabase.from('dispatch_liquidations').select('*'),
             supabase.from('sales').select('*'),
             supabase.from('products').select('*'),
-            supabase.from('dispatch_sales').select('*')
+            supabase.from('dispatch_sales').select('*'),
+            supabase.from('sellers').select('*')
          ]);
          
          if (dsRes.data) {
@@ -59,6 +61,7 @@ export const DispatchLiquidationComp: React.FC = () => {
          if (dlRes.data) setDispatchLiquidations(dlRes.data);
          if (salesRes.data) setSales(salesRes.data);
          if (prodRes.data) setProducts(prodRes.data);
+         if (sellersRes.data) setSellers(sellersRes.data);
       } catch (error) {
          console.error('Error fetching liquidation data', error);
       } finally {
@@ -264,7 +267,7 @@ export const DispatchLiquidationComp: React.FC = () => {
       // Reset entries for this sale
       const initialEntries: Record<string, ReturnEntry> = {};
       const sale = dispatchSales.find(s => s.id === saleId);
-      sale?.items.forEach((item, idx) => {
+      (sale?.items || []).forEach((item, idx) => {
          const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
          initialEntries[itemKey] = { boxes: 0, units: 0 };
       });
@@ -871,8 +874,9 @@ export const DispatchLiquidationComp: React.FC = () => {
                      <tr>
                         <th className="p-3 uppercase">Documento</th>
                         <th className="p-3 uppercase">Cliente</th>
+                        <th className="p-3 uppercase">Vendedor</th>
                         <th className="p-3 uppercase text-right">Total</th>
-                        <th className="p-3 uppercase text-center w-32">Abono (S/)</th>
+                        <th className="p-3 uppercase text-center w-36">Abono (S/)</th>
                         <th className="p-3 uppercase text-right">Saldo</th>
                         <th className="p-3 uppercase text-center">Forma Pago</th>
                         <th className="p-3 uppercase text-center">Acciones Rápidas</th>
@@ -887,14 +891,20 @@ export const DispatchLiquidationComp: React.FC = () => {
                         const isPartial = status.action === 'PARTIAL_RETURN';
                         const saldo = sale.total - status.amount_collected - status.amount_credit_note; // Adjusted saldo logic
 
+                        const seller = sellers.find(s => s.id === sale.seller_id);
+                        const sellerName = seller ? seller.name : 'No Asignado';
+
                         return (
                            <tr key={sale.id} className={`hover:bg-slate-50 transition-colors ${isVoid ? 'opacity-60 bg-red-50' : isPartial ? 'bg-orange-50/40' : ''}`}>
-                              <td className="p-3 font-mono text-slate-700 text-xs">
+                              <td className="p-3 font-mono text-slate-700 text-xs whitespace-nowrap">
                                  {sale.document_type.substring(0, 2)}/{sale.series}-{sale.number}
                                  {extraSaleIds.includes(sale.id) && <span className="block text-[9px] text-blue-600 font-bold uppercase mt-0.5">Agregado Manual</span>}
                               </td>
-                              <td className="p-3 text-slate-800 font-bold text-[11px] max-w-[180px] truncate" title={sale.client_name}>
+                              <td className="p-3 text-slate-800 font-bold text-[11px] max-w-[150px] truncate" title={sale.client_name}>
                                  {sale.client_name}
+                              </td>
+                              <td className="p-3 text-slate-600 text-[10px] uppercase truncate max-w-[100px]" title={sellerName}>
+                                 {sellerName}
                               </td>
                               <td className="p-3 text-right font-bold text-slate-900 text-xs">
                                  {sale.total.toFixed(2)}
@@ -905,7 +915,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                                     min="0"
                                     step="0.10"
                                     disabled={isVoid || isPartial}
-                                    className="w-20 border border-slate-300 rounded px-2 py-1 text-right font-bold text-sm focus:ring-2 focus:ring-blue-500 disabled:bg-transparent disabled:border-transparent disabled:text-slate-500 outline-none"
+                                    className="w-28 border border-slate-300 rounded px-2 py-1.5 text-right font-bold text-sm focus:ring-2 focus:ring-blue-500 disabled:bg-transparent disabled:border-transparent disabled:text-slate-500 outline-none"
                                     value={status.amount_collected}
                                     onChange={(e) => handleAbonoChange(sale, e.target.value)}
                                  />
@@ -926,37 +936,37 @@ export const DispatchLiquidationComp: React.FC = () => {
                                  )}
                               </td>
                               <td className="p-2 text-center">
-                                 <div className="flex justify-center gap-1">
+                                 <div className="flex justify-center gap-1.5">
                                     <button
                                        title="Cobrar Totalidad"
                                        disabled={isVoid || isPartial}
                                        onClick={() => handleQuickAction(sale, 'PAID')}
-                                       className={`p-1.5 rounded border transition-colors disabled:opacity-30 ${status.action === 'PAID' && !isPartial && !isVoid ? 'bg-green-600 text-white border-green-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-green-50 hover:text-green-600'}`}
+                                       className={`p-2 rounded border transition-colors disabled:opacity-30 ${status.action === 'PAID' && !isPartial && !isVoid ? 'bg-green-600 text-white border-green-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-green-50 hover:text-green-600'}`}
                                     >
-                                       <DollarSign className="w-3.5 h-3.5" />
+                                       <DollarSign className="w-4 h-4" />
                                     </button>
                                     <button
                                        title="Pasar a Crédito Total"
                                        disabled={isVoid || isPartial}
                                        onClick={() => handleQuickAction(sale, 'CREDIT')}
-                                       className={`p-1.5 rounded border transition-colors disabled:opacity-30 ${status.action === 'CREDIT' && !isPartial && !isVoid ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50 hover:text-blue-600'}`}
+                                       className={`p-2 rounded border transition-colors disabled:opacity-30 ${status.action === 'CREDIT' && !isPartial && !isVoid ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-blue-50 hover:text-blue-600'}`}
                                     >
-                                       <CreditCard className="w-3.5 h-3.5" />
+                                       <CreditCard className="w-4 h-4" />
                                     </button>
                                     <button
                                        title="Devolución Parcial (Nota de Crédito por Ítems)"
                                        disabled={isVoid}
                                        onClick={() => openPartialModal(sale.id)}
-                                       className={`p-1.5 rounded border transition-colors disabled:opacity-30 ${isPartial ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-orange-50 hover:text-orange-600'}`}
+                                       className={`p-2 rounded border transition-colors disabled:opacity-30 ${isPartial ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-orange-50 hover:text-orange-600'}`}
                                     >
-                                       <Package className="w-3.5 h-3.5" />
+                                       <Package className="w-4 h-4" />
                                     </button>
                                     <button
                                        title="Anular Documento Completo"
                                        onClick={() => openVoidModal(sale.id)}
-                                       className={`p-1.5 rounded border transition-colors ${isVoid ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-red-50 hover:text-red-600'}`}
+                                       className={`p-2 rounded border transition-colors ${isVoid ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-slate-600 border-slate-300 hover:bg-red-50 hover:text-red-600'}`}
                                     >
-                                       <Ban className="w-3.5 h-3.5" />
+                                       <Ban className="w-4 h-4" />
                                     </button>
                                  </div>
                               </td>
@@ -1069,7 +1079,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                               </tr>
                            </thead>
                            <tbody className="divide-y divide-slate-100">
-                              {dispatchSales.find(s => s.id === targetSaleId)?.items.map((item, idx) => {
+                              {(dispatchSales.find(s => s.id === targetSaleId)?.items || []).map((item, idx) => {
                                  const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
                                  const entries = returnEntries[itemKey] || { boxes: 0, units: 0 };
                                  const product = products.find(p => p.id === item.product_id);
@@ -1154,7 +1164,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                               <div className="text-[10px] font-bold text-indigo-500 uppercase">Monto a Devolver (Inc. IGV)</div>
                               {(() => {
                                  let refund = 0;
-                                 dispatchSales.find(s => s.id === targetSaleId)?.items.forEach((item, idx) => {
+                                 (dispatchSales.find(s => s.id === targetSaleId)?.items || []).forEach((item, idx) => {
                                     const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
                                     const entries = returnEntries[itemKey] || { boxes: 0, units: 0 };
                                     const factor = products.find(p => p.id === item.product_id)?.package_content || 1;
