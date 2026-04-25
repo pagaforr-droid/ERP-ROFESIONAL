@@ -241,22 +241,33 @@ export const Dispatch: React.FC = () => {
             alert("¡Hoja de Ruta actualizada exitosamente!");
             await fetchData();
          } else {
-             const dispatchData = {
-                id: crypto.randomUUID(),
-                series: selectedSeries,
+             const dispatchId = crypto.randomUUID();
+             const count = dispatchSheets.length + 1;
+             const real_code = `RUT-${String(count).padStart(4, '0')}`;
+
+             // 1. Insert into dispatch_sheets
+             const { error: err1 } = await supabase.from('dispatch_sheets').insert({
+                id: dispatchId,
+                code: real_code,
                 vehicle_id: selectedVehicleId,
                 status: 'in_transit',
-                date: new Date().toISOString().split('T')[0],
-                sale_ids: selectedSaleIds
-             };
+                date: new Date().toISOString().split('T')[0]
+             });
+             if (err1) throw err1;
 
-             const { data, error } = await supabase.rpc('process_dispatch_transaction', { p_dispatch_data: dispatchData });
-             if (error) throw error;
-
-             if (data && data.success) {
-                 alert(`¡Hoja de Ruta creada! Código: ${data.real_code}`);
-                 await fetchData();
+             // 2. Update sales dispatch_status
+             if (selectedSaleIds.length > 0) {
+                const { error: err2 } = await supabase.from('sales').update({ dispatch_status: 'assigned' }).in('id', selectedSaleIds);
+                if (err2) throw err2;
+                
+                // 3. Insert into dispatch_sales
+                const dsSales = selectedSaleIds.map(id => ({ dispatch_sheet_id: dispatchId, sale_id: id }));
+                const { error: err3 } = await supabase.from('dispatch_sales').insert(dsSales);
+                if (err3) throw err3;
              }
+
+             alert(`¡Hoja de Ruta creada! Código: ${real_code}`);
+             await fetchData();
          }
       } catch (error: any) {
           alert("Error al guardar en Supabase: " + error.message);
@@ -438,6 +449,13 @@ export const Dispatch: React.FC = () => {
          ]);
       });
 
+      tableBody.push([
+         { content: 'TOTAL PLANILLA:', colSpan: 4, styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, fillColor: [240, 240, 240] } },
+         { content: selectedTotals.totalWeight.toFixed(2), styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, fillColor: [240, 240, 240] } },
+         { content: selectedTotals.totalAmount ? selectedTotals.totalAmount.toFixed(2) : selectedTotals.totalMoney.toFixed(2), styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, fillColor: [240, 240, 240] } },
+         { content: '', colSpan: 2, styles: { fillColor: [240, 240, 240] } }
+      ]);
+
       autoTable(doc, {
          startY: 44,
          theme: 'plain',
@@ -482,6 +500,25 @@ export const Dispatch: React.FC = () => {
             }
          }
       });
+
+      let finalY = (doc as any).lastAutoTable.finalY || 200;
+      if (finalY > doc.internal.pageSize.getHeight() - 40) {
+         doc.addPage();
+         finalY = 20;
+      }
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.5);
+      
+      const drvName = selectedVehicle?.driver_id ? drivers.find(d => d.id === selectedVehicle.driver_id)?.name : 'Nombre Chofer / DNI';
+      doc.line(40, finalY + 30, 80, finalY + 30);
+      doc.text("FIRMA REPARTIDOR", 60, finalY + 34, { align: 'center' });
+      doc.text(drvName || "Nombre Chofer / DNI", 60, finalY + 38, { align: 'center' });
+      
+      doc.line(130, finalY + 30, 170, finalY + 30);
+      doc.text("V° B° ALMACÉN", 150, finalY + 34, { align: 'center' });
+      doc.text("Firma y Sello", 150, finalY + 38, { align: 'center' });
 
       window.open(doc.output('bloburl'), '_blank');
    };
@@ -607,6 +644,25 @@ export const Dispatch: React.FC = () => {
             }
          }
       });
+
+      let finalYSeller = (doc as any).lastAutoTable.finalY || 200;
+      if (finalYSeller > doc.internal.pageSize.getHeight() - 40) {
+         doc.addPage();
+         finalYSeller = 20;
+      }
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.5);
+      
+      const drvNameSeller = selectedVehicle?.driver_id ? drivers.find(d => d.id === selectedVehicle.driver_id)?.name : 'Nombre Chofer / DNI';
+      doc.line(40, finalYSeller + 30, 80, finalYSeller + 30);
+      doc.text("FIRMA REPARTIDOR", 60, finalYSeller + 34, { align: 'center' });
+      doc.text(drvNameSeller || "Nombre Chofer / DNI", 60, finalYSeller + 38, { align: 'center' });
+      
+      doc.line(130, finalYSeller + 30, 170, finalYSeller + 30);
+      doc.text("V° B° ALMACÉN", 150, finalYSeller + 34, { align: 'center' });
+      doc.text("Firma y Sello", 150, finalYSeller + 38, { align: 'center' });
 
       window.open(doc.output('bloburl'), '_blank');
    };
@@ -875,6 +931,14 @@ export const Dispatch: React.FC = () => {
                                     </React.Fragment>
                                  );
                               })}
+                              
+                               {/* TOTAL ROW */}
+                               <tr className="border-t-[3px] border-b-2 border-black font-extrabold text-[10px] text-black uppercase bg-gray-100">
+                                  <td colSpan={3} className="py-2.5 pr-4 text-right">TOTAL PLANILLA:</td>
+                                  <td className="py-2.5 text-right pr-4">{selectedTotals.totalWeight.toFixed(2)} KG</td>
+                                  <td className="py-2.5 text-right pr-2">S/ {selectedTotals.totalAmount ? selectedTotals.totalAmount.toFixed(2) : selectedTotals.totalMoney.toFixed(2)}</td>
+                                  <td colSpan={2}></td>
+                               </tr>
                            </tbody>
                         </table>
                         
