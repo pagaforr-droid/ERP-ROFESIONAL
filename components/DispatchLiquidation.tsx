@@ -39,13 +39,23 @@ export const DispatchLiquidationComp: React.FC = () => {
    const fetchData = async () => {
       setIsLoadingData(true);
       try {
-         const [dsRes, dlRes, salesRes, prodRes] = await Promise.all([
+         const [dsRes, dlRes, salesRes, prodRes, dsSalesRes] = await Promise.all([
             supabase.from('dispatch_sheets').select('*'),
             supabase.from('dispatch_liquidations').select('*'),
             supabase.from('sales').select('*'),
-            supabase.from('products').select('*')
+            supabase.from('products').select('*'),
+            supabase.from('dispatch_sales').select('*')
          ]);
-         if (dsRes.data) setDispatchSheets(dsRes.data);
+         
+         if (dsRes.data) {
+            const dsSalesData = dsSalesRes.data || [];
+            const finalDispatches = dsRes.data.map(d => ({
+               ...d,
+               sale_ids: dsSalesData.filter(ds => ds.dispatch_sheet_id === d.id).map(ds => ds.sale_id) || []
+            })) as DispatchSheet[];
+            setDispatchSheets(finalDispatches);
+         }
+
          if (dlRes.data) setDispatchLiquidations(dlRes.data);
          if (salesRes.data) setSales(salesRes.data);
          if (prodRes.data) setProducts(prodRes.data);
