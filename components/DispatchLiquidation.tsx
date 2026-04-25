@@ -39,9 +39,11 @@ export const DispatchLiquidationComp: React.FC = () => {
    const [extraSaleIds, setExtraSaleIds] = useState<string[]>([]); // To track manually added documents
 
    // --- MODALS STATE ---
-   const [activeModal, setActiveModal] = useState<'NONE' | 'VOID' | 'PARTIAL' | 'CONFIRM_FINALIZE' | 'ADD_EXTRA' | 'CHANGE_TYPE' | 'PHOTO'>('NONE');
+   const [activeModal, setActiveModal] = useState<'NONE' | 'VOID' | 'PARTIAL' | 'CONFIRM_FINALIZE' | 'ADD_EXTRA' | 'CHANGE_TYPE' | 'PHOTO' | 'SYSTEM_ALERT' | 'CONFIRM_REVERT' | 'CONFIRM_KARDEX'>('NONE');
    const [targetSaleId, setTargetSaleId] = useState<string | null>(null);
    const [photoTargetUrl, setPhotoTargetUrl] = useState<string | null>(null);
+   const [systemAlertData, setSystemAlertData] = useState<{ title: string, message: string, type: 'success'|'error'|'info' }>({ title: '', message: '', type: 'info' });
+   const [actionTargetId, setActionTargetId] = useState<string | null>(null);
 
    // ADD EXTRA DOC State
    const [extraDocSearch, setExtraDocSearch] = useState('');
@@ -65,6 +67,11 @@ export const DispatchLiquidationComp: React.FC = () => {
    const [voidReason, setVoidReason] = useState('');
 
    // --- HELPERS ---
+   const showSystemAlert = (title: string, message: string, type: 'success'|'error'|'info' = 'info') => {
+      setSystemAlertData({ title, message, type });
+      setActiveModal('SYSTEM_ALERT');
+   };
+
    const getSalesForDispatch = () => {
       if (!selectedDispatch) return [];
       const baseSales = store.sales.filter(s => selectedDispatch.sale_ids.includes(s.id));
@@ -488,16 +495,15 @@ export const DispatchLiquidationComp: React.FC = () => {
    };
 
    const handleRequestFinalize = () => {
-      if (!selectedDispatch) { alert("Error: No hay despacho seleccionado."); return; }
-      if (Object.keys(processedDocs).length === 0) { alert("Error: No hay documentos procesados."); return; }
+      if (!selectedDispatch) { showSystemAlert("Error", "No hay despacho seleccionado.", "error"); return; }
+      if (Object.keys(processedDocs).length === 0) { showSystemAlert("Error", "No hay documentos procesados.", "error"); return; }
       setActiveModal('CONFIRM_FINALIZE');
    };
 
-   const executeFinalize = () => {
+   const executeFinalize = async () => {
       try {
          const docsArray: LiquidationDocument[] = Object.values(processedDocs);
 
-         // 3. Construct Payload
          const liquidationId = generateUUID();
          const liquidation: DispatchLiquidation = {
             id: liquidationId,
@@ -507,37 +513,46 @@ export const DispatchLiquidationComp: React.FC = () => {
             total_credit_receivable: Number(totals.credit.toFixed(2)),
             total_voided: Number(totals.voided.toFixed(2)),
             total_returns_value: Number(totals.returns.toFixed(2)),
-            documents: docsArray
+            documents: docsArray,
+            status: 'PROCESADO'
          };
 
-         // 4. Execute Store Action
          console.log("Processing Liquidation:", liquidation);
-         store.processDispatchLiquidation(liquidation);
+         const res = await store.processDispatchLiquidation(liquidation, 'ADMIN');
 
-         // 5. Reset UI
-         setActiveModal('NONE');
-         alert("¡Liquidación procesada con éxito! Se han generado los movimientos de caja y retorno de kardex.");
-         setSelectedDispatch(null);
-         setProcessedDocs({});
-         setExtraSaleIds([]);
-         setCashDelivered(0);
-         setCurrentStep('LIST');
-         setActiveTab('HISTORY');
+         if (res.success) {
+            setActiveModal('NONE');
+            showSystemAlert("Éxito", "¡Liquidación PROCESADA con éxito! Se han generado las cobranzas y Notas de Crédito. Queda pendiente confirmar el Kardex.", "success");
+            setSelectedDispatch(null);
+            setProcessedDocs({});
+            setExtraSaleIds([]);
+            setCashDelivered(0);
+            setCurrentStep('LIST');
+            setActiveTab('HISTORY');
+         } else {
+            setActiveModal('NONE');
+            showSystemAlert("Error Supabase", res.msg, "error");
+         }
 
-      } catch (error) {
+      } catch (error: any) {
          console.error("Liquidation Error:", error);
-         alert("Ocurrió un error crítico al procesar la liquidación. Por favor contacte soporte.");
+         setActiveModal('NONE');
+         showSystemAlert("Error Crítico", "Ocurrió un error crítico al procesar la liquidación: " + error.message, "error");
       }
    };
 
-   const handleRevertLiquidation = (liqId: string) => {
-      if (!window.confirm("¿Está seguro de revertir esta liquidación? Esto eliminará el movimiento de caja y reactivará la Hoja de Ruta. Las devoluciones físicas no se desharán.")) return;
+   const handleRequestRevert = (liqId: string) => {
+      setActionTargetId(liqId);
+      setActiveModal('CONFIRM_REVERT');
+   };
 
-      const res = store.revertDispatchLiquidation(liqId, 'ADMIN');
+   const executeRevertLiquidation = async () => {
+      if (!actionTargetId) return;
+      const res = await store.revertDispatchLiquidation(actionTargetId, 'ADMIN');
       if (res.success) {
-         alert(res.msg);
+         showSystemAlert("Revertido", res.msg, "success");
          // Auto-load the reverted dispatch to continue editing
-         const liq = store.dispatchLiquidations.find(l => l.id === liqId);
+         const liq = store.dispatchLiquidations.find(l => l.id === actionTargetId);
          if (liq) {
             const ds = store.dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
             if (ds) {
@@ -546,8 +561,29 @@ export const DispatchLiquidationComp: React.FC = () => {
             }
          }
       } else {
-         alert(res.msg);
+         showSystemAlert("Error", res.msg, "error");
       }
+      setActionTargetId(null);
+      if (activeModal === 'CONFIRM_REVERT') setActiveModal('NONE');
+   };
+
+   const handleRequestConfirmKardex = (liqId: string) => {
+      setActionTargetId(liqId);
+      setActiveModal('CONFIRM_KARDEX');
+   };
+
+   const executeConfirmKardex = async () => {
+      if (!actionTargetId) return;
+      const res = await store.confirmDispatchLiquidationKardex(actionTargetId, 'ADMIN');
+      if (res.success) {
+         showSystemAlert("Kardex Confirmado", res.msg, "success");
+         // Update the local state so the UI reflects COMPLETADO
+         store.dispatchLiquidations = store.dispatchLiquidations.map(l => l.id === actionTargetId ? { ...l, status: 'COMPLETADO' } : l);
+      } else {
+         showSystemAlert("Error", res.msg, "error");
+      }
+      setActionTargetId(null);
+      if (activeModal === 'CONFIRM_KARDEX') setActiveModal('NONE');
    };
 
    // --- RENDERS ---
@@ -624,6 +660,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                                     <th className="p-3">Código Liquidación</th>
                                     <th className="p-3">Hoja de Ruta</th>
                                     <th className="p-3">Fecha</th>
+                                    <th className="p-3">Estado</th>
                                     <th className="p-3 text-right">Monto Caja (S/)</th>
                                     <th className="p-3 text-center">Acciones</th>
                                  </tr>
@@ -634,15 +671,31 @@ export const DispatchLiquidationComp: React.FC = () => {
                                        <td className="p-3 font-bold text-slate-800">{liq.id}</td>
                                        <td className="p-3 text-slate-600">{store.dispatchSheets.find(ds => ds.id === liq.dispatch_sheet_id)?.code || 'N/A'}</td>
                                        <td className="p-3 text-slate-600">{new Date(liq.date).toLocaleString()}</td>
+                                       <td className="p-3">
+                                          <span className={`px-2 py-1 text-xs font-bold rounded ${liq.status === 'COMPLETADO' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
+                                             {liq.status || 'PROCESADO'}
+                                          </span>
+                                       </td>
                                        <td className="p-3 text-right font-bold text-green-700">{liq.total_cash_collected.toFixed(2)}</td>
-                                       <td className="p-3 text-center">
-                                          <button
-                                             onClick={() => handleRevertLiquidation(liq.id)}
-                                             title="Revertir Liquidación (Admin)"
-                                             className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded mr-2 transition-colors"
-                                          >
-                                             <RotateCcw className="w-4 h-4" />
-                                          </button>
+                                       <td className="p-3 text-center flex justify-center gap-2">
+                                          {(!liq.status || liq.status === 'PROCESADO') && (
+                                             <button
+                                                onClick={() => handleRequestConfirmKardex(liq.id)}
+                                                title="Confirmar Kardex"
+                                                className="text-green-600 hover:text-green-800 bg-green-50 hover:bg-green-100 p-2 rounded transition-colors flex items-center"
+                                             >
+                                                <CheckCircle className="w-4 h-4 mr-1" /> Completar
+                                             </button>
+                                          )}
+                                          {(!liq.status || liq.status === 'PROCESADO') && (
+                                             <button
+                                                onClick={() => handleRequestRevert(liq.id)}
+                                                title="Revertir Liquidación (Admin)"
+                                                className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 p-2 rounded transition-colors flex items-center"
+                                             >
+                                                <RotateCcw className="w-4 h-4 mr-1" /> Revertir
+                                             </button>
+                                          )}
                                        </td>
                                     </tr>
                                  ))}
@@ -653,6 +706,48 @@ export const DispatchLiquidationComp: React.FC = () => {
                   </>
                )}
             </div>
+
+            {/* --- SYSTEM NATIVE MODALS --- */}
+            {activeModal === 'SYSTEM_ALERT' && (
+               <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+                  <div className={`bg-white w-full max-w-sm rounded-lg shadow-2xl p-6 border-t-4 animate-fade-in-up ${systemAlertData.type === 'error' ? 'border-red-500' : systemAlertData.type === 'success' ? 'border-green-500' : 'border-blue-500'}`}>
+                     <div className="flex items-center mb-4">
+                        {systemAlertData.type === 'error' ? <XCircle className="w-6 h-6 text-red-500 mr-2" /> : systemAlertData.type === 'success' ? <CheckCircle className="w-6 h-6 text-green-500 mr-2" /> : <AlertTriangle className="w-6 h-6 text-blue-500 mr-2" />}
+                        <h3 className="text-lg font-bold">{systemAlertData.title}</h3>
+                     </div>
+                     <p className="text-slate-600 mb-6">{systemAlertData.message}</p>
+                     <div className="flex justify-end">
+                        <button onClick={() => setActiveModal('NONE')} className="px-4 py-2 bg-slate-800 text-white font-bold rounded hover:bg-slate-700">Entendido</button>
+                     </div>
+                  </div>
+               </div>
+            )}
+
+            {activeModal === 'CONFIRM_REVERT' && (
+               <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+                  <div className="bg-white w-full max-w-md rounded-lg shadow-2xl p-6 border-t-4 border-red-500 animate-fade-in-up">
+                     <h3 className="text-lg font-bold flex items-center text-red-600 mb-4"><ShieldAlert className="mr-2" /> Revertir Liquidación</h3>
+                     <p className="text-slate-600 mb-6">¿Está seguro de revertir esta liquidación? Esto eliminará el movimiento de caja y reactivará la Hoja de Ruta. Las Notas de Crédito generadas se eliminarán.</p>
+                     <div className="flex justify-end gap-3">
+                        <button onClick={() => setActiveModal('NONE')} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded">Cancelar</button>
+                        <button onClick={executeRevertLiquidation} className="px-4 py-2 bg-red-600 text-white font-bold hover:bg-red-700 rounded">Sí, Revertir</button>
+                     </div>
+                  </div>
+               </div>
+            )}
+
+            {activeModal === 'CONFIRM_KARDEX' && (
+               <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+                  <div className="bg-white w-full max-w-md rounded-lg shadow-2xl p-6 border-t-4 border-green-500 animate-fade-in-up">
+                     <h3 className="text-lg font-bold flex items-center text-green-600 mb-4"><Package className="mr-2" /> Confirmar Retorno al Kardex</h3>
+                     <p className="text-slate-600 mb-6">Esta acción restituirá el stock físico en el almacén de los productos anulados y devueltos. Pasará la liquidación a estado <strong>COMPLETADO</strong>. Esta acción es definitiva.</p>
+                     <div className="flex justify-end gap-3">
+                        <button onClick={() => setActiveModal('NONE')} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-200 rounded">Cancelar</button>
+                        <button onClick={executeConfirmKardex} className="px-4 py-2 bg-green-600 text-white font-bold hover:bg-green-700 rounded">Completar Kardex</button>
+                     </div>
+                  </div>
+               </div>
+            )}
          </div>
       );
    }

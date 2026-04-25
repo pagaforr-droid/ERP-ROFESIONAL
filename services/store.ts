@@ -121,7 +121,8 @@ interface AppState {
    updateSaleStatus: (saleIds: string[], status: Sale['dispatch_status']) => void;
    updateSaleDeliveryStatus: (saleId: string, status: Sale['dispatch_status'], details?: { reason?: string; photo?: string; location?: { lat: number; lng: number } }) => void;
    updateSunatStatus: (type: 'sale' | 'dispatch', id: string, status: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED', message?: string) => void;
-   processDispatchLiquidation: (liquidation: DispatchLiquidation) => void;
+   processDispatchLiquidation: (liquidation: DispatchLiquidation, userId: string) => Promise<{ success: boolean; msg: string; liquidation_id?: string }>;
+   confirmDispatchLiquidationKardex: (liquidationId: string, userId: string) => Promise<{ success: boolean; msg: string }>;
    markDocumentsAsPrinted: (saleIds: string[]) => Promise<void>;
    generateGuiasFromSales: (saleIds: string[], transporterId: string, driverId: string, vehicleId: string) => void;
 
@@ -131,7 +132,7 @@ interface AppState {
    updateSaleDetailed: (updatedSale: Sale, originalSale: Sale, userId: string) => { success: boolean, msg: string };
    changeSaleDocumentType: (saleId: string, newType: 'FACTURA' | 'BOLETA', userId: string) => { success: boolean, msg: string, newSale?: Sale };
    annulSale: (saleId: string, userId: string) => Promise<{ success: boolean; msg: string }>;
-   revertDispatchLiquidation: (liquidationId: string, userId: string) => { success: boolean, msg: string };
+   revertDispatchLiquidation: (liquidationId: string, userId: string) => Promise<{ success: boolean, msg: string }>;
 
    // Master Data Actions
    addClient: (Client: Client) => void;
@@ -1394,172 +1395,32 @@ export const useStore = create<AppState>((set, get) => ({
       }));
    },
 
-   processDispatchLiquidation: (liquidation) => set((s) => {
-      let currentSeriesState = [...s.company.series];
-      let currentSales = [...s.sales];
-
-      const maxLiqNum = s.dispatchLiquidations.reduce((max, l) => {
-         const num = parseInt(l.id.replace('LIQ-', ''), 10); 
-         return isNaN(num) ? max : Math.max(max, num);
-      }, 0);
-      const liqCode = `LIQ-${String(maxLiqNum + 1).padStart(4, '0')}`;
-      const liquidationToSave = { ...liquidation, id: liqCode };
-
-      const updatedDocs = liquidationToSave.documents.map(doc => {
-         if (doc.action === 'PARTIAL_RETURN' && (!doc.credit_note_series || doc.credit_note_series === 'TBD')) {
-            const ncSeries = currentSeriesState.find(ser => ser.type === 'NOTA_CREDITO' && ser.is_active);
-            let seriesStr = '';
-            let nextNumStr = '';
-            if (ncSeries) {
-               const nextNum = ncSeries.current_number + 1;
-               currentSeriesState = currentSeriesState.map(ser =>
-                  ser.id === ncSeries.id ? { ...ser, current_number: nextNum } : ser
-               );
-               seriesStr = ncSeries.series;
-               nextNumStr = String(nextNum).padStart(8, '0');
-            } else {
-               seriesStr = 'NC01';
-               nextNumStr = String(Math.floor(Math.random() * 10000)).padStart(6, '0');
-            }
-            const fullSeries = `${seriesStr}-${nextNumStr}`;
-
-            const originalSale = currentSales.find(s => s.id === doc.sale_id);
-            if (originalSale && doc.returned_items && doc.returned_items.length > 0) {
-               const creditNoteId = generateUUID();
-               const subT = Number((doc.amount_credit_note! / (1 + (s.company.igv_percent / 100))).toFixed(2));
-               const igvT = Number((doc.amount_credit_note! - subT).toFixed(2));
-
-               const ncSale: Sale = {
-                  id: creditNoteId,
-                  document_type: 'NOTA_CREDITO',
-                  series: seriesStr,
-                  number: nextNumStr,
-                  payment_method: 'CONTADO',
-                  payment_status: 'PAID',
-                  collection_status: 'NONE',
-                  client_id: originalSale.client_id,
-                  client_name: originalSale.client_name,
-                  client_ruc: originalSale.client_ruc,
-                  client_address: originalSale.client_address,
-                  subtotal: subT,
-                  igv: igvT,
-                  total: doc.amount_credit_note!,
-                  balance: 0,
-                  observation: `Devolución de la planilla ${liqCode} - Doc. Org: ${originalSale.series}-${originalSale.number}`,
-                  status: 'completed',
-                  dispatch_status: 'liquidated',
-                  created_at: new Date().toISOString(),
-                  sunat_status: 'PENDING',
-                  printed: false,
-                  origin_order_id: originalSale.id, 
-                  items: doc.returned_items.map((ri: any) => ({
-                     id: generateUUID(),
-                     sale_id: creditNoteId,
-                     product_id: ri.product_id,
-                     product_sku: '',
-                     product_name: ri.product_name,
-                     selected_unit: ri.unit_type === 'MIXTO' ? 'UND' : ri.unit_type,
-                     quantity_presentation: ri.quantity_presentation,
-                     quantity_base: ri.quantity_base,
-                     unit_price: ri.unit_price,
-                     discount_percent: 0,
-                     discount_amount: 0,
-                     total_price: ri.total_refund,
-                     is_bonus: false,
-                     batch_allocations: []
-                  }))
-               };
-               currentSales.unshift(ncSale);
-            }
-
-            return { ...doc, credit_note_series: fullSeries };
-         }
-         return doc;
+   processDispatchLiquidation: async (liquidation, userId) => {
+      const { data, error } = await supabase.rpc('process_dispatch_liquidation_transaction', {
+         p_liquidation_data: liquidation,
+         p_user_id: userId
       });
-
-      updatedDocs.forEach(doc => {
-         const saleIndex = currentSales.findIndex(sale => sale.id === doc.sale_id);
-         if (saleIndex > -1) {
-            const sale = currentSales[saleIndex];
-
-            let newPaymentStatus = sale.payment_status;
-            let newCollectionStatus = sale.collection_status;
-            let newBalance = sale.balance !== undefined ? sale.balance : sale.total;
-            let finalDispatchStatus = sale.dispatch_status;
-
-            if (doc.action === 'PAID') {
-               newBalance = 0;
-               newPaymentStatus = 'PAID';
-               newCollectionStatus = 'COLLECTED';
-               finalDispatchStatus = 'liquidated';
-            } else if (doc.action === 'CREDIT') {
-               newBalance = sale.total;
-               newPaymentStatus = 'PENDING';
-               newCollectionStatus = 'NONE';
-               finalDispatchStatus = 'liquidated';
-            } else if (doc.action === 'VOID') {
-               newBalance = 0;
-               newPaymentStatus = 'PAID'; 
-               newCollectionStatus = 'NONE';
-               finalDispatchStatus = 'liquidated';
-            } else if (doc.action === 'PARTIAL_RETURN') {
-               const remainder = (sale.total - doc.amount_credit_note);
-               if (doc.balance_payment_method === 'CONTADO') {
-                  newBalance = 0;
-                  newPaymentStatus = 'PAID';
-                  newCollectionStatus = 'COLLECTED';
-               } else {
-                  newBalance = remainder;
-                  newPaymentStatus = 'PENDING';
-                  newCollectionStatus = 'NONE';
-               }
-               finalDispatchStatus = 'liquidated';
-            }
-
-            currentSales[saleIndex] = {
-               ...sale,
-               balance: newBalance,
-               payment_status: newPaymentStatus as any,
-               collection_status: newCollectionStatus as any,
-               dispatch_status: finalDispatchStatus as any
-            };
-         }
-      });
-
-      const finalLiquidation = {
-         ...liquidationToSave,
-         documents: updatedDocs
-      };
-
-      const newCashMovements = [...s.cashMovements];
-      if (finalLiquidation.total_cash_collected > 0) {
-         newCashMovements.unshift({
-            id: generateUUID(),
-            type: 'INCOME',
-            category_name: 'LIQUIDACION RUTA',
-            description: `Liquidación ${liqCode} - Efectivo entregado`,
-            amount: finalLiquidation.total_cash_collected,
-            date: finalLiquidation.date,
-            reference_id: finalLiquidation.id,
-            user_id: 'SISTEMA'
-         });
+      if (error) {
+         console.error('Supabase Error (process_dispatch_liquidation_transaction):', error);
+         return { success: false, msg: error.message || 'Error al procesar la liquidación en Supabase.' };
       }
+      
+      const successData = data as { success: boolean; msg: string; liquidation_id?: string };
+      return { success: successData.success, msg: successData.msg, liquidation_id: successData.liquidation_id };
+   },
 
-      const updatedDispatchSheets = s.dispatchSheets.map(ds =>
-         ds.id === finalLiquidation.dispatch_sheet_id ? { ...ds, status: 'completed' as const } : ds
-      );
-
-      return {
-         dispatchLiquidations: [finalLiquidation, ...s.dispatchLiquidations],
-         sales: currentSales,
-         dispatchSheets: updatedDispatchSheets,
-         cashMovements: newCashMovements,
-         company: {
-            ...s.company,
-            series: currentSeriesState
-         }
-      };
-   }),
+   confirmDispatchLiquidationKardex: async (liquidationId, userId) => {
+      const { data, error } = await supabase.rpc('confirm_dispatch_liquidation_kardex', {
+         p_liquidation_id: liquidationId,
+         p_user_id: userId
+      });
+      if (error) {
+         console.error('Supabase Error (confirm_dispatch_liquidation_kardex):', error);
+         return { success: false, msg: error.message || 'Error al confirmar el Kardex.' };
+      }
+      const successData = data as { success: boolean; msg: string };
+      return { success: successData.success, msg: successData.msg };
+   },
 
    addSaleHistoryEvent: (saleId, event) => set((s) => {
       const sale = s.sales.find(x => x.id === saleId);
@@ -1824,68 +1685,19 @@ export const useStore = create<AppState>((set, get) => ({
       return { success, msg, newSale: newSaleObj };
    },
 
-   revertDispatchLiquidation: (liquidationId, userId) => {
-      let success = true;
-      let msg = "Liquidación revertida exitosamente. La cobranza se ha deshecho.";
-
-      set((s) => {
-         const liquidationIndex = s.dispatchLiquidations.findIndex(l => l.id === liquidationId);
-         if (liquidationIndex === -1) {
-            success = false;
-            msg = "Liquidación no encontrada.";
-            return s;
-         }
-
-         const liquidation = s.dispatchLiquidations[liquidationIndex];
-         const updatedSales = [...s.sales];
-
-         liquidation.documents.forEach(doc => {
-            const saleIndex = updatedSales.findIndex(sale => sale.id === doc.sale_id);
-            if (saleIndex > -1) {
-               const sale = updatedSales[saleIndex];
-
-               let newBalance = sale.balance !== undefined ? sale.balance : sale.total;
-               let collectionStatus = sale.collection_status;
-               let paymentStatus = sale.payment_status;
-
-               if (doc.action === 'PAID' || doc.action === 'CREDIT') {
-                  newBalance = sale.total;
-                  paymentStatus = 'PENDING';
-                  collectionStatus = 'NONE';
-               } else if (doc.action === 'PARTIAL_RETURN') {
-                  const remainder = (sale.total - doc.amount_credit_note);
-                  newBalance = remainder;
-                  paymentStatus = 'PENDING';
-                  collectionStatus = 'NONE';
-               }
-
-               updatedSales[saleIndex] = {
-                  ...sale,
-                  balance: newBalance,
-                  payment_status: paymentStatus as any,
-                  collection_status: collectionStatus as any,
-                  dispatch_status: 'delivered' 
-               };
-            }
-         });
-
-         const updatedCashMovements = s.cashMovements.filter(cm => cm.reference_id !== liquidationId);
-
-         const updatedDispatchSheets = s.dispatchSheets.map(ds =>
-            ds.id === liquidation.dispatch_sheet_id ? { ...ds, status: 'in_transit' as const } : ds
-         );
-
-         const updatedLiquidations = s.dispatchLiquidations.filter(l => l.id !== liquidationId);
-
-         return {
-            sales: updatedSales,
-            cashMovements: updatedCashMovements,
-            dispatchSheets: updatedDispatchSheets,
-            dispatchLiquidations: updatedLiquidations
-         };
+   revertDispatchLiquidation: async (liquidationId, userId) => {
+      const { data, error } = await supabase.rpc('revert_dispatch_liquidation_transaction', {
+         p_liquidation_id: liquidationId,
+         p_user_id: userId
       });
 
-      return { success, msg };
+      if (error) {
+         console.error('Supabase Error (revert_dispatch_liquidation_transaction):', error);
+         return { success: false, msg: error.message || 'Error al revertir la liquidación en Supabase.' };
+      }
+
+      const successData = data as { success: boolean; msg: string };
+      return { success: successData.success, msg: successData.msg };
    },
 
    getBatchesForProduct: (productId) => {
