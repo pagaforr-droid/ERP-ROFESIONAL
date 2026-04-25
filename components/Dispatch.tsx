@@ -312,7 +312,6 @@ export const Dispatch: React.FC = () => {
          // 2. Delete dispatch_sales links
          const { data: delDs, error: err1 } = await supabase.from('dispatch_sales').delete().eq('dispatch_sheet_id', dispatchId).select();
          if (err1) throw err1;
-         if (!delDs || delDs.length === 0) throw new Error("Bloqueo de seguridad: No se pudo eliminar los vínculos (dispatch_sales). Ejecuta el SQL.");
 
          // 3. Delete or update dispatch status to canceled
          const { data: up2, error: err2 } = await supabase.from('dispatch_sheets').update({ status: 'canceled' }).eq('id', dispatchId).select();
