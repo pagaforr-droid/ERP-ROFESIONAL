@@ -206,6 +206,7 @@ export const OrderProcessing: React.FC = () => {
 
       try {
          const selectedOrders = orders.filter(o => selectedIds.has(o.id));
+         let successfullyProcessed: string[] = [];
          
          // Sort orders to process them systematically
          selectedOrders.sort((a, b) => {
@@ -233,7 +234,7 @@ export const OrderProcessing: React.FC = () => {
                 itemChunks.push(items.slice(i, i + maxItems));
             }
 
-            let successfullyProcessed: string[] = [];
+            let hasError = false;
 
             for (const chunk of itemChunks) {
                // Calculate chunk totals dynamically
