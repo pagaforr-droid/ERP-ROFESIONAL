@@ -122,6 +122,7 @@ interface AppState {
    updateSaleDeliveryStatus: (saleId: string, status: Sale['dispatch_status'], details?: { reason?: string; photo?: string; location?: { lat: number; lng: number } }) => void;
    updateSunatStatus: (type: 'sale' | 'dispatch', id: string, status: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED', message?: string) => void;
    processDispatchLiquidation: (liquidation: DispatchLiquidation, userId: string) => Promise<{ success: boolean; msg: string; liquidation_id?: string }>;
+   saveDispatchLiquidationDraft: (liquidation: DispatchLiquidation, userId: string) => Promise<{ success: boolean; msg: string; liquidation_id?: string }>;
    confirmDispatchLiquidationKardex: (liquidationId: string, userId: string) => Promise<{ success: boolean; msg: string }>;
    markDocumentsAsPrinted: (saleIds: string[]) => Promise<void>;
    generateGuiasFromSales: (saleIds: string[], transporterId: string, driverId: string, vehicleId: string) => void;
@@ -1403,6 +1404,20 @@ export const useStore = create<AppState>((set, get) => ({
       if (error) {
          console.error('Supabase Error (process_dispatch_liquidation_transaction):', error);
          return { success: false, msg: error.message || 'Error al procesar la liquidación en Supabase.' };
+      }
+      
+      const successData = data as { success: boolean; msg: string; liquidation_id?: string };
+      return { success: successData.success, msg: successData.msg, liquidation_id: successData.liquidation_id };
+   },
+
+   saveDispatchLiquidationDraft: async (liquidation, userId) => {
+      const { data, error } = await supabase.rpc('save_dispatch_liquidation_draft', {
+         p_liquidation_data: liquidation,
+         p_user_id: userId
+      });
+      if (error) {
+         console.error('Supabase Error (save_dispatch_liquidation_draft):', error);
+         return { success: false, msg: error.message || 'Error al guardar el borrador en Supabase.' };
       }
       
       const successData = data as { success: boolean; msg: string; liquidation_id?: string };

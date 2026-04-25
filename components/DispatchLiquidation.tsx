@@ -7,7 +7,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../services/supabase';
 
-type Tab = 'PENDING' | 'HISTORY';
+type Tab = 'PENDING' | 'PROCESSED' | 'HISTORY';
 type Step = 'LIST' | 'PROCESS' | 'SUMMARY';
 
 // Helper interface for the sophisticated return logic
@@ -35,18 +35,20 @@ export const DispatchLiquidationComp: React.FC = () => {
    const [sales, setSales] = useState<Sale[]>([]);
    const [products, setProducts] = useState<import('../types').Product[]>([]);
    const [sellers, setSellers] = useState<any[]>([]);
+   const [liquidationDocuments, setLiquidationDocuments] = useState<LiquidationDocument[]>([]);
    const [isLoadingData, setIsLoadingData] = useState(true);
 
    const fetchData = async () => {
       setIsLoadingData(true);
       try {
-         const [dsRes, dlRes, salesRes, prodRes, dsSalesRes, sellersRes] = await Promise.all([
+         const [dsRes, dlRes, salesRes, prodRes, dsSalesRes, sellersRes, ldRes] = await Promise.all([
             supabase.from('dispatch_sheets').select('*'),
             supabase.from('dispatch_liquidations').select('*'),
             supabase.from('sales').select('*, items:sale_items(*)'),
             supabase.from('products').select('*'),
             supabase.from('dispatch_sales').select('*'),
-            supabase.from('sellers').select('*')
+            supabase.from('sellers').select('*'),
+            supabase.from('liquidation_documents').select('*')
          ]);
          
          if (dsRes.data) {
@@ -62,6 +64,7 @@ export const DispatchLiquidationComp: React.FC = () => {
          if (salesRes.data) setSales(salesRes.data);
          if (prodRes.data) setProducts(prodRes.data);
          if (sellersRes.data) setSellers(sellersRes.data);
+         if (ldRes.data) setLiquidationDocuments(ldRes.data);
       } catch (error) {
          console.error('Error fetching liquidation data', error);
       } finally {
@@ -80,6 +83,7 @@ export const DispatchLiquidationComp: React.FC = () => {
    // Processing State
    const [processedDocs, setProcessedDocs] = useState<Record<string, LiquidationDocument>>({});
    const [extraSaleIds, setExtraSaleIds] = useState<string[]>([]); // To track manually added documents
+   const [draftLiquidationId, setDraftLiquidationId] = useState<string | null>(null);
 
    // --- MODALS STATE ---
    const [activeModal, setActiveModal] = useState<'NONE' | 'VOID' | 'PARTIAL' | 'CONFIRM_FINALIZE' | 'ADD_EXTRA' | 'CHANGE_TYPE' | 'PHOTO' | 'SYSTEM_ALERT' | 'CONFIRM_REVERT' | 'CONFIRM_KARDEX'>('NONE');
@@ -126,29 +130,56 @@ export const DispatchLiquidationComp: React.FC = () => {
    };
 
    const dispatchSales = useMemo(() => getSalesForDispatch(), [selectedDispatch, sales, extraSaleIds]);
-   const pendingDispatches = useMemo(() => dispatchSheets.filter(d => d.status !== 'completed'), [dispatchSheets]);
-   const liquidatedDispatches = useMemo(() => [...dispatchLiquidations].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [dispatchLiquidations]);
+   const pendingDispatches = useMemo(() => dispatchSheets.filter(d => 
+      (d.status === 'pending' || d.status === 'assigned' || d.status === 'in_transit') && 
+      !dispatchLiquidations.some(l => l.dispatch_sheet_id === d.id && (l.status === 'processed' || l.status === 'liquidated' || l.status === 'COMPLETADO'))
+   ), [dispatchSheets, dispatchLiquidations]);
+   const processedDispatches = useMemo(() => [...dispatchLiquidations].filter(l => l.status === 'processed').sort((a, b) => new Date(b.date || Date.now()).getTime() - new Date(a.date || Date.now()).getTime()), [dispatchLiquidations]);
+   const liquidatedDispatches = useMemo(() => [...dispatchLiquidations].filter(l => l.status === 'liquidated' || l.status === 'COMPLETADO').sort((a, b) => new Date(b.date || Date.now()).getTime() - new Date(a.date || Date.now()).getTime()), [dispatchLiquidations]);
 
    const startLiquidation = (ds: DispatchSheet) => {
       setSelectedDispatch(ds);
-      setExtraSaleIds([]); // Reset extra
+      
+      const existingLiq = dispatchLiquidations.find(l => l.dispatch_sheet_id === ds.id && l.status === 'processed');
+      
+      if (existingLiq) {
+         setDraftLiquidationId(existingLiq.id);
+         setCashDelivered(existingLiq.total_cash_collected || 0);
+         
+         const draftDocs = liquidationDocuments.filter(d => d.dispatch_liquidation_id === existingLiq.id);
+         const docsMap: Record<string, LiquidationDocument> = {};
+         draftDocs.forEach(d => {
+            docsMap[d.sale_id] = d;
+         });
+         setProcessedDocs(docsMap);
 
-      // Initialize docs based on original payment method
-      const initial: Record<string, LiquidationDocument> = {};
-      const filteredSales = sales.filter(s => (ds.sale_ids || []).includes(s.id));
-      filteredSales.forEach(s => {
-         initial[s.id] = {
-            sale_id: s.id,
-            action: s.payment_method === 'CONTADO' ? 'PAID' : 'CREDIT',
-            amount_collected: s.payment_method === 'CONTADO' ? (s.total || 0) : 0,
-            amount_credit: s.payment_method === 'CREDITO' ? (s.total || 0) : 0,
-            amount_void: 0,
-            amount_credit_note: 0,
-            returned_items: []
-         };
-      });
-      setProcessedDocs(initial);
-      setCashDelivered(0); // Reset UI fields
+         const baseIds = ds.sale_ids || [];
+         const extraIds = draftDocs.map(d => d.sale_id).filter(id => !baseIds.includes(id));
+         setExtraSaleIds(extraIds);
+      } else {
+         setDraftLiquidationId(null);
+         setExtraSaleIds([]); // Reset extra
+         setCashDelivered(0); // Reset UI fields
+         setYapeDelivered(0);
+         setVoucherDelivered(0);
+
+         // Initialize docs based on original payment method
+         const initial: Record<string, LiquidationDocument> = {};
+         const filteredSales = sales.filter(s => (ds.sale_ids || []).includes(s.id));
+         filteredSales.forEach(s => {
+            initial[s.id] = {
+               sale_id: s.id,
+               action: s.payment_method === 'CONTADO' ? 'PAID' : 'CREDIT',
+               amount_collected: s.payment_method === 'CONTADO' ? (s.total || 0) : 0,
+               amount_credit: s.payment_method === 'CREDITO' ? (s.total || 0) : 0,
+               amount_void: 0,
+               amount_credit_note: 0,
+               returned_items: []
+            };
+         });
+         setProcessedDocs(initial);
+      }
+      
       setCurrentStep('PROCESS');
    };
 
@@ -587,11 +618,47 @@ export const DispatchLiquidationComp: React.FC = () => {
       setActiveModal('CONFIRM_FINALIZE');
    };
 
+   const executeSaveDraft = async () => {
+      try {
+         const docsArray: LiquidationDocument[] = Object.values(processedDocs);
+
+         const liquidationId = draftLiquidationId || generateUUID();
+         const liquidation: DispatchLiquidation = {
+            id: liquidationId,
+            dispatch_sheet_id: selectedDispatch!.id,
+            date: new Date().toISOString(),
+            total_cash_collected: Number(totals.cash.toFixed(2)),
+            total_credit_receivable: Number(totals.credit.toFixed(2)),
+            total_voided: Number(totals.voided.toFixed(2)),
+            total_returns_value: Number(totals.returns.toFixed(2)),
+            documents: docsArray,
+            status: 'processed'
+         };
+
+         console.log("Saving Draft Liquidation:", liquidation);
+         const res = await store.saveDispatchLiquidationDraft(liquidation, 'ADMIN');
+
+         if (res.success) {
+            await fetchData();
+            setActiveModal('NONE');
+            setCurrentStep('LIST');
+            setSelectedDispatch(null);
+            setProcessedDocs({});
+            setDraftLiquidationId(null);
+         } else {
+            alert(res.msg);
+         }
+      } catch (err) {
+         console.error(err);
+         alert("Ocurrió un error al guardar el borrador de la liquidación.");
+      }
+   };
+
    const executeFinalize = async () => {
       try {
          const docsArray: LiquidationDocument[] = Object.values(processedDocs);
 
-         const liquidationId = generateUUID();
+         const liquidationId = draftLiquidationId || generateUUID();
          const liquidation: DispatchLiquidation = {
             id: liquidationId,
             dispatch_sheet_id: selectedDispatch!.id,
@@ -604,7 +671,7 @@ export const DispatchLiquidationComp: React.FC = () => {
             status: 'PROCESADO'
          };
 
-         console.log("Processing Liquidation:", liquidation);
+         console.log("Processing Final Liquidation:", liquidation);
          const res = await store.processDispatchLiquidation(liquidation, 'ADMIN');
 
          if (res.success) {
@@ -696,8 +763,14 @@ export const DispatchLiquidationComp: React.FC = () => {
                      Rutas Pendientes ({pendingDispatches.length})
                   </button>
                   <button
+                     onClick={() => setActiveTab('PROCESSED')}
+                     className={`px-4 py-2 font-bold ${activeTab === 'PROCESSED' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                     En Revisión (Caja) ({processedDispatches.length})
+                  </button>
+                  <button
                      onClick={() => setActiveTab('HISTORY')}
-                     className={`px-4 py-2 font-bold ${activeTab === 'HISTORY' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                     className={`px-4 py-2 font-bold ${activeTab === 'HISTORY' ? 'text-green-600 border-b-2 border-green-600' : 'text-slate-500 hover:text-slate-700'}`}
                   >
                      Historial de Liquidaciones
                   </button>
@@ -732,6 +805,58 @@ export const DispatchLiquidationComp: React.FC = () => {
                                  </button>
                               </div>
                            ))}
+                        </div>
+                     )}
+                  </>
+               )}
+
+               {activeTab === 'PROCESSED' && (
+                  <>
+                     {processedDispatches.length === 0 ? (
+                        <div className="bg-white p-8 rounded-lg text-center text-slate-500 shadow-sm border border-slate-200">
+                           <p>No hay liquidaciones pendientes de revisión en caja.</p>
+                        </div>
+                     ) : (
+                        <div className="bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                           <table className="w-full text-left text-sm">
+                              <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                                 <tr>
+                                    <th className="p-3">Código Liquidación</th>
+                                    <th className="p-3">Hoja de Ruta</th>
+                                    <th className="p-3">Fecha</th>
+                                    <th className="p-3">Estado</th>
+                                    <th className="p-3 text-right">Efectivo Rendido (S/)</th>
+                                    <th className="p-3 text-center">Acciones</th>
+                                 </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                 {processedDispatches.map(liq => (
+                                    <tr key={liq.id} className="hover:bg-slate-50">
+                                       <td className="p-3 font-bold text-slate-800">{liq.id.substring(0,8)}...</td>
+                                       <td className="p-3 text-slate-600">{dispatchSheets.find(ds => ds.id === liq.dispatch_sheet_id)?.code || 'N/A'}</td>
+                                       <td className="p-3 text-slate-600">{liq.date ? new Date(liq.date).toLocaleString() : 'N/A'}</td>
+                                       <td className="p-3">
+                                          <span className="px-2 py-1 text-xs font-bold rounded bg-orange-100 text-orange-800">
+                                             EN REVISIÓN
+                                          </span>
+                                       </td>
+                                       <td className="p-3 text-right font-bold text-slate-700">{(liq.total_cash_collected || 0).toFixed(2)}</td>
+                                       <td className="p-3 text-center flex justify-center gap-2">
+                                          <button
+                                             onClick={() => {
+                                                const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
+                                                if (ds) startLiquidation(ds);
+                                             }}
+                                             title="Revisar y Terminar"
+                                             className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 p-2 rounded transition-colors flex items-center"
+                                          >
+                                             <ArrowRight className="w-4 h-4 mr-1" /> Revisar y Terminar
+                                          </button>
+                                       </td>
+                                    </tr>
+                                 ))}
+                              </tbody>
+                           </table>
                         </div>
                      )}
                   </>
@@ -1358,9 +1483,20 @@ export const DispatchLiquidationComp: React.FC = () => {
                         <button onClick={generateLiquidationPDF} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold flex items-center border border-blue-400">
                            <Printer className="w-4 h-4 mr-2" /> Imprimir Reporte
                         </button>
-                        <button onClick={handleRequestFinalize} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold flex items-center shadow-lg animate-pulse border border-green-400">
-                           <CheckCircle className="w-4 h-4 mr-2" /> Finalizar y Procesar
-                        </button>
+                        {activeTab === 'PENDING' ? (
+                           <button onClick={executeSaveDraft} className="bg-orange-600 hover:bg-orange-500 text-white px-4 py-2 rounded font-bold flex items-center shadow-lg border border-orange-400">
+                              <CheckCircle className="w-4 h-4 mr-2" /> Guardar y Enviar a Caja
+                           </button>
+                        ) : (
+                           <div className="flex gap-2">
+                              <button onClick={executeSaveDraft} className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded font-bold flex items-center border border-slate-400">
+                                 Guardar Cambios
+                              </button>
+                              <button onClick={handleRequestFinalize} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold flex items-center shadow-lg animate-pulse border border-green-400">
+                                 <CheckCircle className="w-4 h-4 mr-2" /> Terminar Liquidación
+                              </button>
+                           </div>
+                        )}
                      </div>
                   </div>
 
