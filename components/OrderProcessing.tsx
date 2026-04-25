@@ -14,6 +14,7 @@ export const OrderProcessing: React.FC = () => {
    const [dbClients, setDbClients] = useState<any[]>([]);
    const [dbZones, setDbZones] = useState<any[]>([]);
    const [dbSeries, setDbSeries] = useState<any[]>([]);
+   const [dbProducts, setDbProducts] = useState<any[]>([]);
    
    const [isLoading, setIsLoading] = useState(false);
    const [hasSearched, setHasSearched] = useState(false);
@@ -21,16 +22,18 @@ export const OrderProcessing: React.FC = () => {
    useEffect(() => {
       const loadMasterData = async () => {
          try {
-            const [resSellers, resClients, resZones, resSeries] = await Promise.all([
+            const [resSellers, resClients, resZones, resSeries, resProducts] = await Promise.all([
                supabase.from('sellers').select('*'),
                supabase.from('clients').select('*'),
                supabase.from('zones').select('*'),
-               supabase.from('document_series').select('*')
+               supabase.from('document_series').select('*'),
+               supabase.from('products').select('*')
             ]);
             if (resSellers.data) setDbSellers(resSellers.data);
             if (resClients.data) setDbClients(resClients.data);
             if (resZones.data) setDbZones(resZones.data);
             if (resSeries.data) setDbSeries(resSeries.data);
+            if (resProducts.data) setDbProducts(resProducts.data);
          } catch (err) {
             console.error("Error loading master data:", err);
          }
@@ -259,7 +262,7 @@ export const OrderProcessing: React.FC = () => {
                   origin_order_id: order.id,
                   seller_id: order.seller_id,
                   items: chunk.map(item => {
-                     const productRef = products.find(p => p.id === item.product_id);
+                     const productRef = dbProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
                      let finalBaseQty = (item as any).quantity_base || item.quantity;
                      const conversionFactor = Number((item.unit_type || '').split('/')[1]) || 1;
                      const presentationQty = (item as any).quantity_presentation || (item.quantity / conversionFactor);
@@ -271,7 +274,7 @@ export const OrderProcessing: React.FC = () => {
 
                      return {
                         product_id: item.product_id,
-                        product_sku: productRef?.sku || 'UNK',
+                        product_sku: (item as any).product_sku || (item as any).sku || productRef?.sku || 'UNK',
                         product_name: item.product_name,
                         selected_unit: item.unit_type === 'COMBO' ? 'UND' : item.unit_type,
                         quantity_presentation: presentationQty,
