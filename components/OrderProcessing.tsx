@@ -2,12 +2,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { supabase } from '../services/supabase';
-import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText, Trash2 } from 'lucide-react';
+import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText, Trash2, Settings, Save } from 'lucide-react';
 import { calculateBaseQuantity } from '../utils/productUtils';
 import { Order, Sale, SaleItem } from '../types';
 
 export const OrderProcessing: React.FC = () => {
-   const { currentUser, company } = useStore();
+   const { currentUser, company, products } = useStore();
 
    const [orders, setOrders] = useState<Order[]>([]);
    const [dbSellers, setDbSellers] = useState<any[]>([]);
@@ -259,7 +259,7 @@ export const OrderProcessing: React.FC = () => {
                   origin_order_id: order.id,
                   seller_id: order.seller_id,
                   items: chunk.map(item => {
-                     const productRef = dbProducts.find(p => p.id === item.product_id);
+                     const productRef = products.find(p => p.id === item.product_id);
                      let finalBaseQty = item.quantity_base || item.quantity;
                      
                      if (productRef) {
