@@ -61,6 +61,10 @@ export const OrderProcessing: React.FC = () => {
    const [isProcessing, setIsProcessing] = useState(false);
    const [processResult, setProcessResult] = useState<{ facturas: number, boletas: number } | null>(null);
 
+   // Max Items Limits
+   const [maxItemsFactura, setMaxItemsFactura] = useState<number>(15);
+   const [maxItemsBoleta, setMaxItemsBoleta] = useState<number>(15);
+
    // Target Series
    const [targetSeries, setTargetSeries] = useState<{ FACTURA?: string, BOLETA?: string }>({});
 
@@ -154,13 +158,17 @@ export const OrderProcessing: React.FC = () => {
          const order = orders.find(o => o.id === id);
          if (order) {
             const isFactura = (order.client_doc_number || '').length === 11;
-            if (isFactura) facturas++; else boletas++;
+            const itemCount = order.items.length || 1;
+            const maxItems = isFactura ? maxItemsFactura : maxItemsBoleta;
+            const chunks = Math.ceil(itemCount / Math.max(1, maxItems));
+            
+            if (isFactura) facturas += chunks; else boletas += chunks;
             totalAmount += order.total;
          }
       });
 
       return { count: idsToProcess.size, facturas, boletas, totalAmount };
-   }, [isConfirmOpen, selectedIds, orders, processResult]);
+   }, [isConfirmOpen, selectedIds, orders, processResult, maxItemsFactura, maxItemsBoleta]);
 
    // 2. Open Modal
    const handleRequestProcess = () => {
@@ -207,71 +215,86 @@ export const OrderProcessing: React.FC = () => {
                address = client?.address || '';
             }
 
-            // Build Sale Payload
-            const saleSubtotal = order.total / 1.18;
-            const saleIgv = order.total - saleSubtotal;
-
-            const salePayload: Partial<Sale> = {
-               id: crypto.randomUUID(),
-               document_type: docType as any,
-               series: seriesStr,
-               payment_method: order.payment_method,
-               payment_status: 'PENDING',
-               collection_status: 'NONE',
-               client_id: order.client_id,
-               client_name: order.client_name,
-               client_ruc: order.client_doc_number,
-               client_address: address,
-               subtotal: saleSubtotal,
-               igv: saleIgv,
-               total: order.total,
-               balance: order.total,
-               status: 'completed',
-               dispatch_status: 'pending',
-               delivery_mode: order.delivery_mode, 
-               sunat_status: 'PENDING',
-               origin_order_id: order.id,
-               seller_id: order.seller_id,
-               items: order.items.map(item => {
-                  const productRef = dbProducts.find(p => p.id === item.product_id);
-                  let finalBaseQty = item.quantity_base || item.quantity;
-                  
-                  if (productRef) {
-                      const { quantityBase } = calculateBaseQuantity(productRef, item.unit_type, item.quantity);
-                      finalBaseQty = quantityBase;
-                  }
-
-                  return {
-                     product_id: item.product_id,
-                     product_name: item.product_name,
-                     selected_unit: item.unit_type === 'COMBO' ? 'UND' : item.unit_type,
-                     quantity_presentation: item.quantity,
-                     quantity_base: finalBaseQty, 
-                     unit_price: item.unit_price,
-                     total_price: item.total_price,
-                     discount_percent: item.discount_percent || 0,
-                     discount_amount: item.discount_amount || 0,
-                     is_bonus: item.is_bonus || false,
-                     auto_promo_id: item.auto_promo_id,
-                     // we omit batch_allocations initially or fetch them if needed. 
-                     // If the order already has them, we can pass them:
-                     batch_allocations: (item as any).batch_allocations || []
-                  };
-               }) as any
-            };
-
-            // Process Sale Transaction in Supabase
-            const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: salePayload });
-            
-            if (error) {
-               console.error("Error processing order:", order.id, error);
-               // Continue to next order even if one fails
-               continue;
+            // Chunk items
+            const items = order.items || [];
+            const maxItems = Math.max(1, docType === 'FACTURA' ? maxItemsFactura : maxItemsBoleta);
+            const itemChunks = [];
+            for (let i = 0; i < items.length; i += maxItems) {
+                itemChunks.push(items.slice(i, i + maxItems));
             }
 
-            // Update order status
+            let hasError = false;
+
+            for (const chunk of itemChunks) {
+               // Calculate chunk totals dynamically
+               const chunkTotal = chunk.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
+               const chunkSubtotal = chunkTotal / 1.18;
+               const chunkIgv = chunkTotal - chunkSubtotal;
+
+               const salePayload: Partial<Sale> = {
+                  id: crypto.randomUUID(),
+                  document_type: docType as any,
+                  series: seriesStr,
+                  payment_method: order.payment_method,
+                  payment_status: 'PENDING',
+                  collection_status: 'NONE',
+                  client_id: order.client_id,
+                  client_name: order.client_name,
+                  client_ruc: order.client_doc_number,
+                  client_address: address,
+                  subtotal: chunkSubtotal,
+                  igv: chunkIgv,
+                  total: chunkTotal,
+                  balance: chunkTotal,
+                  status: 'completed',
+                  dispatch_status: 'pending',
+                  delivery_mode: order.delivery_mode, 
+                  sunat_status: 'PENDING',
+                  origin_order_id: order.id,
+                  seller_id: order.seller_id,
+                  items: chunk.map(item => {
+                     const productRef = dbProducts.find(p => p.id === item.product_id);
+                     let finalBaseQty = item.quantity_base || item.quantity;
+                     
+                     if (productRef) {
+                         const { quantityBase } = calculateBaseQuantity(productRef, item.unit_type, item.quantity);
+                         finalBaseQty = quantityBase;
+                     }
+
+                     return {
+                        product_id: item.product_id,
+                        product_name: item.product_name,
+                        selected_unit: item.unit_type === 'COMBO' ? 'UND' : item.unit_type,
+                        quantity_presentation: item.quantity,
+                        quantity_base: finalBaseQty, 
+                        unit_price: item.unit_price,
+                        total_price: item.total_price,
+                        discount_percent: item.discount_percent || 0,
+                        discount_amount: item.discount_amount || 0,
+                        is_bonus: item.is_bonus || false,
+                        auto_promo_id: item.auto_promo_id,
+                        batch_allocations: (item as any).batch_allocations || []
+                     };
+                  }) as any
+               };
+
+               // Process Sale Transaction in Supabase
+               const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: salePayload });
+               
+               if (error) {
+                  console.error("Error processing order chunk:", order.id, error);
+                  hasError = true;
+                  break; // Stop processing further chunks for this order if one fails
+               }
+               successCount++;
+            }
+
+            if (hasError) {
+               continue; // Move to the next order
+            }
+
+            // Update order status only if ALL chunks were successfully processed
             await supabase.from('orders').update({ status: 'processed' }).eq('id', order.id);
-            successCount++;
          }
 
          setProcessResult({
@@ -381,18 +404,30 @@ export const OrderProcessing: React.FC = () => {
                                     <span className="text-lg font-bold text-slate-700">{processSummary.facturas}</span>
                                  </div>
                                  {processSummary.facturas > 0 && (
-                                    <div className="flex items-center gap-2 mt-1">
-                                       <label className="text-xs font-bold text-blue-700 whitespace-nowrap">Serie destino:</label>
-                                       <select
-                                          className="text-xs border-blue-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-blue-500 bg-white"
-                                          value={targetSeries.FACTURA || ''}
-                                          onChange={e => setTargetSeries(prev => ({ ...prev, FACTURA: e.target.value }))}
-                                       >
-                                          {dbSeries.filter(s => s.type === 'FACTURA').map(s => (
-                                             <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
-                                          ))}
-                                       </select>
-                                    </div>
+                                    <>
+                                       <div className="flex items-center gap-2 mt-1">
+                                          <label className="text-xs font-bold text-blue-700 whitespace-nowrap w-24">Serie destino:</label>
+                                          <select
+                                             className="text-xs border-blue-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-blue-500 bg-white"
+                                             value={targetSeries.FACTURA || ''}
+                                             onChange={e => setTargetSeries(prev => ({ ...prev, FACTURA: e.target.value }))}
+                                          >
+                                             {dbSeries.filter(s => s.type === 'FACTURA').map(s => (
+                                                <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
+                                             ))}
+                                          </select>
+                                       </div>
+                                       <div className="flex items-center gap-2 mt-1">
+                                          <label className="text-xs font-bold text-blue-700 whitespace-nowrap w-24">Máx ítems/Doc:</label>
+                                          <input 
+                                             type="number" 
+                                             min="1" 
+                                             className="text-xs border-blue-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-blue-500 bg-white"
+                                             value={maxItemsFactura}
+                                             onChange={e => setMaxItemsFactura(Math.max(1, Number(e.target.value)))}
+                                          />
+                                       </div>
+                                    </>
                                  )}
                               </div>
                               <div className="flex flex-col p-3 bg-purple-50 rounded border border-purple-100 gap-2">
@@ -403,18 +438,30 @@ export const OrderProcessing: React.FC = () => {
                                     <span className="text-lg font-bold text-slate-700">{processSummary.boletas}</span>
                                  </div>
                                  {processSummary.boletas > 0 && (
-                                    <div className="flex items-center gap-2 mt-1">
-                                       <label className="text-xs font-bold text-purple-700 whitespace-nowrap">Serie destino:</label>
-                                       <select
-                                          className="text-xs border-purple-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-purple-500 bg-white"
-                                          value={targetSeries.BOLETA || ''}
-                                          onChange={e => setTargetSeries(prev => ({ ...prev, BOLETA: e.target.value }))}
-                                       >
-                                          {dbSeries.filter(s => s.type === 'BOLETA').map(s => (
-                                             <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
-                                          ))}
-                                       </select>
-                                    </div>
+                                    <>
+                                       <div className="flex items-center gap-2 mt-1">
+                                          <label className="text-xs font-bold text-purple-700 whitespace-nowrap w-24">Serie destino:</label>
+                                          <select
+                                             className="text-xs border-purple-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-purple-500 bg-white"
+                                             value={targetSeries.BOLETA || ''}
+                                             onChange={e => setTargetSeries(prev => ({ ...prev, BOLETA: e.target.value }))}
+                                          >
+                                             {dbSeries.filter(s => s.type === 'BOLETA').map(s => (
+                                                <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
+                                             ))}
+                                          </select>
+                                       </div>
+                                       <div className="flex items-center gap-2 mt-1">
+                                          <label className="text-xs font-bold text-purple-700 whitespace-nowrap w-24">Máx ítems/Doc:</label>
+                                          <input 
+                                             type="number" 
+                                             min="1" 
+                                             className="text-xs border-purple-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-purple-500 bg-white"
+                                             value={maxItemsBoleta}
+                                             onChange={e => setMaxItemsBoleta(Math.max(1, Number(e.target.value)))}
+                                          />
+                                       </div>
+                                    </>
                                  )}
                               </div>
                               <div className="flex justify-between items-center pt-2 border-t border-slate-100 mt-2">
