@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { supabase } from '../services/supabase';
 import { Truck, CheckCircle, Package, Calendar, User, FileText, Printer, X, Activity, MapPin, AlertTriangle, PlayCircle, Trash2 } from 'lucide-react';
-import { Sale, Product, DispatchSheet } from '../types';
+import { Sale, Product, DispatchSheet, Vehicle, Driver, Client, Seller } from '../types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PdfEngine } from './PdfEngine';
@@ -14,7 +14,14 @@ interface ExtendedSale extends Sale {
 }
 
 export const Dispatch: React.FC = () => {
-   const { vehicles, drivers, clients, zones, sellers, products, suppliers, company, currentUser } = useStore();
+   const { company, currentUser } = useStore();
+   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+   const [drivers, setDrivers] = useState<Driver[]>([]);
+   const [clients, setClients] = useState<Client[]>([]);
+   const [zones, setZones] = useState<any[]>([]);
+   const [sellers, setSellers] = useState<Seller[]>([]);
+   const [products, setProducts] = useState<Product[]>([]);
+   const [suppliers, setSuppliers] = useState<any[]>([]);
 
    const [sales, setSales] = useState<Sale[]>([]);
    const [dispatchSheets, setDispatchSheets] = useState<DispatchSheet[]>([]);
@@ -40,6 +47,23 @@ export const Dispatch: React.FC = () => {
    const fetchData = async () => {
       setIsLoading(true);
       try {
+         const [vData, dData, cData, zData, sData, pData, supData] = await Promise.all([
+            supabase.from('vehicles').select('*'),
+            supabase.from('drivers').select('*'),
+            supabase.from('clients').select('*'),
+            supabase.from('zones').select('*'),
+            supabase.from('sellers').select('*'),
+            supabase.from('products').select('*'),
+            supabase.from('suppliers').select('*')
+         ]);
+         if (vData.data) setVehicles(vData.data as Vehicle[]);
+         if (dData.data) setDrivers(dData.data as Driver[]);
+         if (cData.data) setClients(cData.data as Client[]);
+         if (zData.data) setZones(zData.data);
+         if (sData.data) setSellers(sData.data as Seller[]);
+         if (pData.data) setProducts(pData.data as Product[]);
+         if (supData.data) setSuppliers(supData.data);
+
          // Fetch pending sales
          const { data: salesData, error: salesError } = await supabase
             .from('sales')
