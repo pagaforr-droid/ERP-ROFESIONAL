@@ -27,7 +27,7 @@ export const Dispatch: React.FC = () => {
    const [dispatchSheets, setDispatchSheets] = useState<DispatchSheet[]>([]);
    const [isLoading, setIsLoading] = useState(true);
 
-   const [activeTab, setActiveTab] = useState<'PROGRAMAR' | 'EN_RUTA'>('PROGRAMAR');
+   const [activeTab, setActiveTab] = useState<'PROGRAMAR' | 'EN_RUTA' | 'HISTORIAL'>('PROGRAMAR');
    const [filterDeliveryMode, setFilterDeliveryMode] = useState<'ALL' | 'REGULAR' | 'EXPRESS_MISMO_DIA'>('ALL');
    const [selectedVehicleId, setSelectedVehicleId] = useState('');
    const [selectedSaleIds, setSelectedSaleIds] = useState<string[]>([]);
@@ -75,11 +75,11 @@ export const Dispatch: React.FC = () => {
 
          if (salesError) throw salesError;
 
-         // Fetch active dispatches
+         // Fetch all dispatches for history
          const { data: dispatchData, error: dispatchError } = await supabase
             .from('dispatch_sheets')
             .select('*')
-            .eq('status', 'in_transit');
+            .order('created_at', { ascending: false });
 
          if (dispatchError) throw dispatchError;
 
@@ -391,7 +391,7 @@ export const Dispatch: React.FC = () => {
       doc.setFont('helvetica', 'bold');
       doc.text("CONSOLIDADO DE MERCADERÍA", pageWidth / 2, 18, { align: 'center' });
       doc.setFontSize(8);
-      doc.text("NRO PLLA: 0001 - PENDIENTE", pageWidth / 2, 22, { align: 'center' });
+      doc.text(`NRO PLLA: ${editMode && editingDispatchId ? dispatchSheets.find(d => d.id === editingDispatchId)?.code : 'NUEVA RUTA'}`, pageWidth / 2, 22, { align: 'center' });
 
       // Vehicle Box
       doc.setDrawColor(150);
@@ -507,7 +507,7 @@ export const Dispatch: React.FC = () => {
       doc.setFont('helvetica', 'bold');
       doc.text("ESTRACTO POR VENDEDOR", pageWidth / 2, 18, { align: 'center' });
       doc.setFontSize(8);
-      doc.text("NRO PLLA: 0001 - PENDIENTE", pageWidth / 2, 22, { align: 'center' });
+      doc.text(`NRO PLLA: ${editMode && editingDispatchId ? dispatchSheets.find(d => d.id === editingDispatchId)?.code : 'NUEVA RUTA'}`, pageWidth / 2, 22, { align: 'center' });
 
       // Vehicle Box
       doc.setDrawColor(150);
@@ -765,7 +765,7 @@ export const Dispatch: React.FC = () => {
                   }
                `}</style>
 
-               <div className="flex-1 overflow-auto bg-white print:p-0 print-container">
+               <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent bg-white print:p-0 print-container">
                   {/* --- PAGE 1: CONSOLIDADO DE MERCADERIA --- */}
                   {activePrintTab === 'picking' && (
                      <div className="p-8 print:p-0" style={{ fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '11px' }}>
@@ -780,7 +780,7 @@ export const Dispatch: React.FC = () => {
                            {/* Center */}
                            <div className="text-center flex flex-col items-center">
                               <h2 className="font-black text-[14px] uppercase tracking-wide mb-1">CONSOLIDADO DE MERCADERÍA</h2>
-                              <p className="font-bold text-[10px] text-gray-900 uppercase mb-3">NRO PLLA: 0001 - PENDIENTE</p>
+                              <p className="font-bold text-[10px] text-gray-900 uppercase mb-3">NRO PLLA: {editMode && editingDispatchId ? dispatchSheets.find(d => d.id === editingDispatchId)?.code : 'NUEVA RUTA'}</p>
                               <div className="inline-block text-left px-4 py-1.5 rounded-xl border-[1.5px] border-gray-400">
                                  <p className="font-bold uppercase text-[9px] mb-1 text-gray-500 flex justify-between gap-4">
                                     <span>CORREDOR:</span> <span className="text-black font-extrabold">{selectedVehicle ? 'ASIGNADO' : 'POR ASIGNAR'}</span>
@@ -877,6 +877,27 @@ export const Dispatch: React.FC = () => {
                               })}
                            </tbody>
                         </table>
+                        
+                        {/* SIGNATURES */}
+                        <div className="flex justify-between mt-24 px-16 text-black print:mt-32 break-inside-avoid">
+                           <div className="text-center w-48">
+                              <div className="border-t-[1.5px] border-black pt-2 font-extrabold text-[10px] uppercase">
+                                 Firma Repartidor
+                              </div>
+                              <div className="text-[8px] mt-1 font-bold text-gray-600 uppercase">
+                                 {selectedVehicle?.driver_id ? drivers.find(d => d.id === selectedVehicle.driver_id)?.name : 'Nombre Chofer / DNI'}
+                              </div>
+                           </div>
+                           <div className="text-center w-48">
+                              <div className="border-t-[1.5px] border-black pt-2 font-extrabold text-[10px] uppercase">
+                                 V° B° Almacén
+                              </div>
+                              <div className="text-[8px] mt-1 font-bold text-gray-600 uppercase">
+                                 Firma y Sello
+                              </div>
+                           </div>
+                        </div>
+
                      </div>
                   )}
 
@@ -895,7 +916,7 @@ export const Dispatch: React.FC = () => {
                               {/* Center */}
                               <div className="text-center flex flex-col items-center">
                                  <h2 className="font-black text-[13px] uppercase tracking-wide mb-1 px-4 leading-[1.15]">CONSOLIDADO DE DOCUMENTOS<br />PRE-LIQUIDACIÓN</h2>
-                                 <p className="font-bold text-[10px] text-gray-900 uppercase mb-2">NRO PLLA: 0001 - PENDIENTE</p>
+                                 <p className="font-bold text-[10px] text-gray-900 uppercase mb-2">NRO PLLA: {editMode && editingDispatchId ? dispatchSheets.find(d => d.id === editingDispatchId)?.code : 'NUEVA RUTA'}</p>
                                  <div className="inline-block text-left px-4 py-1.5 rounded-xl border-[1.5px] border-gray-400">
                                     <p className="font-bold uppercase text-[9px] mb-1 text-gray-500 flex justify-between gap-4">
                                        <span>CORREDOR:</span> <span className="text-black font-extrabold">{selectedVehicle ? 'ASIGNADO' : 'POR ASIGNAR'}</span>
@@ -997,6 +1018,26 @@ export const Dispatch: React.FC = () => {
                                  );
                               })}
                            </div>
+
+                           {/* SIGNATURES */}
+                           <div className="flex justify-between mt-24 px-16 text-black print:mt-32 break-inside-avoid">
+                              <div className="text-center w-48">
+                                 <div className="border-t-[1.5px] border-black pt-2 font-extrabold text-[10px] uppercase">
+                                    Firma Repartidor
+                                 </div>
+                                 <div className="text-[8px] mt-1 font-bold text-gray-600 uppercase">
+                                    {selectedVehicle?.driver_id ? drivers.find(d => d.id === selectedVehicle.driver_id)?.name : 'Nombre Chofer / DNI'}
+                                 </div>
+                              </div>
+                              <div className="text-center w-48">
+                                 <div className="border-t-[1.5px] border-black pt-2 font-extrabold text-[10px] uppercase">
+                                    V° B° Almacén
+                                 </div>
+                                 <div className="text-[8px] mt-1 font-bold text-gray-600 uppercase">
+                                    Firma y Sello
+                                 </div>
+                              </div>
+                           </div>
                         </div>
                      </React.Fragment>
                   )}
@@ -1063,10 +1104,17 @@ export const Dispatch: React.FC = () => {
                      <span className="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">{activeDispatches.length}</span>
                   )}
                </button>
+               <button
+                  onClick={() => { setActiveTab('HISTORIAL'); if (editMode) cancelEditMode(); }}
+                  className={`px-6 py-2 rounded-md font-bold text-sm transition-all flex items-center gap-2 ${activeTab === 'HISTORIAL' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'
+                     }`}
+               >
+                  <FileText className="w-4 h-4" /> Historial de Planillas
+               </button>
             </div>
          </div>
 
-         {activeTab === 'PROGRAMAR' ? (
+         {activeTab === 'PROGRAMAR' && (
             <div className="flex gap-6 h-full overflow-hidden">
 
                {/* LEFT PANEL: CONFIG & SUMMARY */}
@@ -1210,11 +1258,12 @@ export const Dispatch: React.FC = () => {
                            )}
                         </tbody>
                      </table>
-                  </div>
-               </div>
-            </div>
-         ) : (
-            // --- EN_RUTA MONITOR TAB ---
+                    </div>
+                 </div>
+              </div>
+           )}
+           
+           {activeTab === 'EN_RUTA' && (
             <div className="flex-1 flex flex-col gap-4 overflow-hidden">
                {activeDispatches.length === 0 ? (
                   <div className="bg-white flex-1 rounded-lg border border-slate-200 flex flex-col items-center justify-center text-slate-500">
@@ -1308,6 +1357,69 @@ export const Dispatch: React.FC = () => {
                       })}
                   </div>
                )}
+            </div>
+         )}
+
+         {activeTab === 'HISTORIAL' && (
+            <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+               <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
+                  <h3 className="font-bold text-slate-800 flex items-center"><FileText className="w-5 h-5 mr-2 text-emerald-600"/> Historial de Planillas de Reparto</h3>
+                  <div className="text-xs text-slate-500">Muestra todas las planillas generadas, liquidadas o anuladas.</div>
+               </div>
+               
+               <div className="flex-1 overflow-auto bg-white rounded-lg border border-slate-200">
+                  <table className="w-full text-left text-sm whitespace-nowrap">
+                     <thead className="bg-slate-100 text-slate-700 sticky top-0 shadow-sm z-10 text-[11px] uppercase font-black">
+                        <tr>
+                           <th className="p-3 border-b">Cod. Planilla</th>
+                           <th className="p-3 border-b">Fecha de Creación</th>
+                           <th className="p-3 border-b">Transporte y Chofer</th>
+                           <th className="p-3 border-b text-center">Nro Documentos</th>
+                           <th className="p-3 border-b text-center">Estado</th>
+                           <th className="p-3 border-b text-right">Acciones</th>
+                        </tr>
+                     </thead>
+                     <tbody className="divide-y divide-slate-100">
+                        {dispatchSheets.filter(d => d.status !== 'in_transit').length === 0 ? (
+                           <tr><td colSpan={6} className="p-8 text-center text-slate-400 font-medium">No hay historial de planillas disponible.</td></tr>
+                        ) : (
+                           dispatchSheets.filter(d => d.status !== 'in_transit').map(ds => {
+                              const v = vehicles.find(x => x.id === ds.vehicle_id);
+                              const d = drivers.find(x => x.id === v?.driver_id);
+                              return (
+                                 <tr key={ds.id} className="hover:bg-slate-50 transition-colors">
+                                    <td className="p-3 font-bold text-slate-800">{ds.code}</td>
+                                    <td className="p-3 text-slate-600 font-medium">
+                                       {new Date(ds.created_at || ds.date).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                    </td>
+                                    <td className="p-3 text-slate-700 font-medium text-xs">
+                                       <div className="flex items-center"><Truck className="w-3 h-3 mr-1 text-slate-400" /> {v?.plate || 'Sin Placa'}</div>
+                                       <div className="flex items-center mt-0.5"><User className="w-3 h-3 mr-1 text-slate-400" /> {d?.name || 'Sin Chofer'}</div>
+                                    </td>
+                                    <td className="p-3 text-center font-bold text-slate-600">{ds.sale_ids.length}</td>
+                                    <td className="p-3 text-center">
+                                       {ds.status === 'completed' && <span className="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-[10px] font-bold uppercase border border-emerald-200">Liquidado</span>}
+                                       {ds.status === 'canceled' && <span className="bg-red-100 text-red-700 px-2 py-1 rounded text-[10px] font-bold uppercase border border-red-200">Anulado</span>}
+                                       {ds.status === 'pending' && <span className="bg-amber-100 text-amber-700 px-2 py-1 rounded text-[10px] font-bold uppercase border border-amber-200">Pendiente</span>}
+                                    </td>
+                                    <td className="p-3 text-right">
+                                       {ds.status !== 'canceled' && (
+                                          <button
+                                             onClick={() => annulDispatch(ds.id)}
+                                             className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors inline-flex items-center shadow-sm"
+                                             title="Anular Planilla y liberar documentos"
+                                          >
+                                             <Trash2 className="w-3.5 h-3.5 mr-1" /> Anular
+                                          </button>
+                                       )}
+                                    </td>
+                                 </tr>
+                              );
+                           })
+                        )}
+                     </tbody>
+                  </table>
+               </div>
             </div>
          )}
       </div>
