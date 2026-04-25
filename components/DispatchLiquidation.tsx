@@ -5,6 +5,7 @@ import { DispatchSheet, Sale, LiquidationDocument, DispatchLiquidation } from '.
 import { Search, CheckCircle, AlertTriangle, ArrowRight, Printer, XCircle, FileText, Ban, DollarSign, CreditCard, ShieldAlert, Save, Package, HelpCircle, User, Calendar, RotateCcw, Plus, ListChecks, Camera, MapPin, Image as ImageIcon, X } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { supabase } from '../services/supabase';
 
 type Tab = 'PENDING' | 'HISTORY';
 type Step = 'LIST' | 'PROCESS' | 'SUMMARY';
@@ -29,6 +30,35 @@ const generateUUID = () => {
 export const DispatchLiquidationComp: React.FC = () => {
    const store = useStore();
    const [activeTab, setActiveTab] = useState<Tab>('PENDING');
+   const [dispatchSheets, setDispatchSheets] = useState<DispatchSheet[]>([]);
+   const [dispatchLiquidations, setDispatchLiquidations] = useState<DispatchLiquidation[]>([]);
+   const [sales, setSales] = useState<Sale[]>([]);
+   const [products, setProducts] = useState<import('../types').Product[]>([]);
+   const [isLoadingData, setIsLoadingData] = useState(true);
+
+   const fetchData = async () => {
+      setIsLoadingData(true);
+      try {
+         const [dsRes, dlRes, salesRes, prodRes] = await Promise.all([
+            supabase.from('dispatch_sheets').select('*'),
+            supabase.from('dispatch_liquidations').select('*'),
+            supabase.from('sales').select('*'),
+            supabase.from('products').select('*')
+         ]);
+         if (dsRes.data) setDispatchSheets(dsRes.data);
+         if (dlRes.data) setDispatchLiquidations(dlRes.data);
+         if (salesRes.data) setSales(salesRes.data);
+         if (prodRes.data) setProducts(prodRes.data);
+      } catch (error) {
+         console.error('Error fetching liquidation data', error);
+      } finally {
+         setIsLoadingData(false);
+      }
+   };
+
+   React.useEffect(() => {
+      fetchData();
+   }, []);
    const [currentStep, setCurrentStep] = useState<Step>('LIST');
 
    // Selection State
@@ -74,17 +104,17 @@ export const DispatchLiquidationComp: React.FC = () => {
 
    const getSalesForDispatch = () => {
       if (!selectedDispatch) return [];
-      const baseSales = store.sales.filter(s => selectedDispatch.sale_ids.includes(s.id));
-      const extraSales = store.sales.filter(s => extraSaleIds.includes(s.id));
+      const baseSales = sales.filter(s => selectedDispatch.sale_ids.includes(s.id));
+      const extraSales = sales.filter(s => extraSaleIds.includes(s.id));
 
       // Combine and filter out duplicates just in case
       const allSales = [...baseSales, ...extraSales];
       return allSales.filter((val, idx, self) => self.findIndex(t => t.id === val.id) === idx);
    };
 
-   const dispatchSales = useMemo(() => getSalesForDispatch(), [selectedDispatch, store.sales, extraSaleIds]);
-   const pendingDispatches = useMemo(() => store.dispatchSheets.filter(d => d.status !== 'completed'), [store.dispatchSheets]);
-   const liquidatedDispatches = useMemo(() => store.dispatchLiquidations.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [store.dispatchLiquidations]);
+   const dispatchSales = useMemo(() => getSalesForDispatch(), [selectedDispatch, sales, extraSaleIds]);
+   const pendingDispatches = useMemo(() => dispatchSheets.filter(d => d.status !== 'completed'), [dispatchSheets]);
+   const liquidatedDispatches = useMemo(() => dispatchLiquidations.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()), [dispatchLiquidations]);
 
    const startLiquidation = (ds: DispatchSheet) => {
       setSelectedDispatch(ds);
@@ -92,7 +122,7 @@ export const DispatchLiquidationComp: React.FC = () => {
 
       // Initialize docs based on original payment method
       const initial: Record<string, LiquidationDocument> = {};
-      const sales = store.sales.filter(s => ds.sale_ids.includes(s.id));
+      const sales = sales.filter(s => ds.sale_ids.includes(s.id));
       sales.forEach(s => {
          initial[s.id] = {
             sale_id: s.id,
@@ -153,7 +183,7 @@ export const DispatchLiquidationComp: React.FC = () => {
    };
 
    const openChangeTypeModal = (saleId: string) => {
-      const sale = store.sales.find(s => s.id === saleId);
+      const sale = sales.find(s => s.id === saleId);
       if (!sale) return;
       if (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED') {
          alert("No se puede cambiar el tipo de un documento ya emitido a SUNAT.");
@@ -214,7 +244,7 @@ export const DispatchLiquidationComp: React.FC = () => {
          if (!entry || (entry.boxes === 0 && entry.units === 0)) continue;
 
          // Get Product Factor
-         const product = store.products.find(p => p.id === item.product_id);
+         const product = products.find(p => p.id === item.product_id);
          const factor = product?.package_content || 1;
 
          // Calculate Units Returned
@@ -283,7 +313,7 @@ export const DispatchLiquidationComp: React.FC = () => {
          alert("El documento ya está en la lista.");
          return;
       }
-      const sale = store.sales.find(s => s.id === saleId);
+      const sale = sales.find(s => s.id === saleId);
       if (!sale) return;
 
       setExtraSaleIds(prev => [...prev, sale.id]);
@@ -437,7 +467,7 @@ export const DispatchLiquidationComp: React.FC = () => {
          doc.text("CONSOLIDADO DE MERCADERÍA REGRESADA AL ALMACÉN", 15, finalY);
 
          const consolidatedRows = Object.values(consolidatedReturns).map(ret => {
-            const product = store.products.find(p => p.id === ret.product_id);
+            const product = products.find(p => p.id === ret.product_id);
             const factor = product?.package_content || 1;
             const cjas = Math.floor(ret.baseQty / factor);
             const unds = ret.baseQty % factor;
@@ -521,12 +551,16 @@ export const DispatchLiquidationComp: React.FC = () => {
          const res = await store.processDispatchLiquidation(liquidation, 'ADMIN');
 
          if (res.success) {
+            await fetchData();
             setActiveModal('NONE');
             showSystemAlert("Éxito", "¡Liquidación PROCESADA con éxito! Se han generado las cobranzas y Notas de Crédito. Queda pendiente confirmar el Kardex.", "success");
             setSelectedDispatch(null);
             setProcessedDocs({});
             setExtraSaleIds([]);
             setCashDelivered(0);
+            setYapeDelivered(0);
+            setVoucherDelivered(0);
+            setResponsiblePerson('');
             setCurrentStep('LIST');
             setActiveTab('HISTORY');
          } else {
@@ -550,11 +584,12 @@ export const DispatchLiquidationComp: React.FC = () => {
       if (!actionTargetId) return;
       const res = await store.revertDispatchLiquidation(actionTargetId, 'ADMIN');
       if (res.success) {
+         await fetchData();
          showSystemAlert("Revertido", res.msg, "success");
          // Auto-load the reverted dispatch to continue editing
-         const liq = store.dispatchLiquidations.find(l => l.id === actionTargetId);
+         const liq = dispatchLiquidations.find(l => l.id === actionTargetId);
          if (liq) {
-            const ds = store.dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
+            const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
             if (ds) {
                startLiquidation(ds);
                setActiveTab('PENDING');
@@ -576,9 +611,8 @@ export const DispatchLiquidationComp: React.FC = () => {
       if (!actionTargetId) return;
       const res = await store.confirmDispatchLiquidationKardex(actionTargetId, 'ADMIN');
       if (res.success) {
+         await fetchData();
          showSystemAlert("Kardex Confirmado", res.msg, "success");
-         // Update the local state so the UI reflects COMPLETADO
-         store.dispatchLiquidations = store.dispatchLiquidations.map(l => l.id === actionTargetId ? { ...l, status: 'COMPLETADO' } : l);
       } else {
          showSystemAlert("Error", res.msg, "error");
       }
@@ -669,7 +703,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                                  {liquidatedDispatches.map(liq => (
                                     <tr key={liq.id} className="hover:bg-slate-50">
                                        <td className="p-3 font-bold text-slate-800">{liq.id}</td>
-                                       <td className="p-3 text-slate-600">{store.dispatchSheets.find(ds => ds.id === liq.dispatch_sheet_id)?.code || 'N/A'}</td>
+                                       <td className="p-3 text-slate-600">{dispatchSheets.find(ds => ds.id === liq.dispatch_sheet_id)?.code || 'N/A'}</td>
                                        <td className="p-3 text-slate-600">{new Date(liq.date).toLocaleString()}</td>
                                        <td className="p-3">
                                           <span className={`px-2 py-1 text-xs font-bold rounded ${liq.status === 'COMPLETADO' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
@@ -1003,7 +1037,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                               {dispatchSales.find(s => s.id === targetSaleId)?.items.map((item, idx) => {
                                  const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
                                  const entries = returnEntries[itemKey] || { boxes: 0, units: 0 };
-                                 const product = store.products.find(p => p.id === item.product_id);
+                                 const product = products.find(p => p.id === item.product_id);
                                  const factor = product?.package_content || 1;
 
                                  // Calculate Refund Preview
@@ -1088,7 +1122,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                                  dispatchSales.find(s => s.id === targetSaleId)?.items.forEach((item, idx) => {
                                     const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
                                     const entries = returnEntries[itemKey] || { boxes: 0, units: 0 };
-                                    const factor = store.products.find(p => p.id === item.product_id)?.package_content || 1;
+                                    const factor = products.find(p => p.id === item.product_id)?.package_content || 1;
                                     const retBase = (entries.boxes * factor) + entries.units;
                                     refund += (retBase / item.quantity_base) * item.total_price;
                                  });
@@ -1130,7 +1164,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                      </div>
 
                      <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-lg shadow-inner bg-slate-50">
-                        {store.sales
+                        {sales
                            .filter(s => s.status !== 'canceled' && s.dispatch_status !== 'liquidated' && !dispatchSales.find(ds => ds.id === s.id))
                            .filter(s => s.client_name.toLowerCase().includes(extraDocSearch.toLowerCase()) ||
                               s.client_ruc.includes(extraDocSearch) ||
@@ -1150,7 +1184,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                                  </button>
                               </div>
                            ))}
-                        {extraDocSearch && store.sales.filter(s => s.status !== 'canceled' && s.dispatch_status !== 'liquidated' && !dispatchSales.find(ds => ds.id === s.id)).filter(s => s.client_name.toLowerCase().includes(extraDocSearch.toLowerCase()) || s.client_ruc.includes(extraDocSearch) || s.number.includes(extraDocSearch)).length === 0 && (
+                        {extraDocSearch && sales.filter(s => s.status !== 'canceled' && s.dispatch_status !== 'liquidated' && !dispatchSales.find(ds => ds.id === s.id)).filter(s => s.client_name.toLowerCase().includes(extraDocSearch.toLowerCase()) || s.client_ruc.includes(extraDocSearch) || s.number.includes(extraDocSearch)).length === 0 && (
                            <div className="p-4 text-center text-slate-500 text-sm">No se encontraron documentos disponibles.</div>
                         )}
                      </div>
@@ -1164,7 +1198,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                   <div className="bg-white w-full max-w-sm rounded-lg shadow-2xl p-6 border-t-4 border-blue-500 animate-fade-in-up">
                      <h3 className="text-lg font-bold text-slate-800 mb-2">Cambiar Tipo de Documento</h3>
                      {(() => {
-                        const sale = store.sales.find(s => s.id === targetSaleId);
+                        const sale = sales.find(s => s.id === targetSaleId);
                         if (!sale) return null;
                         return (
                            <>
@@ -1487,3 +1521,4 @@ export const DispatchLiquidationComp: React.FC = () => {
 
    return <div>Estado Desconocido</div>;
 };
+
