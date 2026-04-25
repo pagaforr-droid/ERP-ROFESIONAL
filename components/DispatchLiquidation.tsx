@@ -103,7 +103,7 @@ export const DispatchLiquidationComp: React.FC = () => {
    };
 
    const getSalesForDispatch = () => {
-      if (!selectedDispatch) return [];
+      if (!selectedDispatch || !selectedDispatch.sale_ids) return [];
       const baseSales = sales.filter(s => selectedDispatch.sale_ids.includes(s.id));
       const extraSales = sales.filter(s => extraSaleIds.includes(s.id));
 
@@ -122,13 +122,13 @@ export const DispatchLiquidationComp: React.FC = () => {
 
       // Initialize docs based on original payment method
       const initial: Record<string, LiquidationDocument> = {};
-      const sales = sales.filter(s => ds.sale_ids.includes(s.id));
-      sales.forEach(s => {
+      const filteredSales = sales.filter(s => (ds.sale_ids || []).includes(s.id));
+      filteredSales.forEach(s => {
          initial[s.id] = {
             sale_id: s.id,
             action: s.payment_method === 'CONTADO' ? 'PAID' : 'CREDIT',
-            amount_collected: s.payment_method === 'CONTADO' ? s.total : 0,
-            amount_credit: s.payment_method === 'CREDITO' ? s.total : 0,
+            amount_collected: s.payment_method === 'CONTADO' ? (s.total || 0) : 0,
+            amount_credit: s.payment_method === 'CREDITO' ? (s.total || 0) : 0,
             amount_void: 0,
             amount_credit_note: 0,
             returned_items: []
@@ -279,7 +279,7 @@ export const DispatchLiquidationComp: React.FC = () => {
 
       // Float correction
       totalRefund = Number(totalRefund.toFixed(2));
-      const saleTotal = Number(sale.total.toFixed(2));
+      const saleTotal = Number((sale.total || 0).toFixed(2));
 
       if (totalRefund >= saleTotal) {
          alert("El monto de devolución iguala o supera el total. Use la opción ANULAR.");
@@ -418,10 +418,10 @@ export const DispatchLiquidationComp: React.FC = () => {
 
          return [
             sale.client_name + isExtra,
-            `${sale.document_type.substring(0, 3)} ${sale.series}-${sale.number}`,
+            `${(sale.document_type || '').substring(0, 3)} ${sale.series}-${sale.number}`,
             finalState,
-            pDoc.amount_collected > 0 ? pDoc.amount_collected.toFixed(2) : '-',
-            pDoc.amount_credit > 0 ? pDoc.amount_credit.toFixed(2) : '-',
+            pDoc.amount_collected > 0 ? (pDoc.amount_collected || 0).toFixed(2) : '-',
+            pDoc.amount_credit > 0 ? (pDoc.amount_credit || 0).toFixed(2) : '-',
             (pDoc.amount_void + pDoc.amount_credit_note) > 0 ? (pDoc.amount_void + pDoc.amount_credit_note).toFixed(2) : '-'
          ];
       });
@@ -664,8 +664,8 @@ export const DispatchLiquidationComp: React.FC = () => {
                                     <div className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded font-bold uppercase">PENDIENTE</div>
                                  </div>
                                  <div className="space-y-1 mb-4 flex-1">
-                                    <div className="text-sm flex items-center text-slate-600"><Calendar className="w-4 h-4 mr-2" /> {new Date(ds.date).toLocaleDateString()}</div>
-                                    <div className="text-sm flex items-center text-slate-600"><FileText className="w-4 h-4 mr-2" /> {ds.sale_ids.length} documentos asignados</div>
+                                    <div className="text-sm flex items-center text-slate-600"><Calendar className="w-4 h-4 mr-2" /> {ds.date ? new Date(ds.date).toLocaleDateString() : 'N/A'}</div>
+                                    <div className="text-sm flex items-center text-slate-600"><FileText className="w-4 h-4 mr-2" /> {ds.sale_ids?.length || 0} documentos asignados</div>
                                  </div>
                                  <button
                                     onClick={() => startLiquidation(ds)}
@@ -704,13 +704,13 @@ export const DispatchLiquidationComp: React.FC = () => {
                                     <tr key={liq.id} className="hover:bg-slate-50">
                                        <td className="p-3 font-bold text-slate-800">{liq.id}</td>
                                        <td className="p-3 text-slate-600">{dispatchSheets.find(ds => ds.id === liq.dispatch_sheet_id)?.code || 'N/A'}</td>
-                                       <td className="p-3 text-slate-600">{new Date(liq.date).toLocaleString()}</td>
+                                       <td className="p-3 text-slate-600">{liq.date ? new Date(liq.date).toLocaleString() : 'N/A'}</td>
                                        <td className="p-3">
                                           <span className={`px-2 py-1 text-xs font-bold rounded ${liq.status === 'COMPLETADO' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
                                              {liq.status || 'PROCESADO'}
                                           </span>
                                        </td>
-                                       <td className="p-3 text-right font-bold text-green-700">{liq.total_cash_collected.toFixed(2)}</td>
+                                       <td className="p-3 text-right font-bold text-green-700">{(liq.total_cash_collected || 0).toFixed(2)}</td>
                                        <td className="p-3 text-center flex justify-center gap-2">
                                           {(!liq.status || liq.status === 'PROCESADO') && (
                                              <button
@@ -840,7 +840,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                               </div>
                            </div>
                            <div className="text-right">
-                              <div className="font-bold text-lg text-slate-900 leading-tight">S/ {sale.total.toFixed(2)}</div>
+                              <div className="font-bold text-lg text-slate-900 leading-tight">S/ {(sale.total || 0).toFixed(2)}</div>
                               <div className="text-[10px] font-bold text-slate-400">{sale.payment_method}</div>
                            </div>
                         </div>
@@ -900,7 +900,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                         {(sale.delivery_reason || sale.delivery_photo || sale.delivery_location) && (
                            <div className="text-xs bg-blue-50/50 p-2 rounded border border-blue-100 mt-1">
                               <div className="font-bold text-blue-900 mb-1 flex items-center">
-                                 <FileText className="w-3 h-3 mr-1" /> Evidencia de Reparto Móvil ({sale.dispatch_status.toUpperCase()})
+                                 <FileText className="w-3 h-3 mr-1" /> Evidencia de Reparto Móvil ({(sale.dispatch_status || '').toUpperCase()})
                               </div>
                               {sale.delivery_reason && (
                                  <p className="text-slate-700 italic border-l-2 border-blue-300 pl-2 mb-2">"{sale.delivery_reason}"</p>
@@ -1016,7 +1016,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                               </div>
                               <div className="text-right">
                                  <div className="text-[10px] font-bold text-slate-500 uppercase">Monto Total Facturado</div>
-                                 <div className="font-bold text-xl text-slate-900">S/ {sale.total.toFixed(2)}</div>
+                                 <div className="font-bold text-xl text-slate-900">S/ {(sale.total || 0).toFixed(2)}</div>
                               </div>
                            </div>
                         );
@@ -1174,7 +1174,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                               <div key={sale.id} className="p-3 border-b border-slate-200 last:border-0 hover:bg-blue-50 flex justify-between items-center transition-colors">
                                  <div>
                                     <div className="font-bold text-sm text-slate-800">{sale.client_name}</div>
-                                    <div className="text-xs text-slate-500 font-mono">{sale.document_type} {sale.series}-{sale.number} • <span className="text-slate-700 font-bold">S/ {sale.total.toFixed(2)}</span></div>
+                                    <div className="text-xs text-slate-500 font-mono">{sale.document_type} {sale.series}-{sale.number} • <span className="text-slate-700 font-bold">S/ {(sale.total || 0).toFixed(2)}</span></div>
                                  </div>
                                  <button
                                     onClick={() => handleAddExtraDocument(sale.id)}
@@ -1427,7 +1427,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                               return (
                                  <tr key={sale.id} className="border-b border-slate-100">
                                     <td className="py-1">{sale.client_name}</td>
-                                    <td className="py-1 font-mono">{sale.document_type.substring(0, 3)} {sale.series}-{sale.number}</td>
+                                    <td className="py-1 font-mono">{(sale.document_type || '').substring(0, 3)} {sale.series}-{sale.number}</td>
                                     <td className="py-1 text-center font-bold">
                                        {doc.action === 'PAID' && 'COBRADO'}
                                        {doc.action === 'CREDIT' && 'CREDITO'}
