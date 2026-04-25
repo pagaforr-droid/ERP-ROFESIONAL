@@ -43,7 +43,7 @@ export const DispatchLiquidationComp: React.FC = () => {
          const [dsRes, dlRes, salesRes, prodRes, dsSalesRes, sellersRes] = await Promise.all([
             supabase.from('dispatch_sheets').select('*'),
             supabase.from('dispatch_liquidations').select('*'),
-            supabase.from('sales').select('*'),
+            supabase.from('sales').select('*, items:sale_items(*)'),
             supabase.from('products').select('*'),
             supabase.from('dispatch_sales').select('*'),
             supabase.from('sellers').select('*')
