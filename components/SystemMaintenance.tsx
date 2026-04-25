@@ -81,9 +81,12 @@ export const SystemMaintenance = () => {
       }
       const ids = oldOrders.map(o => o.id);
       
-      await supabase.from('sales').update({ origin_order_id: null }).in('origin_order_id', ids);
-      await supabase.from('order_items').delete().in('order_id', ids);
-      await supabase.from('orders').delete().in('id', ids);
+      const { error: err1 } = await supabase.from('sales').update({ origin_order_id: null }).in('origin_order_id', ids);
+      if (err1) throw err1;
+      const { error: err2 } = await supabase.from('order_items').delete().in('order_id', ids);
+      if (err2) throw err2;
+      const { error: err3 } = await supabase.from('orders').delete().in('id', ids);
+      if (err3) throw err3;
 
       showDialog('success', 'Purga Exitosa', `Se han eliminado ${ids.length} pedidos antiguos exitosamente. La base de datos ha sido aligerada.`);
       loadStats();

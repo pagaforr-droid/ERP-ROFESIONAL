@@ -339,17 +339,24 @@ export const OrderProcessing: React.FC = () => {
       }
       setIsProcessing(true);
       try {
-         await supabase.from('sales').update({ origin_order_id: null }).in('origin_order_id', ordersPendingPurge);
-         await supabase.from('order_items').delete().in('order_id', ordersPendingPurge);
-         await supabase.from('orders').delete().in('id', ordersPendingPurge);
+         const { error: e1 } = await supabase.from('sales').update({ origin_order_id: null }).in('origin_order_id', ordersPendingPurge);
+         if (e1) throw e1;
+         
+         const { error: e2 } = await supabase.from('order_items').delete().in('order_id', ordersPendingPurge);
+         if (e2) throw e2;
+         
+         const { error: e3 } = await supabase.from('orders').delete().in('id', ordersPendingPurge);
+         if (e3) throw e3;
          
          setSelectedIds(new Set());
          handleSearch();
-      } catch (err) {
+         closeAndReset();
+      } catch (err: any) {
          console.error("Purge error:", err);
+         alert("ATENCIÓN: Se insertaron los documentos fiscales con éxito, pero hubo un error al purgar los pedidos originales. Detalles: " + err.message);
+         closeAndReset();
       } finally {
          setIsProcessing(false);
-         closeAndReset();
       }
    };
 
