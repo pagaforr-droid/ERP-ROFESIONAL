@@ -242,7 +242,16 @@ export const Dispatch: React.FC = () => {
             await fetchData();
          } else {
              const dispatchId = crypto.randomUUID();
-             const count = dispatchSheets.length + 1;
+             // Calculate the next code safely by finding the maximum existing number
+             let maxCount = 0;
+             dispatchSheets.forEach(ds => {
+                 const match = ds.code.match(/RUT-(\d+)/);
+                 if (match && match[1]) {
+                     const num = parseInt(match[1], 10);
+                     if (num > maxCount) maxCount = num;
+                 }
+             });
+             const count = maxCount + 1;
              const real_code = `RUT-${String(count).padStart(4, '0')}`;
 
              // 1. Insert into dispatch_sheets
