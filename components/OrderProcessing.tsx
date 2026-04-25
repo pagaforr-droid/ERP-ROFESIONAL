@@ -62,8 +62,14 @@ export const OrderProcessing: React.FC = () => {
    const [processResult, setProcessResult] = useState<{ facturas: number, boletas: number } | null>(null);
 
    // Max Items Limits
-   const [maxItemsFactura, setMaxItemsFactura] = useState<number>(15);
-   const [maxItemsBoleta, setMaxItemsBoleta] = useState<number>(15);
+   const [maxItemsFactura, setMaxItemsFactura] = useState<number>(() => {
+       const saved = localStorage.getItem('maxItemsFactura');
+       return saved ? parseInt(saved) : 15;
+   });
+   const [maxItemsBoleta, setMaxItemsBoleta] = useState<number>(() => {
+       const saved = localStorage.getItem('maxItemsBoleta');
+       return saved ? parseInt(saved) : 15;
+   });
 
    // Target Series
    const [targetSeries, setTargetSeries] = useState<{ FACTURA?: string, BOLETA?: string }>({});
@@ -404,30 +410,18 @@ export const OrderProcessing: React.FC = () => {
                                     <span className="text-lg font-bold text-slate-700">{processSummary.facturas}</span>
                                  </div>
                                  {processSummary.facturas > 0 && (
-                                    <>
-                                       <div className="flex items-center gap-2 mt-1">
-                                          <label className="text-xs font-bold text-blue-700 whitespace-nowrap w-24">Serie destino:</label>
-                                          <select
-                                             className="text-xs border-blue-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-blue-500 bg-white"
-                                             value={targetSeries.FACTURA || ''}
-                                             onChange={e => setTargetSeries(prev => ({ ...prev, FACTURA: e.target.value }))}
-                                          >
-                                             {dbSeries.filter(s => s.type === 'FACTURA').map(s => (
-                                                <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
-                                             ))}
-                                          </select>
-                                       </div>
-                                       <div className="flex items-center gap-2 mt-1">
-                                          <label className="text-xs font-bold text-blue-700 whitespace-nowrap w-24">Máx ítems/Doc:</label>
-                                          <input 
-                                             type="number" 
-                                             min="1" 
-                                             className="text-xs border-blue-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-blue-500 bg-white"
-                                             value={maxItemsFactura}
-                                             onChange={e => setMaxItemsFactura(Math.max(1, Number(e.target.value)))}
-                                          />
-                                       </div>
-                                    </>
+                                    <div className="flex items-center gap-2 mt-1">
+                                       <label className="text-xs font-bold text-blue-700 whitespace-nowrap">Serie destino:</label>
+                                       <select
+                                          className="text-xs border-blue-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-blue-500 bg-white"
+                                          value={targetSeries.FACTURA || ''}
+                                          onChange={e => setTargetSeries(prev => ({ ...prev, FACTURA: e.target.value }))}
+                                       >
+                                          {dbSeries.filter(s => s.type === 'FACTURA').map(s => (
+                                             <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
+                                          ))}
+                                       </select>
+                                    </div>
                                  )}
                               </div>
                               <div className="flex flex-col p-3 bg-purple-50 rounded border border-purple-100 gap-2">
@@ -438,30 +432,18 @@ export const OrderProcessing: React.FC = () => {
                                     <span className="text-lg font-bold text-slate-700">{processSummary.boletas}</span>
                                  </div>
                                  {processSummary.boletas > 0 && (
-                                    <>
-                                       <div className="flex items-center gap-2 mt-1">
-                                          <label className="text-xs font-bold text-purple-700 whitespace-nowrap w-24">Serie destino:</label>
-                                          <select
-                                             className="text-xs border-purple-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-purple-500 bg-white"
-                                             value={targetSeries.BOLETA || ''}
-                                             onChange={e => setTargetSeries(prev => ({ ...prev, BOLETA: e.target.value }))}
-                                          >
-                                             {dbSeries.filter(s => s.type === 'BOLETA').map(s => (
-                                                <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
-                                             ))}
-                                          </select>
-                                       </div>
-                                       <div className="flex items-center gap-2 mt-1">
-                                          <label className="text-xs font-bold text-purple-700 whitespace-nowrap w-24">Máx ítems/Doc:</label>
-                                          <input 
-                                             type="number" 
-                                             min="1" 
-                                             className="text-xs border-purple-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-purple-500 bg-white"
-                                             value={maxItemsBoleta}
-                                             onChange={e => setMaxItemsBoleta(Math.max(1, Number(e.target.value)))}
-                                          />
-                                       </div>
-                                    </>
+                                    <div className="flex items-center gap-2 mt-1">
+                                       <label className="text-xs font-bold text-purple-700 whitespace-nowrap">Serie destino:</label>
+                                       <select
+                                          className="text-xs border-purple-200 rounded p-1 flex-1 font-bold text-slate-700 focus:ring-purple-500 bg-white"
+                                          value={targetSeries.BOLETA || ''}
+                                          onChange={e => setTargetSeries(prev => ({ ...prev, BOLETA: e.target.value }))}
+                                       >
+                                          {dbSeries.filter(s => s.type === 'BOLETA').map(s => (
+                                             <option key={s.id} value={s.series}>{s.series} {s.is_active ? '(Activa)' : ''}</option>
+                                          ))}
+                                       </select>
+                                    </div>
                                  )}
                               </div>
                               <div className="flex justify-between items-center pt-2 border-t border-slate-100 mt-2">
@@ -514,6 +496,51 @@ export const OrderProcessing: React.FC = () => {
                <FileCheck className="mr-2 text-accent" /> Procesamiento de Pedidos
             </h2>
          </div>
+
+         {/* --- ADMIN SETTINGS PANEL --- */}
+         {currentUser?.role === 'ADMIN' && (
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-amber-200 flex flex-wrap gap-4 items-end bg-amber-50/30">
+               <div className="flex-1">
+                  <h3 className="font-bold text-amber-800 mb-2 flex items-center text-sm">
+                     <Settings className="w-4 h-4 mr-2" />
+                     Configuración de Impresión (Solo Admin)
+                  </h3>
+                  <div className="flex gap-4">
+                     <div>
+                        <label className="block text-[10px] font-bold text-amber-700 mb-1">Nro. item. Facturas</label>
+                        <input 
+                           type="number" 
+                           min="1"
+                           className="w-24 border-amber-200 rounded p-2 text-sm focus:ring-amber-500 font-bold bg-white"
+                           value={maxItemsFactura}
+                           onChange={e => setMaxItemsFactura(Math.max(1, Number(e.target.value)))}
+                        />
+                     </div>
+                     <div>
+                        <label className="block text-[10px] font-bold text-amber-700 mb-1">Nro. item. Boletas</label>
+                        <input 
+                           type="number" 
+                           min="1"
+                           className="w-24 border-amber-200 rounded p-2 text-sm focus:ring-amber-500 font-bold bg-white"
+                           value={maxItemsBoleta}
+                           onChange={e => setMaxItemsBoleta(Math.max(1, Number(e.target.value)))}
+                        />
+                     </div>
+                  </div>
+               </div>
+               <button 
+                  onClick={() => {
+                     localStorage.setItem('maxItemsFactura', maxItemsFactura.toString());
+                     localStorage.setItem('maxItemsBoleta', maxItemsBoleta.toString());
+                     alert('Configuración guardada exitosamente.');
+                  }}
+                  className="bg-amber-600 text-white font-bold py-2 px-4 rounded text-sm hover:bg-amber-700 transition-colors h-[38px] flex items-center shadow"
+               >
+                  <Save className="w-4 h-4 mr-2" />
+                  Aceptar y Guardar
+               </button>
+            </div>
+         )}
 
          {/* FILTER BAR */}
          <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200 flex flex-wrap gap-4 items-end">
