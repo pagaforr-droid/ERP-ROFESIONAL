@@ -308,13 +308,15 @@ export const AdvancedOrderEntry: React.FC = () => {
   const handleQtyKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
         e.preventDefault();
-        if (isAdmin) {
-            const el = document.getElementById('entryPriceInput');
-            if (el) el.focus();
-            else executeAddToCart();
-        } else {
-            executeAddToCart();
-        }
+        const el = document.getElementById('unitSelectInput');
+        if (el) el.focus();
+    }
+  };
+
+  const handleUnitKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addBtnRef.current?.focus();
     }
   };
 
@@ -1032,7 +1034,13 @@ export const AdvancedOrderEntry: React.FC = () => {
 
           <div className="w-32 relative">
             <label className="block text-[10px] font-bold text-blue-800 mb-1">Unidad</label>
-            <select className="w-full py-1.5 px-2 border border-blue-300 rounded text-sm font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" value={entryUnit} onChange={e => handleUnitChange(e.target.value)}>
+            <select 
+              id="unitSelectInput"
+              className="w-full py-1.5 px-2 border border-blue-300 rounded text-sm font-bold bg-white focus:ring-2 focus:ring-blue-500 outline-none appearance-none" 
+              value={entryUnit} 
+              onChange={e => handleUnitChange(e.target.value)}
+              onKeyDown={handleUnitKeyDown}
+            >
               <option value={selectedProduct?.unit_type || 'UND'}>{selectedProduct?.unit_type || 'UND'} (Mínima)</option>
               {selectedProduct?.package_type && <option value={selectedProduct.package_type}>{selectedProduct.package_type} (Máxima)</option>}
             </select>
