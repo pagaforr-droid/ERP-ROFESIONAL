@@ -18,22 +18,29 @@ export const OrderProcessing: React.FC = () => {
    
    const [isLoading, setIsLoading] = useState(false);
    const [hasSearched, setHasSearched] = useState(false);
+   const [companyConfigId, setCompanyConfigId] = useState<string | null>(null);
 
    useEffect(() => {
       const loadMasterData = async () => {
          try {
-            const [resSellers, resClients, resZones, resSeries, resProducts] = await Promise.all([
+            const [resSellers, resClients, resZones, resSeries, resProducts, resConfig] = await Promise.all([
                supabase.from('sellers').select('*'),
                supabase.from('clients').select('*'),
                supabase.from('zones').select('*'),
                supabase.from('document_series').select('*'),
-               supabase.from('products').select('*')
+               supabase.from('products').select('*'),
+               supabase.from('company_config').select('id, max_items_factura, max_items_boleta').limit(1).maybeSingle()
             ]);
             if (resSellers.data) setDbSellers(resSellers.data);
             if (resClients.data) setDbClients(resClients.data);
             if (resZones.data) setDbZones(resZones.data);
             if (resSeries.data) setDbSeries(resSeries.data);
             if (resProducts.data) setDbProducts(resProducts.data);
+            if (resConfig.data) {
+               setCompanyConfigId(resConfig.data.id);
+               if (resConfig.data.max_items_factura) setMaxItemsFactura(resConfig.data.max_items_factura);
+               if (resConfig.data.max_items_boleta) setMaxItemsBoleta(resConfig.data.max_items_boleta);
+            }
          } catch (err) {
             console.error("Error loading master data:", err);
          }
@@ -66,14 +73,8 @@ export const OrderProcessing: React.FC = () => {
    const [ordersPendingPurge, setOrdersPendingPurge] = useState<string[]>([]);
 
    // Max Items Limits
-   const [maxItemsFactura, setMaxItemsFactura] = useState<number>(() => {
-       const saved = localStorage.getItem('maxItemsFactura');
-       return saved ? parseInt(saved) : 15;
-   });
-   const [maxItemsBoleta, setMaxItemsBoleta] = useState<number>(() => {
-       const saved = localStorage.getItem('maxItemsBoleta');
-       return saved ? parseInt(saved) : 15;
-   });
+   const [maxItemsFactura, setMaxItemsFactura] = useState<number>(15);
+   const [maxItemsBoleta, setMaxItemsBoleta] = useState<number>(15);
 
    // Target Series
    const [targetSeries, setTargetSeries] = useState<{ FACTURA?: string, BOLETA?: string }>({});
@@ -568,10 +569,21 @@ export const OrderProcessing: React.FC = () => {
                   </div>
                </div>
                <button 
-                  onClick={() => {
-                     localStorage.setItem('maxItemsFactura', maxItemsFactura.toString());
-                     localStorage.setItem('maxItemsBoleta', maxItemsBoleta.toString());
-                     alert('Configuración guardada exitosamente.');
+                  onClick={async () => {
+                     if (!companyConfigId) {
+                         alert('Error: No se encontró la configuración de la empresa.');
+                         return;
+                     }
+                     try {
+                         const { error } = await supabase.from('company_config').update({
+                             max_items_factura: maxItemsFactura,
+                             max_items_boleta: maxItemsBoleta
+                         }).eq('id', companyConfigId);
+                         if (error) throw error;
+                         alert('Configuración guardada exitosamente en Supabase.');
+                     } catch (err: any) {
+                         alert('Error al guardar: ' + err.message);
+                     }
                   }}
                   className="bg-amber-600 text-white font-bold py-2 px-4 rounded text-sm hover:bg-amber-700 transition-colors h-[38px] flex items-center shadow"
                >

@@ -158,6 +158,10 @@ export interface CompanyConfig {
   sunat_provider?: 'PSE' | 'OSE' | 'SUNAT' | ''; // Proveedor e.g. Nubefact/APIPeru
   sunat_api_url?: string;
   sunat_api_token?: string;
+  
+  // Impresion Masiva
+  max_items_factura?: number;
+  max_items_boleta?: number;
 }
 
 // === CASH FLOW & EXPENSES ===
