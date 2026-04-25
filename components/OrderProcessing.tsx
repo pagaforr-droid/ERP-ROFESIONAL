@@ -260,18 +260,21 @@ export const OrderProcessing: React.FC = () => {
                   seller_id: order.seller_id,
                   items: chunk.map(item => {
                      const productRef = products.find(p => p.id === item.product_id);
-                     let finalBaseQty = item.quantity_base || item.quantity;
+                     let finalBaseQty = (item as any).quantity_base || item.quantity;
+                     const conversionFactor = Number((item.unit_type || '').split('/')[1]) || 1;
+                     const presentationQty = (item as any).quantity_presentation || (item.quantity / conversionFactor);
                      
-                     if (productRef) {
-                         const { quantityBase } = calculateBaseQuantity(productRef, item.unit_type, item.quantity);
+                     if (productRef && !(item as any).quantity_base) {
+                         const { quantityBase } = calculateBaseQuantity(productRef, item.unit_type, presentationQty);
                          finalBaseQty = quantityBase;
                      }
 
                      return {
                         product_id: item.product_id,
+                        product_sku: productRef?.sku || 'UNK',
                         product_name: item.product_name,
                         selected_unit: item.unit_type === 'COMBO' ? 'UND' : item.unit_type,
-                        quantity_presentation: item.quantity,
+                        quantity_presentation: presentationQty,
                         quantity_base: finalBaseQty, 
                         unit_price: item.unit_price,
                         total_price: item.total_price,
