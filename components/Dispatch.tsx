@@ -257,8 +257,11 @@ export const Dispatch: React.FC = () => {
 
              // 2. Update sales dispatch_status
              if (selectedSaleIds.length > 0) {
-                const { error: err2 } = await supabase.from('sales').update({ dispatch_status: 'assigned' }).in('id', selectedSaleIds);
+                const { data: updatedSales, error: err2 } = await supabase.from('sales').update({ dispatch_status: 'assigned' }).in('id', selectedSaleIds).select();
                 if (err2) throw err2;
+                if (!updatedSales || updatedSales.length === 0) {
+                   throw new Error("No se pudo actualizar el estado de los documentos. Supabase bloqueó la acción silenciosamente. Ejecuta el SQL de RLS proporcionado.");
+                }
                 
                 // 3. Insert into dispatch_sales
                 const dsSales = selectedSaleIds.map(id => ({ dispatch_sheet_id: dispatchId, sale_id: id }));
@@ -290,7 +293,9 @@ export const Dispatch: React.FC = () => {
 
          // 1. Update sales dispatch_status back to pending
          if (dispatch.sale_ids.length > 0) {
-            await supabase.from('sales').update({ dispatch_status: 'pending' }).in('id', dispatch.sale_ids);
+            const { data: up1, error } = await supabase.from('sales').update({ dispatch_status: 'pending' }).in('id', dispatch.sale_ids).select();
+            if (error) throw error;
+            if (!up1 || up1.length === 0) throw new Error("Bloqueo de seguridad: No se pudo revertir el estado. Ejecuta el SQL de RLS proporcionado.");
          }
 
          // 2. Delete dispatch_sales links
