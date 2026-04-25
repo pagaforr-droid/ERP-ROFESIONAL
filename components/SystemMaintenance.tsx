@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Database, HardDrive, Trash2, DownloadCloud, AlertTriangle, ShieldCheck, RefreshCw, Lock, FileJson, Info } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../services/supabase';
 import { useStore } from '../services/store';
 
 export const SystemMaintenance = () => {
