@@ -299,10 +299,13 @@ export const Dispatch: React.FC = () => {
          }
 
          // 2. Delete dispatch_sales links
-         await supabase.from('dispatch_sales').delete().eq('dispatch_sheet_id', dispatchId);
+         const { error: err1 } = await supabase.from('dispatch_sales').delete().eq('dispatch_sheet_id', dispatchId);
+         if (err1) throw err1;
 
          // 3. Delete or update dispatch status to canceled
-         await supabase.from('dispatch_sheets').update({ status: 'canceled' }).eq('id', dispatchId);
+         const { data: up2, error: err2 } = await supabase.from('dispatch_sheets').update({ status: 'canceled' }).eq('id', dispatchId).select();
+         if (err2) throw err2;
+         if (!up2 || up2.length === 0) throw new Error("Bloqueo de seguridad: No se pudo anular la planilla. Ejecuta el SQL de RLS.");
 
          alert('Hoja de Ruta anulada correctamente.');
          await fetchData();
@@ -763,38 +766,38 @@ export const Dispatch: React.FC = () => {
 
                      <button
                         onClick={() => setActivePrintTab('picking')}
-                        className={`px-4 py-1.5 rounded text-sm font-bold ${activePrintTab === 'picking' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                        className={`px-3 py-1.5 rounded text-[11px] font-bold ${activePrintTab === 'picking' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                      >
-                        1. Consolidado Picking
+                        1. Consolidado
                      </button>
                      <button
                         onClick={() => setActivePrintTab('sellers')}
-                        className={`px-4 py-1.5 rounded text-sm font-bold ${activePrintTab === 'sellers' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                        className={`px-3 py-1.5 rounded text-[11px] font-bold ${activePrintTab === 'sellers' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
                      >
-                        2. Estracto por Vendedor
+                        2. Por Vendedor
                      </button>
                      <button
                         onClick={() => setActivePrintTab('guia')}
-                        className={`px-4 py-1.5 rounded text-sm font-bold ${activePrintTab === 'guia' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-emerald-400'}`}
+                        className={`px-3 py-1.5 rounded text-[11px] font-bold ${activePrintTab === 'guia' ? 'bg-emerald-600 text-white shadow' : 'text-slate-400 hover:text-emerald-400'}`}
                      >
-                        3. Guía de Remisión Consolidada
+                        3. Guía
                      </button>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex gap-1.5">
                      <button onClick={() => {
                         if (activePrintTab === 'picking') generatePickingPDF();
                         else if (activePrintTab === 'sellers') generateSellerExtractPDF();
                         else generateConsolidatedGuidePDF();
-                     }} className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded font-bold flex items-center shadow">
-                        <Printer className="w-4 h-4 mr-2" /> IMPRIMIR PDF EXACTO
+                     }} className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded text-[11px] font-bold flex items-center shadow">
+                        <Printer className="w-3.5 h-3.5 mr-1.5" /> IMPRIMIR PDF
                      </button>
-                     <button onClick={() => setShowPickingList(false)} className="bg-slate-600 hover:bg-slate-500 text-white px-4 py-2 rounded font-bold flex items-center">
-                        <X className="w-4 h-4 mr-2" /> Cerrar
+                     <button onClick={() => setShowPickingList(false)} className="bg-slate-600 hover:bg-slate-500 text-white px-3 py-1.5 rounded text-[11px] font-bold flex items-center">
+                        <X className="w-3.5 h-3.5 mr-1" /> Cerrar
                      </button>
-                     <button onClick={confirmDispatch} disabled={isSaving} className={`${editMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'} text-white px-8 py-2 rounded font-bold shadow-lg flex items-center disabled:opacity-50`}>
-                        {isSaving ? <Activity className="w-4 h-4 mr-2 animate-spin" /> : <CheckCircle className="w-4 h-4 mr-2" />}
-                        {editMode ? 'GUARDAR CAMBIOS' : 'CONFIRMAR Y CREAR RUTA'}
+                     <button onClick={confirmDispatch} disabled={isSaving} className={`${editMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'} text-white px-5 py-1.5 rounded text-[11px] font-bold shadow flex items-center disabled:opacity-50`}>
+                        {isSaving ? <Activity className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5 mr-1.5" />}
+                        {editMode ? 'GUARDAR' : 'CREAR RUTA'}
                      </button>
                   </div>
                </div>
