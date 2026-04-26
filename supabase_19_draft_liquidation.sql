@@ -27,6 +27,7 @@ BEGIN
             total_credit_receivable = (p_liquidation_data->>'total_credit_receivable')::DECIMAL,
             total_voided = (p_liquidation_data->>'total_voided')::DECIMAL,
             total_returns_value = (p_liquidation_data->>'total_returns_value')::DECIMAL,
+            date = (p_liquidation_data->>'date')::DATE,
             status = 'processed',
             updated_at = NOW()
         WHERE id = v_liquidation_id;
@@ -35,10 +36,11 @@ BEGIN
         DELETE FROM liquidation_documents WHERE dispatch_liquidation_id = v_liquidation_id;
     ELSE
         INSERT INTO dispatch_liquidations (
-            id, dispatch_sheet_id, total_cash_collected, total_credit_receivable, total_voided, total_returns_value, status
+            id, dispatch_sheet_id, date, total_cash_collected, total_credit_receivable, total_voided, total_returns_value, status
         ) VALUES (
             v_liquidation_id,
             v_dispatch_id,
+            (p_liquidation_data->>'date')::DATE,
             (p_liquidation_data->>'total_cash_collected')::DECIMAL,
             (p_liquidation_data->>'total_credit_receivable')::DECIMAL,
             (p_liquidation_data->>'total_voided')::DECIMAL,
@@ -107,6 +109,7 @@ BEGIN
             total_credit_receivable = (p_liquidation_data->>'total_credit_receivable')::DECIMAL,
             total_voided = (p_liquidation_data->>'total_voided')::DECIMAL,
             total_returns_value = (p_liquidation_data->>'total_returns_value')::DECIMAL,
+            date = (p_liquidation_data->>'date')::DATE,
             status = 'processed', -- Mantenemos temporalmente como processed hasta el commit final
             updated_at = NOW()
         WHERE id = v_liquidation_id;
@@ -115,10 +118,11 @@ BEGIN
         DELETE FROM liquidation_documents WHERE dispatch_liquidation_id = v_liquidation_id;
     ELSE
         INSERT INTO dispatch_liquidations (
-            id, dispatch_sheet_id, total_cash_collected, total_credit_receivable, total_voided, total_returns_value, status
+            id, dispatch_sheet_id, date, total_cash_collected, total_credit_receivable, total_voided, total_returns_value, status
         ) VALUES (
             v_liquidation_id,
             v_dispatch_id,
+            (p_liquidation_data->>'date')::DATE,
             (p_liquidation_data->>'total_cash_collected')::DECIMAL,
             (p_liquidation_data->>'total_credit_receivable')::DECIMAL,
             (p_liquidation_data->>'total_voided')::DECIMAL,
