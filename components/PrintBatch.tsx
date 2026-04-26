@@ -40,16 +40,16 @@ export const PrintBatch: React.FC = () => {
 
     // --- FILTER LOGIC ---
     const allDocuments = useMemo(() => {
-        const mappedSales = dbSales.map(s => ({ ...s, _isGuia: false, date: s.created_at.split('T')[0] }));
+        const mappedSales = dbSales.map(s => ({ ...s, _isGuia: false, date: (s.created_at || new Date().toISOString()).split('T')[0] }));
 
         const mappedGuias = dbDispatchSheets.map(d => {
             // Aggregate items for Guia
             let guiaItems: any[] = [];
             let totalWeight = 0;
 
-            const dSales = dbSales.filter(s => d.sale_ids.includes(s.id));
+            const dSales = dbSales.filter(s => (d.sale_ids || []).includes(s.id));
             dSales.forEach(sale => {
-                sale.items.forEach(item => {
+                (sale.items || []).forEach(item => {
                     const prod = products.find(p => p.id === item.product_id);
                     const existingItem = guiaItems.find(gi => gi.product_id === item.product_id);
                     if (existingItem) {
@@ -65,7 +65,7 @@ export const PrintBatch: React.FC = () => {
                 });
             });
 
-            const isConsolidated = d.sale_ids.length > 1;
+            const isConsolidated = (d.sale_ids || []).length > 1;
             const firstSale = dSales.length > 0 ? dSales[0] : null;
 
             let clientName = 'Documentos Itinerantes';
@@ -93,9 +93,9 @@ export const PrintBatch: React.FC = () => {
                 guide_vehicle_id: firstSale?.guide_vehicle_id || d.vehicle_id || '',
                 items: guiaItems,
                 total: 0,
-                series: d.code.split('-')[0] || 'T001',
-                number: d.code.split('-')[1] || '000000',
-                date: d.date.split('T')[0]
+                series: (d.code || '').split('-')[0] || 'T001',
+                number: (d.code || '').split('-')[1] || '000000',
+                date: (d.date || new Date().toISOString()).split('T')[0]
             };
         });
 
@@ -164,9 +164,9 @@ export const PrintBatch: React.FC = () => {
 
         const matchesPrintStatus = printStatusFilter === 'PENDING' ? !s.printed : s.printed;
 
-        const matchesSearch = s.client_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            s.number?.includes(searchTerm) ||
-            s.series?.includes(searchTerm);
+        const matchesSearch = String(s.client_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+            String(s.number || '').includes(searchTerm) ||
+            String(s.series || '').includes(searchTerm);
 
         return matchesDate && matchesType && matchesPrintStatus && matchesSearch;
     });
