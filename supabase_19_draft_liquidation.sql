@@ -66,7 +66,7 @@ BEGIN
             (v_doc->>'amount_credit_note')::DECIMAL,
             v_doc->>'reason',
             COALESCE(v_doc->'returned_items', '[]'::JSONB),
-            v_doc->>'balance_payment_method'
+            (v_doc->>'balance_payment_method')::payment_method
         );
     END LOOP;
 
@@ -154,7 +154,7 @@ BEGIN
             (v_doc->>'amount_credit_note')::DECIMAL,
             v_doc->>'reason',
             COALESCE(v_doc->'returned_items', '[]'::JSONB),
-            v_doc->>'balance_payment_method'
+            (v_doc->>'balance_payment_method')::payment_method
         );
 
         -- Lógica de Facturación y Cuentas por Cobrar
