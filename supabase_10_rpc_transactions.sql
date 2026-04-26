@@ -96,6 +96,7 @@ BEGIN
             FROM batches 
             WHERE product_id = (v_item->>'product_id')::uuid AND quantity_current > 0
             ORDER BY expiration_date ASC, created_at ASC
+            FOR UPDATE
         LOOP
             IF v_qty_needed <= 0 THEN EXIT; END IF;
 
@@ -177,6 +178,7 @@ BEGIN
             FROM batches 
             WHERE product_id = (v_item->>'product_id')::uuid AND quantity_current > 0
             ORDER BY expiration_date ASC, created_at ASC
+            FOR UPDATE
         LOOP
             IF v_qty_needed <= 0 THEN EXIT; END IF;
 
