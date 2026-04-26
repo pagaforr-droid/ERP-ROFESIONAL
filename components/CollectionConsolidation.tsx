@@ -226,7 +226,7 @@ export const CollectionConsolidation: React.FC = () => {
          // Sync state in Mock_db para offline reactiveness
          consolidateCollections(
             idsArray,
-            currentUser?.id || 'ADMIN',
+            currentUser?.id as string,
             editingPlanillaData?.type === 'PENDING' ? {
                editPlanillaId: editingPlanillaData.id,
                editPlanillaCode: editingPlanillaData.code
@@ -360,7 +360,7 @@ export const CollectionConsolidation: React.FC = () => {
             amount: item.amountToPay
          }));
 
-         await manualLiquidation(payments, currentUser?.id || 'ADMIN', {
+         await manualLiquidation(payments, currentUser?.id as string, {
             date: new Date(planillaDate).toISOString(),
             glosa: planillaGlosa,
             ...(editingPlanillaData?.type === 'MANUAL' ? {
@@ -492,7 +492,7 @@ export const CollectionConsolidation: React.FC = () => {
    const confirmAnnulPlanilla = async () => {
       if (showAnnulModal) {
          try {
-            await annulCollectionPlanilla(showAnnulModal, currentUser?.id || 'ADMIN');
+            await annulCollectionPlanilla(showAnnulModal, currentUser?.id as string);
             setShowAnnulModal(null);
             if (selectedPlanillaId === showAnnulModal) {
                setSelectedPlanillaId(null);

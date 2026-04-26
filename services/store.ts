@@ -823,7 +823,7 @@ export const useStore = create<AppState>((set, get) => ({
          description: `Planilla de Cobranza ${planillaCode} - Vendedores: ${sellerNames}`,
          amount: totalTotal,
          date: new Date().toISOString(),
-         user_id: userId || 'ADMIN',
+         user_id: userId as string,
          reference_id: planillaId
       };
 
@@ -863,7 +863,7 @@ export const useStore = create<AppState>((set, get) => ({
       
       const { data, error } = await supabase.rpc('consolidate_manual_collections', {
          p_payments: payments,
-         p_user_id: userId || 'ADMIN',
+         p_user_id: userId as string,
          p_date: dateNow,
          p_glosa: planillaGlosa,
          p_edit_planilla_id: metadata?.editPlanillaId || null,
@@ -926,7 +926,7 @@ export const useStore = create<AppState>((set, get) => ({
             description: `Liquidación Manual ${planillaCode} - ${planillaGlosa}`,
             amount: totalCollected,
             date: dateNow,
-            user_id: userId || 'ADMIN',
+            user_id: userId as string,
             reference_id: planillaId
          };
 

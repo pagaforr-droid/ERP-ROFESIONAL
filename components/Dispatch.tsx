@@ -187,14 +187,14 @@ export const Dispatch: React.FC = () => {
 
    const handleGenerateRoute = async () => {
       if (selectedSaleIds.length === 0) return;
-      
+
       // Cargar series de Guía Reales
       try {
-          const { data } = await import('../services/supabase').then(m => m.supabase.from('document_series').select('*').eq('type', 'GUIA').eq('is_active', true));
-          if (data && data.length > 0) {
-              setDbSeries(data);
-              setSelectedSeries(data[0].series);
-          }
+         const { data } = await import('../services/supabase').then(m => m.supabase.from('document_series').select('*').eq('type', 'GUIA').eq('is_active', true));
+         if (data && data.length > 0) {
+            setDbSeries(data);
+            setSelectedSeries(data[0].series);
+         }
       } catch (e) { console.error(e); }
 
       setShowPickingList(true);
@@ -241,63 +241,63 @@ export const Dispatch: React.FC = () => {
             alert("¡Hoja de Ruta actualizada exitosamente!");
             await fetchData();
          } else {
-             const dispatchId = crypto.randomUUID();
-             // Calculate the next code safely by finding the maximum existing number
-             let maxCount = 0;
-             dispatchSheets.forEach(ds => {
-                 const match = ds.code.match(/RUT-(\d+)/);
-                 if (match && match[1]) {
-                     const num = parseInt(match[1], 10);
-                     if (num > maxCount) maxCount = num;
-                 }
-             });
-             const count = maxCount + 1;
-             const real_code = `RUT-${String(count).padStart(4, '0')}`;
+            const dispatchId = crypto.randomUUID();
+            // Calculate the next code safely by finding the maximum existing number
+            let maxCount = 0;
+            dispatchSheets.forEach(ds => {
+               const match = ds.code.match(/RUT-(\d+)/);
+               if (match && match[1]) {
+                  const num = parseInt(match[1], 10);
+                  if (num > maxCount) maxCount = num;
+               }
+            });
+            const count = maxCount + 1;
+            const real_code = `RUT-${String(count).padStart(4, '0')}`;
 
-             // 1. Insert into dispatch_sheets
-             const { data: insDs, error: err1 } = await supabase.from('dispatch_sheets').insert({
-                id: dispatchId,
-                code: real_code,
-                vehicle_id: selectedVehicleId,
-                status: 'in_transit',
-                date: new Date().toISOString().split('T')[0]
-             }).select();
-             if (err1) throw err1;
-             if (!insDs || insDs.length === 0) throw new Error("Supabase RLS bloqueó silenciosamente la creación de la planilla (dispatch_sheets). Ejecuta el SQL de permisos.");
+            // 1. Insert into dispatch_sheets
+            const { data: insDs, error: err1 } = await supabase.from('dispatch_sheets').insert({
+               id: dispatchId,
+               code: real_code,
+               vehicle_id: selectedVehicleId,
+               status: 'in_transit',
+               date: new Date().toISOString().split('T')[0]
+            }).select();
+            if (err1) throw err1;
+            if (!insDs || insDs.length === 0) throw new Error("Supabase RLS bloqueó silenciosamente la creación de la planilla (dispatch_sheets). Ejecuta el SQL de permisos.");
 
-             // 2. Update sales dispatch_status
-             if (selectedSaleIds.length > 0) {
-                const { data: updatedSales, error: err2 } = await supabase.from('sales').update({ dispatch_status: 'assigned' }).in('id', selectedSaleIds).select();
-                if (err2) throw err2;
-                if (!updatedSales || updatedSales.length === 0) {
-                   throw new Error("No se pudo actualizar el estado de los documentos. Supabase bloqueó la acción silenciosamente. Ejecuta el SQL de RLS proporcionado.");
-                }
-                
-                // 3. Insert into dispatch_sales
-                const dsSales = selectedSaleIds.map(id => ({ dispatch_sheet_id: dispatchId, sale_id: id }));
-                const { data: insSales, error: err3 } = await supabase.from('dispatch_sales').insert(dsSales).select();
-                if (err3) throw err3;
-                if (!insSales || insSales.length === 0) throw new Error("Supabase RLS bloqueó silenciosamente el vínculo de los documentos (dispatch_sales). Ejecuta el SQL de permisos.");
-             }
+            // 2. Update sales dispatch_status
+            if (selectedSaleIds.length > 0) {
+               const { data: updatedSales, error: err2 } = await supabase.from('sales').update({ dispatch_status: 'assigned' }).in('id', selectedSaleIds).select();
+               if (err2) throw err2;
+               if (!updatedSales || updatedSales.length === 0) {
+                  throw new Error("No se pudo actualizar el estado de los documentos. Supabase bloqueó la acción silenciosamente. Ejecuta el SQL de RLS proporcionado.");
+               }
 
-             alert(`¡Hoja de Ruta creada! Código: ${real_code}`);
-             await fetchData();
+               // 3. Insert into dispatch_sales
+               const dsSales = selectedSaleIds.map(id => ({ dispatch_sheet_id: dispatchId, sale_id: id }));
+               const { data: insSales, error: err3 } = await supabase.from('dispatch_sales').insert(dsSales).select();
+               if (err3) throw err3;
+               if (!insSales || insSales.length === 0) throw new Error("Supabase RLS bloqueó silenciosamente el vínculo de los documentos (dispatch_sales). Ejecuta el SQL de permisos.");
+            }
+
+            alert(`¡Hoja de Ruta creada! Código: ${real_code}`);
+            await fetchData();
          }
       } catch (error: any) {
-          alert("Error al guardar en Supabase: " + error.message);
+         alert("Error al guardar en Supabase: " + error.message);
       } finally {
-          setIsSaving(false);
-          setSelectedSaleIds([]);
-          setSelectedVehicleId('');
-          setShowPickingList(false);
-          setEditMode(false);
-          setEditingDispatchId(null);
+         setIsSaving(false);
+         setSelectedSaleIds([]);
+         setSelectedVehicleId('');
+         setShowPickingList(false);
+         setEditMode(false);
+         setEditingDispatchId(null);
       }
    };
 
    const annulDispatch = async (dispatchId: string) => {
       if (!confirm('¿Está seguro de que desea anular esta Hoja de Ruta? Todas las ventas asociadas volverán a estar pendientes.')) return;
-      
+
       try {
          const dispatch = dispatchSheets.find(d => d.id === dispatchId);
          if (!dispatch) return;
@@ -529,12 +529,12 @@ export const Dispatch: React.FC = () => {
       doc.setFont('helvetica', 'bold');
       doc.setDrawColor(0);
       doc.setLineWidth(0.5);
-      
+
       const drvName = selectedVehicle?.driver_id ? drivers.find(d => d.id === selectedVehicle.driver_id)?.name : 'Nombre Chofer / DNI';
       doc.line(40, finalY + 30, 80, finalY + 30);
       doc.text("FIRMA REPARTIDOR", 60, finalY + 34, { align: 'center' });
       doc.text(drvName || "Nombre Chofer / DNI", 60, finalY + 38, { align: 'center' });
-      
+
       doc.line(130, finalY + 30, 170, finalY + 30);
       doc.text("V° B° ALMACÉN", 150, finalY + 34, { align: 'center' });
       doc.text("Firma y Sello", 150, finalY + 38, { align: 'center' });
@@ -673,12 +673,12 @@ export const Dispatch: React.FC = () => {
       doc.setFont('helvetica', 'bold');
       doc.setDrawColor(0);
       doc.setLineWidth(0.5);
-      
+
       const drvNameSeller = selectedVehicle?.driver_id ? drivers.find(d => d.id === selectedVehicle.driver_id)?.name : 'Nombre Chofer / DNI';
       doc.line(40, finalYSeller + 30, 80, finalYSeller + 30);
       doc.text("FIRMA REPARTIDOR", 60, finalYSeller + 34, { align: 'center' });
       doc.text(drvNameSeller || "Nombre Chofer / DNI", 60, finalYSeller + 38, { align: 'center' });
-      
+
       doc.line(130, finalYSeller + 30, 170, finalYSeller + 30);
       doc.text("V° B° ALMACÉN", 150, finalYSeller + 34, { align: 'center' });
       doc.text("Firma y Sello", 150, finalYSeller + 38, { align: 'center' });
@@ -692,55 +692,55 @@ export const Dispatch: React.FC = () => {
    }, [dispatchSheets]);
 
    const generateConsolidatedGuidePDF = async () => {
-       // Mocking a DispatchSheet that represents the Consolidated Guide
-       const consolidatedId = `CONSOL-${new Date().getTime()}`;
-       
-       let guiaItems: any[] = [];
-       const selectedDocs = sortedSales.filter(s => selectedSaleIds.includes(s.id));
-       
-       selectedDocs.forEach(sale => {
-          sale.items.forEach(item => {
-             const prod = products.find(p => p.id === item.product_id);
-             const existingItem = guiaItems.find(gi => gi.product_id === item.product_id);
-             if (existingItem) {
-                existingItem.quantity += item.quantity_base;
-             } else {
-                guiaItems.push({
-                   product_id: item.product_id,
-                   product: prod,
-                   quantity: item.quantity_base,
-                   unit_price: 0,
-                });
-             }
-          });
-       });
+      // Mocking a DispatchSheet that represents the Consolidated Guide
+      const consolidatedId = `CONSOL-${new Date().getTime()}`;
 
-       const firstTrackedSale = selectedDocs.find(s => s.guide_transporter_id || s.guide_driver_id) || selectedDocs[0];
+      let guiaItems: any[] = [];
+      const selectedDocs = sortedSales.filter(s => selectedSaleIds.includes(s.id));
 
-       const consolidatedPayload = {
-           id: consolidatedId,
-           code: `0001-${new Date().getTime().toString().slice(-6)}`,
-           date: new Date().toISOString(),
-           vehicle_id: selectedVehicleId,
-           status: 'pending',
-           sale_ids: selectedSaleIds,
-           items: guiaItems,
-           client_name: 'Documentos Itinerantes',
-           motivo: 'Traslado por Emisor (Consolidado)',
-           guide_transporter_id: firstTrackedSale?.guide_transporter_id || '',
-           guide_driver_id: firstTrackedSale?.guide_driver_id || '',
-           guide_vehicle_id: firstTrackedSale?.guide_vehicle_id || selectedVehicleId || ''
-       };
+      selectedDocs.forEach(sale => {
+         sale.items.forEach(item => {
+            const prod = products.find(p => p.id === item.product_id);
+            const existingItem = guiaItems.find(gi => gi.product_id === item.product_id);
+            if (existingItem) {
+               existingItem.quantity += item.quantity_base;
+            } else {
+               guiaItems.push({
+                  product_id: item.product_id,
+                  product: prod,
+                  quantity: item.quantity_base,
+                  unit_price: 0,
+               });
+            }
+         });
+      });
 
-       try {
-           setIsPrinting(true);
-           await PdfEngine.openDocument(consolidatedPayload, 'GUIA_CONSOLIDADA', company);
-       } catch (error) {
-           console.error("Failed to generate PDF:", error);
-           alert("Hubo un error al generar el documento PDF.");
-       } finally {
-           setIsPrinting(false);
-       }
+      const firstTrackedSale = selectedDocs.find(s => s.guide_transporter_id || s.guide_driver_id) || selectedDocs[0];
+
+      const consolidatedPayload = {
+         id: consolidatedId,
+         code: `0001-${new Date().getTime().toString().slice(-6)}`,
+         date: new Date().toISOString(),
+         vehicle_id: selectedVehicleId,
+         status: 'pending',
+         sale_ids: selectedSaleIds,
+         items: guiaItems,
+         client_name: 'Documentos Itinerantes',
+         motivo: 'Traslado por Emisor (Consolidado)',
+         guide_transporter_id: firstTrackedSale?.guide_transporter_id || '',
+         guide_driver_id: firstTrackedSale?.guide_driver_id || '',
+         guide_vehicle_id: firstTrackedSale?.guide_vehicle_id || selectedVehicleId || ''
+      };
+
+      try {
+         setIsPrinting(true);
+         await PdfEngine.openDocument(consolidatedPayload, 'GUIA_CONSOLIDADA', company);
+      } catch (error) {
+         console.error("Failed to generate PDF:", error);
+         alert("Hubo un error al generar el documento PDF.");
+      } finally {
+         setIsPrinting(false);
+      }
    };
 
    // --- RENDER ---
@@ -765,13 +765,13 @@ export const Dispatch: React.FC = () => {
                   <div className="flex bg-slate-900 rounded p-1 items-center gap-2">
                      <div className="flex bg-slate-800 rounded p-1 mr-2 border border-slate-700">
                         <label className="text-[10px] font-bold text-slate-400 mr-2 uppercase self-center ml-1">Serie Guía:</label>
-                        <select 
-                            className="bg-slate-900 text-white text-xs font-bold border-none outline-none rounded px-2 py-1"
-                            value={selectedSeries}
-                            onChange={(e) => setSelectedSeries(e.target.value)}
+                        <select
+                           className="bg-slate-900 text-white text-xs font-bold border-none outline-none rounded px-2 py-1"
+                           value={selectedSeries}
+                           onChange={(e) => setSelectedSeries(e.target.value)}
                         >
-                            {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
-                            {dbSeries.length === 0 && <option value="G001">G001 (Auto)</option>}
+                           {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
+                           {dbSeries.length === 0 && <option value="G001">G001 (Auto)</option>}
                         </select>
                      </div>
 
@@ -950,17 +950,17 @@ export const Dispatch: React.FC = () => {
                                     </React.Fragment>
                                  );
                               })}
-                              
-                               {/* TOTAL ROW */}
-                               <tr className="border-t-[3px] border-b-2 border-black font-extrabold text-[10px] text-black uppercase bg-gray-100">
-                                  <td colSpan={3} className="py-2.5 pr-4 text-right">TOTAL PLANILLA:</td>
-                                  <td className="py-2.5 text-right pr-4">{selectedTotals.totalWeight.toFixed(2)} KG</td>
-                                  <td className="py-2.5 text-right pr-2">S/ {selectedTotals.totalAmount ? selectedTotals.totalAmount.toFixed(2) : selectedTotals.totalMoney.toFixed(2)}</td>
-                                  <td colSpan={2}></td>
-                               </tr>
+
+                              {/* TOTAL ROW */}
+                              <tr className="border-t-[3px] border-b-2 border-black font-extrabold text-[10px] text-black uppercase bg-gray-100">
+                                 <td colSpan={3} className="py-2.5 pr-4 text-right">TOTAL PLANILLA:</td>
+                                 <td className="py-2.5 text-right pr-4">{selectedTotals.totalWeight.toFixed(2)} KG</td>
+                                 <td className="py-2.5 text-right pr-2">S/ {selectedTotals.totalAmount ? selectedTotals.totalAmount.toFixed(2) : selectedTotals.totalMoney.toFixed(2)}</td>
+                                 <td colSpan={2}></td>
+                              </tr>
                            </tbody>
                         </table>
-                        
+
                         {/* SIGNATURES */}
                         <div className="flex justify-between mt-24 px-16 text-black print:mt-32 break-inside-avoid">
                            <div className="text-center w-48">
@@ -1131,7 +1131,7 @@ export const Dispatch: React.FC = () => {
                         <FileText className="w-24 h-24 mb-6 text-slate-300" />
                         <h2 className="text-2xl font-black text-slate-700 mb-2">Guía de Remisión Consolidada</h2>
                         <p className="text-center max-w-lg mb-8">Esta opción generará un documento oficial que consolida toda la mercadería de la lista seleccionada en una sola <b>Guía de Remisión</b> (Tipo Remitente) para el traslado en la misma unidad de transporte.</p>
-                        
+
                         <div className="bg-amber-50 border border-amber-200 p-6 rounded-xl max-w-lg w-full text-amber-800 text-sm">
                            <h3 className="font-bold flex items-center mb-2"><AlertTriangle className="w-4 h-4 mr-2" /> Excepción Legal (SUNAT)</h3>
                            <p className="mb-2">Al generar una Guía de Remisión Consolidada, deberás adjuntar copias físicas o virtuales de todas las Facturas o Boletas individuales que componen el reparto.</p>
@@ -1341,12 +1341,12 @@ export const Dispatch: React.FC = () => {
                            )}
                         </tbody>
                      </table>
-                    </div>
-                 </div>
-              </div>
-           )}
-           
-           {activeTab === 'EN_RUTA' && (
+                  </div>
+               </div>
+            </div>
+         )}
+
+         {activeTab === 'EN_RUTA' && (
             <div className="flex-1 flex flex-col gap-4 overflow-hidden">
                {activeDispatches.length === 0 ? (
                   <div className="bg-white flex-1 rounded-lg border border-slate-200 flex flex-col items-center justify-center text-slate-500">
@@ -1399,45 +1399,45 @@ export const Dispatch: React.FC = () => {
                                        <AlertTriangle className="w-4 h-4 mr-2" />
                                        <div className="text-xs font-medium">Se han reportado incidencias (Entregas parciales o locales cerrados) durante esta ruta.</div>
                                     </div>
-                                  ) : (
-                                     <div className="flex items-start text-emerald-600">
-                                        <CheckCircle className="w-4 h-4 mr-2" />
-                                        <div className="text-xs font-medium">Sin incidencias reportadas por el momento. El reparto transcurre con normalidad.</div>
-                                     </div>
-                                  )}
-                               </div>
+                                 ) : (
+                                    <div className="flex items-start text-emerald-600">
+                                       <CheckCircle className="w-4 h-4 mr-2" />
+                                       <div className="text-xs font-medium">Sin incidencias reportadas por el momento. El reparto transcurre con normalidad.</div>
+                                    </div>
+                                 )}
+                              </div>
 
-                               <div className="flex border-t border-slate-100 pt-3 gap-2 align-bottom">
-                                  <button
+                              <div className="flex border-t border-slate-100 pt-3 gap-2 align-bottom">
+                                 <button
                                     onClick={() => enterEditMode(ds)}
                                     className="flex-1 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold py-2 rounded transition-colors"
-                                  >
+                                 >
                                     Modificar Ruta
-                                  </button>
-                                  <button
+                                 </button>
+                                 <button
                                     onClick={() => {
-                                      // Quickly enter edit mode, show picking list to print, then leave edit mode.
-                                      setEditMode(true);
-                                      setEditingDispatchId(ds.id);
-                                      setSelectedVehicleId(ds.vehicle_id);
-                                      setSelectedSaleIds([...ds.sale_ids]);
-                                      setShowPickingList(true);
+                                       // Quickly enter edit mode, show picking list to print, then leave edit mode.
+                                       setEditMode(true);
+                                       setEditingDispatchId(ds.id);
+                                       setSelectedVehicleId(ds.vehicle_id);
+                                       setSelectedSaleIds([...ds.sale_ids]);
+                                       setShowPickingList(true);
                                     }}
                                     className="flex-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold py-2 rounded transition-colors flex items-center justify-center"
-                                  >
+                                 >
                                     <Printer className="w-3 h-3 mr-1" /> Imprimir
-                                  </button>
-                                  <button
+                                 </button>
+                                 <button
                                     onClick={() => annulDispatch(ds.id)}
                                     className="bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 text-xs font-bold px-3 py-2 rounded transition-colors flex items-center justify-center"
                                     title="Anular Hoja de Ruta"
-                                  >
+                                 >
                                     <Trash2 className="w-4 h-4" />
-                                  </button>
-                               </div>
-                            </div>
-                         );
-                      })}
+                                 </button>
+                              </div>
+                           </div>
+                        );
+                     })}
                   </div>
                )}
             </div>
@@ -1446,10 +1446,10 @@ export const Dispatch: React.FC = () => {
          {activeTab === 'HISTORIAL' && (
             <div className="flex-1 flex flex-col gap-4 overflow-hidden">
                <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex justify-between items-center">
-                  <h3 className="font-bold text-slate-800 flex items-center"><FileText className="w-5 h-5 mr-2 text-emerald-600"/> Historial de Planillas de Reparto</h3>
+                  <h3 className="font-bold text-slate-800 flex items-center"><FileText className="w-5 h-5 mr-2 text-emerald-600" /> Historial de Planillas de Reparto</h3>
                   <div className="text-xs text-slate-500">Muestra todas las planillas generadas, liquidadas o anuladas.</div>
                </div>
-               
+
                <div className="flex-1 overflow-auto bg-white rounded-lg border border-slate-200">
                   <table className="w-full text-left text-sm whitespace-nowrap">
                      <thead className="bg-slate-100 text-slate-700 sticky top-0 shadow-sm z-10 text-[11px] uppercase font-black">

@@ -516,7 +516,7 @@ export interface DispatchSheet {
   id: string;
   code: string;
   vehicle_id: string;
-  status: 'pending' | 'in_transit' | 'completed';
+  status: 'pending' | 'in_transit' | 'completed' | 'canceled';
   date: string;
   sale_ids: string[];
 

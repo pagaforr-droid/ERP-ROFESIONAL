@@ -285,7 +285,7 @@ export const DispatchLiquidationComp: React.FC = () => {
    const confirmChangeType = () => {
       if (!targetSaleId) return;
 
-      const res = store.changeSaleDocumentType(targetSaleId, newDocType, 'ADMIN');
+      const res = store.changeSaleDocumentType(targetSaleId, newDocType, store.currentUser?.id as string);
       if (res.success) {
          setActiveModal('NONE');
       } else {
@@ -636,7 +636,7 @@ export const DispatchLiquidationComp: React.FC = () => {
          };
 
          console.log("Saving Draft Liquidation:", liquidation);
-         const res = await store.saveDispatchLiquidationDraft(liquidation, 'ADMIN');
+         const res = await store.saveDispatchLiquidationDraft(liquidation, store.currentUser?.id as string);
 
          if (res.success) {
             await fetchData();
@@ -672,7 +672,7 @@ export const DispatchLiquidationComp: React.FC = () => {
          };
 
          console.log("Processing Final Liquidation:", liquidation);
-         const res = await store.processDispatchLiquidation(liquidation, 'ADMIN');
+         const res = await store.processDispatchLiquidation(liquidation, store.currentUser?.id as string);
 
          if (res.success) {
             await fetchData();
@@ -706,7 +706,7 @@ export const DispatchLiquidationComp: React.FC = () => {
 
    const executeRevertLiquidation = async () => {
       if (!actionTargetId) return;
-      const res = await store.revertDispatchLiquidation(actionTargetId, 'ADMIN');
+      const res = await store.revertDispatchLiquidation(actionTargetId, store.currentUser?.id as string);
       if (res.success) {
          await fetchData();
          showSystemAlert("Revertido", res.msg, "success");
@@ -733,7 +733,7 @@ export const DispatchLiquidationComp: React.FC = () => {
 
    const executeConfirmKardex = async () => {
       if (!actionTargetId) return;
-      const res = await store.confirmDispatchLiquidationKardex(actionTargetId, 'ADMIN');
+      const res = await store.confirmDispatchLiquidationKardex(actionTargetId, store.currentUser?.id as string);
       if (res.success) {
          await fetchData();
          showSystemAlert("Kardex Confirmado", res.msg, "success");
