@@ -159,7 +159,7 @@ BEGIN
 
         -- Lógica de Facturación y Cuentas por Cobrar
         IF v_doc->>'action' = 'PAID' THEN
-            UPDATE sales SET balance = 0, payment_status = 'PAID', collection_status = 'COLLECTED', dispatch_status = 'liquidated' WHERE id = v_sale.id;
+            UPDATE sales SET balance = 0, payment_status = 'PAID', collection_status = 'COLLECTED'::collection_status, dispatch_status = 'liquidated'::dispatch_status WHERE id = v_sale.id;
         
         ELSIF v_doc->>'action' = 'CREDIT' THEN
             -- Update balance to reflect the amount collected if it's a partial credit collection
@@ -167,13 +167,13 @@ BEGIN
             UPDATE sales SET 
                 balance = total - (v_doc->>'amount_collected')::DECIMAL,
                 payment_status = CASE WHEN (total - (v_doc->>'amount_collected')::DECIMAL) <= 0 THEN 'PAID' ELSE 'PENDING' END,
-                collection_status = CASE WHEN (total - (v_doc->>'amount_collected')::DECIMAL) <= 0 THEN 'COLLECTED' ELSE (CASE WHEN (v_doc->>'amount_collected')::DECIMAL > 0 THEN 'PARTIAL' ELSE 'NONE' END) END,
-                dispatch_status = 'liquidated' 
+                collection_status = (CASE WHEN (total - (v_doc->>'amount_collected')::DECIMAL) <= 0 THEN 'COLLECTED' ELSE (CASE WHEN (v_doc->>'amount_collected')::DECIMAL > 0 THEN 'PARTIAL' ELSE 'NONE' END) END)::collection_status,
+                dispatch_status = 'liquidated'::dispatch_status 
             WHERE id = v_sale.id;
         
         ELSIF v_doc->>'action' = 'VOID' THEN
             -- SOLO cambiamos estado, no borramos batch_allocations aqui (se hace en confirm_kardex)
-            UPDATE sales SET status = 'canceled', payment_status = 'PENDING', collection_status = 'NONE', balance = total, dispatch_status = 'liquidated' WHERE id = v_sale.id;
+            UPDATE sales SET status = 'canceled'::general_status, payment_status = 'PENDING', collection_status = 'NONE'::collection_status, balance = total, dispatch_status = 'liquidated'::dispatch_status WHERE id = v_sale.id;
             
         ELSIF v_doc->>'action' = 'PARTIAL_RETURN' THEN
             -- Generar Serie para NC
@@ -192,10 +192,10 @@ BEGIN
             INSERT INTO sales (
                 id, origin_order_id, document_type, series, number, payment_method, payment_status, collection_status, client_id, seller_id, client_name, client_ruc, client_address, subtotal, igv, total, balance, observation, status, dispatch_status, sunat_status
             ) VALUES (
-                v_new_sale_id, v_sale.origin_order_id, 'NOTA_CREDITO', v_nc_series, v_nc_number, 'CONTADO', 'PAID', 'NONE', v_sale.client_id, v_sale.seller_id, v_sale.client_name, v_sale.client_ruc, v_sale.client_address, 
+                v_new_sale_id, v_sale.origin_order_id, 'NOTA_CREDITO', v_nc_series, v_nc_number, 'CONTADO'::payment_method, 'PAID', 'NONE'::collection_status, v_sale.client_id, v_sale.seller_id, v_sale.client_name, v_sale.client_ruc, v_sale.client_address, 
                 ((v_doc->>'amount_credit_note')::DECIMAL / 1.18), 
                 ((v_doc->>'amount_credit_note')::DECIMAL - ((v_doc->>'amount_credit_note')::DECIMAL / 1.18)), 
-                (v_doc->>'amount_credit_note')::DECIMAL, 0, 'Devolución de Liquidación ' || v_liquidation_id || ' - Doc. Org: ' || v_sale.series || '-' || v_sale.number, 'completed', 'liquidated', 'PENDING'
+                (v_doc->>'amount_credit_note')::DECIMAL, 0, 'Devolución de Liquidación ' || v_liquidation_id || ' - Doc. Org: ' || v_sale.series || '-' || v_sale.number, 'completed'::general_status, 'liquidated'::dispatch_status, 'PENDING'::sunat_status
             );
 
             -- Insertar sale_items
