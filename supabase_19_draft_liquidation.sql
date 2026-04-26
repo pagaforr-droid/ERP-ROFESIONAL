@@ -24,9 +24,9 @@ BEGIN
     IF EXISTS (SELECT 1 FROM dispatch_liquidations WHERE id = v_liquidation_id) THEN
         UPDATE dispatch_liquidations SET
             total_cash_collected = (p_liquidation_data->>'total_cash_collected')::DECIMAL,
-            total_credit_reported = (p_liquidation_data->>'total_credit_reported')::DECIMAL,
+            total_credit_receivable = (p_liquidation_data->>'total_credit_receivable')::DECIMAL,
             total_voided = (p_liquidation_data->>'total_voided')::DECIMAL,
-            total_returns = (p_liquidation_data->>'total_returns')::DECIMAL,
+            total_returns_value = (p_liquidation_data->>'total_returns_value')::DECIMAL,
             status = 'processed',
             updated_at = NOW()
         WHERE id = v_liquidation_id;
@@ -35,14 +35,14 @@ BEGIN
         DELETE FROM liquidation_documents WHERE dispatch_liquidation_id = v_liquidation_id;
     ELSE
         INSERT INTO dispatch_liquidations (
-            id, dispatch_sheet_id, total_cash_collected, total_credit_reported, total_voided, total_returns, status
+            id, dispatch_sheet_id, total_cash_collected, total_credit_receivable, total_voided, total_returns_value, status
         ) VALUES (
             v_liquidation_id,
             v_dispatch_id,
             (p_liquidation_data->>'total_cash_collected')::DECIMAL,
-            (p_liquidation_data->>'total_credit_reported')::DECIMAL,
+            (p_liquidation_data->>'total_credit_receivable')::DECIMAL,
             (p_liquidation_data->>'total_voided')::DECIMAL,
-            (p_liquidation_data->>'total_returns')::DECIMAL,
+            (p_liquidation_data->>'total_returns_value')::DECIMAL,
             'processed'
         );
     END IF;
@@ -104,9 +104,9 @@ BEGIN
     IF EXISTS (SELECT 1 FROM dispatch_liquidations WHERE id = v_liquidation_id) THEN
         UPDATE dispatch_liquidations SET
             total_cash_collected = (p_liquidation_data->>'total_cash_collected')::DECIMAL,
-            total_credit_reported = (p_liquidation_data->>'total_credit_reported')::DECIMAL,
+            total_credit_receivable = (p_liquidation_data->>'total_credit_receivable')::DECIMAL,
             total_voided = (p_liquidation_data->>'total_voided')::DECIMAL,
-            total_returns = (p_liquidation_data->>'total_returns')::DECIMAL,
+            total_returns_value = (p_liquidation_data->>'total_returns_value')::DECIMAL,
             status = 'processed', -- Mantenemos temporalmente como processed hasta el commit final
             updated_at = NOW()
         WHERE id = v_liquidation_id;
@@ -115,14 +115,14 @@ BEGIN
         DELETE FROM liquidation_documents WHERE dispatch_liquidation_id = v_liquidation_id;
     ELSE
         INSERT INTO dispatch_liquidations (
-            id, dispatch_sheet_id, total_cash_collected, total_credit_reported, total_voided, total_returns, status
+            id, dispatch_sheet_id, total_cash_collected, total_credit_receivable, total_voided, total_returns_value, status
         ) VALUES (
             v_liquidation_id,
             v_dispatch_id,
             (p_liquidation_data->>'total_cash_collected')::DECIMAL,
-            (p_liquidation_data->>'total_credit_reported')::DECIMAL,
+            (p_liquidation_data->>'total_credit_receivable')::DECIMAL,
             (p_liquidation_data->>'total_voided')::DECIMAL,
-            (p_liquidation_data->>'total_returns')::DECIMAL,
+            (p_liquidation_data->>'total_returns_value')::DECIMAL,
             'processed'
         );
     END IF;
