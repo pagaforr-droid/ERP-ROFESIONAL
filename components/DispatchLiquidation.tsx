@@ -699,6 +699,44 @@ export const DispatchLiquidationComp: React.FC = () => {
       }
    };
 
+   const executeDirectFinalize = async (liqId: string) => {
+      if (!confirm("¿Está seguro de procesar y enviar a caja esta liquidación de forma definitiva? Esto también actualizará el Kardex.")) return;
+      
+      try {
+         const existingLiq = dispatchLiquidations.find(l => l.id === liqId);
+         if (!existingLiq) return;
+
+         const draftDocs = liquidationDocuments.filter(d => d.dispatch_liquidation_id === existingLiq.id);
+         const fullLiq: DispatchLiquidation = {
+            ...existingLiq,
+            documents: draftDocs
+         };
+
+         // Paso 1: Procesar a Caja
+         const resProcess = await store.processDispatchLiquidation(fullLiq, store.currentUser?.id as string);
+         if (!resProcess.success) {
+            showSystemAlert("Error en Caja", resProcess.msg, "error");
+            return;
+         }
+         
+         // Paso 2: Confirmar Kardex
+         const resKardex = await store.confirmDispatchLiquidationKardex(existingLiq.id, store.currentUser?.id as string);
+         if (!resKardex.success) {
+            showSystemAlert("Procesado Parcial", "Se envió a caja y generó Notas de Crédito, pero ocurrió un error en Kardex: " + resKardex.msg, "info");
+            await fetchData();
+            return;
+         }
+
+         // Éxito Total
+         await fetchData();
+         showSystemAlert("Completado", "Liquidación procesada: Movimientos de caja registrados, NC emitidas y Kardex actualizado.", "success");
+         setActiveTab('HISTORY');
+      } catch (error: any) {
+         console.error("Direct Finalize Error:", error);
+         showSystemAlert("Error Crítico", "Ocurrió un error: " + error.message, "error");
+      }
+   };
+
    const handleRequestRevert = (liqId: string) => {
       setActionTargetId(liqId);
       setActiveModal('CONFIRM_REVERT');
@@ -853,11 +891,8 @@ export const DispatchLiquidationComp: React.FC = () => {
                                              <Edit3 className="w-4 h-4 mr-1" /> Corregir
                                           </button>
                                           <button
-                                             onClick={() => {
-                                                const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
-                                                if (ds) startLiquidation(ds);
-                                             }}
-                                             title="Revisar y Terminar"
+                                             onClick={() => executeDirectFinalize(liq.id)}
+                                             title="Procesar Directamente a Caja y Kardex"
                                              className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 p-2 rounded transition-colors flex items-center"
                                           >
                                              <ArrowRight className="w-4 h-4 mr-1" /> Terminar
