@@ -398,8 +398,11 @@ export const MobileOrders: React.FC = () => {
       }
 
       if (totalStock < requiredBaseUnits && !item.is_bonus) {
-         setSystemAlert({ show: true, message: 'Stock Insuficiente para ' + pRef.name + '.\nDisponible: ' + totalStock + ' unid.\nIntentó solicitar: ' + requiredBaseUnits + ' unid.', type: 'error' });
-         return;
+         // Permitir siempre la reducción de cantidad para destrabar al usuario
+         if (newQty > item.quantity) {
+            setSystemAlert({ show: true, message: 'Stock Insuficiente para ' + pRef.name + '.\nDisponible: ' + totalStock + ' unid.\nIntentó solicitar: ' + requiredBaseUnits + ' unid.', type: 'error' });
+            return;
+         }
       }
 
       const tGross = newQty * item.unit_price;
