@@ -507,22 +507,6 @@ export const MobileOrders: React.FC = () => {
       } catch (e) { setSystemAlert({ show: true, message: 'Error al cargar pedido.', type: 'error' }); } finally { setIsLoadingData(false); }
    };
 
-   const handleGoToProductSelect = async () => {
-      setIsLoadingData(true);
-      try {
-         // Refrescar el catálogo de productos con su stock real más actual (Kardex precalculado)
-         const { data, error } = await supabase.from('vw_active_products').select('*');
-         if (error) throw error;
-         if (data) setDbProducts(data as any[]);
-         setViewMode('PRODUCT_SELECT');
-      } catch (error) {
-         console.error("Error al actualizar stock de productos:", error);
-         setSystemAlert({ show: true, message: 'No se pudo sincronizar el inventario en tiempo real. Usando datos en caché.', type: 'error' });
-         setViewMode('PRODUCT_SELECT'); // Ir de todos modos si falla la conexión
-      } finally {
-         setIsLoadingData(false);
-      }
-   };
 
    const handleProductClick = async (p: Product) => {
       setIsLoadingData(true);
@@ -540,6 +524,7 @@ export const MobileOrders: React.FC = () => {
 
          const updatedProduct = { ...p, current_stock: freshStock };
 
+         setDbProducts(prev => prev.map(prod => prod.id === p.id ? updatedProduct : prod));
          setCartProductsCache(prev => ({ ...prev, [p.id]: updatedProduct }));
          setLoadedBatches(prev => ({ ...prev, [p.id]: bData || [] }));
          setSelectedProduct(updatedProduct);
@@ -965,7 +950,7 @@ export const MobileOrders: React.FC = () => {
                         <button onClick={() => setShowReviewModal(true)} disabled={cart.length === 0} className="w-full mb-3 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black shadow-lg shadow-blue-600/30 active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none">
                            <Eye className="w-5 h-5" /> REVISAR Y EDITAR CARRITO
                         </button>
-                        <button onClick={handleGoToProductSelect} className="w-full py-3 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-xl font-black flex items-center justify-center gap-2 active:bg-indigo-100 transition-colors text-sm shadow-sm">
+                        <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full py-3 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-xl font-black flex items-center justify-center gap-2 active:bg-indigo-100 transition-colors text-sm shadow-sm">
                            <Plus className="w-5 h-5" /> AGREGAR NUEVO PRODUCTO
                         </button>
                      </div>
