@@ -750,7 +750,7 @@ export const Dispatch: React.FC = () => {
       return (
          <div className="fixed inset-0 bg-slate-100 z-50 flex flex-col p-4 overflow-hidden">
             <div className="bg-white shadow-lg rounded-lg flex flex-col h-full max-w-5xl mx-auto w-full border border-slate-300">
-               {/* Header */}
+               {/* Header - Control */}
                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-800 text-white rounded-t-lg print:hidden">
                   <div>
                      <h2 className="text-xl font-bold flex items-center">
