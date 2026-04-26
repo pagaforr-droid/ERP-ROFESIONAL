@@ -167,9 +167,10 @@ export const Kardex: React.FC = () => {
            if (filterCategory !== 'ALL' && prod.category !== filterCategory) return;
            if (filterSupplier !== 'ALL' && prod.supplier_id !== filterSupplier) return;
 
+           const isCreditNote = s.document_type === 'NOTA_CREDITO' || s.document_type === 'NOTA CREDITO';
            list.push({
               id: `SALE-${s.id}-${item.id}`,
-              date: date, type: 'OUT', docType: s.document_type || 'VENTA', docNumber: `${s.series || ''}-${s.number || ''}`,
+              date: date, type: isCreditNote ? 'IN' : 'OUT', docType: s.document_type || 'VENTA', docNumber: `${s.series || ''}-${s.number || ''}`,
               productName: prod.name || 'Desconocido', sku: prod.sku || 'S/N', quantity: item.quantity_base || 0, 
               unitPrice: (item.quantity_base || 0) > 0 ? (item.total_price || 0) / item.quantity_base : 0,
               total: item.total_price || 0, reference: s.client_name || 'Desconocido'
@@ -198,23 +199,7 @@ export const Kardex: React.FC = () => {
                     });
                  });
               }
-              if (doc.action === 'PARTIAL_RETURN') {
-                 (doc.returned_items || []).forEach(ret => {
-                    const prod = (dbProducts || []).find(x => x.id === ret.product_id);
-                    if (!prod) return;
-                    if (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()) && !(prod.sku || '').toLowerCase().includes(searchTerm.toLowerCase())) return;
-                    if (filterCategory !== 'ALL' && prod.category !== filterCategory) return;
-                    if (filterSupplier !== 'ALL' && prod.supplier_id !== filterSupplier) return;
-
-                    list.push({
-                       id: `RET-${doc.sale_id}-${ret.product_id}`,
-                       date, type: 'IN', docType: 'NOTA CREDITO', docNumber: doc.credit_note_series || 'NC-000',
-                       productName: prod.name || '', sku: prod.sku || '', quantity: ret.quantity_base || 0, 
-                       unitPrice: (ret.quantity_base || 0) > 0 ? (ret.total_refund || 0) / ret.quantity_base : 0, 
-                       total: ret.total_refund || 0, reference: sale?.client_name || 'CLIENTE'
-                    });
-                 });
-              }
+               // PARTIAL_RETURN ya es manejado por dbSales al generar una NOTA_CREDITO
            }
         });
      });
