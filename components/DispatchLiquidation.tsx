@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { DispatchSheet, Sale, LiquidationDocument, DispatchLiquidation } from '../types';
-import { Search, CheckCircle, AlertTriangle, ArrowRight, Printer, XCircle, FileText, Ban, DollarSign, CreditCard, ShieldAlert, Save, Package, HelpCircle, User, Calendar, RotateCcw, Plus, ListChecks, Camera, MapPin, Image as ImageIcon, X } from 'lucide-react';
+import { Search, CheckCircle, AlertTriangle, ArrowRight, Printer, XCircle, FileText, Ban, DollarSign, CreditCard, ShieldAlert, Save, Package, HelpCircle, User, Calendar, RotateCcw, Plus, ListChecks, Camera, MapPin, Image as ImageIcon, X, Edit3 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../services/supabase';
@@ -847,10 +847,20 @@ export const DispatchLiquidationComp: React.FC = () => {
                                                 const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
                                                 if (ds) startLiquidation(ds);
                                              }}
+                                             title="Corregir Liquidación"
+                                             className="text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 p-2 rounded transition-colors flex items-center"
+                                          >
+                                             <Edit3 className="w-4 h-4 mr-1" /> Corregir
+                                          </button>
+                                          <button
+                                             onClick={() => {
+                                                const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
+                                                if (ds) startLiquidation(ds);
+                                             }}
                                              title="Revisar y Terminar"
                                              className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 p-2 rounded transition-colors flex items-center"
                                           >
-                                             <ArrowRight className="w-4 h-4 mr-1" /> Revisar y Terminar
+                                             <ArrowRight className="w-4 h-4 mr-1" /> Terminar
                                           </button>
                                        </td>
                                     </tr>
