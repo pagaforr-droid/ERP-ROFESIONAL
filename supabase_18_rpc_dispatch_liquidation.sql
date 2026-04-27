@@ -52,9 +52,18 @@ BEGIN
         (p_liquidation_data->>'total_voided')::DECIMAL,
         (p_liquidation_data->>'total_returns_value')::DECIMAL,
         'PROCESADO'
-    );
+    ) ON CONFLICT (id) DO UPDATE SET
+        date = EXCLUDED.date,
+        total_cash_collected = EXCLUDED.total_cash_collected,
+        total_credit_receivable = EXCLUDED.total_credit_receivable,
+        total_voided = EXCLUDED.total_voided,
+        total_returns_value = EXCLUDED.total_returns_value,
+        status = 'PROCESADO';
 
     v_total_cash := 0;
+
+    -- Eliminar documentos previos (idempotencia)
+    DELETE FROM liquidation_documents WHERE dispatch_liquidation_id = v_liquidation_id;
 
     -- Iterar Documentos
     FOR v_doc IN SELECT * FROM jsonb_array_elements(p_liquidation_data->'documents') LOOP
