@@ -86,10 +86,11 @@ export const DispatchLiquidationComp: React.FC = () => {
    const [draftLiquidationId, setDraftLiquidationId] = useState<string | null>(null);
 
    // --- MODALS STATE ---
-   const [activeModal, setActiveModal] = useState<'NONE' | 'VOID' | 'PARTIAL' | 'CONFIRM_FINALIZE' | 'ADD_EXTRA' | 'CHANGE_TYPE' | 'PHOTO' | 'SYSTEM_ALERT' | 'CONFIRM_REVERT' | 'CONFIRM_KARDEX'>('NONE');
+   const [activeModal, setActiveModal] = useState<'NONE' | 'VOID' | 'PARTIAL' | 'CONFIRM_FINALIZE' | 'ADD_EXTRA' | 'CHANGE_TYPE' | 'PHOTO' | 'SYSTEM_ALERT' | 'CONFIRM_REVERT' | 'CONFIRM_KARDEX' | 'SYSTEM_CONFIRM'>('NONE');
    const [targetSaleId, setTargetSaleId] = useState<string | null>(null);
    const [photoTargetUrl, setPhotoTargetUrl] = useState<string | null>(null);
    const [systemAlertData, setSystemAlertData] = useState<{ title: string, message: string, type: 'success'|'error'|'info' }>({ title: '', message: '', type: 'info' });
+   const [confirmDialogData, setConfirmDialogData] = useState<{ title: string, message: string, onConfirm: () => void }>({ title: '', message: '', onConfirm: () => {} });
    const [actionTargetId, setActionTargetId] = useState<string | null>(null);
 
    // ADD EXTRA DOC State
@@ -117,6 +118,11 @@ export const DispatchLiquidationComp: React.FC = () => {
    const showSystemAlert = (title: string, message: string, type: 'success'|'error'|'info' = 'info') => {
       setSystemAlertData({ title, message, type });
       setActiveModal('SYSTEM_ALERT');
+   };
+
+   const showConfirmDialog = (title: string, message: string, onConfirm: () => void) => {
+      setConfirmDialogData({ title, message, onConfirm });
+      setActiveModal('SYSTEM_CONFIRM');
    };
 
    const getSalesForDispatch = () => {
@@ -222,28 +228,39 @@ export const DispatchLiquidationComp: React.FC = () => {
    };
 
    const markAllAsPaid = () => {
-      if (!confirm('¿Marcar TODOS los documentos pendientes como cobrados en su totalidad?')) return;
-      
-      const updated: Record<string, LiquidationDocument> = { ...processedDocs };
-      dispatchSales.forEach(sale => {
-         const status = updated[sale.id];
-         // Only modify if it hasn't been voided or partially returned
-         if (status && status.action !== 'VOID' && status.action !== 'PARTIAL_RETURN') {
-            updated[sale.id] = {
-               sale_id: sale.id,
-               action: 'PAID',
-               amount_collected: sale.total,
-               amount_credit: 0,
-               amount_void: 0,
-               amount_credit_note: 0,
-               returned_items: []
-            };
-         }
+      showConfirmDialog('Confirmar Acción', '¿Marcar TODOS los documentos pendientes como cobrados en su totalidad?', () => {
+         const updated: Record<string, LiquidationDocument> = { ...processedDocs };
+         dispatchSales.forEach(sale => {
+            const status = updated[sale.id];
+            // Only modify if it hasn't been voided or partially returned
+            if (status && status.action !== 'VOID' && status.action !== 'PARTIAL_RETURN') {
+               updated[sale.id] = {
+                  sale_id: sale.id,
+                  action: 'PAID',
+                  amount_collected: sale.total,
+                  amount_credit: 0,
+                  amount_void: 0,
+                  amount_credit_note: 0,
+                  returned_items: []
+               };
+            }
+         });
+         setProcessedDocs(updated);
+         setActiveModal('NONE');
       });
-      setProcessedDocs(updated);
    };
 
    const openVoidModal = (saleId: string) => {
+      const currentStatus = processedDocs[saleId];
+      if (currentStatus?.action === 'VOID') {
+         // Des-anular (Undo Void)
+         setProcessedDocs(prev => {
+            const next = { ...prev };
+            delete next[saleId];
+            return next;
+         });
+         return;
+      }
       setTargetSaleId(saleId);
       setVoidReason('');
       setActiveModal('VOID');
@@ -251,7 +268,7 @@ export const DispatchLiquidationComp: React.FC = () => {
 
    const confirmVoid = () => {
       if (!targetSaleId) return;
-      if (voidReason.length < 5) { alert("Debe ingresar un motivo válido para la anulación."); return; }
+      if (voidReason.length < 5) { showSystemAlert('Error', 'Debe ingresar un motivo válido para la anulación.', 'error'); return; }
 
       const sale = dispatchSales.find(s => s.id === targetSaleId);
       if (!sale) return;
@@ -274,7 +291,7 @@ export const DispatchLiquidationComp: React.FC = () => {
       const sale = sales.find(s => s.id === saleId);
       if (!sale) return;
       if (sale.sunat_status === 'SENT' || sale.sunat_status === 'ACCEPTED') {
-         alert("No se puede cambiar el tipo de un documento ya emitido a SUNAT.");
+         showSystemAlert('Error', 'No se puede cambiar el tipo de un documento ya emitido a SUNAT.', 'error');
          return;
       }
       setTargetSaleId(saleId);
@@ -289,7 +306,7 @@ export const DispatchLiquidationComp: React.FC = () => {
       if (res.success) {
          setActiveModal('NONE');
       } else {
-         alert(res.msg);
+         showSystemAlert('Error', res.msg, 'error');
       }
    };
 
@@ -340,7 +357,7 @@ export const DispatchLiquidationComp: React.FC = () => {
 
          // Validation: Cannot return more than sold
          if (returnedBaseUnits > item.quantity_base) {
-            alert(`Error en ${item.product_name}: Estás devolviendo ${returnedBaseUnits} unidades, pero solo se vendieron ${item.quantity_base}.`);
+            showSystemAlert('Error de Cantidad', `Estás devolviendo ${returnedBaseUnits} unidades, pero solo se vendieron ${item.quantity_base} del producto ${item.product_name}.`, 'error');
             return;
          }
 
@@ -363,14 +380,14 @@ export const DispatchLiquidationComp: React.FC = () => {
          }
       }
 
-      if (totalRefund === 0) { alert("No ha seleccionado ninguna devolución."); return; }
+      if (totalRefund === 0) { showSystemAlert('Aviso', 'No ha seleccionado ninguna devolución.', 'info'); return; }
 
       // Float correction
       totalRefund = Number(totalRefund.toFixed(2));
       const saleTotal = Number((sale.total || 0).toFixed(2));
 
       if (totalRefund >= saleTotal) {
-         alert("El monto de devolución iguala o supera el total. Use la opción ANULAR.");
+         showSystemAlert('Aviso', 'El monto de devolución iguala o supera el total. Use la opción ANULAR.', 'info');
          return;
       }
 
@@ -398,7 +415,7 @@ export const DispatchLiquidationComp: React.FC = () => {
 
    const handleAddExtraDocument = (saleId: string) => {
       if (dispatchSales.find(s => s.id === saleId)) {
-         alert("El documento ya está en la lista.");
+         showSystemAlert('Aviso', 'El documento ya está en la lista.', 'info');
          return;
       }
       const sale = sales.find(s => s.id === saleId);
@@ -646,11 +663,11 @@ export const DispatchLiquidationComp: React.FC = () => {
             setProcessedDocs({});
             setDraftLiquidationId(null);
          } else {
-            alert(res.msg);
+            showSystemAlert('Error', res.msg, 'error');
          }
       } catch (err) {
          console.error(err);
-         alert("Ocurrió un error al guardar el borrador de la liquidación.");
+         showSystemAlert('Error Crítico', 'Ocurrió un error al guardar el borrador de la liquidación.', 'error');
       }
    };
 
@@ -700,41 +717,44 @@ export const DispatchLiquidationComp: React.FC = () => {
    };
 
    const executeDirectFinalize = async (liqId: string) => {
-      if (!confirm("¿Está seguro de procesar y enviar a caja esta liquidación de forma definitiva? Esto también actualizará el Kardex.")) return;
-      
-      try {
-         const existingLiq = dispatchLiquidations.find(l => l.id === liqId);
-         if (!existingLiq) return;
+      showConfirmDialog('Confirmar Finalización', '¿Está seguro de procesar y enviar a caja esta liquidación de forma definitiva? Esto también actualizará el Kardex.', async () => {
+         try {
+            const existingLiq = dispatchLiquidations.find(l => l.id === liqId);
+            if (!existingLiq) {
+               setActiveModal('NONE');
+               return;
+            }
 
-         const draftDocs = liquidationDocuments.filter(d => d.dispatch_liquidation_id === existingLiq.id);
-         const fullLiq: DispatchLiquidation = {
-            ...existingLiq,
-            documents: draftDocs
-         };
+            const draftDocs = liquidationDocuments.filter(d => d.dispatch_liquidation_id === existingLiq.id);
+            const fullLiq: DispatchLiquidation = {
+               ...existingLiq,
+               documents: draftDocs
+            };
 
-         // Paso 1: Procesar a Caja
-         const resProcess = await store.processDispatchLiquidation(fullLiq, store.currentUser?.id as string);
-         if (!resProcess.success) {
-            showSystemAlert("Error en Caja", resProcess.msg, "error");
-            return;
-         }
-         
-         // Paso 2: Confirmar Kardex
-         const resKardex = await store.confirmDispatchLiquidationKardex(existingLiq.id, store.currentUser?.id as string);
-         if (!resKardex.success) {
-            showSystemAlert("Procesado Parcial", "Se envió a caja y generó Notas de Crédito, pero ocurrió un error en Kardex: " + resKardex.msg, "info");
+            // Paso 1: Procesar a Caja
+            const resProcess = await store.processDispatchLiquidation(fullLiq, store.currentUser?.id as string);
+            if (!resProcess.success) {
+               showSystemAlert("Error en Caja", resProcess.msg, "error");
+               return;
+            }
+            
+            // Paso 2: Confirmar Kardex
+            const resKardex = await store.confirmDispatchLiquidationKardex(existingLiq.id, store.currentUser?.id as string);
+            if (!resKardex.success) {
+               showSystemAlert("Procesado Parcial", "Se envió a caja y generó Notas de Crédito, pero ocurrió un error en Kardex: " + resKardex.msg, "info");
+               await fetchData();
+               return;
+            }
+
+            // Éxito Total
             await fetchData();
-            return;
+            showSystemAlert("Completado", "Liquidación procesada: Movimientos de caja registrados, NC emitidas y Kardex actualizado.", "success");
+            setActiveTab('HISTORY');
+         } catch (error: any) {
+            console.error(error);
+            showSystemAlert("Error", "Ocurrió un error: " + error.message, "error");
          }
-
-         // Éxito Total
-         await fetchData();
-         showSystemAlert("Completado", "Liquidación procesada: Movimientos de caja registrados, NC emitidas y Kardex actualizado.", "success");
-         setActiveTab('HISTORY');
-      } catch (error: any) {
-         console.error("Direct Finalize Error:", error);
-         showSystemAlert("Error Crítico", "Ocurrió un error: " + error.message, "error");
-      }
+      });
    };
 
    const handleRequestRevert = (liqId: string) => {
@@ -984,6 +1004,24 @@ export const DispatchLiquidationComp: React.FC = () => {
                </div>
             )}
 
+            {activeModal === 'SYSTEM_CONFIRM' && (
+               <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+                  <div className="bg-white w-full max-w-sm rounded-lg shadow-2xl p-6 border-t-4 border-indigo-500 animate-fade-in-up">
+                     <div className="flex items-center mb-4">
+                        <HelpCircle className="w-6 h-6 text-indigo-500 mr-2" />
+                        <h3 className="text-lg font-bold text-slate-800">{confirmDialogData.title}</h3>
+                     </div>
+                     <p className="text-slate-600 mb-6">{confirmDialogData.message}</p>
+                     <div className="flex justify-end gap-3">
+                        <button onClick={() => setActiveModal('NONE')} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded">Cancelar</button>
+                        <button onClick={confirmDialogData.onConfirm} className="px-4 py-2 bg-indigo-600 text-white font-bold rounded hover:bg-indigo-700 shadow-md flex items-center">
+                           <CheckCircle className="w-4 h-4 mr-2" /> Aceptar
+                        </button>
+                     </div>
+                  </div>
+               </div>
+            )}
+
             {activeModal === 'CONFIRM_REVERT' && (
                <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
                   <div className="bg-white w-full max-w-md rounded-lg shadow-2xl p-6 border-t-4 border-red-500 animate-fade-in-up">
@@ -1188,7 +1226,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                            onClick={() => {
                               const input = document.getElementById('voidConfirmInput') as HTMLInputElement;
                               if (input?.value.toUpperCase() !== 'ANULAR') {
-                                 alert("Debe escribir la palabra ANULAR para confirmar.");
+                                 showSystemAlert('Error', 'Debe escribir la palabra ANULAR para confirmar.', 'error');
                                  return;
                               }
                               confirmVoid();
