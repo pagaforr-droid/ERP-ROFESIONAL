@@ -103,7 +103,7 @@ export default function App() {
 
   // --- PERMISSION CHECK ---
   const canAccess = (view: string) => {
-    return currentUser.permissions?.includes(view) || view === 'edit-sale'; // Permitido temporalmente para testeo, luego asócialo a un permiso
+    return currentUser.permissions?.includes(view) || view === 'edit-sale' || view === 'accounts-receivable'; 
   };
 
   const renderContent = () => {
