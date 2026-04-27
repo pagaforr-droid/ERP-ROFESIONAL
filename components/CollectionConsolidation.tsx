@@ -6,7 +6,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../services/supabase';
 
 export const CollectionConsolidation: React.FC = () => {
-   const { collectionRecords, collectionPlanillas, sellers, consolidateCollections, currentUser, annulCollectionPlanilla, revertPlanillaForEdit, removeRecordFromPlanilla, sales, manualLiquidation, users, clients } = useStore();
+   const { collectionRecords, collectionPlanillas, sellers, currentUser, sales, users, clients } = useStore();
 
    // Layout State
    const [activeTab, setActiveTab] = useState<'PENDING' | 'HISTORY' | 'MANUAL'>('PENDING');
@@ -196,6 +196,17 @@ export const CollectionConsolidation: React.FC = () => {
       setShowConfirmModal('PENDING');
    };
 
+   // --- DATA SYNC ---
+   const syncSupabaseData = async () => {
+      const { data: recData } = await supabase.from('collection_records').select('*');
+      const { data: planData } = await supabase.from('collection_planillas').select('*');
+      const { data: salesData } = await supabase.from('sales').select('*');
+      
+      if (recData) useStore.setState({ collectionRecords: recData as any[] });
+      if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
+      if (salesData) useStore.setState({ sales: salesData as any[] });
+   };
+
    const handleConfirmProcess = async () => {
       setShowConfirmModal(null);
       setLastTotal(totals);
@@ -209,30 +220,19 @@ export const CollectionConsolidation: React.FC = () => {
             p_user_id: currentUser?.id,
             p_planilla_date: new Date(planillaDate).toISOString(),
             p_category_id: selectedCategoryId || null,
-            p_glosa: planillaGlosa || 'Cobranzas Vendedores'
+            p_glosa: planillaGlosa || 'Cobranzas Vendedores',
+            p_edit_planilla_id: editingPlanillaData?.type === 'PENDING' ? editingPlanillaData.id : null,
+            p_edit_planilla_code: editingPlanillaData?.type === 'PENDING' ? editingPlanillaData.code : null
          });
 
          if (error) {
             console.error('Supabase Error:', error);
-            if (error.message.includes('Aperturado')) {
-               alert("Seguridad: No se puede generar una Planilla de Cobranzas sin un Turno de Caja Aperturado activamente.");
-            } else {
-               alert(`Error de sincronizaciÃ³n con Supabase: ${error.message}`);
-            }
+            alert(`Error al procesar planilla: ${error.message}`);
             setIsProcessing(false);
             return;
          }
 
-         // Sync state in Mock_db para offline reactiveness
-         consolidateCollections(
-            idsArray,
-            currentUser?.id as string,
-            editingPlanillaData?.type === 'PENDING' ? {
-               editPlanillaId: editingPlanillaData.id,
-               editPlanillaCode: editingPlanillaData.code
-            } : undefined
-         );
-
+         await syncSupabaseData();
          setSelectedIds(new Set());
          setPlanillaGlosa('');
          if (editingPlanillaData?.type === 'PENDING') setEditingPlanillaData(null);
@@ -241,7 +241,7 @@ export const CollectionConsolidation: React.FC = () => {
       } catch (error) {
          console.error(error);
          setIsProcessing(false);
-         alert("OcurriÃ³ un error al procesar la planilla.");
+         alert("Ocurrió un error al procesar la planilla.");
       }
    };
 
@@ -314,9 +314,6 @@ export const CollectionConsolidation: React.FC = () => {
 
       setManualCart(prev => [...prev, ...newCartItems]);
       setShowManualSearchModal(false);
-
-      // Keep selected client but clear the selections inside it perfectly matching user workflow 
-      // (though usually closing modal is enough, clearing ensures pristine state next open)
       setManualSelectedIds(new Set());
       setManualAmounts({});
    };
@@ -347,29 +344,28 @@ export const CollectionConsolidation: React.FC = () => {
       setIsProcessing(true);
 
       try {
-         // Create the local array for RPC execution
-         // Wait, manual payments first need to exist as collection_records internally
-         // which the mock `manualLiquidation` created.
-         // Actually, if we want full Supabase, we should run a custom RPC for this.
-         // Since I did not write `consolidate_manual_collections` in SQL, I will run local Mock DB first, 
-         // and in background save the movements or just let the mock logic run for now.
-         // Note: "urgente" so simple migration: just prevent action if session closes, which `process_collection` protects!
-         
          const payments = manualCart.map(item => ({
             saleId: item.saleId,
             amount: item.amountToPay
          }));
 
-         await manualLiquidation(payments, currentUser?.id as string, {
-            date: new Date(planillaDate).toISOString(),
-            glosa: planillaGlosa,
-            ...(editingPlanillaData?.type === 'MANUAL' ? {
-               editPlanillaId: editingPlanillaData.id,
-               editPlanillaCode: editingPlanillaData.code
-            } : {})
+         const { error } = await supabase.rpc('consolidate_manual_collections', {
+            p_payments: payments,
+            p_user_id: currentUser?.id,
+            p_date: new Date(planillaDate).toISOString(),
+            p_glosa: planillaGlosa || 'Cobranza Manual',
+            p_edit_planilla_id: editingPlanillaData?.type === 'MANUAL' ? editingPlanillaData.id : null,
+            p_edit_planilla_code: editingPlanillaData?.type === 'MANUAL' ? editingPlanillaData.code : null
          });
 
-         // Clear cart and headers on success
+         if (error) {
+            console.error('Supabase Error:', error);
+            alert(`Error al procesar planilla manual: ${error.message}`);
+            setIsProcessing(false);
+            return;
+         }
+
+         await syncSupabaseData();
          setManualCart([]);
          setPlanillaGlosa('');
          if (editingPlanillaData?.type === 'MANUAL') setEditingPlanillaData(null);
@@ -378,27 +374,21 @@ export const CollectionConsolidation: React.FC = () => {
       } catch (error) {
          console.error(error);
          setIsProcessing(false);
-         alert("OcurriÃ³ un error al procesar la planilla manual.");
+         alert("Ocurrió un error al procesar la planilla manual.");
       }
    };
 
    // --- HANDLERS (HISTORY) ---
 
    const handleExportExcel = (planilla: CollectionPlanilla, records: CollectionRecord[]) => {
-      // Create data for Excel
       const excelData = [];
-
-      // Header Section
       excelData.push(['PLANILLA DE COBRANZAS', planilla.code, '', '', '', '']);
       excelData.push(['FECHA EMISION', new Date(planilla.date).toLocaleString(), '', '', '', '']);
       excelData.push(['TOTAL GENERADO', `S/ ${planilla.total_amount.toFixed(2)}`, '', '', '', '']);
       excelData.push(['GENERADO POR', currentUser?.name || planilla.user_id || 'SISTEMA', '', '', '', '']);
-      excelData.push([]); // Empty row
+      excelData.push([]); 
+      excelData.push(['N°', 'FECHA DOC', 'VENDEDOR', 'CLIENTE', 'NRO DOCUMENTO', 'IMPORTE (S/)']);
 
-      // Headers
-      excelData.push(['NÂ°', 'FECHA DOC', 'VENDEDOR', 'CLIENTE', 'NRO DOCUMENTO', 'IMPORTE (S/)']);
-
-      // Data Rows
       records.forEach((r, i) => {
          const seller = sellers.find(s => s.id === r.seller_id)?.name || 'N/A';
          excelData.push([
@@ -407,46 +397,21 @@ export const CollectionConsolidation: React.FC = () => {
             seller,
             r.client_name,
             r.document_ref,
-            r.amount_reported, // Keep number for easy summing in Excel
+            r.amount_reported,
          ]);
       });
 
-      // Total row
       excelData.push([]);
       excelData.push(['', '', '', '', 'TOTAL:', planilla.total_amount]);
 
-      // Create Workshet
       const ws = XLSX.utils.aoa_to_sheet(excelData);
-
-      // Simple styling to make it look professional (Set column widths)
-      ws['!cols'] = [
-         { wch: 5 },  // NÂ°
-         { wch: 15 }, // Fecha Doc
-         { wch: 25 }, // Vendedor
-         { wch: 40 }, // Cliente
-         { wch: 15 }, // Nro Documento
-         { wch: 15 }, // Importe
-      ];
-
-      // Apply bold to headers
-      const range = XLSX.utils.decode_range(ws['!ref'] || "A1:F1");
-      for (let C = range.s.c; C <= range.e.c; ++C) {
-         const addr = XLSX.utils.encode_cell({ r: 5, c: C }); // Row 6 (0-indexed 5) has headers
-         if (!ws[addr]) continue;
-         ws[addr].s = { font: { bold: true } };
-      }
-
-      // Create Workbook and Export
+      ws['!cols'] = [{ wch: 5 }, { wch: 15 }, { wch: 25 }, { wch: 40 }, { wch: 15 }, { wch: 15 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, `Planilla ${planilla.code}`);
-
       XLSX.writeFile(wb, `Planilla_${planilla.code}.xlsx`);
    };
 
    const handlePrintA4 = (planillaId: string) => {
-      // Ideally we would route or trigger a specialized print view.
-      // Temporarily simulating via window print, but restricting to Planilla container
-      // To do this deeply we should build a Print Wrapper. Setting global focus for print:
       setSelectedPlanillaId(planillaId);
       setTimeout(() => {
          window.print();
@@ -470,16 +435,14 @@ export const CollectionConsolidation: React.FC = () => {
    };
 
    const processAdminAuth = () => {
-      // Validate Admin Password
       const adminUsers = users.filter(u => u.role === 'ADMIN');
       const isValid = adminUsers.some(admin => admin.password === adminAuthInput);
 
       if (!isValid) {
-         setAdminAuthError('ContraseÃ±a incorrecta o permisos insuficientes.');
+         setAdminAuthError('Contraseña incorrecta o permisos insuficientes.');
          return;
       }
 
-      // If valid, proceed with action
       if (showAdminAuthModal === "ANNUL") {
          confirmAnnulPlanilla();
       } else if (showAdminAuthModal === "EDIT") {
@@ -492,21 +455,27 @@ export const CollectionConsolidation: React.FC = () => {
    const confirmAnnulPlanilla = async () => {
       if (showAnnulModal) {
          try {
-            await annulCollectionPlanilla(showAnnulModal, currentUser?.id as string);
+            const { error } = await supabase.rpc('annul_collection_planilla', {
+               p_planilla_id: showAnnulModal,
+               p_user_id: currentUser?.id
+            });
+            
+            if (error) throw error;
+
+            await syncSupabaseData();
             setShowAnnulModal(null);
             if (selectedPlanillaId === showAnnulModal) {
                setSelectedPlanillaId(null);
             }
-         } catch (error) {
+         } catch (error: any) {
             console.error("Error al anular:", error);
-            alert("Error al anular la planilla en Supabase.");
+            alert(`Error al anular la planilla: ${error.message}`);
          }
       }
    };
 
    const confirmEditPlanilla = async () => {
       if (showEditPlanillaId) {
-         // 1. Find the Planilla and Records before reverting
          const p = collectionPlanillas.find(x => x.id === showEditPlanillaId);
          if (!p) return;
 
@@ -514,20 +483,23 @@ export const CollectionConsolidation: React.FC = () => {
          const wasManual = planillaRecords.every(r => r.seller_id === 'MANUAL');
 
          try {
-            // 2. Extorno (Revertir para editar sin anular) to put the balances and records back
-            await revertPlanillaForEdit(showEditPlanillaId);
+            const { error } = await supabase.rpc('revert_planilla_for_edit', {
+               p_planilla_id: showEditPlanillaId
+            });
+
+            if (error) throw error;
+
+            await syncSupabaseData();
+            
             setEditingPlanillaData({ id: p.id, code: p.code, type: wasManual ? 'MANUAL' : 'PENDING' });
 
             if (wasManual && planillaRecords.length > 0) {
-               // Restore Manual workflow state (CART)
                const restoredCartItems: ManualCartItem[] = [];
-
                planillaRecords.forEach(r => {
                   const sale = sales.find(s => s.id === r.sale_id);
                   if (sale) {
-                     // After revertPlanillaForEdit, the balance in store is already returned!
+                     // Balance was restored by RPC!
                      const currentReturnedBalance = sale.balance !== undefined ? sale.balance : sale.total;
-
                      restoredCartItems.push({
                         saleId: sale.id,
                         clientName: sale.client_name || r.client_name,
@@ -545,33 +517,38 @@ export const CollectionConsolidation: React.FC = () => {
                setPlanillaGlosa(p.glosa || '');
                setManualCart(restoredCartItems);
                setActiveTab('MANUAL');
-
             } else {
-               // Normal Pending Restoration
                setActiveTab('PENDING');
-               setSelectedIds(new Set(p.records.filter(id => {
-                  const rec = collectionRecords.find(r => r.id === id);
-                  return rec && rec.seller_id !== 'MANUAL';
-               })));
+               // We need to set selectedIds for editing pending vouchers
+               setSelectedIds(new Set(p.records));
+               setPlanillaDate(p.date ? p.date.split('T')[0] : new Date().toISOString().split('T')[0]);
+               setPlanillaGlosa(p.glosa || '');
             }
 
             setSelectedPlanillaId(null);
             setShowEditPlanillaId(null);
-         } catch (error) {
+         } catch (error: any) {
             console.error("Error al revertir la planilla:", error);
-            alert("Error al revertir la planilla para ediciÃ³n.");
+            alert(`Error al revertir la planilla para edición: ${error.message}`);
          }
       }
    };
 
    const handleRemoveRecordFromPlanilla = async (recordId: string) => {
       if (!selectedPlanillaId) return;
-      if (!window.confirm("Â¿EstÃ¡ seguro de extraer este documento de la planilla guardada? Esto recalcularÃ¡ los saldos automÃ¡ticamente y devolverÃ¡ el voucher a estado Pendiente.")) return;
+      if (!window.confirm("¿Está seguro de extraer este documento de la planilla guardada? Esto recalculará los saldos automáticamente.")) return;
       try {
-         await removeRecordFromPlanilla(selectedPlanillaId, recordId);
-      } catch (error) {
+         const { error } = await supabase.rpc('remove_record_from_planilla', {
+            p_planilla_id: selectedPlanillaId,
+            p_record_id: recordId
+         });
+
+         if (error) throw error;
+
+         await syncSupabaseData();
+      } catch (error: any) {
          console.error("Error al remover el registro:", error);
-         alert("Error al intentar extraer el documento.");
+         alert(`Error al intentar extraer el documento: ${error.message}`);
       }
    };
 

@@ -53,7 +53,9 @@ CREATE OR REPLACE FUNCTION consolidate_collections(
     p_user_id UUID, 
     p_planilla_date TIMESTAMP WITH TIME ZONE,
     p_category_id UUID,
-    p_glosa TEXT
+    p_glosa TEXT,
+    p_edit_planilla_id UUID DEFAULT NULL,
+    p_edit_planilla_code TEXT DEFAULT NULL
 ) RETURNS UUID AS $$
 DECLARE
     v_session_id UUID;
@@ -78,29 +80,35 @@ BEGIN
         RAISE EXCEPTION 'Ninguno de los registros seleccionados es válido o su suma es 0.';
     END IF;
 
-    -- Generar Autocódigo PLAN-0001
-    SELECT COALESCE(MAX(NULLIF(regexp_replace(code, '\D', '', 'g'), '')), '0')::INT 
-    INTO v_max_num 
-    FROM collection_planillas WHERE code LIKE 'PLAN-%';
-    
-    v_code := 'PLAN-' || LPAD((COALESCE(v_max_num, 0) + 1)::TEXT, 4, '0');
+    -- Manejo de Código e ID (Edición vs Creación)
+    IF p_edit_planilla_id IS NOT NULL AND p_edit_planilla_code IS NOT NULL THEN
+        v_planilla_id := p_edit_planilla_id;
+        v_code := p_edit_planilla_code;
+        -- Limpiar rastro de la planilla que estaba en estado EDITING antes de re-consolidar
+        DELETE FROM collection_planillas WHERE id = v_planilla_id;
+        DELETE FROM cash_movements WHERE reference_id = v_planilla_id::TEXT;
+    ELSE
+        -- Generar Autocódigo PLAN-0001
+        SELECT COALESCE(MAX(NULLIF(regexp_replace(code, '\D', '', 'g'), '')), '0')::INT 
+        INTO v_max_num 
+        FROM collection_planillas WHERE code LIKE 'PLAN-%';
+        
+        v_code := 'PLAN-' || LPAD((COALESCE(v_max_num, 0) + 1)::TEXT, 4, '0');
+        v_planilla_id := gen_random_uuid();
+    END IF;
 
     -- Inserción directa en CAJA (Flujo de Efectivo) validando Categoría "Cobranza Vendedores"
-    INSERT INTO cash_movements (type, category_id, category_name, description, amount, date, user_id)
-    VALUES ('INCOME', p_category_id, 'COBRANZAS VENDEDORES', COALESCE(p_glosa, 'Planilla de Cobranzas') || ' ' || v_code, v_total, p_planilla_date, p_user_id)
+    INSERT INTO cash_movements (type, category_id, category_name, description, amount, date, user_id, reference_id)
+    VALUES ('INCOME', p_category_id, 'COBRANZAS VENDEDORES', COALESCE(p_glosa, 'Planilla de Cobranzas') || ' ' || v_code, v_total, p_planilla_date, p_user_id, v_planilla_id::TEXT)
     RETURNING id INTO v_cash_mov_id;
 
     -- Generar Recibo de Planilla Único
-    INSERT INTO collection_planillas (code, date, total_amount, record_count, user_id, cash_movement_id, glosa, status)
-    VALUES (v_code, p_planilla_date, v_total, array_length(p_record_ids, 1), p_user_id, v_cash_mov_id, p_glosa, 'ACTIVE')
-    RETURNING id INTO v_planilla_id;
-
-    -- Sellar el reference en Caja
-    UPDATE cash_movements SET reference_id = v_planilla_id::TEXT WHERE id = v_cash_mov_id;
+    INSERT INTO collection_planillas (id, code, date, total_amount, record_count, user_id, cash_movement_id, glosa, status, records)
+    VALUES (v_planilla_id, v_code, p_planilla_date, v_total, array_length(p_record_ids, 1), p_user_id, v_cash_mov_id, p_glosa, 'ACTIVE', p_record_ids);
 
     -- Actualizar estado de records sueltos y amarrarlos
     UPDATE collection_records 
-    SET status = 'REPORTED', planilla_id = v_planilla_id
+    SET status = 'VALIDATED', planilla_id = v_planilla_id
     WHERE id = ANY(p_record_ids);
 
     RETURN v_planilla_id;
