@@ -105,7 +105,7 @@ BEGIN
             INSERT INTO sales (
                 id, origin_order_id, document_type, series, number, payment_method, payment_status, collection_status, client_id, seller_id, client_name, client_ruc, client_address, subtotal, igv, total, balance, observation, status, dispatch_status, sunat_status
             ) VALUES (
-                v_new_sale_id, v_sale.id, 'NOTA_CREDITO', v_nc_series, v_nc_number, 'CONTADO', 'PAID', 'NONE', v_sale.client_id, v_sale.seller_id, v_sale.client_name, v_sale.client_ruc, v_sale.client_address, 
+                v_new_sale_id, v_sale.origin_order_id, 'NOTA_CREDITO', v_nc_series, v_nc_number, 'CONTADO', 'PAID', 'NONE', v_sale.client_id, v_sale.seller_id, v_sale.client_name, v_sale.client_ruc, v_sale.client_address, 
                 ((v_doc->>'amount_credit_note')::DECIMAL / 1.18), 
                 ((v_doc->>'amount_credit_note')::DECIMAL - ((v_doc->>'amount_credit_note')::DECIMAL / 1.18)), 
                 (v_doc->>'amount_credit_note')::DECIMAL, 0, 'Devolución de Liquidación ' || v_liquidation_id || ' - Doc. Org: ' || v_sale.series || '-' || v_sale.number, 'completed', 'liquidated', 'PENDING'
