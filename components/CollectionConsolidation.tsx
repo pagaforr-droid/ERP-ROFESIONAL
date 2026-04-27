@@ -107,12 +107,18 @@ export const CollectionConsolidation: React.FC = () => {
    // Client Selection Search
    const manualClientsFound = useMemo(() => {
       const q = manualClientSearch.toLowerCase();
-      if (!q) return [];
+      
+      // Si no hay búsqueda, sugerir clientes que TIENEN deudas pendientes.
+      if (!q) {
+         const clientsWithDebt = new Set(sales.filter(s => (s.balance ?? s.total) > 0 && s.status !== 'canceled').map(s => s.client_id));
+         return clients.filter(c => clientsWithDebt.has(c.id)).slice(0, 10);
+      }
+
       return clients.filter(c =>
          c.name.toLowerCase().includes(q) ||
          (c.doc_number && c.doc_number.toLowerCase().includes(q))
       ).slice(0, 10);
-   }, [clients, manualClientSearch]);
+   }, [clients, manualClientSearch, sales]);
 
    // Filter sales ONLY for selected client
    const manualPendingSales = useMemo(() => {
@@ -162,9 +168,14 @@ export const CollectionConsolidation: React.FC = () => {
          const { data: recData } = await supabase.from('collection_records').select('*');
          const { data: planData } = await supabase.from('collection_planillas').select('*');
          const { data: salesData } = await supabase.from('sales').select('*');
+         const { data: clientsData } = await supabase.from('clients').select('*');
+         const { data: sellersData } = await supabase.from('sellers').select('*');
+         
          if (recData) useStore.setState({ collectionRecords: recData as any[] });
          if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
          if (salesData) useStore.setState({ sales: salesData as any[] });
+         if (clientsData) useStore.setState({ clients: clientsData as any[] });
+         if (sellersData) useStore.setState({ sellers: sellersData as any[] });
 
         // Cargar categorias y preseleccionar
         const { data: catData } = await supabase.from('expense_categories').select('*');

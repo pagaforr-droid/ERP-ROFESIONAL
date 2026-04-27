@@ -17,7 +17,12 @@ export const AccountsReceivable: React.FC = () => {
   React.useEffect(() => {
      const initData = async () => {
         const { data: salesData } = await supabase.from('sales').select('*');
+        const { data: clientsData } = await supabase.from('clients').select('*');
+        const { data: sellersData } = await supabase.from('sellers').select('*');
+        
         if (salesData) useStore.setState({ sales: salesData as any[] });
+        if (clientsData) useStore.setState({ clients: clientsData as any[] });
+        if (sellersData) useStore.setState({ sellers: sellersData as any[] });
      };
      initData();
   }, []);
