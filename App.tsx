@@ -27,6 +27,7 @@ import { PromoManager } from './components/PromoManager';
 import { PriceManager } from './components/PriceManager';
 import { VirtualStore } from './components/VirtualStore';
 import { CollectionConsolidation } from './components/CollectionConsolidation';
+import { AccountsReceivable } from './components/AccountsReceivable'; // NUEVO MÓDULO
 import { SunatManager } from './components/SunatManager';
 import { CreditNotes } from './components/CreditNotes';
 import { QuotaManager } from './components/QuotaManager';
@@ -120,6 +121,7 @@ export default function App() {
       case 'dispatch-liquidation': return <DispatchLiquidationComp />;
       case 'cash-flow': return <CashFlow />;
       case 'collection-consolidation': return <CollectionConsolidation />;
+      case 'accounts-receivable': return <AccountsReceivable />; // RENDER DEL NUEVO MÓDULO
       case 'sunat-manager': return <SunatManager />;
       case 'credit-notes': return <CreditNotes />;
       case 'products': return <ProductManagement />;
@@ -267,6 +269,7 @@ export default function App() {
           <Section title="Finanzas" theme="emerald">
             <NavItem view="cash-flow" icon={DollarSign} label="Flujo de Caja" />
             <NavItem view="collection-consolidation" icon={Wallet} label="Consolidar Cobranzas" />
+            <NavItem view="accounts-receivable" icon={PieChart} label="Cuentas por Cobrar" />
           </Section>
 
           <Section title="Logística" theme="amber">

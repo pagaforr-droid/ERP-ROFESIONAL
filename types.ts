@@ -741,4 +741,5 @@ export type ViewState =
   | 'credit-notes'
   | 'advanced-orders'
   | 'mobile-delivery'
+  | 'accounts-receivable' // NEW: Cuentas por Cobrar
   | 'personnel-management';
