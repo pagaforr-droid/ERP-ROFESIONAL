@@ -50,7 +50,7 @@ export const Kardex: React.FC = () => {
               supabase.from('suppliers').select('*'),
               supabase.from('purchases').select('*, items:purchase_items(*)'),
               supabase.from('sales').select('*, items:sale_items(*)'),
-              supabase.from('dispatch_liquidations').select('*')
+              supabase.from('dispatch_liquidations').select('*, documents:liquidation_documents(*)')
            ]);
            if (pRes.data) setDbProducts(pRes.data as Product[]);
            if (bRes.data) setDbBatches(bRes.data as Batch[]);
