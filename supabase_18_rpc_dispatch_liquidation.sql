@@ -172,7 +172,7 @@ BEGIN
         IF v_doc.action = 'VOID' THEN
             -- Devolver stock a los lotes originales
             FOR v_batch_id, v_qty IN 
-                SELECT batch_id, quantity_allocated 
+                SELECT batch_id, quantity 
                 FROM batch_allocations 
                 WHERE sale_item_id IN (SELECT id FROM sale_items WHERE sale_id = v_doc.sale_id)
             LOOP
