@@ -629,6 +629,142 @@ export const DispatchLiquidationComp: React.FC = () => {
       window.open(pdfBlob, '_blank');
    };
 
+   const generateHistoricalLiquidationPDF = (liqId: string) => {
+      const liq = liquidatedDispatches.find(l => l.id === liqId);
+      if (!liq) return;
+      const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
+      if (!ds) return;
+      
+      const docs = liquidationDocuments.filter(d => d.dispatch_liquidation_id === liq.id);
+      const liqSales = sales.filter(s => docs.some(d => d.sale_id === s.id));
+
+      const docPdf = new jsPDF({ format: 'A4', unit: 'mm' });
+      const pageWidth = docPdf.internal.pageSize.width;
+
+      // Header
+      docPdf.setFontSize(18);
+      docPdf.setFont("helvetica", "bold");
+      docPdf.text("Liquidación de Ruta (Histórico)", pageWidth / 2, 20, { align: "center" });
+
+      docPdf.setFontSize(10);
+      docPdf.setFont("helvetica", "normal");
+      docPdf.text(`Hoja de Ruta: ${ds.code}`, 15, 30);
+      docPdf.text(`Fecha Liquidación: ${new Date(liq.date || Date.now()).toLocaleString()}`, 15, 36);
+      docPdf.text(`Código Liquidación: ${liq.id.split('-')[0]}`, 15, 42);
+
+      // Total Summaries
+      docPdf.setDrawColor(200, 200, 200);
+      docPdf.setFillColor(240, 240, 240);
+      docPdf.rect(15, 48, pageWidth - 30, 22, "FD");
+
+      docPdf.setFont("helvetica", "bold");
+      docPdf.text("Resumen General", 20, 55);
+
+      docPdf.setFontSize(8);
+      docPdf.setFont("helvetica", "bold");
+      const cashCol = liq.total_cash_collected || 0;
+      const creditCol = liq.total_credit_receivable || 0;
+      docPdf.text("Monto en Caja Cobrado:", 20, 62);
+      docPdf.text(`S/ ${cashCol.toFixed(2)}`, 65, 62);
+
+      docPdf.text("Ctas por Cobrar (Créditos):", 20, 67);
+      docPdf.text(`S/ ${creditCol.toFixed(2)}`, 65, 67);
+
+      // DOCUMENT TABLE
+      const tableData = liqSales.map(sale => {
+         const pDoc = docs.find(d => d.sale_id === sale.id);
+         let finalState = '-';
+         if (!pDoc) return [sale.client_name, sale.number, 'ERROR', '-', '-', '-'];
+         if (pDoc.action === 'PAID') finalState = 'COBRADO';
+         if (pDoc.action === 'CREDIT') finalState = 'CREDITO';
+         if (pDoc.action === 'VOID') finalState = 'ANULADO';
+         if (pDoc.action === 'PARTIAL_RETURN') finalState = `PARCIAL (NC ${pDoc.credit_note_series || ''})`;
+
+         return [
+            sale.client_name,
+            `${(sale.document_type || '').substring(0, 3)} ${sale.series}-${sale.number}`,
+            finalState,
+            pDoc.amount_collected > 0 ? (pDoc.amount_collected || 0).toFixed(2) : '-',
+            pDoc.amount_credit > 0 ? (pDoc.amount_credit || 0).toFixed(2) : '-',
+            (pDoc.amount_void + pDoc.amount_credit_note) > 0 ? (pDoc.amount_void + pDoc.amount_credit_note).toFixed(2) : '-'
+         ];
+      });
+
+      autoTable(docPdf, {
+         startY: 75,
+         head: [['Cliente', 'Documento', 'Estado', 'Efectivo', 'Crédito', 'Devuelto (S/)']],
+         body: tableData,
+         theme: 'grid',
+         styles: { fontSize: 7, cellPadding: 0.8 },
+         headStyles: { fillColor: [50, 50, 50] },
+      });
+
+      let finalY = (docPdf as any).lastAutoTable.finalY + 15;
+
+      // KARDEX RETURN TABLE
+      const returnEntriesForPdf: any[] = [];
+      const consolidatedReturns: Record<string, { name: string, baseQty: number, product_id: string }> = {};
+
+      docs.forEach(pDoc => {
+         const sale = liqSales.find(s => s.id === pDoc.sale_id);
+         if (!sale) return;
+
+         if (pDoc.action === 'VOID') {
+            sale.items.forEach(i => {
+               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit === 'PKG' ? 'CJA' : 'UND'} (Anulación)`, i.total_price.toFixed(2)]);
+               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id };
+               consolidatedReturns[i.product_id].baseQty += i.quantity_base;
+            });
+         } else if (pDoc.action === 'PARTIAL_RETURN') {
+            (pDoc.returned_items || []).forEach((i: any) => {
+               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_base} Base (NC)`, (i.total_refund || 0).toFixed(2)]);
+               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id };
+               consolidatedReturns[i.product_id].baseQty += i.quantity_base;
+            });
+         }
+      });
+
+      if (returnEntriesForPdf.length > 0) {
+         docPdf.setFontSize(10);
+         docPdf.setFont("helvetica", "bold");
+         docPdf.text("CONSOLIDADO DE MERCADERÍA REGRESADA AL ALMACÉN", 15, finalY);
+
+         const consolidatedRows = Object.values(consolidatedReturns).map(ret => {
+            const product = products.find(p => p.id === ret.product_id);
+            const factor = product?.package_content || 1;
+            const cjas = Math.floor(ret.baseQty / factor);
+            const unds = ret.baseQty % factor;
+            const formatQty = `${cjas > 0 ? cjas + ' CJAS ' : ''}${unds > 0 || cjas === 0 ? unds + ' UNDS' : ''}`;
+            return [ret.name, formatQty, ret.baseQty.toString()];
+         });
+
+         autoTable(docPdf, {
+            startY: finalY + 5,
+            head: [['Producto', 'Cant. (Cajas / Unidades)', 'Total Unid. Base']],
+            body: consolidatedRows,
+            theme: 'grid',
+            headStyles: { fillColor: [150, 0, 0] },
+            styles: { fontSize: 8, fontStyle: 'bold' }
+         });
+         finalY = (docPdf as any).lastAutoTable.finalY + 15;
+
+         docPdf.setFontSize(10);
+         docPdf.setFont("helvetica", "bold");
+         docPdf.text("Detalle de Retorno por Documento", 15, finalY);
+
+         autoTable(docPdf, {
+            startY: finalY + 5,
+            head: [['Producto', 'Documento Origen', 'Cant. Retornada', 'Valor (S/)']],
+            body: returnEntriesForPdf,
+            theme: 'grid',
+            styles: { fontSize: 7, cellPadding: 0.8 }
+         });
+      }
+
+      const pdfBlob = docPdf.output('bloburl');
+      window.open(pdfBlob, '_blank');
+   };
+
    const handleRequestFinalize = () => {
       if (!selectedDispatch) { showSystemAlert("Error", "No hay despacho seleccionado.", "error"); return; }
       if (Object.keys(processedDocs).length === 0) { showSystemAlert("Error", "No hay documentos procesados.", "error"); return; }
@@ -959,6 +1095,13 @@ export const DispatchLiquidationComp: React.FC = () => {
                                        </td>
                                        <td className="p-3 text-right font-bold text-green-700">{(liq.total_cash_collected || 0).toFixed(2)}</td>
                                        <td className="p-3 text-center flex justify-center gap-2">
+                                          <button
+                                             onClick={() => generateHistoricalLiquidationPDF(liq.id)}
+                                             title="Imprimir PDF"
+                                             className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded transition-colors flex items-center font-bold shadow-sm border border-blue-200"
+                                          >
+                                             <Printer className="w-4 h-4 mr-1" /> PDF
+                                          </button>
                                           {(!liq.status || liq.status === 'PROCESADO') && (
                                              <button
                                                 onClick={() => handleRequestConfirmKardex(liq.id)}
