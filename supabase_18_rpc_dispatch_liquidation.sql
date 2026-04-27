@@ -170,16 +170,7 @@ BEGIN
     FOR v_doc IN SELECT * FROM liquidation_documents WHERE dispatch_liquidation_id = p_liquidation_id LOOP
         
         IF v_doc.action = 'VOID' THEN
-            -- Devolver stock a los lotes originales
-            FOR v_batch_id, v_qty IN 
-                SELECT batch_id, quantity 
-                FROM batch_allocations 
-                WHERE sale_item_id IN (SELECT id FROM sale_items WHERE sale_id = v_doc.sale_id)
-            LOOP
-                UPDATE batches SET quantity_current = quantity_current + v_qty WHERE id = v_batch_id;
-            END LOOP;
-            
-            -- Eliminar asignaciones (devuelve stock)
+            -- Eliminar asignaciones (el trigger ON DELETE de batch_allocations devuelve el stock automáticamente)
             DELETE FROM batch_allocations WHERE sale_item_id IN (SELECT id FROM sale_items WHERE sale_id = v_doc.sale_id);
             
         ELSIF v_doc.action = 'PARTIAL_RETURN' THEN
