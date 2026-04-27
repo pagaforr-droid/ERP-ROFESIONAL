@@ -83,7 +83,7 @@ BEGIN
         UPDATE sales 
         SET balance = v_new_balance,
             payment_status = CASE WHEN v_new_balance = 0 THEN 'PAID' ELSE 'PENDING' END,
-            collection_status = CASE WHEN v_new_balance = 0 THEN 'COLLECTED' ELSE 'PARTIAL' END
+            collection_status = (CASE WHEN v_new_balance = 0 THEN 'COLLECTED' ELSE 'PARTIAL' END)::collection_status
         WHERE id = v_sale_id;
 
         INSERT INTO collection_records (sale_id, seller_id, client_name, document_ref, amount_reported, status, date_reported, payment_method, planilla_id)
@@ -129,7 +129,7 @@ BEGIN
         UPDATE sales 
         SET balance = COALESCE(balance, 0) + v_record.amount_reported,
             payment_status = 'PENDING',
-            collection_status = CASE WHEN COALESCE(balance, 0) + v_record.amount_reported >= total THEN 'NONE' ELSE 'PARTIAL' END
+            collection_status = (CASE WHEN COALESCE(balance, 0) + v_record.amount_reported >= total THEN 'NONE' ELSE 'PARTIAL' END)::collection_status
         WHERE id = v_record.sale_id;
 
         IF v_record.seller_id = 'MANUAL' THEN
@@ -168,7 +168,7 @@ BEGIN
         UPDATE sales 
         SET balance = COALESCE(balance, 0) + v_record.amount_reported,
             payment_status = 'PENDING',
-            collection_status = CASE WHEN COALESCE(balance, 0) + v_record.amount_reported >= total THEN 'NONE' ELSE 'PARTIAL' END
+            collection_status = (CASE WHEN COALESCE(balance, 0) + v_record.amount_reported >= total THEN 'NONE' ELSE 'PARTIAL' END)::collection_status
         WHERE id = v_record.sale_id;
 
         IF v_record.seller_id != 'MANUAL' THEN
@@ -208,7 +208,7 @@ BEGIN
     UPDATE sales 
     SET balance = COALESCE(balance, 0) + v_record.amount_reported,
         payment_status = 'PENDING',
-        collection_status = CASE WHEN COALESCE(balance, 0) + v_record.amount_reported >= total THEN 'NONE' ELSE 'PARTIAL' END
+        collection_status = (CASE WHEN COALESCE(balance, 0) + v_record.amount_reported >= total THEN 'NONE' ELSE 'PARTIAL' END)::collection_status
     WHERE id = v_record.sale_id;
 
     -- Actualizar Registro
