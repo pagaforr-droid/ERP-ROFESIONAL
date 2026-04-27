@@ -470,7 +470,7 @@ export const useStore = create<AppState>((set, get) => ({
 
       allSales = allSales.map(s => {
          if (s.id === originalSaleId) {
-            const currentBalance = s.balance !== undefined ? s.balance : s.total;
+            const currentBalance = s.balance ?? s.total;
             const newBalance = Math.max(0, currentBalance - finalizedCN.total);
             return {
                ...s,
@@ -844,7 +844,7 @@ export const useStore = create<AppState>((set, get) => ({
       
       const currentPaid = purchase.paid_amount || 0;
       const newPaid = currentPaid + amount;
-      const currentBalance = purchase.balance !== undefined ? purchase.balance : purchase.total;
+      const currentBalance = purchase.balance ?? purchase.total;
       const newBalance = Math.max(0, currentBalance - amount);
       const isPaid = newBalance <= 0;
 

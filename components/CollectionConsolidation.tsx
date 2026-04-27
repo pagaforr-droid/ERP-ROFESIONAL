@@ -122,7 +122,7 @@ export const CollectionConsolidation: React.FC = () => {
       return sales
          .filter(s => s.client_id === manualSelectedClient.id || s.client_ruc === manualSelectedClient.doc_number)
          .filter(s => {
-            const currentBalance = s.balance !== undefined ? s.balance : s.total;
+            const currentBalance = s.balance ?? s.total;
             return currentBalance > 0 && s.status !== 'canceled';
          })
          .filter(s => {
@@ -161,8 +161,10 @@ export const CollectionConsolidation: React.FC = () => {
 
          const { data: recData } = await supabase.from('collection_records').select('*');
          const { data: planData } = await supabase.from('collection_planillas').select('*');
+         const { data: salesData } = await supabase.from('sales').select('*');
          if (recData) useStore.setState({ collectionRecords: recData as any[] });
          if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
+         if (salesData) useStore.setState({ sales: salesData as any[] });
 
         // Cargar categorias y preseleccionar
         const { data: catData } = await supabase.from('expense_categories').select('*');

@@ -9,8 +9,18 @@ import {
 import { Sale, CollectionRecord } from '../types';
 import * as XLSX from 'xlsx';
 
+import { supabase } from '../services/supabase';
+
 export const AccountsReceivable: React.FC = () => {
   const { sales, clients, sellers, collectionRecords, collectionPlanillas } = useStore();
+
+  React.useEffect(() => {
+     const initData = async () => {
+        const { data: salesData } = await supabase.from('sales').select('*');
+        if (salesData) useStore.setState({ sales: salesData as any[] });
+     };
+     initData();
+  }, []);
 
   // Filters State
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,13 +55,13 @@ export const AccountsReceivable: React.FC = () => {
   const receivables = useMemo(() => {
     return sales
       .filter(s => {
-        const balance = s.balance !== undefined ? s.balance : s.total;
+        const balance = s.balance ?? s.total;
         return balance > 0 && s.status !== 'canceled' && s.document_type !== 'NOTA_CREDITO';
       })
       .map(sale => {
         const aging = calculateAging(sale);
         const seller = sellers.find(sll => sll.id === sale.seller_id);
-        const balance = sale.balance !== undefined ? sale.balance : sale.total;
+        const balance = sale.balance ?? sale.total;
         return {
           ...sale,
           ...aging,
