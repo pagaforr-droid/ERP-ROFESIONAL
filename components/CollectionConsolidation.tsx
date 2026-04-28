@@ -493,7 +493,7 @@ export const CollectionConsolidation: React.FC = () => {
          if (!p) return;
 
          const planillaRecords = collectionRecords.filter(r => p.records.includes(r.id));
-         const wasManual = planillaRecords.every(r => r.seller_id === 'MANUAL');
+         const wasManual = planillaRecords.every(r => r.seller_id === null);
 
          try {
             const { error } = await supabase.rpc('revert_planilla_for_edit', {

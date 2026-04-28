@@ -49,7 +49,7 @@ BEGIN
         v_code := p_edit_planilla_code;
         
         -- Opcional: Eliminar los records previos manuales que estaban en esta planilla para recrearlos
-        DELETE FROM collection_records WHERE planilla_id = v_planilla_id AND seller_id = 'MANUAL';
+        DELETE FROM collection_records WHERE planilla_id = v_planilla_id AND seller_id IS NULL;
         DELETE FROM cash_movements WHERE reference_id = v_planilla_id::TEXT;
         DELETE FROM collection_planillas WHERE id = v_planilla_id;
     ELSE
@@ -87,7 +87,7 @@ BEGIN
         WHERE id = v_sale_id;
 
         INSERT INTO collection_records (sale_id, seller_id, client_name, document_ref, amount_reported, status, date_reported, payment_method, planilla_id)
-        VALUES (v_sale_id, 'MANUAL', v_client_name, v_doc_ref, v_amount, 'VALIDATED', p_date, 'CASH', v_planilla_id)
+        VALUES (v_sale_id, NULL, v_client_name, v_doc_ref, v_amount, 'VALIDATED', p_date, 'CASH', v_planilla_id)
         RETURNING id INTO v_record_id;
         
         v_records := array_append(v_records, v_record_id);
@@ -132,7 +132,7 @@ BEGIN
             collection_status = (CASE WHEN COALESCE(balance, 0) + v_record.amount_reported >= total THEN 'NONE' ELSE 'PARTIAL' END)::collection_status
         WHERE id = v_record.sale_id;
 
-        IF v_record.seller_id = 'MANUAL' THEN
+        IF v_record.seller_id IS NULL THEN
             -- Eliminar permanentemente los registros de cobro manual
             DELETE FROM collection_records WHERE id = v_record.id;
         ELSE
@@ -171,13 +171,13 @@ BEGIN
             collection_status = (CASE WHEN COALESCE(balance, 0) + v_record.amount_reported >= total THEN 'NONE' ELSE 'PARTIAL' END)::collection_status
         WHERE id = v_record.sale_id;
 
-        IF v_record.seller_id != 'MANUAL' THEN
+        IF v_record.seller_id IS NOT NULL THEN
             UPDATE collection_records SET status = 'PENDING_VALIDATION', planilla_id = NULL WHERE id = v_record.id;
         END IF;
     END LOOP;
 
     -- Eliminar records manuales, ya que se regenerarán en el nuevo envío
-    DELETE FROM collection_records WHERE planilla_id = p_planilla_id AND seller_id = 'MANUAL';
+    DELETE FROM collection_records WHERE planilla_id = p_planilla_id AND seller_id IS NULL;
 
     -- Eliminar Movimiento de Caja
     DELETE FROM cash_movements WHERE id = v_planilla.cash_movement_id;
