@@ -72,18 +72,70 @@ export const CollectionConsolidation: React.FC = () => {
    }, [collectionRecords, selectedSeller]);
 
    const historyPlanillas = useMemo(() => {
-      return collectionPlanillas
-         .filter(p => !dateFilter || p.date.startsWith(dateFilter))
-         .filter(p => {
-            // Only filter by seller if user explicitly chose it
-            if (selectedSeller === 'ALL') return true;
+      const unified: any[] = [];
 
-            // Check if any record in this planilla belongs to the selected seller
-            const recs = collectionRecords.filter(r => p.records.includes(r.id));
-            return recs.some(r => r.seller_id === selectedSeller);
-         })
-         .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-   }, [collectionPlanillas, dateFilter, selectedSeller, collectionRecords]);
+      // 1. Add Collection Planillas
+      collectionPlanillas.forEach(p => {
+         const recs = collectionRecords.filter(r => p.records.includes(r.id));
+         if (selectedSeller !== 'ALL' && !recs.some(r => r.seller_id === selectedSeller)) return;
+         if (dateFilter && !p.date.startsWith(dateFilter)) return;
+
+         unified.push({
+            type: 'COLLECTION',
+            id: p.id,
+            code: p.code,
+            date: p.date,
+            total_amount: p.total_amount,
+            record_count: p.record_count,
+            status: p.status,
+            user_id: p.user_id,
+            glosa: p.glosa,
+            original: p
+         });
+      });
+
+      // 2. Add Dispatch Liquidations
+      if (selectedSeller === 'ALL') { // Dispatch liquidations usually apply globally (to drivers)
+         dispatchLiquidations.forEach(liq => {
+            if (dateFilter && !liq.date.startsWith(dateFilter)) return;
+            // Only show processed/completed liquidations
+            if (liq.status !== 'PROCESADO' && liq.status !== 'COMPLETADO') return;
+
+            const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
+            if (!ds) return;
+
+            const veh = vehicles.find(v => v.id === ds.vehicle_id);
+            const driver = drivers.find(d => d.id === veh?.driver_id);
+
+            const cm = cashMovements.find(c => c.reference_id === liq.id && c.category_name === 'LIQUIDACION RUTA');
+            
+            let responsibleName = 'N/A';
+            if (cm && cm.description) {
+               const respMatch = cm.description.match(/- Resp: (.*?) -/);
+               if (respMatch) responsibleName = respMatch[1].trim();
+            }
+
+            const docs = liquidationDocs.filter(ld => ld.dispatch_liquidation_id === liq.id);
+
+            unified.push({
+               type: 'DISPATCH',
+               id: liq.id,
+               code: `RUT-${ds.code}`, // Use dispatch sheet code as Planilla Code
+               date: liq.date,
+               total_amount: liq.total_cash_collected || 0,
+               record_count: docs.length,
+               status: liq.status === 'COMPLETADO' ? 'ACTIVE' : 'ACTIVE', // map to ACTIVE for UI to allow viewing
+               user_id: cm?.user_id,
+               glosa: `Liquidación de Ruta ${ds.code}`,
+               driver_name: driver?.name || 'N/A',
+               responsible_name: responsibleName,
+               original: liq
+            });
+         });
+      }
+
+      return unified.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+   }, [collectionPlanillas, dateFilter, selectedSeller, collectionRecords, dispatchLiquidations, dispatchSheets, vehicles, drivers, cashMovements, liquidationDocs]);
 
    const totals = useMemo(() => {
       return pendingCollections.reduce((acc, curr) => {
@@ -96,13 +148,30 @@ export const CollectionConsolidation: React.FC = () => {
 
    const selectedPlanilla = useMemo(() => {
       if (!selectedPlanillaId) return null;
-      return collectionPlanillas.find(p => p.id === selectedPlanillaId);
-   }, [selectedPlanillaId, collectionPlanillas]);
+      return historyPlanillas.find(p => p.id === selectedPlanillaId);
+   }, [selectedPlanillaId, historyPlanillas]);
 
    const selectedPlanillaRecords = useMemo(() => {
       if (!selectedPlanilla) return [];
-      return collectionRecords.filter(r => selectedPlanilla.records.includes(r.id));
-   }, [selectedPlanilla, collectionRecords]);
+      if (selectedPlanilla.type === 'DISPATCH') {
+         // Map Liquidation Docs to look like CollectionRecords for the simple UI
+         const ldocs = liquidationDocs.filter(ld => ld.dispatch_liquidation_id === selectedPlanilla.id);
+         return ldocs.map(ld => {
+            const sale = sales.find(s => s.id === ld.sale_id);
+            return {
+               id: ld.id,
+               sale_id: ld.sale_id,
+               seller_id: sale?.seller_id,
+               client_name: sale?.client_name || 'Desconocido',
+               document_ref: sale ? `${sale.document_type?.substring(0, 3)} ${sale.series}-${sale.number}` : 'N/A',
+               amount_reported: ld.amount_collected || 0,
+               date_reported: selectedPlanilla.date,
+               status: 'VALIDATED'
+            } as any;
+         });
+      }
+      return collectionRecords.filter(r => selectedPlanilla.original.records.includes(r.id));
+   }, [selectedPlanilla, collectionRecords, liquidationDocs, sales]);
 
    // --- DATA PREPARATION (MANUAL) ---
 
@@ -155,6 +224,14 @@ export const CollectionConsolidation: React.FC = () => {
    const [expenseCategories, setExpenseCategories] = useState<any[]>([]);
    const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
 
+   // NEW: Extended State for Dispatch Liquidations in History
+   const [dispatchLiquidations, setDispatchLiquidations] = useState<any[]>([]);
+   const [dispatchSheets, setDispatchSheets] = useState<any[]>([]);
+   const [vehicles, setVehicles] = useState<any[]>([]);
+   const [drivers, setDrivers] = useState<any[]>([]);
+   const [cashMovements, setCashMovements] = useState<any[]>([]);
+   const [liquidationDocs, setLiquidationDocs] = useState<any[]>([]);
+
    useEffect(() => {
      const initSupabase = async () => {
         // Verificar turno de caja abierto
@@ -173,11 +250,25 @@ export const CollectionConsolidation: React.FC = () => {
          const { data: clientsData } = await supabase.from('clients').select('*');
          const { data: sellersData } = await supabase.from('sellers').select('*');
          
+         const { data: dlData } = await supabase.from('dispatch_liquidations').select('*');
+         const { data: dsData } = await supabase.from('dispatch_sheets').select('*');
+         const { data: vData } = await supabase.from('vehicles').select('*');
+         const { data: drData } = await supabase.from('drivers').select('*');
+         const { data: cmData } = await supabase.from('cash_movements').select('*');
+         const { data: ldData } = await supabase.from('liquidation_documents').select('*');
+
          if (recData) useStore.setState({ collectionRecords: recData as any[] });
          if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
          if (salesData) useStore.setState({ sales: salesData as any[] });
          if (clientsData) useStore.setState({ clients: clientsData as any[] });
          if (sellersData) useStore.setState({ sellers: sellersData as any[] });
+
+         if (dlData) setDispatchLiquidations(dlData);
+         if (dsData) setDispatchSheets(dsData);
+         if (vData) setVehicles(vData);
+         if (drData) setDrivers(drData);
+         if (cmData) setCashMovements(cmData);
+         if (ldData) setLiquidationDocs(ldData);
 
         // Cargar categorias y preseleccionar
         const { data: catData } = await supabase.from('expense_categories').select('*');
@@ -216,10 +307,16 @@ export const CollectionConsolidation: React.FC = () => {
       const { data: recData } = await supabase.from('collection_records').select('*');
       const { data: planData } = await supabase.from('collection_planillas').select('*');
       const { data: salesData } = await supabase.from('sales').select('*');
+      const { data: dlData } = await supabase.from('dispatch_liquidations').select('*');
+      const { data: cmData } = await supabase.from('cash_movements').select('*');
+      const { data: ldData } = await supabase.from('liquidation_documents').select('*');
       
       if (recData) useStore.setState({ collectionRecords: recData as any[] });
       if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
       if (salesData) useStore.setState({ sales: salesData as any[] });
+      if (dlData) setDispatchLiquidations(dlData);
+      if (cmData) setCashMovements(cmData);
+      if (ldData) setLiquidationDocs(ldData);
    };
 
    const handleConfirmProcess = async () => {
@@ -434,26 +531,48 @@ export const CollectionConsolidation: React.FC = () => {
    };
 
    const handleDownloadPDF = (planillaId: string) => {
-      const plan = collectionPlanillas.find(p => p.id === planillaId);
+      const plan = historyPlanillas.find(p => p.id === planillaId);
       if (!plan) return;
       
-      const records = collectionRecords.filter(r => r.planilla_id === plan.id);
-      const creator = users.find(u => u.id === plan.user_id)?.name || 'SISTEMA';
+      let recordsToPrint: any[] = [];
+      let creator = users.find(u => u.id === plan.user_id)?.name || 'SISTEMA';
+
+      if (plan.type === 'COLLECTION') {
+         recordsToPrint = collectionRecords.filter(r => plan.original.records.includes(r.id));
+      } else {
+         const ldocs = liquidationDocs.filter(ld => ld.dispatch_liquidation_id === plan.id);
+         recordsToPrint = ldocs.map(ld => {
+            const sale = sales.find(s => s.id === ld.sale_id);
+            return {
+               id: ld.id,
+               seller_id: sale?.seller_id,
+               client_name: sale?.client_name || 'Desconocido',
+               document_ref: sale ? `${sale.document_type?.substring(0, 3)} ${sale.series}-${sale.number}` : 'N/A',
+               amount_reported: ld.amount_collected || 0,
+               date_reported: plan.date
+            };
+         });
+      }
 
       const doc = new jsPDF();
       
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      doc.text(`LIQUIDACIÓN DE COBRANZAS: ${plan.code}`, 14, 22);
+      doc.text(plan.type === 'DISPATCH' ? `LIQUIDACIÓN DE RUTA: ${plan.code}` : `LIQUIDACIÓN DE COBRANZAS: ${plan.code}`, 14, 22);
       
       doc.setFontSize(11);
       doc.setFont('helvetica', 'normal');
       doc.text(`Fecha: ${new Date(plan.date).toLocaleString()}`, 14, 32);
       doc.text(`Usuario: ${creator}`, 14, 38);
-      if (plan.glosa) doc.text(`Glosa: ${plan.glosa}`, 14, 44);
+      if (plan.type === 'DISPATCH') {
+         doc.text(`Chofer: ${plan.driver_name}`, 14, 44);
+         doc.text(`Responsable: ${plan.responsible_name}`, 14, 50);
+      } else if (plan.glosa) {
+         doc.text(`Glosa: ${plan.glosa}`, 14, 44);
+      }
       doc.text(`Estado: ${plan.status === 'ANNULLED' ? 'ANULADA' : 'CERRADA EN CAJA'}`, 140, 32);
 
-      const tableData = records.map((r, i) => {
+      const tableData = recordsToPrint.map((r, i) => {
          const sellerName = sellers.find(s => s.id === r.seller_id)?.name || 'N/A';
          return [
             i + 1,
@@ -465,8 +584,10 @@ export const CollectionConsolidation: React.FC = () => {
          ];
       });
 
+      const startY = plan.type === 'DISPATCH' ? 56 : (plan.glosa ? 50 : 44);
+
       autoTable(doc, {
-         startY: 50,
+         startY,
          head: [['N°', 'Vendedor', 'Cliente', 'Documento', 'Fecha Recibo', 'Importe']],
          body: tableData,
          theme: 'grid',
@@ -1391,7 +1512,13 @@ export const CollectionConsolidation: React.FC = () => {
                                  <div className="flex justify-between items-end mt-2">
                                     <div>
                                        <div className="text-xs text-slate-500">{new Date(plan.date).toLocaleDateString()} {new Date(plan.date).toLocaleTimeString().slice(0, 5)}</div>
-                                       <div className="text-[10px] text-slate-400 mt-1 uppercase">Usuario: <span className="font-bold text-slate-600">{users.find(u => u.id === plan.user_id)?.name || 'Sistema'}</span></div>
+                                       <div className="text-[10px] text-slate-400 mt-1 uppercase">Usuario que liquidó: <span className="font-bold text-slate-600">{users.find(u => u.id === plan.user_id)?.name || 'Sistema'}</span></div>
+                                       {plan.type === 'DISPATCH' && (
+                                          <>
+                                             <div className="text-[10px] text-slate-400 mt-0.5 uppercase">Chofer: <span className="font-bold text-slate-600">{plan.driver_name}</span></div>
+                                             <div className="text-[10px] text-slate-400 mt-0.5 uppercase">Responsable: <span className="font-bold text-slate-600">{plan.responsible_name}</span></div>
+                                          </>
+                                       )}
                                        {plan.glosa && <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={plan.glosa}>Glosa: {plan.glosa}</div>}
                                        <div className="text-xs text-slate-500 mt-1 font-medium">{plan.record_count} docs</div>
                                     </div>
@@ -1400,7 +1527,7 @@ export const CollectionConsolidation: React.FC = () => {
                                           S/ {plan.total_amount.toFixed(2)}
                                        </div>
                                        <div className="mt-2 space-x-1 flex justify-end">
-                                          {plan.status === 'ACTIVE' && (
+                                          {plan.status === 'ACTIVE' && plan.type === 'COLLECTION' && (
                                              <>
                                                 <button onClick={(e) => { e.stopPropagation(); initiateAdminAuth("EDIT", plan.id); }} className="text-[10px] bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200 hover:bg-blue-100 transition-colors" title="Editar / Corregir Planilla">Editar</button>
                                                 <button onClick={(e) => { e.stopPropagation(); initiateAdminAuth("ANNUL", plan.id); }} className="text-[10px] bg-red-50 text-red-600 px-2 py-1 rounded border border-red-200 hover:bg-red-100 transition-colors" title="Anular Planilla">Anular</button>
@@ -1426,7 +1553,7 @@ export const CollectionConsolidation: React.FC = () => {
                               <p className="text-xs text-slate-500">Detalle de recaudación financiera</p>
                            </div>
                            <div className="flex gap-2">
-                              {selectedPlanilla.status === 'ACTIVE' && (
+                              {selectedPlanilla.status === 'ACTIVE' && selectedPlanilla.type === 'COLLECTION' && (
                                  <>
                                     <button
                                        onClick={() => initiateAdminAuth("EDIT", selectedPlanilla.id)}
@@ -1444,18 +1571,27 @@ export const CollectionConsolidation: React.FC = () => {
                                     </button>
                                  </>
                               )}
-                              <button
-                                 onClick={() => handleExportExcel(selectedPlanilla, selectedPlanillaRecords)}
-                                 className="flex items-center text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded border border-green-200 transition-colors"
-                              >
-                                 <Download className="w-4 h-4 mr-1" /> Excel (.xls)
-                              </button>
-                              <button
-                                 onClick={() => handlePrintA4(selectedPlanilla.id)}
-                                 className="flex items-center text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 px-3 py-1.5 rounded border border-slate-300 shadow-sm transition-colors"
-                              >
-                                 <Printer className="w-4 h-4 mr-1" /> Imprimir A4
-                              </button>
+                              {selectedPlanilla.type === 'COLLECTION' && (
+                                 <>
+                                    <button
+                                       onClick={() => handleExportExcel(selectedPlanilla.original, selectedPlanillaRecords)}
+                                       className="flex items-center text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded border border-green-200 transition-colors"
+                                    >
+                                       <Download className="w-4 h-4 mr-1" /> Excel (.xls)
+                                    </button>
+                                    <button
+                                       onClick={() => handlePrintA4(selectedPlanilla.id)}
+                                       className="flex items-center text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded border border-slate-300 transition-colors"
+                                    >
+                                       <Printer className="w-4 h-4 mr-1" /> Imprimir A4
+                                    </button>
+                                 </>
+                              )}
+                              {selectedPlanilla.type === 'DISPATCH' && (
+                                 <div className="text-xs text-slate-400 italic px-3 py-1.5">
+                                    Modificaciones vía módulo de Despachos.
+                                 </div>
+                              )}
                               <button onClick={() => setSelectedPlanillaId(null)} className="ml-2 text-slate-400 hover:text-slate-600 bg-slate-100 p-1.5 rounded">
                                  ✕
                               </button>
