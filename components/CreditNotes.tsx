@@ -28,35 +28,33 @@ export const CreditNotes: React.FC = () => {
     const [dbSeries, setDbSeries] = useState<any[]>([]);
     const [selectedSeries, setSelectedSeries] = useState('');
 
-    const handleSearch = React.useCallback(() => {
+    const handleSearch = React.useCallback(async () => {
         try {
-            let results = sales.filter(s => s && (s.document_type === 'FACTURA' || s.document_type === 'BOLETA'));
+            let query = supabase.from('sales').select('*, items:sale_items(*)').in('document_type', ['FACTURA', 'BOLETA']).neq('status', 'annulled');
 
-            // Date filter
             if (dateFrom) {
-                results = results.filter(s => {
-                    if (!s.created_at) return false;
-                    return s.created_at.substring(0, 10) >= dateFrom;
-                });
+                query = query.gte('created_at', `${dateFrom}T00:00:00`);
             }
             if (dateTo) {
-                results = results.filter(s => {
-                    if (!s.created_at) return false;
-                    return s.created_at.substring(0, 10) <= dateTo;
-                });
+                query = query.lte('created_at', `${dateTo}T23:59:59`);
             }
 
-            // Text filter
+            const { data, error } = await query.order('created_at', { ascending: false }).limit(50);
+            
+            if (error) throw error;
+            
+            let results = data || [];
+
             if (searchTerm.trim()) {
                 const term = searchTerm.trim().toUpperCase();
                 if (searchType === 'NUMBER') {
-                    results = results.filter(s => {
+                    results = results.filter((s: any) => {
                         const num = s.number || '';
                         const ser = s.series || '';
                         return num.includes(term) || `${ser}-${num}` === term;
                     });
                 } else {
-                    results = results.filter(s => {
+                    results = results.filter((s: any) => {
                         const cName = (s.client_name || '').toUpperCase();
                         const cRuc = s.client_ruc || '';
                         return cName.includes(term) || cRuc.includes(term);
@@ -64,12 +62,12 @@ export const CreditNotes: React.FC = () => {
                 }
             }
 
-            setSearchResults(results.slice(0, 50)); // max 50
+            setSearchResults(results as Sale[]);
             setOriginalSale(null);
         } catch (e) {
             console.error("Search error:", e);
         }
-    }, [sales, dateFrom, dateTo, searchTerm, searchType]);
+    }, [dateFrom, dateTo, searchTerm, searchType]);
 
     useEffect(() => {
         const fetchSeries = async () => {
