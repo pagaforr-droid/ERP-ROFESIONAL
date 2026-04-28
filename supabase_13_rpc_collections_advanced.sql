@@ -50,7 +50,7 @@ BEGIN
         
         -- Opcional: Eliminar los records previos manuales que estaban en esta planilla para recrearlos
         DELETE FROM collection_records WHERE planilla_id = v_planilla_id AND seller_id IS NULL;
-        DELETE FROM cash_movements WHERE reference_id = v_planilla_id::TEXT;
+        DELETE FROM cash_movements WHERE reference_id = v_planilla_id;
         DELETE FROM collection_planillas WHERE id = v_planilla_id;
     ELSE
         SELECT COALESCE(MAX(NULLIF(regexp_replace(code, '\D', '', 'g'), '')), '0')::INT 
@@ -100,7 +100,7 @@ BEGIN
 
     -- Inserción en CAJA
     INSERT INTO cash_movements (type, category_id, category_name, description, amount, date, user_id, reference_id)
-    VALUES ('INCOME', v_category_id, 'COBRANZA MANUAL', COALESCE(p_glosa, 'Liquidación Manual') || ' ' || v_code, v_total, p_date, p_user_id, v_planilla_id::TEXT)
+    VALUES ('INCOME', v_category_id, 'COBRANZA MANUAL', COALESCE(p_glosa, 'Liquidación Manual') || ' ' || v_code, v_total, p_date, p_user_id, v_planilla_id)
     RETURNING id INTO v_cash_mov_id;
 
     -- Generar Planilla
