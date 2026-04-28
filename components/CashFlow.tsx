@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { CashMovement, ExpenseCategory, ScheduledTransaction } from '../types';
-import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, XCircle, BarChart3, Briefcase, Store, Truck, Coins, Loader2 } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, XCircle, BarChart3, Briefcase, Store, Truck, Coins, Loader2, Edit2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 type Tab = 'SESSION' | 'DASHBOARD' | 'MOVEMENTS' | 'PLANNER' | 'CONFIG';
@@ -447,6 +447,7 @@ export const CashFlow: React.FC = () => {
 
    const PlannerView = () => {
       const [showForm, setShowForm] = useState(false);
+      const [editId, setEditId] = useState<string | null>(null);
       const [formData, setFormData] = useState<Partial<ScheduledTransaction>>({ frequency: 'MONTHLY', amount: 0, next_due_date: new Date().toISOString().split('T')[0] });
 
       // Beneficiary Logic
@@ -455,22 +456,59 @@ export const CashFlow: React.FC = () => {
 
       const [alertState, setAlertState] = useState<{show: boolean, type: 'CONFIRM'|'INFO'|'ERROR', title: string, message: string, onConfirm?: () => void, confirmText?: string}>({show: false, type: 'INFO', title: '', message: ''});
 
+      const handleOpenNew = () => {
+         setEditId(null);
+         setBeneficiaryType('OTHER');
+         setFormData({ frequency: 'MONTHLY', amount: 0, next_due_date: new Date().toISOString().split('T')[0] });
+         setShowForm(true);
+      };
+
+      const openEditForm = (t: ScheduledTransaction) => {
+         setEditId(t.id);
+         setBeneficiaryType(t.beneficiary_type || 'OTHER');
+         setFormData({
+            name: t.name,
+            category_id: t.category_id,
+            amount: t.amount,
+            frequency: t.frequency,
+            next_due_date: t.next_due_date,
+            beneficiary_id: t.beneficiary_id
+         });
+         setShowForm(true);
+      };
+
       const handleSaveSchedule = async () => {
          if (!formData.name || !formData.amount || !formData.category_id) return;
          
          try {
-            await store.addScheduledTransaction({
-               id: crypto.randomUUID(),
-               is_active: true,
-               name: formData.name,
-               category_id: formData.category_id,
-               amount: Number(formData.amount),
-               frequency: formData.frequency as any,
-               next_due_date: formData.next_due_date as string,
-               beneficiary_type: beneficiaryType,
-               beneficiary_id: formData.beneficiary_id
-            });
+            if (editId) {
+               const existingTx = store.scheduledTransactions.find(t => t.id === editId);
+               await store.updateScheduledTransaction({
+                  ...existingTx,
+                  id: editId,
+                  name: formData.name,
+                  category_id: formData.category_id,
+                  amount: Number(formData.amount),
+                  frequency: formData.frequency as any,
+                  next_due_date: formData.next_due_date as string,
+                  beneficiary_type: beneficiaryType,
+                  beneficiary_id: formData.beneficiary_id
+               } as ScheduledTransaction);
+            } else {
+               await store.addScheduledTransaction({
+                  id: crypto.randomUUID(),
+                  is_active: true,
+                  name: formData.name,
+                  category_id: formData.category_id,
+                  amount: Number(formData.amount),
+                  frequency: formData.frequency as any,
+                  next_due_date: formData.next_due_date as string,
+                  beneficiary_type: beneficiaryType,
+                  beneficiary_id: formData.beneficiary_id
+               });
+            }
             setShowForm(false);
+            setEditId(null);
             setFormData({ frequency: 'MONTHLY', amount: 0, next_due_date: new Date().toISOString().split('T')[0] });
          } catch(e: any) {
             setAlertState({show: true, type: 'ERROR', title: 'Error', message: 'No se pudo guardar la programación: ' + e.message});
@@ -523,7 +561,7 @@ export const CashFlow: React.FC = () => {
                      <h3 className="font-bold text-slate-800 text-lg">Programación de Gastos Fijos</h3>
                      <p className="text-xs text-slate-500 mt-1">Administra alquileres, servicios, sueldos y compromisos recurrentes</p>
                   </div>
-                  <button onClick={() => setShowForm(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold flex items-center shadow-md transition-colors">
+                  <button onClick={handleOpenNew} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold flex items-center shadow-md transition-colors">
                      <Clock className="w-4 h-4 mr-2" /> Nueva Programación
                   </button>
                </div>
@@ -605,7 +643,10 @@ export const CashFlow: React.FC = () => {
                                     <button onClick={() => handleProcess(t.id)} disabled={isProcessing} className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-2 rounded-lg text-xs font-bold flex justify-center items-center transition-colors disabled:opacity-50">
                                        <CheckCircle className="w-4 h-4 mr-1.5" /> Procesar Pago
                                     </button>
-                                    <button onClick={() => handleDeletePlanner(t.id)} className="px-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors border border-red-100">
+                                    <button onClick={() => openEditForm(t)} className="px-3 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors border border-blue-100" title="Editar">
+                                       <Edit2 className="w-4 h-4" />
+                                    </button>
+                                    <button onClick={() => handleDeletePlanner(t.id)} className="px-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors border border-red-100" title="Eliminar">
                                        <Trash2 className="w-4 h-4" />
                                     </button>
                                  </div>
@@ -619,24 +660,30 @@ export const CashFlow: React.FC = () => {
 
             {/* Schedule Form Modal */}
             {showForm && (
-               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                  <div className="bg-white p-6 rounded-lg shadow-xl w-[500px]">
-                     <h3 className="font-bold text-lg mb-4 text-slate-800 flex items-center"><Clock className="mr-2" /> Programar Gasto Recurrente</h3>
-                     <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
+               <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
+                  <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-lg mx-4 animate-scale-in border border-slate-100">
+                     <div className="flex items-center justify-between mb-6">
+                        <h3 className="font-black text-xl text-slate-800 flex items-center">
+                           <Clock className="mr-3 text-indigo-600 w-6 h-6" /> 
+                           {editId ? 'Editar Programación' : 'Programar Gasto Fijo'}
+                        </h3>
+                        <button onClick={() => setShowForm(false)} className="text-slate-400 hover:bg-slate-100 p-2 rounded-full transition-colors"><XCircle className="w-6 h-6" /></button>
+                     </div>
+                     <div className="space-y-5">
+                        <div className="grid grid-cols-2 gap-5">
                            <div>
-                              <label className="block text-xs font-bold text-slate-600 mb-1">Tipo Beneficiario</label>
-                              <select className="w-full border border-slate-300 p-2 rounded text-sm" value={beneficiaryType} onChange={e => setBeneficiaryType(e.target.value as any)}>
+                              <label className="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wide">Tipo Beneficiario</label>
+                              <select className="w-full border-2 border-slate-200 focus:border-indigo-500 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none transition-colors bg-slate-50" value={beneficiaryType} onChange={e => setBeneficiaryType(e.target.value as any)}>
                                  <option value="OTHER">Otro / General</option>
                                  <option value="SUPPLIER">Proveedor</option>
                               </select>
                            </div>
                            <div>
-                              <label className="block text-xs font-bold text-slate-600 mb-1">
-                                 {beneficiaryType === 'SUPPLIER' ? 'Seleccionar Proveedor' : 'Nombre / Concepto'}
+                              <label className="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wide">
+                                 {beneficiaryType === 'SUPPLIER' ? 'Proveedor' : 'Concepto'}
                               </label>
                               {beneficiaryType === 'SUPPLIER' ? (
-                                 <select className="w-full border border-slate-300 p-2 rounded text-sm" onChange={e => {
+                                 <select className="w-full border-2 border-slate-200 focus:border-indigo-500 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none transition-colors bg-slate-50" value={formData.beneficiary_id || ''} onChange={e => {
                                     const sup = store.suppliers.find(x => x.id === e.target.value);
                                     setFormData({ ...formData, beneficiary_id: e.target.value, name: `PAGO RECURRENTE: ${sup?.name}` });
                                  }}>
@@ -644,29 +691,32 @@ export const CashFlow: React.FC = () => {
                                     {store.suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                  </select>
                               ) : (
-                                 <input className="w-full border border-slate-300 p-2 rounded text-sm" placeholder="Ej. Alquiler Local, Internet..." value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} />
+                                 <input className="w-full border-2 border-slate-200 focus:border-indigo-500 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none transition-colors bg-slate-50" placeholder="Ej. Alquiler Local..." value={formData.name || ''} onChange={e => setFormData({ ...formData, name: e.target.value })} />
                               )}
                            </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-5">
                            <div>
-                              <label className="block text-xs font-bold text-slate-600 mb-1">Categoría Gasto</label>
-                              <select className="w-full border border-slate-300 p-2 rounded text-sm" value={formData.category_id} onChange={e => setFormData({ ...formData, category_id: e.target.value })}>
+                              <label className="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wide">Categoría</label>
+                              <select className="w-full border-2 border-slate-200 focus:border-indigo-500 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none transition-colors bg-slate-50" value={formData.category_id} onChange={e => setFormData({ ...formData, category_id: e.target.value })}>
                                  <option value="">-- Seleccionar --</option>
                                  {store.expenseCategories.filter(c => c.type === 'EXPENSE').map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                               </select>
                            </div>
                            <div>
-                              <label className="block text-xs font-bold text-slate-600 mb-1">Monto Cuota (S/)</label>
-                              <input type="number" className="w-full border border-slate-300 p-2 rounded text-sm font-bold" value={formData.amount} onChange={e => setFormData({ ...formData, amount: Number(e.target.value) })} />
+                              <label className="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wide">Monto Cuota (S/)</label>
+                              <div className="relative">
+                                 <span className="absolute left-3 top-2.5 text-slate-400 font-bold">S/</span>
+                                 <input type="number" className="w-full border-2 border-slate-200 focus:border-indigo-500 p-2.5 pl-8 rounded-xl text-sm font-black text-slate-800 outline-none transition-colors bg-white shadow-inner" value={formData.amount} onChange={e => setFormData({ ...formData, amount: Number(e.target.value) })} />
+                              </div>
                            </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-5">
                            <div>
-                              <label className="block text-xs font-bold text-slate-600 mb-1">Frecuencia</label>
-                              <select className="w-full border border-slate-300 p-2 rounded text-sm" value={formData.frequency} onChange={e => setFormData({ ...formData, frequency: e.target.value as any })}>
+                              <label className="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wide">Frecuencia</label>
+                              <select className="w-full border-2 border-slate-200 focus:border-indigo-500 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none transition-colors bg-slate-50" value={formData.frequency} onChange={e => setFormData({ ...formData, frequency: e.target.value as any })}>
                                  <option value="MONTHLY">Mensual</option>
                                  <option value="WEEKLY">Semanal</option>
                                  <option value="BIWEEKLY">Quincenal</option>
@@ -674,14 +724,17 @@ export const CashFlow: React.FC = () => {
                               </select>
                            </div>
                            <div>
-                              <label className="block text-xs font-bold text-slate-600 mb-1">Primer Vencimiento</label>
-                              <input type="date" className="w-full border border-slate-300 p-2 rounded text-sm" value={formData.next_due_date} onChange={e => setFormData({ ...formData, next_due_date: e.target.value })} />
+                              <label className="block text-xs font-black text-slate-500 mb-1.5 uppercase tracking-wide">Próximo Vencimiento</label>
+                              <input type="date" className="w-full border-2 border-slate-200 focus:border-indigo-500 p-2.5 rounded-xl text-sm font-bold text-slate-700 outline-none transition-colors bg-slate-50" value={formData.next_due_date} onChange={e => setFormData({ ...formData, next_due_date: e.target.value })} />
                            </div>
                         </div>
 
-                        <div className="flex justify-end gap-2 pt-4">
-                           <button onClick={() => setShowForm(false)} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded">Cancelar</button>
-                           <button onClick={handleSaveSchedule} className="px-6 py-2 bg-indigo-600 text-white font-bold rounded shadow hover:bg-indigo-700">Guardar Programación</button>
+                        <div className="flex justify-end gap-3 pt-6 border-t border-slate-100 mt-2">
+                           <button onClick={() => setShowForm(false)} className="px-5 py-2.5 text-slate-500 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancelar</button>
+                           <button onClick={handleSaveSchedule} className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 hover:shadow-lg transition-all active:scale-95 flex items-center">
+                              <Save className="w-4 h-4 mr-2" />
+                              {editId ? 'Guardar Cambios' : 'Crear Programación'}
+                           </button>
                         </div>
                      </div>
                   </div>
@@ -901,97 +954,108 @@ export const CashFlow: React.FC = () => {
       }
 
       return (
-         <div className="flex gap-6 h-full animate-fade-in">
+         <div className="flex gap-8 h-full animate-fade-in">
             {/* Control Panel / Summary */}
-            <div className="w-1/3 flex flex-col gap-4">
-               <div className="bg-slate-900 p-6 rounded-2xl shadow-lg relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-4 opacity-10">
-                     <Coins className="w-24 h-24" />
-                  </div>
-                  <div className="relative z-10 flex items-center justify-between">
-                     <div>
-                        <p className="text-emerald-400 font-bold text-xs uppercase tracking-wider mb-1 flex items-center"><CheckCircle className="w-3 h-3 mr-1" /> TURNO ACTIVO</p>
-                        <p className="text-slate-300 text-xs">Cajero: <span className="text-white font-bold">{activeSession.opened_by}</span></p>
-                        <p className="text-slate-300 text-xs">Abrió: <span className="text-white">{new Date(activeSession.open_time).toLocaleTimeString()}</span></p>
-                     </div>
+            <div className="w-[420px] flex flex-col gap-6">
+               {/* Premium Gradient Card */}
+               <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-7 rounded-3xl shadow-xl shadow-indigo-900/20 relative overflow-hidden border border-white/10">
+                  {/* Decorative Elements */}
+                  <div className="absolute top-[-20px] right-[-20px] w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl"></div>
+                  <div className="absolute bottom-[-20px] left-[-20px] w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl"></div>
+                  <div className="absolute top-4 right-4 p-2 opacity-20 bg-white/5 rounded-full backdrop-blur-md">
+                     <Coins className="w-16 h-16 text-white" />
                   </div>
 
-                  <div className="mt-6 space-y-3 relative z-10">
-                     <div className="flex justify-between items-center text-sm border-b border-slate-700 pb-2">
-                        <span className="text-slate-400">Saldo Inicial</span>
+                  <div className="relative z-10 flex flex-col mb-8">
+                     <span className="bg-emerald-500/20 text-emerald-400 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-full w-max mb-4 flex items-center border border-emerald-500/30">
+                        <CheckCircle className="w-3 h-3 mr-1.5" /> Turno Activo
+                     </span>
+                     <p className="text-slate-400 text-sm font-medium">Cajero / Responsable</p>
+                     <p className="text-white font-black text-xl tracking-tight">{activeSession.opened_by}</p>
+                     <p className="text-indigo-300/80 text-xs mt-1 font-medium flex items-center">
+                        <Clock className="w-3 h-3 mr-1" /> Apertura: {new Date(activeSession.open_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                     </p>
+                  </div>
+
+                  <div className="space-y-4 relative z-10 bg-white/5 p-5 rounded-2xl backdrop-blur-sm border border-white/10">
+                     <div className="flex justify-between items-center text-sm border-b border-white/5 pb-3">
+                        <span className="text-slate-400 font-medium">Fondo de Caja</span>
                         <span className="text-white font-bold">S/ {activeSession.system_opening_amount.toFixed(2)}</span>
                      </div>
-                     <div className="flex justify-between items-center text-sm border-b border-slate-700 pb-2">
-                        <span className="text-slate-400">Total Ingresos (+ Ventas)</span>
+                     <div className="flex justify-between items-center text-sm border-b border-white/5 pb-3">
+                        <span className="text-slate-400 font-medium">Ingresos Totales</span>
                         <span className="text-emerald-400 font-bold">+ S/ {liveIncome.toFixed(2)}</span>
                      </div>
-                     <div className="flex justify-between items-center text-sm border-b border-slate-700 pb-2">
-                        <span className="text-slate-400">Total Egresos</span>
+                     <div className="flex justify-between items-center text-sm border-b border-white/5 pb-3">
+                        <span className="text-slate-400 font-medium">Egresos Totales</span>
                         <span className="text-red-400 font-bold">- S/ {liveExpense.toFixed(2)}</span>
                      </div>
-                     <div className="flex justify-between items-center pt-2">
-                        <span className="text-slate-300 font-bold uppercase text-xs">Debería Haber (Sistema)</span>
-                        <span className="text-white text-2xl font-black">S/ {expectedCurrentBalance.toFixed(2)}</span>
+                     <div className="flex justify-between items-end pt-2">
+                        <span className="text-indigo-200 font-black uppercase text-xs tracking-wider">Flujo Esperado</span>
+                        <span className="text-white text-3xl font-black tracking-tight leading-none">S/ {expectedCurrentBalance.toFixed(2)}</span>
                      </div>
                   </div>
                </div>
 
-               <div className="bg-white p-6 rounded-2xl shadow border border-slate-200 flex-1 flex flex-col">
-                  <h3 className="font-bold text-slate-800 flex items-center mb-4"><BarChart3 className="w-5 h-5 mr-2 text-indigo-500" /> Resumen de Declaración</h3>
+               {/* Resumen Declaración Card */}
+               <div className="bg-white p-7 rounded-3xl shadow-sm border border-slate-200 flex-1 flex flex-col relative overflow-hidden">
+                  <h3 className="font-black text-slate-800 text-xl flex items-center mb-6"><BarChart3 className="w-6 h-6 mr-3 text-indigo-500" /> Declaración</h3>
 
                   <div className="space-y-4 flex-1">
-                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                        <span className="text-slate-600 font-bold text-sm">Efectivo Físico</span>
-                        <span className="text-slate-900 font-black">S/ {totalCashDeclared.toFixed(2)}</span>
+                     <div className="flex justify-between items-center p-4 bg-slate-50/80 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
+                        <span className="text-slate-500 font-bold text-sm">Físico / Efectivo</span>
+                        <span className="text-slate-800 font-black text-lg">S/ {totalCashDeclared.toFixed(2)}</span>
                      </div>
-                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                        <span className="text-slate-600 font-bold text-sm">Tarjetas / Vouchers</span>
-                        <span className="text-slate-900 font-black">S/ {vouchers.toFixed(2)}</span>
+                     <div className="flex justify-between items-center p-4 bg-slate-50/80 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
+                        <span className="text-slate-500 font-bold text-sm">Tarjetas / POS</span>
+                        <span className="text-slate-800 font-black text-lg">S/ {vouchers.toFixed(2)}</span>
                      </div>
-                     <div className="flex justify-between items-center p-3 bg-slate-50 rounded-lg">
-                        <span className="text-slate-600 font-bold text-sm">Yape / Plin / Transf.</span>
-                        <span className="text-slate-900 font-black">S/ {transfers.toFixed(2)}</span>
+                     <div className="flex justify-between items-center p-4 bg-slate-50/80 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
+                        <span className="text-slate-500 font-bold text-sm">Transferencias (Yape/Plin)</span>
+                        <span className="text-slate-800 font-black text-lg">S/ {transfers.toFixed(2)}</span>
                      </div>
                   </div>
 
-                  <div className="border-t border-slate-200 pt-4 mt-auto">
-                     <div className="flex justify-between items-center px-2 mb-4">
-                        <span className="text-slate-800 font-bold text-lg">Total Físico:</span>
-                        <span className="text-indigo-600 font-black text-2xl">S/ {totalDeclared.toFixed(2)}</span>
+                  <div className="mt-8">
+                     <div className="flex justify-between items-center mb-6">
+                        <span className="text-slate-500 font-black uppercase text-sm tracking-wider">Total Declarado</span>
+                        <span className="text-indigo-600 font-black text-3xl">S/ {totalDeclared.toFixed(2)}</span>
                      </div>
 
-                     <div className={`p-4 rounded-xl text-center mb-6 animate-fade-in ${totalDeclared === 0 ? 'bg-slate-50 text-slate-500 border border-slate-200'
-                           : (totalDeclared - expectedCurrentBalance) === 0 ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
-                              : 'bg-red-50 border border-red-200 text-red-700'
+                     <div className={`p-5 rounded-2xl text-center mb-6 animate-fade-in transition-all duration-300 ${totalDeclared === 0 ? 'bg-slate-50 text-slate-400 border-2 border-slate-100'
+                           : (totalDeclared - expectedCurrentBalance) === 0 ? 'bg-emerald-50 border-2 border-emerald-200 text-emerald-700 shadow-sm shadow-emerald-100/50'
+                              : 'bg-red-50 border-2 border-red-200 text-red-700 shadow-sm shadow-red-100/50'
                         }`}>
-                        <p className="text-xs font-bold uppercase mb-1">Diferencia de Arqueo</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest mb-1.5 opacity-80">Diferencia (Sobrante/Faltante)</p>
                         {totalDeclared === 0 ? (
-                           <span className="font-bold text-lg">Ingresa los montos conteados</span>
+                           <span className="font-bold">Ingresa los montos conteados</span>
                         ) : (
-                           <span className="font-black text-2xl">
+                           <span className="font-black text-4xl">
                               {(totalDeclared - expectedCurrentBalance) > 0 ? '+' : ''}{(totalDeclared - expectedCurrentBalance).toFixed(2)}
                            </span>
                         )}
                      </div>
 
-                     <button onClick={handleClose} disabled={totalDeclared === 0 && expectedCurrentBalance > 0} className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-bold py-4 rounded-xl shadow-md transition-all active:scale-95 text-lg flex justify-center items-center">
-                        <Save className="w-5 h-5 mr-2" /> GENERAR CIERRE
+                     <button onClick={handleClose} disabled={totalDeclared === 0 && expectedCurrentBalance > 0} className="w-full bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-black py-4 rounded-2xl shadow-lg hover:shadow-xl transition-all active:scale-95 flex justify-center items-center text-lg">
+                        <Save className="w-5 h-5 mr-3" /> CERRAR TURNO Y GUARDAR
                      </button>
                   </div>
                </div>
             </div>
 
             {/* Detailed Count Interface */}
-            <div className="flex-1 bg-white p-6 rounded-2xl shadow border border-slate-200 overflow-y-auto">
-               <h3 className="font-bold text-xl text-slate-800 mb-6 flex items-center border-b border-slate-100 pb-4">
-                  Contador de Billetes y Monedas
+            <div className="flex-1 bg-white p-8 rounded-3xl shadow-sm border border-slate-200 overflow-y-auto">
+               <h3 className="font-black text-2xl text-slate-800 mb-8 flex items-center pb-5 border-b-2 border-slate-50">
+                  Desglose de Conteo <span className="ml-3 px-3 py-1 bg-slate-100 text-slate-500 text-xs rounded-full uppercase tracking-widest font-bold">Herramienta</span>
                </h3>
 
-               <div className="grid grid-cols-2 gap-8">
+               <div className="grid grid-cols-2 gap-10">
                   {/* Billetes */}
                   <div>
-                     <h4 className="font-bold text-slate-500 mb-4 text-xs uppercase tracking-widest border-l-4 border-emerald-500 pl-2">Billetes</h4>
-                     <div className="space-y-3">
+                     <h4 className="font-black text-emerald-600 mb-5 text-sm uppercase tracking-widest flex items-center bg-emerald-50 w-max px-3 py-1.5 rounded-lg border border-emerald-100">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></div> Billetes
+                     </h4>
+                     <div className="space-y-4">
                         {[
                            { val: 200, label: 'S/ 200.00', state: b200, setter: setB200 },
                            { val: 100, label: 'S/ 100.00', state: b100, setter: setB100 },
@@ -999,11 +1063,11 @@ export const CashFlow: React.FC = () => {
                            { val: 20, label: 'S/ 20.00', state: b20, setter: setB20 },
                            { val: 10, label: 'S/ 10.00', state: b10, setter: setB10 },
                         ].map(item => (
-                           <div key={item.val} className="flex items-center gap-3">
-                              <span className="w-24 text-right font-bold text-slate-700">{item.label}</span>
-                              <span className="text-slate-300">x</span>
-                              <input type="number" min="0" className="w-20 border border-slate-300 p-2 rounded text-center font-bold text-lg text-emerald-700 bg-emerald-50 focus:ring-emerald-500" value={item.state} onChange={e => item.setter(Math.max(0, parseInt(e.target.value) || 0))} />
-                              <span className="w-24 font-bold text-slate-400 text-right">= S/ {(item.val * item.state).toFixed(2)}</span>
+                           <div key={item.val} className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm shadow-slate-100/50 hover:border-emerald-200 hover:shadow-emerald-100/30 transition-all group">
+                              <span className="w-24 text-right font-black text-slate-400 group-hover:text-emerald-600 transition-colors">{item.label}</span>
+                              <span className="text-slate-300 font-bold text-lg">x</span>
+                              <input type="number" min="0" className="w-24 border-2 border-slate-100 p-3 rounded-xl text-center font-black text-xl text-emerald-700 bg-emerald-50/50 focus:bg-emerald-50 outline-none focus:border-emerald-400 transition-all" value={item.state} onChange={e => item.setter(Math.max(0, parseInt(e.target.value) || 0))} />
+                              <span className="w-28 font-black text-slate-800 text-right text-lg">= S/ {(item.val * item.state).toFixed(2)}</span>
                            </div>
                         ))}
                      </div>
@@ -1011,8 +1075,10 @@ export const CashFlow: React.FC = () => {
 
                   {/* Monedas */}
                   <div>
-                     <h4 className="font-bold text-slate-500 mb-4 text-xs uppercase tracking-widest border-l-4 border-amber-500 pl-2">Monedas</h4>
-                     <div className="space-y-3">
+                     <h4 className="font-black text-amber-600 mb-5 text-sm uppercase tracking-widest flex items-center bg-amber-50 w-max px-3 py-1.5 rounded-lg border border-amber-100">
+                        <div className="w-2 h-2 rounded-full bg-amber-500 mr-2"></div> Monedas
+                     </h4>
+                     <div className="space-y-4">
                         {[
                            { val: 5, label: 'S/ 5.00', state: m5, setter: setM5 },
                            { val: 2, label: 'S/ 2.00', state: m2, setter: setM2 },
@@ -1021,11 +1087,11 @@ export const CashFlow: React.FC = () => {
                            { val: 0.2, label: 'S/ 0.20', state: m02, setter: setM02 },
                            { val: 0.1, label: 'S/ 0.10', state: m01, setter: setM01 },
                         ].map(item => (
-                           <div key={item.val} className="flex items-center gap-3">
-                              <span className="w-24 text-right font-bold text-slate-700">{item.label}</span>
-                              <span className="text-slate-300">x</span>
-                              <input type="number" min="0" className="w-20 border border-slate-300 p-2 rounded text-center font-bold text-lg text-amber-700 bg-amber-50 focus:ring-amber-500" value={item.state} onChange={e => item.setter(Math.max(0, parseInt(e.target.value) || 0))} />
-                              <span className="w-24 font-bold text-slate-400 text-right">= S/ {(item.val * item.state).toFixed(2)}</span>
+                           <div key={item.val} className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm shadow-slate-100/50 hover:border-amber-200 hover:shadow-amber-100/30 transition-all group">
+                              <span className="w-24 text-right font-black text-slate-400 group-hover:text-amber-600 transition-colors">{item.label}</span>
+                              <span className="text-slate-300 font-bold text-lg">x</span>
+                              <input type="number" min="0" className="w-24 border-2 border-slate-100 p-3 rounded-xl text-center font-black text-xl text-amber-700 bg-amber-50/50 focus:bg-amber-50 outline-none focus:border-amber-400 transition-all" value={item.state} onChange={e => item.setter(Math.max(0, parseInt(e.target.value) || 0))} />
+                              <span className="w-28 font-black text-slate-800 text-right text-lg">= S/ {(item.val * item.state).toFixed(2)}</span>
                            </div>
                         ))}
                      </div>
@@ -1033,20 +1099,24 @@ export const CashFlow: React.FC = () => {
                </div>
 
                {/* Digital / Other */}
-               <h4 className="font-bold text-slate-500 mt-10 border-b border-slate-100 pb-4 text-xs uppercase tracking-widest border-l-4 border-indigo-500 pl-2">Saldos No Efectivo (Digitales / Tarjetas)</h4>
-               <div className="grid grid-cols-2 gap-8 mt-6">
-                  <div>
-                     <label className="block text-sm font-bold text-slate-700 mb-2">Total en Vouchers (Tarjetas / POS)</label>
-                     <div className="flex items-center">
-                        <span className="px-4 py-3 bg-slate-100 border border-slate-300 border-r-0 rounded-l font-bold text-slate-500">S/</span>
-                        <input type="number" min="0" step="0.01" className="w-full border border-slate-300 p-3 rounded-r font-black text-xl text-indigo-700 focus:ring-indigo-500" value={vouchers} onChange={e => setVouchers(Math.max(0, parseFloat(e.target.value) || 0))} />
+               <div className="mt-12 bg-slate-50/80 p-6 rounded-3xl border border-slate-100">
+                  <h4 className="font-black text-indigo-600 mb-6 text-sm uppercase tracking-widest flex items-center">
+                     <div className="w-2 h-2 rounded-full bg-indigo-500 mr-2"></div> Digitales / Bancos
+                  </h4>
+                  <div className="grid grid-cols-2 gap-8">
+                     <div>
+                        <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Tarjetas / POS</label>
+                        <div className="relative">
+                           <span className="absolute left-4 top-3.5 text-slate-400 font-black">S/</span>
+                           <input type="number" min="0" step="0.01" className="w-full border-2 border-slate-200 bg-white p-4 pl-12 rounded-2xl font-black text-2xl text-indigo-700 outline-none focus:border-indigo-400 transition-colors shadow-inner" value={vouchers} onChange={e => setVouchers(Math.max(0, parseFloat(e.target.value) || 0))} />
+                        </div>
                      </div>
-                  </div>
-                  <div>
-                     <label className="block text-sm font-bold text-slate-700 mb-2">Total en Yape / Plin / Transferencias</label>
-                     <div className="flex items-center">
-                        <span className="px-4 py-3 bg-slate-100 border border-slate-300 border-r-0 rounded-l font-bold text-slate-500">S/</span>
-                        <input type="number" min="0" step="0.01" className="w-full border border-slate-300 p-3 rounded-r font-black text-xl text-indigo-700 focus:ring-indigo-500" value={transfers} onChange={e => setTransfers(Math.max(0, parseFloat(e.target.value) || 0))} />
+                     <div>
+                        <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Yape / Plin / Transf.</label>
+                        <div className="relative">
+                           <span className="absolute left-4 top-3.5 text-slate-400 font-black">S/</span>
+                           <input type="number" min="0" step="0.01" className="w-full border-2 border-slate-200 bg-white p-4 pl-12 rounded-2xl font-black text-2xl text-indigo-700 outline-none focus:border-indigo-400 transition-colors shadow-inner" value={transfers} onChange={e => setTransfers(Math.max(0, parseFloat(e.target.value) || 0))} />
+                        </div>
                      </div>
                   </div>
                </div>
