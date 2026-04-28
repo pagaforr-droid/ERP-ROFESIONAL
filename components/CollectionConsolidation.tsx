@@ -458,7 +458,7 @@ export const CollectionConsolidation: React.FC = () => {
       const plan = historyPlanillas.find(p => p.id === planillaId);
       if (!plan) return;
       
-      const recordsToPrint = collectionRecords.filter(r => (plan.original.records || []).includes(r.id));
+      const recordsToPrint = collectionRecords.filter(r => r.planilla_id === plan.id || (plan.original.records || []).includes(r.id));
       let creator = allUsers.find(u => u.id === plan.user_id)?.name || 'SISTEMA';
 
       const doc = new jsPDF();
