@@ -87,7 +87,7 @@ BEGIN
         WHERE id = v_sale_id;
 
         INSERT INTO collection_records (sale_id, seller_id, client_name, document_ref, amount_reported, status, date_reported, payment_method, planilla_id)
-        VALUES (v_sale_id, NULL, v_client_name, v_doc_ref, v_amount, 'VALIDATED', p_date, 'CASH', v_planilla_id)
+        VALUES (v_sale_id, NULL, v_client_name, v_doc_ref, v_amount, 'VALIDATED', p_date, 'CASH', NULL)
         RETURNING id INTO v_record_id;
         
         v_records := array_append(v_records, v_record_id);
@@ -106,6 +106,9 @@ BEGIN
     -- Generar Planilla
     INSERT INTO collection_planillas (id, code, date, total_amount, record_count, user_id, cash_movement_id, glosa, status, records)
     VALUES (v_planilla_id, v_code, p_date, v_total, array_length(v_records, 1), p_user_id, v_cash_mov_id, p_glosa, 'ACTIVE', v_records);
+
+    -- Actualizar registros con el ID de la planilla recién creada para evitar fk_collrec_planilla error
+    UPDATE collection_records SET planilla_id = v_planilla_id WHERE id = ANY(v_records);
 
     RETURN v_planilla_id;
 END;
