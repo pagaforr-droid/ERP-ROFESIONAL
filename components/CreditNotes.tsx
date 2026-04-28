@@ -141,9 +141,7 @@ export const CreditNotes: React.FC = () => {
             if (!retState || retState.qty <= 0) return;
 
             const product = products.find(p => p.id === item.product_id);
-            if (!product) return;
-
-            const packageContent = product.package_content || 1;
+            const packageContent = product?.package_content || 1;
 
             const originalIsPkg = isPackageUnit(item.selected_unit, product);
             const originalBaseQty = item.quantity_base || (originalIsPkg ? item.quantity_presentation * packageContent : item.quantity_presentation);
