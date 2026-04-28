@@ -15,13 +15,6 @@ export const CollectionConsolidation: React.FC = () => {
    const [expenseCategories, setExpenseCategories] = useState<any[]>([]);
    const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
 
-   // NEW: Extended State for Dispatch Liquidations in History
-   const [dispatchLiquidations, setDispatchLiquidations] = useState<any[]>([]);
-   const [dispatchSheets, setDispatchSheets] = useState<any[]>([]);
-   const [vehicles, setVehicles] = useState<any[]>([]);
-   const [drivers, setDrivers] = useState<any[]>([]);
-   const [cashMovements, setCashMovements] = useState<any[]>([]);
-   const [liquidationDocs, setLiquidationDocs] = useState<any[]>([]);
 
    // Layout State
    const [activeTab, setActiveTab] = useState<'PENDING' | 'HISTORY' | 'MANUAL'>('PENDING');
@@ -107,53 +100,12 @@ export const CollectionConsolidation: React.FC = () => {
          });
       });
 
-      // 2. Add Dispatch Liquidations
-      if (selectedSeller === 'ALL') { // Dispatch liquidations usually apply globally (to drivers)
-         dispatchLiquidations.forEach(liq => {
-            const liqDate = liq.created_at || new Date().toISOString();
-            if (dateFilter && !liqDate.startsWith(dateFilter)) return;
-            // Only show processed/completed liquidations
-            if (liq.status !== 'PROCESADO' && liq.status !== 'COMPLETADO') return;
-
-            const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
-            if (!ds) return;
-
-            const veh = vehicles.find(v => v.id === ds.vehicle_id);
-            const driver = drivers.find(d => d.id === veh?.driver_id);
-
-            const cm = cashMovements.find(c => c.reference_id === liq.id && c.category_name === 'LIQUIDACION RUTA');
-            
-            let responsibleName = 'N/A';
-            if (cm && cm.description) {
-               const respMatch = cm.description.match(/- Resp: (.*?) -/);
-               if (respMatch) responsibleName = respMatch[1].trim();
-            }
-
-            const docs = liquidationDocs.filter(ld => ld.dispatch_liquidation_id === liq.id);
-
-            unified.push({
-               type: 'DISPATCH',
-               id: liq.id,
-               code: `RUT-${ds.code}`, // Use dispatch sheet code as Planilla Code
-               date: liqDate,
-               total_amount: Number(liq.total_cash_collected) || 0,
-               record_count: docs.length,
-               status: liq.status === 'COMPLETADO' ? 'ACTIVE' : 'ACTIVE', // map to ACTIVE for UI to allow viewing
-               user_id: cm?.user_id,
-               glosa: `Liquidación de Ruta ${ds.code}`,
-               driver_name: driver?.name || 'N/A',
-               responsible_name: responsibleName,
-               original: liq
-            });
-         });
-      }
-
       return unified.sort((a, b) => {
          const timeA = a.date ? new Date(a.date).getTime() : 0;
          const timeB = b.date ? new Date(b.date).getTime() : 0;
          return timeB - timeA;
       });
-   }, [collectionPlanillas, dateFilter, selectedSeller, collectionRecords, dispatchLiquidations, dispatchSheets, vehicles, drivers, cashMovements, liquidationDocs]);
+   }, [collectionPlanillas, dateFilter, selectedSeller, collectionRecords]);
 
    const totals = useMemo(() => {
       return pendingCollections.reduce((acc, curr) => {
@@ -171,25 +123,8 @@ export const CollectionConsolidation: React.FC = () => {
 
    const selectedPlanillaRecords = useMemo(() => {
       if (!selectedPlanilla) return [];
-      if (selectedPlanilla.type === 'DISPATCH') {
-         // Map Liquidation Docs to look like CollectionRecords for the simple UI
-         const ldocs = liquidationDocs.filter(ld => ld.dispatch_liquidation_id === selectedPlanilla.id);
-         return ldocs.map(ld => {
-            const sale = sales.find(s => s.id === ld.sale_id);
-            return {
-               id: ld.id,
-               sale_id: ld.sale_id,
-               seller_id: sale?.seller_id,
-               client_name: sale?.client_name || 'Desconocido',
-               document_ref: sale ? `${sale.document_type?.substring(0, 3)} ${sale.series}-${sale.number}` : 'N/A',
-               amount_reported: ld.amount_collected || 0,
-               date_reported: selectedPlanilla.date,
-               status: 'VALIDATED'
-            } as any;
-         });
-      }
       return collectionRecords.filter(r => (selectedPlanilla.original.records || []).includes(r.id));
-   }, [selectedPlanilla, collectionRecords, liquidationDocs, sales]);
+   }, [selectedPlanilla, collectionRecords]);
 
    // --- DATA PREPARATION (MANUAL) ---
 
@@ -256,25 +191,11 @@ export const CollectionConsolidation: React.FC = () => {
          const { data: clientsData } = await supabase.from('clients').select('*');
          const { data: sellersData } = await supabase.from('sellers').select('*');
          
-         const { data: dlData } = await supabase.from('dispatch_liquidations').select('*');
-         const { data: dsData } = await supabase.from('dispatch_sheets').select('*');
-         const { data: vData } = await supabase.from('vehicles').select('*');
-         const { data: drData } = await supabase.from('drivers').select('*');
-         const { data: cmData } = await supabase.from('cash_movements').select('*');
-         const { data: ldData } = await supabase.from('liquidation_documents').select('*');
-
          if (recData) useStore.setState({ collectionRecords: recData as any[] });
          if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
          if (salesData) useStore.setState({ sales: salesData as any[] });
          if (clientsData) useStore.setState({ clients: clientsData as any[] });
          if (sellersData) useStore.setState({ sellers: sellersData as any[] });
-
-         if (dlData) setDispatchLiquidations(dlData);
-         if (dsData) setDispatchSheets(dsData);
-         if (vData) setVehicles(vData);
-         if (drData) setDrivers(drData);
-         if (cmData) setCashMovements(cmData);
-         if (ldData) setLiquidationDocs(ldData);
 
         // Cargar categorias y preseleccionar
         const { data: catData } = await supabase.from('expense_categories').select('*');
@@ -540,31 +461,14 @@ export const CollectionConsolidation: React.FC = () => {
       const plan = historyPlanillas.find(p => p.id === planillaId);
       if (!plan) return;
       
-      let recordsToPrint: any[] = [];
+      const recordsToPrint = collectionRecords.filter(r => (plan.original.records || []).includes(r.id));
       let creator = users.find(u => u.id === plan.user_id)?.name || 'SISTEMA';
-
-      if (plan.type === 'COLLECTION') {
-         recordsToPrint = collectionRecords.filter(r => plan.original.records.includes(r.id));
-      } else {
-         const ldocs = liquidationDocs.filter(ld => ld.dispatch_liquidation_id === plan.id);
-         recordsToPrint = ldocs.map(ld => {
-            const sale = sales.find(s => s.id === ld.sale_id);
-            return {
-               id: ld.id,
-               seller_id: sale?.seller_id,
-               client_name: sale?.client_name || 'Desconocido',
-               document_ref: sale ? `${sale.document_type?.substring(0, 3)} ${sale.series}-${sale.number}` : 'N/A',
-               amount_reported: ld.amount_collected || 0,
-               date_reported: plan.date
-            };
-         });
-      }
 
       const doc = new jsPDF();
       
       doc.setFontSize(18);
       doc.setFont('helvetica', 'bold');
-      doc.text(plan.type === 'DISPATCH' ? `LIQUIDACIÓN DE RUTA: ${plan.code}` : `LIQUIDACIÓN DE COBRANZAS: ${plan.code}`, 14, 22);
+      doc.text(`LIQUIDACIÓN DE COBRANZAS: ${plan.code}`, 14, 22);
       
       doc.setFontSize(11);
       doc.setFont('helvetica', 'normal');
