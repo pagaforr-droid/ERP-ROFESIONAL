@@ -19,19 +19,23 @@ export const CashFlow: React.FC = () => {
    const [localLiquidations, setLocalLiquidations] = useState<any[]>([]);
    const [localDispatchSheets, setLocalDispatchSheets] = useState<any[]>([]);
    const [localDrivers, setLocalDrivers] = useState<any[]>([]);
+   const [localVehicles, setLocalVehicles] = useState<any[]>([]);
+   const [localUsers, setLocalUsers] = useState<any[]>([]);
 
    useEffect(() => {
       const fetchInitialData = async () => {
          setIsLoading(true);
          try {
-            const [sessionsRes, categoriesRes, movementsRes, scheduledRes, liqRes, sheetsRes, driversRes] = await Promise.all([
+            const [sessionsRes, categoriesRes, movementsRes, scheduledRes, liqRes, sheetsRes, driversRes, vehiclesRes, usersRes] = await Promise.all([
                supabase.from('cash_register_sessions').select('*').order('created_at', { ascending: false }),
                supabase.from('expense_categories').select('*'),
                supabase.from('cash_movements').select('*').order('date', { ascending: false }),
                supabase.from('scheduled_transactions').select('*'),
                supabase.from('dispatch_liquidations').select('id, dispatch_sheet_id'),
                supabase.from('dispatch_sheets').select('*'),
-               supabase.from('drivers').select('*')
+               supabase.from('drivers').select('*'),
+               supabase.from('vehicles').select('*'),
+               supabase.from('erp_users').select('id, name')
             ]);
             
             const stateUpdates: any = {};
@@ -51,6 +55,8 @@ export const CashFlow: React.FC = () => {
             if (liqRes?.data) setLocalLiquidations(liqRes.data);
             if (sheetsRes?.data) setLocalDispatchSheets(sheetsRes.data);
             if (driversRes?.data) setLocalDrivers(driversRes.data);
+            if (vehiclesRes?.data) setLocalVehicles(vehiclesRes.data);
+            if (usersRes?.data) setLocalUsers(usersRes.data);
          } catch (error) {
             console.error("Error fetching cash flow data:", error);
          } finally {
@@ -348,7 +354,8 @@ export const CashFlow: React.FC = () => {
                                           if (!liq) return m.description;
                                           const sheet = localDispatchSheets.find(s => s.id === liq.dispatch_sheet_id);
                                           if (!sheet) return m.description;
-                                          const driver = localDrivers.find(d => d.id === sheet.driver_id);
+                                          const vehicle = localVehicles.find(v => v.id === sheet.vehicle_id);
+                                          const driver = localDrivers.find(d => d.id === (vehicle?.driver_id || sheet.driver_id));
                                           return `Planilla N° ${sheet.code} - Chofer: ${driver?.name || 'S/D'}`;
                                        })()
                                        : m.description
@@ -359,7 +366,11 @@ export const CashFlow: React.FC = () => {
                            <td className="p-3 text-slate-600">
                               <div className="flex items-center gap-1 text-xs">
                                  <User className="w-3 h-3 text-slate-400" />
-                                 {m.user_id || 'SISTEMA'}
+                                 {(() => {
+                                    if (!m.user_id) return 'SISTEMA';
+                                    const user = localUsers.find(u => u.id === m.user_id);
+                                    return user?.name || m.user_id;
+                                 })()}
                               </div>
                            </td>
                            <td className={`p-3 text-right font-bold ${m.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
