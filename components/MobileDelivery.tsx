@@ -26,8 +26,6 @@ export const MobileDelivery: React.FC = () => {
     // Modal State
     const [modal, setModal] = useState<DeliveryModalState>({ isOpen: false, sale: null, actionType: null });
     const [reason, setReason] = useState('');
-    const [location, setLocation] = useState<{ lat: number, lng: number } | undefined>();
-    const [isLocating, setIsLocating] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [showFinishConfirm, setShowFinishConfirm] = useState(false);
     const [systemAlert, setSystemAlert] = useState<{ show: boolean, message: string, type: 'success' | 'error' | 'info' }>({ show: false, message: '', type: 'info' });
@@ -132,27 +130,6 @@ export const MobileDelivery: React.FC = () => {
     const openActionModal = (sale: Sale, actionType: 'delivered' | 'partial' | 'failed') => {
         setModal({ isOpen: true, sale, actionType });
         setReason('');
-        setLocation(undefined);
-    };
-
-    const handleGetLocation = () => {
-        setIsLocating(true);
-        if ("geolocation" in navigator) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-                    setIsLocating(false);
-                },
-                (error) => {
-                    setSystemAlert({ show: true, message: "No se pudo obtener la ubicación GPS. Por favor encienda el GPS de su celular y brinde permisos.", type: "error" });
-                    setIsLocating(false);
-                },
-                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-            );
-        } else {
-            setSystemAlert({ show: true, message: "Geolocalización no soportada en este dispositivo.", type: "error" });
-            setIsLocating(false);
-        }
     };
 
     const handleConfirmAction = async () => {
@@ -164,18 +141,29 @@ export const MobileDelivery: React.FC = () => {
             return;
         }
 
-        // Require GPS for every delivery action for tracking
-        if (!location) {
-            setSystemAlert({ show: true, message: "¡Obligatorio! Debe capturar su ubicación GPS para informar al monitoreo en ruta.", type: "error" });
-            return;
+        setIsProcessing(true);
+
+        // Captura GPS Silenciosa
+        let currentLocation = null;
+        if ("geolocation" in navigator) {
+            try {
+                currentLocation = await new Promise((resolve) => {
+                    navigator.geolocation.getCurrentPosition(
+                        (position) => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }),
+                        (error) => resolve(null), // Si falla, sigue el proceso sin alertar
+                        { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+                    );
+                });
+            } catch (e) {
+                // Silencioso
+            }
         }
 
-        setIsProcessing(true);
         try {
             const updatePayload = {
                 dispatch_status: modal.actionType,
                 delivery_reason: reason || null,
-                delivery_location: location
+                delivery_location: currentLocation
             };
 
             const { error } = await supabase.from('sales').update(updatePayload).eq('id', modal.sale.id);
@@ -382,28 +370,6 @@ export const MobileDelivery: React.FC = () => {
                                         ></textarea>
                                     </div>
                                 )}
-
-                                <div className="mb-8">
-                                    <label className="block text-xs font-black text-slate-600 mb-2 uppercase tracking-wider">Verificación GPS (Obligatorio)</label>
-                                    {location ? (
-                                        <div className="bg-green-50 border border-green-200 text-green-800 p-4 rounded-xl flex items-center font-bold shadow-sm">
-                                            <div className="bg-green-500 p-1.5 rounded-full mr-3"><CheckCircle className="w-5 h-5 text-white" /></div>
-                                            <div>
-                                                Ubicación capturada para Monitoreo.
-                                                <div className="text-[10px] font-normal text-green-600 mt-0.5">Gerencia podrá ver esta ubicación en el mapa.</div>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <button
-                                            onClick={handleGetLocation}
-                                            disabled={isLocating}
-                                            className="w-full py-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-2 border-indigo-200 rounded-xl flex items-center justify-center font-black text-sm transition-colors shadow-sm"
-                                        >
-                                            {isLocating ? <Loader2 className="w-5 h-5 mr-2 animate-spin" /> : <Navigation className="w-5 h-5 mr-2" />}
-                                            CAPTURAR MI UBICACIÓN AHORA
-                                        </button>
-                                    )}
-                                </div>
 
                                 <button
                                     onClick={handleConfirmAction}
