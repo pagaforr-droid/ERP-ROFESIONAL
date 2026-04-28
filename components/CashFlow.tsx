@@ -15,15 +15,23 @@ export const CashFlow: React.FC = () => {
    const [filterDateFrom, setFilterDateFrom] = useState(new Date().toISOString().split('T')[0]);
    const [filterDateTo, setFilterDateTo] = useState(new Date().toISOString().split('T')[0]);
 
+   // Helper metadata for descriptions
+   const [localLiquidations, setLocalLiquidations] = useState<any[]>([]);
+   const [localDispatchSheets, setLocalDispatchSheets] = useState<any[]>([]);
+   const [localDrivers, setLocalDrivers] = useState<any[]>([]);
+
    useEffect(() => {
       const fetchInitialData = async () => {
          setIsLoading(true);
          try {
-            const [sessionsRes, categoriesRes, movementsRes, scheduledRes] = await Promise.all([
+            const [sessionsRes, categoriesRes, movementsRes, scheduledRes, liqRes, sheetsRes, driversRes] = await Promise.all([
                supabase.from('cash_register_sessions').select('*').order('created_at', { ascending: false }),
                supabase.from('expense_categories').select('*'),
                supabase.from('cash_movements').select('*').order('date', { ascending: false }),
-               supabase.from('scheduled_transactions').select('*')
+               supabase.from('scheduled_transactions').select('*'),
+               supabase.from('dispatch_liquidations').select('id, dispatch_sheet_id'),
+               supabase.from('dispatch_sheets').select('*'),
+               supabase.from('drivers').select('*')
             ]);
             
             const stateUpdates: any = {};
@@ -39,6 +47,10 @@ export const CashFlow: React.FC = () => {
             if (Object.keys(stateUpdates).length > 0) {
                useStore.setState(stateUpdates);
             }
+
+            if (liqRes?.data) setLocalLiquidations(liqRes.data);
+            if (sheetsRes?.data) setLocalDispatchSheets(sheetsRes.data);
+            if (driversRes?.data) setLocalDrivers(driversRes.data);
          } catch (error) {
             console.error("Error fetching cash flow data:", error);
          } finally {
@@ -329,7 +341,18 @@ export const CashFlow: React.FC = () => {
                            </td>
                            <td className="p-3 text-slate-600">
                               <div className="flex flex-col">
-                                 <span>{m.description}</span>
+                                 <span className="font-medium text-slate-800">{
+                                    m.category_name === 'LIQUIDACION RUTA' && m.reference_id
+                                       ? (() => {
+                                          const liq = localLiquidations.find(l => l.id === m.reference_id);
+                                          if (!liq) return m.description;
+                                          const sheet = localDispatchSheets.find(s => s.id === liq.dispatch_sheet_id);
+                                          if (!sheet) return m.description;
+                                          const driver = localDrivers.find(d => d.id === sheet.driver_id);
+                                          return `Planilla N° ${sheet.code} - Chofer: ${driver?.name || 'S/D'}`;
+                                       })()
+                                       : m.description
+                                 }</span>
                                  <span className="text-[9px] text-slate-400 font-mono mt-0.5">{m.id}</span>
                               </div>
                            </td>
