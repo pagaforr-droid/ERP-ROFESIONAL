@@ -348,14 +348,20 @@ export const CashFlow: React.FC = () => {
                            <td className="p-3 text-slate-600">
                               <div className="flex flex-col">
                                  <span className="font-medium text-slate-800">{
-                                    m.category_name === 'LIQUIDACION RUTA' && m.reference_id
+                                    m.category_name === 'LIQUIDACION RUTA'
                                        ? (() => {
-                                          const liq = localLiquidations.find(l => l.id === m.reference_id);
-                                          if (!liq) return m.description;
+                                          const parsedId = m.reference_id || m.description.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+                                          if (!parsedId) return `${m.description} (No ID)`;
+                                          
+                                          const liq = localLiquidations.find(l => l.id === parsedId);
+                                          if (!liq) return `${m.description} (No Liq)`;
+                                          
                                           const sheet = localDispatchSheets.find(s => s.id === liq.dispatch_sheet_id);
-                                          if (!sheet) return m.description;
+                                          if (!sheet) return `${m.description} (No Sheet)`;
+                                          
                                           const vehicle = localVehicles.find(v => v.id === sheet.vehicle_id);
                                           const driver = localDrivers.find(d => d.id === (vehicle?.driver_id || sheet.driver_id));
+                                          
                                           return `Planilla N° ${sheet.code} - Chofer: ${driver?.name || 'S/D'}`;
                                        })()
                                        : m.description
