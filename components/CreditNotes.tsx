@@ -30,7 +30,7 @@ export const CreditNotes: React.FC = () => {
 
     const handleSearch = React.useCallback(async () => {
         try {
-            let query = supabase.from('sales').select('*, items:sale_items(*)').in('document_type', ['FACTURA', 'BOLETA']).neq('status', 'annulled');
+            let query = supabase.from('sales').select('*, items:sale_items(*)').in('document_type', ['FACTURA', 'BOLETA']).neq('status', 'canceled');
 
             if (dateFrom) {
                 query = query.gte('created_at', `${dateFrom}T00:00:00`);
@@ -328,13 +328,13 @@ export const CreditNotes: React.FC = () => {
                                             </td>
                                             <td className="p-3 text-right font-bold text-slate-800">S/ {sale.total.toFixed(2)}</td>
                                             <td className="p-3 text-center">
-                                                <span className={`px-2 py-1 rounded text-[10px] font-bold ${sale.status === 'annulled' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                    {sale.status === 'annulled' ? 'ANULADO' : 'ACTIVO'}
+                                                <span className={`px-2 py-1 rounded text-[10px] font-bold ${sale.status === 'canceled' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                    {sale.status === 'canceled' ? 'ANULADO' : 'ACTIVO'}
                                                 </span>
                                             </td>
                                             <td className="p-3 text-center">
                                                 <button 
-                                                    disabled={sale.status === 'annulled'}
+                                                    disabled={sale.status === 'canceled'}
                                                     onClick={() => handleSelectSale(sale)}
                                                     className="bg-slate-800 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-slate-700 disabled:opacity-50"
                                                 >
