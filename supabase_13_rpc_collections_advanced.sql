@@ -104,8 +104,8 @@ BEGIN
     RETURNING id INTO v_cash_mov_id;
 
     -- Generar Planilla
-    INSERT INTO collection_planillas (id, code, date, total_amount, record_count, user_id, cash_movement_id, glosa, status, records)
-    VALUES (v_planilla_id, v_code, p_date, v_total, array_length(v_records, 1), p_user_id, v_cash_mov_id, p_glosa, 'ACTIVE', v_records);
+    INSERT INTO collection_planillas (id, code, date, total_amount, record_count, user_id, cash_movement_id, glosa, status)
+    VALUES (v_planilla_id, v_code, p_date, v_total, array_length(v_records, 1), p_user_id, v_cash_mov_id, p_glosa, 'ACTIVE');
 
     -- Actualizar registros con el ID de la planilla recién creada para evitar fk_collrec_planilla error
     UPDATE collection_records SET planilla_id = v_planilla_id WHERE id = ANY(v_records);
@@ -127,7 +127,7 @@ BEGIN
     IF v_planilla.status = 'ANNULLED' THEN RETURN TRUE; END IF;
 
     -- Restaurar saldos de las ventas
-    FOR v_record IN SELECT * FROM collection_records WHERE id = ANY(v_planilla.records)
+    FOR v_record IN SELECT * FROM collection_records WHERE planilla_id = p_planilla_id
     LOOP
         UPDATE sales 
         SET balance = COALESCE(balance, 0) + v_record.amount_reported,
@@ -148,7 +148,7 @@ BEGIN
     DELETE FROM cash_movements WHERE id = v_planilla.cash_movement_id;
 
     -- Marcar Planilla como Anulada
-    UPDATE collection_planillas SET status = 'ANNULLED', records = '{}', total_amount = 0, record_count = 0 WHERE id = p_planilla_id;
+    UPDATE collection_planillas SET status = 'ANNULLED', total_amount = 0, record_count = 0 WHERE id = p_planilla_id;
 
     RETURN TRUE;
 END;
@@ -166,7 +166,7 @@ BEGIN
     IF NOT FOUND THEN RAISE EXCEPTION 'Planilla no encontrada'; END IF;
 
     -- Restaurar saldos de las ventas
-    FOR v_record IN SELECT * FROM collection_records WHERE id = ANY(v_planilla.records)
+    FOR v_record IN SELECT * FROM collection_records WHERE planilla_id = p_planilla_id
     LOOP
         UPDATE sales 
         SET balance = COALESCE(balance, 0) + v_record.amount_reported,
@@ -186,7 +186,7 @@ BEGIN
     DELETE FROM cash_movements WHERE id = v_planilla.cash_movement_id;
 
     -- Marcar Planilla como Editando
-    UPDATE collection_planillas SET status = 'EDITING', cash_movement_id = NULL, records = '{}' WHERE id = p_planilla_id;
+    UPDATE collection_planillas SET status = 'EDITING', cash_movement_id = NULL WHERE id = p_planilla_id;
 
     RETURN TRUE;
 END;
@@ -220,12 +220,11 @@ BEGIN
     -- Actualizar totales en Planilla
     UPDATE collection_planillas 
     SET total_amount = total_amount - v_record.amount_reported,
-        record_count = record_count - 1,
-        records = array_remove(records, p_record_id)
+        record_count = record_count - 1
     WHERE id = p_planilla_id;
 
     -- Si se quedó en cero registros, anularla completamente
-    IF array_length(array_remove(v_planilla.records, p_record_id), 1) IS NULL THEN
+    IF v_planilla.record_count <= 1 THEN
         UPDATE collection_planillas SET status = 'ANNULLED' WHERE id = p_planilla_id;
         DELETE FROM cash_movements WHERE id = v_planilla.cash_movement_id;
     ELSE

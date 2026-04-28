@@ -492,7 +492,7 @@ export const CollectionConsolidation: React.FC = () => {
          const p = collectionPlanillas.find(x => x.id === showEditPlanillaId);
          if (!p) return;
 
-         const planillaRecords = collectionRecords.filter(r => p.records.includes(r.id));
+         const planillaRecords = collectionRecords.filter(r => r.planilla_id === p.id);
          const wasManual = planillaRecords.every(r => r.seller_id === null);
 
          try {
