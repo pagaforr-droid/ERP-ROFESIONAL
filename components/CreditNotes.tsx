@@ -29,28 +29,46 @@ export const CreditNotes: React.FC = () => {
     const [selectedSeries, setSelectedSeries] = useState('');
 
     const handleSearch = React.useCallback(() => {
-        let results = sales.filter(s => s.document_type === 'FACTURA' || s.document_type === 'BOLETA');
+        try {
+            let results = sales.filter(s => s && (s.document_type === 'FACTURA' || s.document_type === 'BOLETA'));
 
-        // Date filter
-        if (dateFrom) {
-            results = results.filter(s => s.created_at.split('T')[0] >= dateFrom);
-        }
-        if (dateTo) {
-            results = results.filter(s => s.created_at.split('T')[0] <= dateTo);
-        }
-
-        // Text filter
-        if (searchTerm.trim()) {
-            const term = searchTerm.trim().toUpperCase();
-            if (searchType === 'NUMBER') {
-                results = results.filter(s => s.number.includes(term) || `${s.series}-${s.number}` === term);
-            } else {
-                results = results.filter(s => s.client_name?.toUpperCase().includes(term) || s.client_ruc?.includes(term));
+            // Date filter
+            if (dateFrom) {
+                results = results.filter(s => {
+                    if (!s.created_at) return false;
+                    return s.created_at.substring(0, 10) >= dateFrom;
+                });
             }
-        }
+            if (dateTo) {
+                results = results.filter(s => {
+                    if (!s.created_at) return false;
+                    return s.created_at.substring(0, 10) <= dateTo;
+                });
+            }
 
-        setSearchResults(results.slice(0, 50)); // max 50
-        setOriginalSale(null);
+            // Text filter
+            if (searchTerm.trim()) {
+                const term = searchTerm.trim().toUpperCase();
+                if (searchType === 'NUMBER') {
+                    results = results.filter(s => {
+                        const num = s.number || '';
+                        const ser = s.series || '';
+                        return num.includes(term) || `${ser}-${num}` === term;
+                    });
+                } else {
+                    results = results.filter(s => {
+                        const cName = (s.client_name || '').toUpperCase();
+                        const cRuc = s.client_ruc || '';
+                        return cName.includes(term) || cRuc.includes(term);
+                    });
+                }
+            }
+
+            setSearchResults(results.slice(0, 50)); // max 50
+            setOriginalSale(null);
+        } catch (e) {
+            console.error("Search error:", e);
+        }
     }, [sales, dateFrom, dateTo, searchTerm, searchType]);
 
     useEffect(() => {
