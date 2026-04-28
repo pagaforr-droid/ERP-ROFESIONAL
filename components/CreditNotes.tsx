@@ -1,18 +1,35 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
-import { Sale, SaleItem } from '../types';
+import { isPackageUnit, calculateBaseQuantity } from '../utils/productUtils';
+import { Sale, SaleItem, DocumentSeries, NCType } from '../types';
 import { Search, FileText, ArrowLeftRight, CheckCircle2, ShieldAlert, FilePlus, Calendar, User, Hash, X } from 'lucide-react';
 import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
 import { supabase } from '../services/supabase';
 
-type NCType = 'DEVOLUCION' | 'DESCUENTO';
+// MOTIVOS SUNAT
+const SUNAT_MOTIVOS_NC = [
+    { code: '01', desc: 'Anulación de la operación' },
+    { code: '02', desc: 'Anulación por error en el RUC' },
+    { code: '03', desc: 'Corrección por error en la descripción' },
+    { code: '04', desc: 'Descuento global' },
+    { code: '05', desc: 'Descuento por ítem' },
+    { code: '06', desc: 'Devolución total' },
+    { code: '07', desc: 'Devolución por ítem' },
+    { code: '08', desc: 'Bonificación' },
+    { code: '09', desc: 'Disminución en el valor' },
+    { code: '10', desc: 'Otros Conceptos' },
+    { code: '13', desc: 'Por Diferencia de Precio' }
+];
 
 export const CreditNotes: React.FC = () => {
     const { sales, products, company, syncCreditNoteResult } = useStore();
 
+    // UI State
+    const [activeTab, setActiveTab] = useState<'EMITIR' | 'APLICAR'>('EMITIR');
+    
     // Search State
-    const [searchType, setSearchType] = useState<'NUMBER' | 'CLIENT'>('NUMBER');
     const [searchTerm, setSearchTerm] = useState('');
+    const [searchType, setSearchType] = useState<'CLIENT' | 'NUMBER'>('CLIENT');
     const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; });
     const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0]);
     const [searchResults, setSearchResults] = useState<Sale[]>([]);
@@ -20,13 +37,27 @@ export const CreditNotes: React.FC = () => {
     // Creation State
     const [originalSale, setOriginalSale] = useState<Sale | null>(null);
     const [ncType, setNcType] = useState<NCType>('DEVOLUCION');
-    const [returnQuantities, setReturnQuantities] = useState<Record<string, { qty: number, unit: 'UND' | 'PKG' }>>({});
+    const [returnQuantities, setReturnQuantities] = useState<Record<string, { qty: number, unit: string }>>({});
     const [discountAmount, setDiscountAmount] = useState<number>(0);
     const [glosa, setGlosa] = useState('');
+    const [sunatMotivo, setSunatMotivo] = useState('07');
 
     const [isSaving, setIsSaving] = useState(false);
     const [dbSeries, setDbSeries] = useState<any[]>([]);
     const [selectedSeries, setSelectedSeries] = useState('');
+
+    // --- Modal State ---
+    const [modalConfig, setModalConfig] = useState<{isOpen: boolean, type: 'info'|'warning'|'error'|'confirm', message: string, onConfirm?: () => void}>({
+        isOpen: false, type: 'info', message: ''
+    });
+
+    const showAlert = (message: string, type: 'info'|'warning'|'error' = 'info') => {
+        setModalConfig({ isOpen: true, type, message });
+    };
+
+    const showConfirm = (message: string, onConfirm: () => void) => {
+        setModalConfig({ isOpen: true, type: 'confirm', message, onConfirm });
+    };
 
     const handleSearch = React.useCallback(async () => {
         try {
@@ -86,14 +117,15 @@ export const CreditNotes: React.FC = () => {
 
     const handleSelectSale = (sale: Sale) => {
         setOriginalSale(sale);
+        setGlosa(`Referencia a ${sale.document_type} ${sale.series}-${sale.number}`);
+        setSunatMotivo('07'); // Default: Devolución por item
         setNcType('DEVOLUCION');
-        setGlosa(`Devolución referente a ${sale.document_type} ${sale.series}-${sale.number}`);
         setDiscountAmount(0);
 
-        const initialReturns: Record<string, { qty: number, unit: 'UND' | 'PKG' }> = {};
+        const initialReturns: Record<string, { qty: number, unit: string }> = {};
         sale.items.forEach((item, idx) => {
             const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
-            initialReturns[itemKey] = { qty: 0, unit: item.selected_unit as 'UND' | 'PKG' };
+            initialReturns[itemKey] = { qty: 0, unit: item.selected_unit }; // Exact unit from DB
         });
         setReturnQuantities(initialReturns);
     };
@@ -109,14 +141,15 @@ export const CreditNotes: React.FC = () => {
             if (!retState || retState.qty <= 0) return;
 
             const product = products.find(p => p.id === item.product_id);
-            const packageContent = product?.package_content || 1;
+            if (!product) return;
 
-            const retBaseQty = retState.unit === 'PKG' ? retState.qty * packageContent : retState.qty;
+            const packageContent = product.package_content || 1;
 
-            let originalBaseQty = item.quantity_base;
-            if (!originalBaseQty) {
-                originalBaseQty = item.selected_unit === 'PKG' ? item.quantity_presentation * packageContent : item.quantity_presentation;
-            }
+            const originalIsPkg = isPackageUnit(item.selected_unit, product);
+            const originalBaseQty = item.quantity_base || (originalIsPkg ? item.quantity_presentation * packageContent : item.quantity_presentation);
+
+            const retIsPkg = isPackageUnit(retState.unit, product);
+            const retBaseQty = retIsPkg ? retState.qty * packageContent : retState.qty;
 
             const ratio = originalBaseQty > 0 ? (retBaseQty / originalBaseQty) : 0;
 
@@ -127,9 +160,11 @@ export const CreditNotes: React.FC = () => {
             const total = proportionalGross - discountAmt;
 
             // Strict adherence to original unit_price as requested by user.
-            const newUnitPrice = retState.unit === item.selected_unit
-                ? item.unit_price
-                : (retState.unit === 'UND' ? (item.unit_price / packageContent) : (item.unit_price * packageContent));
+            let newUnitPrice = item.unit_price;
+            if (retIsPkg !== originalIsPkg) {
+                 if (!retIsPkg && originalIsPkg) newUnitPrice = item.unit_price / packageContent;
+                 if (retIsPkg && !originalIsPkg) newUnitPrice = item.unit_price * packageContent;
+            }
 
             let retAllocations = [];
             if (item.batch_allocations) {
@@ -168,90 +203,145 @@ export const CreditNotes: React.FC = () => {
         if (!originalSale) return;
         
         if (ncType === 'DEVOLUCION' && returnedItemsList.length === 0) {
-            alert('Debe devolver al menos un producto mayor a cero para generar la Nota de Crédito por Devolución.');
+            showAlert('Debe devolver al menos un producto mayor a cero para generar la Nota de Crédito por Devolución.', 'warning');
             return;
         }
 
         if (ncType === 'DESCUENTO' && (discountAmount <= 0 || discountAmount > originalSale.total)) {
-            alert(`El monto de descuento debe ser mayor a 0 y no puede exceder el total de la factura (S/ ${originalSale.total.toFixed(2)}).`);
+            showAlert(`El monto de descuento debe ser mayor a 0 y no puede exceder el total de la factura (S/ ${originalSale.total.toFixed(2)}).`, 'warning');
             return;
         }
 
         if (!selectedSeries) {
-            alert('No hay una serie de Nota de Crédito activa en Configuración.');
+            showAlert('No hay una serie de Nota de Crédito activa en Configuración.', 'error');
             return;
         }
 
-        const confirm = window.confirm(`¿Está seguro de generar una NOTA DE CRÉDITO por ${ncType} que afectará a la ${originalSale.document_type} ${originalSale.series}-${originalSale.number}?`);
-        if (!confirm) return;
+        showConfirm(`¿Está seguro de generar una NOTA DE CRÉDITO por ${ncType} que afectará a la ${originalSale.document_type} ${originalSale.series}-${originalSale.number}?`, async () => {
+            setIsSaving(true);
+            try {
+                let itemsPayload: SaleItem[] = [];
 
-        setIsSaving(true);
-        try {
-            let itemsPayload: SaleItem[] = [];
+                if (ncType === 'DEVOLUCION') {
+                    itemsPayload = returnedItemsList;
+                } else {
+                    // Descuento: 1 item dummy representativo que NO afecta kardex
+                    itemsPayload = [{
+                        id: crypto.randomUUID(),
+                        product_id: originalSale.items[0].product_id, // valid UUID
+                        product_sku: 'DSCTO',
+                        product_name: 'DESCUENTO COMERCIAL APLICADO',
+                        selected_unit: 'UND',
+                        quantity_presentation: 1,
+                        quantity_base: 0, // 0 = NO KARDEX
+                        unit_price: returnSubtotal,
+                        total_price: returnGrandTotal,
+                        discount_percent: 0,
+                        discount_amount: 0,
+                        is_bonus: false,
+                        batch_allocations: [] // NO ALLOCATIONS = NO KARDEX
+                    } as any];
+                }
 
-            if (ncType === 'DEVOLUCION') {
-                itemsPayload = returnedItemsList;
-            } else {
-                // Descuento: 1 item dummy representativo que NO afecta kardex
-                itemsPayload = [{
+                const motivoText = SUNAT_MOTIVOS_NC.find(m => m.code === sunatMotivo)?.desc || '';
+
+                const ncPayload = {
                     id: crypto.randomUUID(),
-                    product_id: originalSale.items[0].product_id, // valid UUID
-                    product_sku: 'DSCTO',
-                    product_name: 'DESCUENTO COMERCIAL APLICADO',
-                    selected_unit: 'UND',
-                    quantity_presentation: 1,
-                    quantity_base: 0, // 0 = NO KARDEX
-                    unit_price: returnSubtotal,
-                    total_price: returnGrandTotal,
-                    discount_percent: 0,
-                    discount_amount: 0,
-                    is_bonus: false,
-                    batch_allocations: [] // NO ALLOCATIONS = NO KARDEX
-                } as any];
+                    series: selectedSeries,
+                    client_id: originalSale.client_id,
+                    client_name: originalSale.client_name,
+                    client_ruc: originalSale.client_ruc,
+                    client_address: originalSale.client_address,
+                    payment_method: originalSale.payment_method || 'CONTADO',
+                    subtotal: returnSubtotal,
+                    igv: returnIgv,
+                    total: returnGrandTotal,
+                    observation: `[MOTIVO SUNAT: ${sunatMotivo} - ${motivoText}] ${glosa}`,
+                    items: itemsPayload
+                };
+
+                const { data, error } = await supabase.rpc('process_credit_note_transaction', { p_nc_data: ncPayload });
+                if (error) throw error;
+
+                if (data && data.success) {
+                    const finalNC = { ...ncPayload, number: data.real_number, document_type: 'NOTA_CREDITO', created_at: new Date().toISOString() } as Sale;
+                    syncCreditNoteResult(finalNC, originalSale.id);
+                    generateMassiveInvoicePDF(company, [finalNC]);
+                    showAlert(`¡Nota de Crédito ${selectedSeries}-${data.real_number} generada con éxito!`, 'info');
+                    setOriginalSale(null);
+                    setSearchResults([]);
+                }
+            } catch (e: any) {
+                showAlert("Error al generar NC: " + e.message, 'error');
+            } finally {
+                setIsSaving(false);
             }
-
-            const ncPayload = {
-                id: crypto.randomUUID(),
-                series: selectedSeries,
-                client_id: originalSale.client_id,
-                client_name: originalSale.client_name,
-                client_ruc: originalSale.client_ruc,
-                client_address: originalSale.client_address,
-                payment_method: originalSale.payment_method || 'CONTADO',
-                subtotal: returnSubtotal,
-                igv: returnIgv,
-                total: returnGrandTotal,
-                observation: `[${ncType}] ${glosa}`,
-                items: itemsPayload
-            };
-
-            const { data, error } = await supabase.rpc('process_credit_note_transaction', { p_nc_data: ncPayload });
-            if (error) throw error;
-
-            if (data && data.success) {
-                const finalNC = { ...ncPayload, number: data.real_number, document_type: 'NOTA_CREDITO', created_at: new Date().toISOString() } as Sale;
-                syncCreditNoteResult(finalNC, originalSale.id);
-                generateMassiveInvoicePDF(company, [finalNC]);
-                alert(`¡Nota de Crédito ${selectedSeries}-${data.real_number} generada con éxito!`);
-                setOriginalSale(null);
-                setSearchResults([]);
-            }
-        } catch (e: any) {
-            alert("Error al generar NC: " + e.message);
-        } finally {
-            setIsSaving(false);
-        }
+        });
     };
 
     return (
         <div className="flex flex-col h-full font-sans text-sm relative space-y-4">
-            <div className="flex justify-between items-center">
-                <h2 className="text-xl font-bold text-slate-800 flex items-center">
-                    <ArrowLeftRight className="mr-2 text-indigo-600 w-6 h-6" /> Notas de Crédito Profesionales
+            {modalConfig.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-fade-in-up">
+                        {modalConfig.type === 'error' && <ShieldAlert className="w-12 h-12 text-red-500 mx-auto mb-4" />}
+                        {modalConfig.type === 'warning' && <ShieldAlert className="w-12 h-12 text-amber-500 mx-auto mb-4" />}
+                        {modalConfig.type === 'info' && <CheckCircle2 className="w-12 h-12 text-indigo-500 mx-auto mb-4" />}
+                        {modalConfig.type === 'confirm' && <ShieldAlert className="w-12 h-12 text-blue-500 mx-auto mb-4" />}
+                        
+                        <h3 className="text-lg font-black text-slate-800 mb-2">
+                            {modalConfig.type === 'error' ? 'Error Detectado' : modalConfig.type === 'warning' ? 'Aviso Importante' : modalConfig.type === 'confirm' ? 'Confirmación Requerida' : 'Operación Exitosa'}
+                        </h3>
+                        <p className="text-sm text-slate-600 mb-6">{modalConfig.message}</p>
+                        
+                        <div className="flex gap-3 justify-center">
+                            {modalConfig.type === 'confirm' ? (
+                                <>
+                                    <button onClick={() => setModalConfig({...modalConfig, isOpen: false})} className="px-6 py-2 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">Cancelar</button>
+                                    <button onClick={() => { setModalConfig({...modalConfig, isOpen: false}); modalConfig.onConfirm?.(); }} className="px-6 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Confirmar</button>
+                                </>
+                            ) : (
+                                <button onClick={() => setModalConfig({...modalConfig, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-indigo-600 hover:bg-indigo-700">Entendido</button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                <h2 className="text-xl font-black text-slate-800 flex items-center">
+                    <ArrowLeftRight className="mr-3 text-indigo-600 w-6 h-6" /> Gestión de Notas de Crédito
                 </h2>
             </div>
 
-            {!originalSale ? (
+            <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-1">
+                <button
+                    onClick={() => setActiveTab('EMITIR')}
+                    className={`flex-1 py-3 font-black text-sm flex items-center justify-center rounded-lg transition-all ${activeTab === 'EMITIR' ? 'bg-indigo-50 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                    <FilePlus className="w-4 h-4 mr-2" /> Emitir Nota de Crédito
+                </button>
+                <button
+                    onClick={() => setActiveTab('APLICAR')}
+                    className={`flex-1 py-3 font-black text-sm flex items-center justify-center rounded-lg transition-all ${activeTab === 'APLICAR' ? 'bg-indigo-50 text-indigo-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+                >
+                    <CheckCircle2 className="w-4 h-4 mr-2" /> Aplicación / Consulta (Pendientes)
+                </button>
+            </div>
+
+            {activeTab === 'APLICAR' ? (
+                 <div className="flex-1 bg-white border border-slate-200 rounded p-8 flex flex-col items-center justify-center text-center shadow-sm">
+                     <div className="w-20 h-20 bg-indigo-50 text-indigo-300 rounded-full flex items-center justify-center mb-6">
+                         <ArrowLeftRight className="w-10 h-10" />
+                     </div>
+                     <h2 className="text-2xl font-black text-slate-800 mb-2">Módulo en Desarrollo</h2>
+                     <p className="text-slate-500 max-w-md">
+                         Aquí aparecerán las Notas de Crédito que generaron un <strong>"Saldo a Favor"</strong> (aplicadas a facturas ya canceladas). Podrá aplicarlas como pago a futuras facturas del cliente.
+                     </p>
+                 </div>
+            ) : (
+                <>
+                {!originalSale ? (
                 <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-140px)]">
                     <div className="p-4 border-b border-slate-100 bg-slate-50 flex flex-wrap gap-4 items-end">
                         <div>
@@ -418,6 +508,16 @@ export const CreditNotes: React.FC = () => {
                                         </select>
                                     </div>
                                     <div>
+                                        <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Motivo SUNAT *</label>
+                                        <select 
+                                            className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm font-bold text-indigo-700 outline-none focus:border-indigo-400"
+                                            value={sunatMotivo}
+                                            onChange={(e) => setSunatMotivo(e.target.value)}
+                                        >
+                                            {SUNAT_MOTIVOS_NC.map(m => <option key={m.code} value={m.code}>{m.code} - {m.desc}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
                                         <label className="text-[10px] font-bold text-slate-500 uppercase mb-1 block">Motivo / Glosa Opcional</label>
                                         <textarea 
                                             className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm text-slate-800 outline-none focus:border-indigo-400 resize-none h-20"
@@ -478,8 +578,9 @@ export const CreditNotes: React.FC = () => {
                                                             value={returnQty === 0 ? '' : returnQty}
                                                             onChange={e => {
                                                                 let q = Number(e.target.value);
-                                                                if (returnUnit === 'PKG' && q * packageContent > maxBaseQty) q = Math.floor(maxBaseQty / packageContent);
-                                                                else if (returnUnit === 'UND' && q > maxBaseQty) q = maxBaseQty;
+                                                                const retIsPkg = isPackageUnit(returnUnit, product);
+                                                                if (retIsPkg && q * packageContent > maxBaseQty) q = Math.floor(maxBaseQty / packageContent);
+                                                                else if (!retIsPkg && q > maxBaseQty) q = maxBaseQty;
                                                                 if (q < 0) q = 0;
                                                                 setReturnQuantities(prev => ({ ...prev, [itemKey]: { ...prev[itemKey], qty: q } }));
                                                             }}
@@ -487,10 +588,12 @@ export const CreditNotes: React.FC = () => {
                                                         <select
                                                             className="w-20 border border-indigo-200 rounded p-1.5 text-xs font-bold text-indigo-700 focus:ring-2 focus:ring-indigo-500 outline-none appearance-none bg-white"
                                                             value={returnUnit}
-                                                            onChange={e => setReturnQuantities(prev => ({ ...prev, [itemKey]: { qty: 0, unit: e.target.value as 'UND' | 'PKG' } }))}
+                                                            onChange={e => setReturnQuantities(prev => ({ ...prev, [itemKey]: { qty: 0, unit: e.target.value } }))}
                                                         >
-                                                            <option value="UND">UND</option>
-                                                            {product?.package_type && !item.is_bonus && <option value="PKG">{product.package_type.substring(0, 3).toUpperCase()}</option>}
+                                                            <option value={product?.unit_type || 'UND'}>{(product?.unit_type || 'UND').substring(0,3).toUpperCase()}</option>
+                                                            {isPackageUnit(item.selected_unit, product) && !item.is_bonus && (
+                                                                <option value={item.selected_unit}>{item.selected_unit.split('/')[0].substring(0,3).toUpperCase()}</option>
+                                                            )}
                                                         </select>
                                                     </div>
                                                     <div className="w-24 text-right font-black text-slate-800 text-sm">
@@ -548,6 +651,8 @@ export const CreditNotes: React.FC = () => {
                         </div>
                     </div>
                 </div>
+            )}
+            </>
             )}
         </div>
     );

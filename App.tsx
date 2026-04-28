@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { NewSale } from './components/NewSale';
+import { supabase } from './services/supabase';
 import { EditSale } from './components/EditSale'; // NUEVO MÓDULO IMPORTADO
 import { AdvancedOrderEntry } from './components/AdvancedOrderEntry';
 import { Purchases } from './components/Purchases';
@@ -89,7 +90,24 @@ export default function App() {
   const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'system-maintenance'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
-  const { company, currentUser, logout } = useStore();
+  const { company, currentUser, logout, updateCompany } = useStore();
+
+  useEffect(() => {
+    const fetchCompanyData = async () => {
+      try {
+        const { data: compData } = await supabase.from('company_config').select('*').limit(1).maybeSingle();
+        if (compData) {
+          const { data: serData } = await supabase.from('document_series').select('*').eq('company_id', compData.id).order('type');
+          updateCompany({ ...compData, series: serData || [] });
+        }
+      } catch (error) {
+        console.error("Error cargando configuración global:", error);
+      }
+    };
+    if (currentUser && company.ruc === '') {
+      fetchCompanyData();
+    }
+  }, [currentUser]);
 
   // --- AUTH CHECK ---
   if (!currentUser) {
