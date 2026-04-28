@@ -3,7 +3,7 @@ import { useStore } from '../services/store';
 import { isPackageUnit, calculateBaseQuantity } from '../utils/productUtils';
 import { Sale, SaleItem, DocumentSeries, NCType } from '../types';
 import { Search, FileText, ArrowLeftRight, CheckCircle2, ShieldAlert, FilePlus, Calendar, User, Hash, X } from 'lucide-react';
-import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
+import { PdfEngine } from './PdfEngine';
 import { supabase } from '../services/supabase';
 
 // MOTIVOS SUNAT
@@ -250,6 +250,8 @@ export const CreditNotes: React.FC = () => {
                     client_name: originalSale.client_name,
                     client_ruc: originalSale.client_ruc,
                     client_address: originalSale.client_address,
+                    seller_id: originalSale.seller_id,
+                    seller_name: originalSale.seller_name,
                     payment_method: originalSale.payment_method || 'CONTADO',
                     subtotal: returnSubtotal,
                     igv: returnIgv,
@@ -264,7 +266,7 @@ export const CreditNotes: React.FC = () => {
                 if (data && data.success) {
                     const finalNC = { ...ncPayload, number: data.real_number, document_type: 'NOTA_CREDITO', created_at: new Date().toISOString() } as Sale;
                     syncCreditNoteResult(finalNC, originalSale.id);
-                    generateMassiveInvoicePDF(company, [finalNC]);
+                    await PdfEngine.openDocument([finalNC], 'NOTA_CREDITO', company);
                     showAlert(`¡Nota de Crédito ${selectedSeries}-${data.real_number} generada con éxito!`, 'info');
                     setOriginalSale(null);
                     setSearchResults([]);

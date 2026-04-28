@@ -113,6 +113,7 @@ const LogoComponent = ({ url, defaultName }: { url?: string, defaultName: string
 );
 
 const ClientSection = ({ data }: { data: any }) => (
+  <>
   <View style={styles.clientBox}>
     <View style={styles.clientCol1}>
       <View style={styles.clientRowInfo}>
@@ -151,6 +152,13 @@ const ClientSection = ({ data }: { data: any }) => (
       </View>
     </View>
   </View>
+  {data.observation && (
+      <View style={{ borderWidth: 1, borderColor: '#000', borderTopWidth: 0, padding: 2, marginBottom: 5, flexDirection: 'row' }}>
+          <Text style={{ fontSize: 7, fontWeight: 'bold', width: 60 }}>Referencia / Motivo:</Text>
+          <Text style={{ fontSize: 7, flex: 1 }}>{data.observation}</Text>
+      </View>
+  )}
+  </>
 );
 
 const ItemsTable = ({ data, isFactura }: { data: any, isFactura: boolean }) => (
@@ -220,7 +228,8 @@ const FacturaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: a
 
   // Formato QR SUNAT: RUC | TIPO_DOC | SERIE | NUMERO | IGV | TOTAL | FECHA | TIPO_DOC_CLIENTE | NUM_DOC_CLIENTE | HASH | FIRMA
   const docDate = (data.created_at || data.date || new Date().toISOString()).split('T')[0];
-  const qrData = `${companyInfo.ruc || '20000000001'}|01|${data.series || 'F001'}|${data.number || '00000000'}|${igv.toFixed(2)}|${total.toFixed(2)}|${docDate}|6|${data.client_ruc || data.client_id || '00000000'}|HASH|FIRMA`;
+  const tipoDocSunat = isNotaCredito ? '07' : '01';
+  const qrData = `${companyInfo.ruc || '20000000001'}|${tipoDocSunat}|${data.series || 'F001'}|${data.number || '00000000'}|${igv.toFixed(2)}|${total.toFixed(2)}|${docDate}|6|${data.client_ruc || data.client_id || '00000000'}|HASH|FIRMA`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
 
   return (
@@ -298,7 +307,8 @@ const BoletaTemplate = ({ data, companyInfo, isNotaCredito = false }: { data: an
   const total = Number(data.total || 0);
   const igv = total - (total / 1.18);
   const docDate = (data.created_at || data.date || new Date().toISOString()).split('T')[0];
-  const qrData = `${companyInfo.ruc || '20000000001'}|03|${data.series || 'B001'}|${data.number || '00000000'}|${igv.toFixed(2)}|${total.toFixed(2)}|${docDate}|1|${data.client_ruc || data.client_id || '00000000'}|HASH|FIRMA`;
+  const tipoDocSunat = isNotaCredito ? '07' : '03';
+  const qrData = `${companyInfo.ruc || '20000000001'}|${tipoDocSunat}|${data.series || 'B001'}|${data.number || '00000000'}|${igv.toFixed(2)}|${total.toFixed(2)}|${docDate}|1|${data.client_ruc || data.client_id || '00000000'}|HASH|FIRMA`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(qrData)}`;
 
   return (
