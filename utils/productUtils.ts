@@ -9,7 +9,7 @@ export const isPackageUnit = (unitName: string, product: Product): boolean => {
     // Extraer solo el nombre de la unidad, ignorando el factor de conversión si existe (ej. "CAJ / 12" -> "CAJ")
     const baseUnitName = unitName.split('/')[0].trim().toUpperCase();
     
-    if (baseUnitName === 'PKG' || baseUnitName === 'CJA' || baseUnitName === 'CAJA') return true;
+    if (baseUnitName === 'PKG' || baseUnitName === 'CJA' || baseUnitName === 'CAJA' || baseUnitName === 'CAJ') return true;
     if (product.package_type && baseUnitName === product.package_type.trim().toUpperCase()) return true;
     
     return false;

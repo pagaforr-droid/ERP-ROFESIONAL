@@ -125,7 +125,9 @@ export const CreditNotes: React.FC = () => {
         const initialReturns: Record<string, { qty: number, unit: string }> = {};
         sale.items.forEach((item, idx) => {
             const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
-            initialReturns[itemKey] = { qty: 0, unit: item.selected_unit }; // Exact unit from DB
+            const product = products.find(p => p.id === item.product_id);
+            const defaultUnit = product?.unit_type || 'UND';
+            initialReturns[itemKey] = { qty: 0, unit: defaultUnit }; // Default to base unit for safety
         });
         setReturnQuantities(initialReturns);
     };
