@@ -100,7 +100,7 @@ interface AppState {
 
    // Sales & Orders
    createSale: (sale: Sale) => void;
-   createCreditNote: (creditNote: Sale, originalSaleId: string, returnedItems: SaleItem[]) => void;
+   syncCreditNoteResult: (newNc: Sale, originalSaleId: string) => void;
    createOrder: (order: Order) => void;
    updateOrder: (order: Order) => void;
    annulOrder: (orderId: string, userId: string) => Promise<{ success: boolean; msg: string }>;
@@ -433,45 +433,13 @@ export const useStore = create<AppState>((set, get) => ({
       return { success: true };
    },
 
-   createCreditNote: (creditNote, originalSaleId, returnedItems) => set((state) => {
-      const newBatches = [...state.batches];
-      returnedItems.forEach(item => {
-         item.batch_allocations?.forEach(alloc => {
-            const batchIndex = newBatches.findIndex(b => b.id === alloc.batch_id);
-            if (batchIndex >= 0) {
-               if (item.warehouse_id === 'MERMAS') {
-                  newBatches.push({
-                     ...newBatches[batchIndex],
-                     id: crypto.randomUUID(),
-                     warehouse_id: 'MERMAS',
-                     quantity_initial: alloc.quantity,
-                     quantity_current: alloc.quantity,
-                     created_at: new Date().toISOString()
-                  });
-               } else {
-                  newBatches[batchIndex] = {
-                     ...newBatches[batchIndex],
-                     quantity_current: newBatches[batchIndex].quantity_current + alloc.quantity
-                  };
-               }
-            }
-         });
-      });
-
-      const finalizedCN = {
-         ...creditNote,
-         payment_status: 'PAID', 
-         collection_status: 'NONE',
-         balance: 0,
-         sunat_status: 'PENDING'
-      } as Sale;
-
-      let allSales = [finalizedCN, ...state.sales];
+   syncCreditNoteResult: (creditNote, originalSaleId) => set((state) => {
+      let allSales = [creditNote, ...state.sales];
 
       allSales = allSales.map(s => {
          if (s.id === originalSaleId) {
             const currentBalance = s.balance ?? s.total;
-            const newBalance = Math.max(0, currentBalance - finalizedCN.total);
+            const newBalance = Math.max(0, currentBalance - creditNote.total);
             return {
                ...s,
                balance: newBalance,
@@ -481,7 +449,7 @@ export const useStore = create<AppState>((set, get) => ({
          return s;
       });
 
-      return { batches: newBatches, sales: allSales };
+      return { sales: allSales };
    }),
 
    createOrder: (order) => set((state) => {
