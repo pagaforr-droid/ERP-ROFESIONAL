@@ -269,6 +269,26 @@ export const generateMassiveInvoicePDF = (company: CompanyConfig, sales: Sale[])
             ];
         });
 
+        autoTable(doc, {
+            startY: currentY,
+            head: [['COD', 'CANT', 'UM', 'DESCRIPCION', 'V/U', 'DSCTO', 'TOTAL']],
+            body: itemsBody,
+            theme: 'plain',
+            styles: { fontSize: 6, cellPadding: 1, textColor: 0 },
+            headStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold', halign: 'center' },
+            columnStyles: {
+                0: { cellWidth: 15, halign: 'center' },
+                1: { cellWidth: 10, halign: 'center' },
+                2: { cellWidth: 12, halign: 'center' },
+                3: { cellWidth: 'auto' },
+                4: { cellWidth: 15, halign: 'right' },
+                5: { cellWidth: 12, halign: 'right' },
+                6: { cellWidth: 18, halign: 'right' }
+            },
+            margin: { left: margin, right: margin }
+        });
+
+        const finalTableY = (doc as any).lastAutoTable.finalY;
         // 4. Footer
         // Stick footer to bottom of the 'Half' (e.g. at Y = startY + 148.5 - 25)
         const footerY = startY + 115; // Fixed height area for footer

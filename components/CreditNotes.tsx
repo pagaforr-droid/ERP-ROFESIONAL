@@ -217,6 +217,7 @@ export const CreditNotes: React.FC = () => {
                 client_name: originalSale.client_name,
                 client_ruc: originalSale.client_ruc,
                 client_address: originalSale.client_address,
+                payment_method: originalSale.payment_method || 'CONTADO',
                 subtotal: returnSubtotal,
                 igv: returnIgv,
                 total: returnGrandTotal,
