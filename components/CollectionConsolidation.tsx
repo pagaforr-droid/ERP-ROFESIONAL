@@ -14,6 +14,7 @@ export const CollectionConsolidation: React.FC = () => {
    const [isSessionOpen, setIsSessionOpen] = useState(false);
    const [expenseCategories, setExpenseCategories] = useState<any[]>([]);
    const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+   const [allUsers, setAllUsers] = useState<any[]>([]); // To resolve names for history
 
 
    // Layout State
@@ -197,6 +198,9 @@ export const CollectionConsolidation: React.FC = () => {
          if (clientsData) useStore.setState({ clients: clientsData as any[] });
          if (sellersData) useStore.setState({ sellers: sellersData as any[] });
 
+         const { data: usersData } = await supabase.from('erp_users').select('id, name, role, pin_code');
+         if (usersData) setAllUsers(usersData);
+
         // Cargar categorias y preseleccionar
         const { data: catData } = await supabase.from('expense_categories').select('*');
         if (catData) {
@@ -234,16 +238,9 @@ export const CollectionConsolidation: React.FC = () => {
       const { data: recData } = await supabase.from('collection_records').select('*');
       const { data: planData } = await supabase.from('collection_planillas').select('*');
       const { data: salesData } = await supabase.from('sales').select('*');
-      const { data: dlData } = await supabase.from('dispatch_liquidations').select('*');
-      const { data: cmData } = await supabase.from('cash_movements').select('*');
-      const { data: ldData } = await supabase.from('liquidation_documents').select('*');
-      
       if (recData) useStore.setState({ collectionRecords: recData as any[] });
       if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
       if (salesData) useStore.setState({ sales: salesData as any[] });
-      if (dlData) setDispatchLiquidations(dlData);
-      if (cmData) setCashMovements(cmData);
-      if (ldData) setLiquidationDocs(ldData);
    };
 
    const handleConfirmProcess = async () => {
@@ -424,7 +421,7 @@ export const CollectionConsolidation: React.FC = () => {
       excelData.push(['PLANILLA DE COBRANZAS', planilla.code, '', '', '', '']);
       excelData.push(['FECHA EMISION', new Date(planilla.date).toLocaleString(), '', '', '', '']);
       excelData.push(['TOTAL GENERADO', `S/ ${planilla.total_amount.toFixed(2)}`, '', '', '', '']);
-      excelData.push(['GENERADO POR', currentUser?.name || planilla.user_id || 'SISTEMA', '', '', '', '']);
+      excelData.push(['GENERADO POR', allUsers.find(u => u.id === planilla.user_id)?.name || planilla.user_id || 'SISTEMA', '', '', '', '']);
       excelData.push([]); 
       excelData.push(['N°', 'FECHA DOC', 'VENDEDOR', 'CLIENTE', 'NRO DOCUMENTO', 'IMPORTE (S/)']);
 
@@ -462,7 +459,7 @@ export const CollectionConsolidation: React.FC = () => {
       if (!plan) return;
       
       const recordsToPrint = collectionRecords.filter(r => (plan.original.records || []).includes(r.id));
-      let creator = currentUser?.name || 'SISTEMA';
+      let creator = allUsers.find(u => u.id === plan.user_id)?.name || 'SISTEMA';
 
       const doc = new jsPDF();
       
@@ -524,7 +521,7 @@ export const CollectionConsolidation: React.FC = () => {
    };
 
    const processAdminAuth = () => {
-      const adminUsers = users.filter(u => u.role === 'ADMIN');
+      const adminUsers = allUsers.filter(u => u.role === 'ADMIN');
       const isValid = adminAuthInput === '123456' || adminUsers.some(admin => admin.password === adminAuthInput || admin.pin_code === adminAuthInput);
 
       if (!isValid) {
@@ -656,7 +653,7 @@ export const CollectionConsolidation: React.FC = () => {
                <h2 className="text-xl font-bold mt-1">PLANILLA N° {selectedPlanilla.code}</h2>
                <div className="flex justify-between mt-4 text-sm font-bold text-gray-700">
                   <span>FECHA: {new Date(selectedPlanilla.date).toLocaleDateString()} {new Date(selectedPlanilla.date).toLocaleTimeString()}</span>
-                  <span>GENERADO POR: {currentUser?.name || selectedPlanilla.user_id || 'SISTEMA'}</span>
+                  <span>GENERADO POR: {allUsers.find(u => u.id === selectedPlanilla.user_id)?.name || selectedPlanilla.user_id || 'SISTEMA'}</span>
                </div>
             </div>
 
@@ -1419,7 +1416,7 @@ export const CollectionConsolidation: React.FC = () => {
                                  <div className="flex justify-between items-end mt-2">
                                     <div>
                                        <div className="text-xs text-slate-500">{new Date(plan.date).toLocaleDateString()} {new Date(plan.date).toLocaleTimeString().slice(0, 5)}</div>
-                                       <div className="text-[10px] text-slate-400 mt-1 uppercase">Usuario que liquidó: <span className="font-bold text-slate-600">{currentUser?.name || 'Sistema'}</span></div>
+                                       <div className="text-[10px] text-slate-400 mt-1 uppercase">Usuario que liquidó: <span className="font-bold text-slate-600">{allUsers.find(u => u.id === plan.user_id)?.name || 'Sistema'}</span></div>
                                        {plan.glosa && <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={plan.glosa}>Glosa: {plan.glosa}</div>}
                                        <div className="text-xs text-slate-500 mt-1 font-medium">{plan.record_count} docs</div>
                                     </div>
