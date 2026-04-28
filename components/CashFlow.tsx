@@ -35,7 +35,7 @@ export const CashFlow: React.FC = () => {
                supabase.from('dispatch_sheets').select('*'),
                supabase.from('drivers').select('*'),
                supabase.from('vehicles').select('*'),
-               supabase.from('erp_users').select('id, name')
+               supabase.from('erp_users').select('id, name, username')
             ]);
             
             const stateUpdates: any = {};
@@ -362,7 +362,10 @@ export const CashFlow: React.FC = () => {
                                           const vehicle = localVehicles.find(v => v.id === sheet.vehicle_id);
                                           const driver = localDrivers.find(d => d.id === (vehicle?.driver_id || sheet.driver_id));
                                           
-                                          return `Planilla N° ${sheet.code} - Chofer: ${driver?.name || 'S/D'}`;
+                                          const user = localUsers.find(u => u.id === m.user_id);
+                                          const userName = user ? (user.name === 'Nuevo Usuario' ? user.username : user.name) : (m.user_id || 'SISTEMA');
+                                          
+                                          return `Planilla N° ${sheet.code} - Chofer: ${driver?.name || 'S/D'} - Reg: ${userName}`;
                                        })()
                                        : m.description
                                  }</span>
@@ -370,12 +373,12 @@ export const CashFlow: React.FC = () => {
                               </div>
                            </td>
                            <td className="p-3 text-slate-600">
-                              <div className="flex items-center gap-1 text-xs">
+                              <div className="flex items-center gap-1 text-xs font-bold text-slate-700">
                                  <User className="w-3 h-3 text-slate-400" />
                                  {(() => {
                                     if (!m.user_id) return 'SISTEMA';
                                     const user = localUsers.find(u => u.id === m.user_id);
-                                    return user?.name || m.user_id;
+                                    return user ? (user.name === 'Nuevo Usuario' ? user.username : user.name) : m.user_id;
                                  })()}
                               </div>
                            </td>
