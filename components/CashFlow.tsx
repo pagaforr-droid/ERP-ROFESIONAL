@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { CashMovement, ExpenseCategory, ScheduledTransaction } from '../types';
-import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, BarChart3, Briefcase, Store, Truck, Coins, Loader2 } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, XCircle, BarChart3, Briefcase, Store, Truck, Coins, Loader2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 type Tab = 'SESSION' | 'DASHBOARD' | 'MOVEMENTS' | 'PLANNER' | 'CONFIG';
@@ -451,92 +451,169 @@ export const CashFlow: React.FC = () => {
 
       // Beneficiary Logic
       const [beneficiaryType, setBeneficiaryType] = useState<'EMPLOYEE' | 'SUPPLIER' | 'OTHER'>('OTHER');
+      const [isProcessing, setIsProcessing] = useState(false);
 
-      const handleSaveSchedule = () => {
+      const [alertState, setAlertState] = useState<{show: boolean, type: 'CONFIRM'|'INFO'|'ERROR', title: string, message: string, onConfirm?: () => void, confirmText?: string}>({show: false, type: 'INFO', title: '', message: ''});
+
+      const handleSaveSchedule = async () => {
          if (!formData.name || !formData.amount || !formData.category_id) return;
-         store.addScheduledTransaction({
-            id: crypto.randomUUID(),
-            is_active: true,
-            name: formData.name,
-            category_id: formData.category_id,
-            amount: Number(formData.amount),
-            frequency: formData.frequency as any,
-            next_due_date: formData.next_due_date as string,
-            beneficiary_type: beneficiaryType,
-            beneficiary_id: formData.beneficiary_id
-         });
-         setShowForm(false);
-         setFormData({ frequency: 'MONTHLY', amount: 0, next_due_date: new Date().toISOString().split('T')[0] });
+         
+         try {
+            await store.addScheduledTransaction({
+               id: crypto.randomUUID(),
+               is_active: true,
+               name: formData.name,
+               category_id: formData.category_id,
+               amount: Number(formData.amount),
+               frequency: formData.frequency as any,
+               next_due_date: formData.next_due_date as string,
+               beneficiary_type: beneficiaryType,
+               beneficiary_id: formData.beneficiary_id
+            });
+            setShowForm(false);
+            setFormData({ frequency: 'MONTHLY', amount: 0, next_due_date: new Date().toISOString().split('T')[0] });
+         } catch(e: any) {
+            setAlertState({show: true, type: 'ERROR', title: 'Error', message: 'No se pudo guardar la programación: ' + e.message});
+         }
       };
 
       const handleProcess = (txId: string) => {
-         if (confirm("¿Confirmar pago de esta cuota? Se generará el egreso y se actualizará la próxima fecha.")) {
-            store.processScheduledTransaction(txId, store.currentUser?.name || store.currentUser?.id || 'SISTEMA');
-         }
+         setAlertState({
+            show: true,
+            type: 'CONFIRM',
+            title: 'Confirmar Pago',
+            message: '¿Estás seguro de procesar este gasto? Se generará un egreso en la caja actual y se actualizará la próxima fecha de pago.',
+            confirmText: 'Sí, Procesar Pago',
+            onConfirm: async () => {
+               setIsProcessing(true);
+               const res = await store.processScheduledTransaction(txId, store.currentUser?.id || 'SISTEMA');
+               setIsProcessing(false);
+               if (res?.success) {
+                  setAlertState({show: true, type: 'INFO', title: 'Éxito', message: 'Pago procesado correctamente.'});
+               } else {
+                  setAlertState({show: true, type: 'ERROR', title: 'Error', message: res?.msg || 'Error al procesar el pago.'});
+               }
+            }
+         });
       };
 
       const handleDeletePlanner = (txId: string) => {
-         if (confirm("¿Eliminar este gasto programado? No se generarán más egresos automáticos para él.")) {
-            store.deleteScheduledTransaction(txId);
-         }
+         setAlertState({
+            show: true,
+            type: 'CONFIRM',
+            title: 'Eliminar Programación',
+            message: '¿Deseas eliminar este gasto fijo? Ya no se generarán pagos automáticos para él en el futuro.',
+            confirmText: 'Eliminar',
+            onConfirm: async () => {
+               try {
+                  await store.deleteScheduledTransaction(txId);
+                  setAlertState({show: false, type: 'INFO', title: '', message: ''});
+               } catch(e: any) {
+                  setAlertState({show: true, type: 'ERROR', title: 'Error', message: 'No se pudo eliminar: ' + e.message});
+               }
+            }
+         });
       };
 
       return (
-         <div className="flex gap-6 h-full">
-            <div className="flex-1 bg-white rounded-lg shadow border border-slate-200 flex flex-col">
-               <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+         <div className="flex gap-6 h-full relative">
+            <div className="flex-1 bg-slate-50 rounded-lg flex flex-col">
+               <div className="p-4 border-b border-slate-200 bg-white shadow-sm flex justify-between items-center rounded-t-lg">
                   <div>
-                     <h3 className="font-bold text-slate-700">Programación de Pagos</h3>
-                     <p className="text-xs text-slate-500">Gastos fijos, alquileres y proveedores</p>
+                     <h3 className="font-bold text-slate-800 text-lg">Programación de Gastos Fijos</h3>
+                     <p className="text-xs text-slate-500 mt-1">Administra alquileres, servicios, sueldos y compromisos recurrentes</p>
                   </div>
-                  <button onClick={() => setShowForm(true)} className="bg-slate-900 text-white px-4 py-2 rounded text-sm font-bold flex items-center shadow">
+                  <button onClick={() => setShowForm(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold flex items-center shadow-md transition-colors">
                      <Clock className="w-4 h-4 mr-2" /> Nueva Programación
                   </button>
                </div>
-               <div className="flex-1 overflow-auto">
-                  <table className="w-full text-sm text-left">
-                     <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0">
-                        <tr>
-                           <th className="p-3">Concepto</th>
-                           <th className="p-3">Categoría</th>
-                           <th className="p-3">Frecuencia</th>
-                           <th className="p-3">Próximo Vencimiento</th>
-                           <th className="p-3 text-right">Monto</th>
-                           <th className="p-3 text-center">Acción</th>
-                        </tr>
-                     </thead>
-                     <tbody className="divide-y divide-slate-100">
+               
+               <div className="flex-1 overflow-auto p-6">
+                  {store.scheduledTransactions.filter(t => t.is_active).length === 0 ? (
+                     <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                        <Calendar className="w-16 h-16 mb-4 opacity-50" />
+                        <p className="font-bold">No hay gastos fijos programados</p>
+                        <p className="text-sm mt-1">Crea uno nuevo para comenzar a llevar el control.</p>
+                     </div>
+                  ) : (
+                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {store.scheduledTransactions.filter(t => t.is_active).map(t => {
                            const cat = store.expenseCategories.find(c => c.id === t.category_id);
-                           const daysLeft = Math.ceil((new Date(t.next_due_date).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
-                           const isOverdue = daysLeft < 0;
+                           
+                           // Date logic for color coding
+                           const today = new Date();
+                           today.setHours(0,0,0,0);
+                           const dueDate = new Date(t.next_due_date);
+                           dueDate.setHours(0,0,0,0);
+                           const diffMs = dueDate.getTime() - today.getTime();
+                           const daysLeft = Math.ceil(diffMs / (1000 * 3600 * 24));
+                           
+                           let cardStyle = "bg-white border-slate-200";
+                           let statusBadge = "";
+                           let statusIcon = null;
+                           let statusColor = "";
+
+                           if (daysLeft < 0) {
+                              cardStyle = "bg-red-50 border-red-200 shadow-red-100/50";
+                              statusBadge = "VENCIDO";
+                              statusIcon = <AlertTriangle className="w-3 h-3 mr-1" />;
+                              statusColor = "text-red-700 bg-red-100 border-red-200";
+                           } else if (daysLeft <= 5) {
+                              cardStyle = "bg-amber-50 border-amber-200 shadow-amber-100/50";
+                              statusBadge = "POR VENCER";
+                              statusIcon = <Clock className="w-3 h-3 mr-1" />;
+                              statusColor = "text-amber-700 bg-amber-100 border-amber-200";
+                           } else {
+                              cardStyle = "bg-emerald-50 border-emerald-200 shadow-emerald-100/50";
+                              statusBadge = "AL DÍA";
+                              statusIcon = <CheckCircle className="w-3 h-3 mr-1" />;
+                              statusColor = "text-emerald-700 bg-emerald-100 border-emerald-200";
+                           }
+
                            return (
-                              <tr key={t.id} className="hover:bg-slate-50">
-                                 <td className="p-3 font-bold text-slate-800">{t.name}</td>
-                                 <td className="p-3 text-slate-600 text-xs uppercase">{cat?.name}</td>
-                                 <td className="p-3"><span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded text-[10px] font-bold">{t.frequency}</span></td>
-                                 <td className="p-3">
-                                    <div className={`flex items-center ${isOverdue ? 'text-red-600 font-bold' : 'text-slate-600'}`}>
-                                       {isOverdue && <AlertTriangle className="w-3 h-3 mr-1" />}
-                                       {t.next_due_date}
+                              <div key={t.id} className={`rounded-xl border shadow-sm flex flex-col overflow-hidden transition-all hover:shadow-md ${cardStyle}`}>
+                                 <div className="p-4 flex-1">
+                                    <div className="flex justify-between items-start mb-3">
+                                       <span className={`px-2 py-1 rounded text-[10px] font-black tracking-wider flex items-center border ${statusColor}`}>
+                                          {statusIcon} {statusBadge}
+                                       </span>
+                                       <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[10px] font-bold border border-slate-200">
+                                          {t.frequency}
+                                       </span>
                                     </div>
-                                 </td>
-                                 <td className="p-3 text-right font-bold text-slate-900">S/ {t.amount.toFixed(2)}</td>
-                                 <td className="p-3 text-center">
-                                    <div className="flex items-center justify-center gap-2">
-                                       <button onClick={() => handleProcess(t.id)} className="bg-green-100 hover:bg-green-200 text-green-700 px-3 py-1 rounded text-xs font-bold border border-green-200 flex items-center transition-colors">
-                                          <CheckCircle className="w-3 h-3 mr-1" /> Procesar Pago
-                                       </button>
-                                       <button onClick={() => handleDeletePlanner(t.id)} className="p-1 text-slate-400 hover:bg-red-100 hover:text-red-600 rounded transition-colors" title="Eliminar Programación">
-                                          <Trash2 className="w-4 h-4" />
-                                       </button>
+                                    <h4 className="font-black text-slate-800 text-lg leading-tight mb-1">{t.name}</h4>
+                                    <p className="text-xs text-slate-500 font-medium flex items-center uppercase tracking-wide">
+                                       <Briefcase className="w-3 h-3 mr-1 opacity-70" /> {cat?.name}
+                                    </p>
+                                    
+                                    <div className="mt-4 bg-white/60 p-3 rounded-lg border border-white/40">
+                                       <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">Próximo Vencimiento</p>
+                                       <p className={`font-bold text-sm flex items-center ${daysLeft < 0 ? 'text-red-600' : 'text-slate-800'}`}>
+                                          <Calendar className="w-4 h-4 mr-2 opacity-70" /> {t.next_due_date}
+                                       </p>
                                     </div>
-                                 </td>
-                              </tr>
+                                    
+                                    <div className="mt-4 flex justify-between items-end">
+                                       <div>
+                                          <p className="text-[10px] text-slate-500 font-bold uppercase mb-0.5">Importe Cuota</p>
+                                          <p className="font-black text-xl text-slate-900">S/ {t.amount.toFixed(2)}</p>
+                                       </div>
+                                    </div>
+                                 </div>
+                                 
+                                 <div className="bg-white border-t border-slate-100 p-3 flex gap-2">
+                                    <button onClick={() => handleProcess(t.id)} disabled={isProcessing} className="flex-1 bg-slate-900 hover:bg-slate-800 text-white py-2 rounded-lg text-xs font-bold flex justify-center items-center transition-colors disabled:opacity-50">
+                                       <CheckCircle className="w-4 h-4 mr-1.5" /> Procesar Pago
+                                    </button>
+                                    <button onClick={() => handleDeletePlanner(t.id)} className="px-3 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors border border-red-100">
+                                       <Trash2 className="w-4 h-4" />
+                                    </button>
+                                 </div>
+                              </div>
                            );
                         })}
-                     </tbody>
-                  </table>
+                     </div>
+                  )}
                </div>
             </div>
 
@@ -604,8 +681,44 @@ export const CashFlow: React.FC = () => {
 
                         <div className="flex justify-end gap-2 pt-4">
                            <button onClick={() => setShowForm(false)} className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded">Cancelar</button>
-                           <button onClick={handleSaveSchedule} className="px-6 py-2 bg-slate-900 text-white font-bold rounded shadow hover:bg-slate-800">Guardar Programación</button>
+                           <button onClick={handleSaveSchedule} className="px-6 py-2 bg-indigo-600 text-white font-bold rounded shadow hover:bg-indigo-700">Guardar Programación</button>
                         </div>
+                     </div>
+                  </div>
+               </div>
+            )}
+
+            {/* Custom Alert Modal */}
+            {alertState.show && (
+               <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-[100] animate-fade-in">
+                  <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 animate-scale-in">
+                     <div className="flex items-center mb-4">
+                        {alertState.type === 'CONFIRM' && <AlertTriangle className="w-8 h-8 text-amber-500 mr-3" />}
+                        {alertState.type === 'INFO' && <CheckCircle className="w-8 h-8 text-emerald-500 mr-3" />}
+                        {alertState.type === 'ERROR' && <XCircle className="w-8 h-8 text-red-500 mr-3" />}
+                        <h3 className="font-black text-xl text-slate-800">{alertState.title}</h3>
+                     </div>
+                     <p className="text-slate-600 mb-6">{alertState.message}</p>
+                     
+                     <div className="flex justify-end gap-3">
+                        {alertState.type === 'CONFIRM' && (
+                           <button onClick={() => setAlertState({...alertState, show: false})} className="px-4 py-2 font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
+                              Cancelar
+                           </button>
+                        )}
+                        <button 
+                           onClick={() => {
+                              if (alertState.onConfirm) alertState.onConfirm();
+                              else setAlertState({...alertState, show: false});
+                           }} 
+                           className={`px-5 py-2 font-bold rounded-lg text-white shadow-md transition-colors ${
+                              alertState.type === 'ERROR' ? 'bg-red-600 hover:bg-red-700' :
+                              alertState.type === 'CONFIRM' ? 'bg-amber-500 hover:bg-amber-600' :
+                              'bg-emerald-600 hover:bg-emerald-700'
+                           }`}
+                        >
+                           {alertState.confirmText || 'Aceptar'}
+                        </button>
                      </div>
                   </div>
                </div>
@@ -975,7 +1088,7 @@ export const CashFlow: React.FC = () => {
                { id: 'SESSION', label: 'Arqueo Caja', icon: Store },
                { id: 'DASHBOARD', label: 'Dashboard', icon: PieChart },
                { id: 'MOVEMENTS', label: 'Movimientos', icon: ArrowRight },
-               { id: 'PLANNER', label: 'Programación (Sueldos/Fijos)', icon: Clock },
+               { id: 'PLANNER', label: 'Programacion de Gastos Fijos', icon: Clock },
                { id: 'CONFIG', label: 'Categorías', icon: Settings }
             ].map(tab => (
                <button

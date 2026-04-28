@@ -162,7 +162,7 @@ interface AppState {
    addScheduledTransaction: (ScheduledTransaction: ScheduledTransaction) => void;
    updateScheduledTransaction: (ScheduledTransaction: ScheduledTransaction) => void;
    deleteScheduledTransaction: (id: string) => void;
-   processScheduledTransaction: (txId: string, userId: string) => void;
+   processScheduledTransaction: (txId: string, userId: string) => Promise<{success: boolean, msg?: string}>;
    openCashSession: (amount: number, userId: string) => void;
    closeCashSession: (sessionId: string, details: Omit<import('../types').CashRegisterSession, 'id' | 'open_time' | 'opened_by' | 'status' | 'system_opening_amount' | 'system_income' | 'system_expense' | 'system_expected_close' | 'difference'>, userId: string) => void;
 
@@ -1333,48 +1333,55 @@ export const useStore = create<AppState>((set, get) => ({
       set(s => ({ scheduledTransactions: s.scheduledTransactions.filter(t => t.id !== id) }));
    },
 
-   processScheduledTransaction: (txId, userId) => set(s => {
-      const tx = s.scheduledTransactions.find(t => t.id === txId);
-      if (!tx || !tx.is_active) return s;
+   processScheduledTransaction: async (txId, userId) => {
+      const { data, error } = await supabase.rpc('process_scheduled_transaction', {
+         p_tx_id: txId,
+         p_user_id: userId
+      });
 
-      const cat = s.expenseCategories.find(c => c.id === tx.category_id);
-
-      const newMovement: import('../types').CashMovement = {
-         id: crypto.randomUUID(),
-         type: 'EXPENSE',
-         category_id: tx.category_id,
-         category_name: cat?.name || 'GASTO PROGRAMADO',
-         description: `Pago Automático: ${tx.name}`,
-         amount: tx.amount,
-         date: new Date().toISOString(),
-         reference_id: tx.id,
-         user_id: userId
-      };
-
-      let newNextDate = new Date(tx.next_due_date);
-      let newIsActive = true;
-
-      if (tx.frequency === 'MONTHLY') {
-         newNextDate.setUTCMonth(newNextDate.getUTCMonth() + 1);
-      } else if (tx.frequency === 'WEEKLY') {
-         newNextDate.setUTCDate(newNextDate.getUTCDate() + 7);
-      } else if (tx.frequency === 'BIWEEKLY') {
-         newNextDate.setUTCDate(newNextDate.getUTCDate() + 14);
-      } else if (tx.frequency === 'ONETIME') {
-         newIsActive = false;
+      if (error) {
+         console.error('Supabase Error (process_scheduled_transaction):', error);
+         return { success: false, msg: error.message || 'Error al procesar el pago recurrente.' };
       }
 
-      const updatedTx = {
-         ...tx,
-         is_active: newIsActive,
-         next_due_date: newNextDate.toISOString().split('T')[0]
-      };
+      const res = data as any;
+      if (!res.success) {
+         return { success: false, msg: 'No se pudo procesar la transacción programada.' };
+      }
 
-      return {
-         cashMovements: [newMovement, ...s.cashMovements],
-         scheduledTransactions: s.scheduledTransactions.map(t => t.id === tx.id ? updatedTx : t)
-      };
-   }),
+      // Update local state to reflect the change immediately
+      set(s => {
+         const tx = s.scheduledTransactions.find(t => t.id === txId);
+         if (!tx) return s;
+
+         const cat = s.expenseCategories.find(c => c.id === tx.category_id);
+
+         const newMovement: import('../types').CashMovement = {
+            id: res.movement_id,
+            type: 'EXPENSE',
+            category_id: tx.category_id,
+            category_name: cat?.name || 'GASTO PROGRAMADO',
+            description: `Pago Automático: ${tx.name}`,
+            amount: tx.amount,
+            date: new Date().toISOString(),
+            reference_id: tx.id,
+            user_id: userId
+         };
+
+         const updatedTx = {
+            ...tx,
+            is_active: res.is_active,
+            next_due_date: res.next_due_date
+         };
+
+         return {
+            cashMovements: [newMovement, ...s.cashMovements],
+            scheduledTransactions: s.scheduledTransactions.map(t => t.id === tx.id ? updatedTx : t)
+         };
+      });
+
+      return { success: true };
+   },
 
    openCashSession: async (amount, userId) => {
       const { data: newSessionId, error } = await supabase.rpc('open_cash_session', {
