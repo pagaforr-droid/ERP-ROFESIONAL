@@ -365,7 +365,10 @@ export const CashFlow: React.FC = () => {
                                           const user = localUsers.find(u => u.id === m.user_id);
                                           const userName = user ? (user.name === 'Nuevo Usuario' ? user.username : user.name) : (m.user_id || 'SISTEMA');
                                           
-                                          return `Planilla N° ${sheet.code} - Chofer: ${driver?.name || 'S/D'} - Reg: ${userName}`;
+                                          const respMatch = m.description.match(/- Resp: (.*?) -/);
+                                          const rindio = respMatch ? respMatch[1].trim() : null;
+                                          
+                                          return `Planilla N° ${sheet.code} - Chofer: ${driver?.name || 'S/D'}${rindio ? ` - Rindió: ${rindio}` : ''} - Reg: ${userName}`;
                                        })()
                                        : m.description
                                  }</span>

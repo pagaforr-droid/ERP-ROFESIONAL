@@ -828,6 +828,16 @@ export const DispatchLiquidationComp: React.FC = () => {
          const res = await store.processDispatchLiquidation(liquidation, store.currentUser?.id as string);
 
          if (res.success) {
+            if (responsiblePerson) {
+               try {
+                  await supabase.from('cash_movements')
+                     .update({ description: `Liquidación ${liquidationId} - Resp: ${responsiblePerson} - Efectivo` })
+                     .eq('reference_id', liquidationId);
+               } catch (e) {
+                  console.error("No se pudo guardar el responsable en la descripción", e);
+               }
+            }
+
             await fetchData();
             setActiveModal('NONE');
             showSystemAlert("Éxito", "¡Liquidación PROCESADA con éxito! Se han generado las cobranzas y Notas de Crédito. Queda pendiente confirmar el Kardex.", "success");
