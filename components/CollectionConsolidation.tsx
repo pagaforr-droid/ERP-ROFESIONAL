@@ -10,6 +10,19 @@ import autoTable from 'jspdf-autotable';
 export const CollectionConsolidation: React.FC = () => {
    const { collectionRecords, collectionPlanillas, sellers, currentUser, sales, users, clients } = useStore();
 
+   // --- EXTENDED STATE (Moved to top to prevent ReferenceError) ---
+   const [isSessionOpen, setIsSessionOpen] = useState(false);
+   const [expenseCategories, setExpenseCategories] = useState<any[]>([]);
+   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+
+   // NEW: Extended State for Dispatch Liquidations in History
+   const [dispatchLiquidations, setDispatchLiquidations] = useState<any[]>([]);
+   const [dispatchSheets, setDispatchSheets] = useState<any[]>([]);
+   const [vehicles, setVehicles] = useState<any[]>([]);
+   const [drivers, setDrivers] = useState<any[]>([]);
+   const [cashMovements, setCashMovements] = useState<any[]>([]);
+   const [liquidationDocs, setLiquidationDocs] = useState<any[]>([]);
+
    // Layout State
    const [activeTab, setActiveTab] = useState<'PENDING' | 'HISTORY' | 'MANUAL'>('PENDING');
 
@@ -219,18 +232,6 @@ export const CollectionConsolidation: React.FC = () => {
    }, [sales, manualSelectedIds]);
 
    // --- HANDLERS (PENDING) ---
-
-   const [isSessionOpen, setIsSessionOpen] = useState(false);
-   const [expenseCategories, setExpenseCategories] = useState<any[]>([]);
-   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
-
-   // NEW: Extended State for Dispatch Liquidations in History
-   const [dispatchLiquidations, setDispatchLiquidations] = useState<any[]>([]);
-   const [dispatchSheets, setDispatchSheets] = useState<any[]>([]);
-   const [vehicles, setVehicles] = useState<any[]>([]);
-   const [drivers, setDrivers] = useState<any[]>([]);
-   const [cashMovements, setCashMovements] = useState<any[]>([]);
-   const [liquidationDocs, setLiquidationDocs] = useState<any[]>([]);
 
    useEffect(() => {
      const initSupabase = async () => {
