@@ -28,18 +28,7 @@ export const CreditNotes: React.FC = () => {
     const [dbSeries, setDbSeries] = useState<any[]>([]);
     const [selectedSeries, setSelectedSeries] = useState('');
 
-    useEffect(() => {
-        const fetchSeries = async () => {
-            const { data } = await supabase.from('document_series').select('*').eq('type', 'NOTA_CREDITO').eq('is_active', true);
-            if (data && data.length > 0) {
-                setDbSeries(data);
-                setSelectedSeries(data[0].series);
-            }
-        };
-        fetchSeries();
-    }, []);
-
-    const handleSearch = () => {
+    const handleSearch = React.useCallback(() => {
         let results = sales.filter(s => s.document_type === 'FACTURA' || s.document_type === 'BOLETA');
 
         // Date filter
@@ -62,7 +51,22 @@ export const CreditNotes: React.FC = () => {
 
         setSearchResults(results.slice(0, 50)); // max 50
         setOriginalSale(null);
-    };
+    }, [sales, dateFrom, dateTo, searchTerm, searchType]);
+
+    useEffect(() => {
+        const fetchSeries = async () => {
+            const { data } = await supabase.from('document_series').select('*').eq('type', 'NOTA_CREDITO').eq('is_active', true);
+            if (data && data.length > 0) {
+                setDbSeries(data);
+                setSelectedSeries(data[0].series);
+            }
+        };
+        fetchSeries();
+    }, []);
+
+    useEffect(() => {
+        handleSearch();
+    }, [handleSearch]);
 
     const handleSelectSale = (sale: Sale) => {
         setOriginalSale(sale);
