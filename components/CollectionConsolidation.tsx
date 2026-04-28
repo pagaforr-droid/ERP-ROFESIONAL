@@ -462,7 +462,7 @@ export const CollectionConsolidation: React.FC = () => {
       if (!plan) return;
       
       const recordsToPrint = collectionRecords.filter(r => (plan.original.records || []).includes(r.id));
-      let creator = users.find(u => u.id === plan.user_id)?.name || 'SISTEMA';
+      let creator = currentUser?.name || 'SISTEMA';
 
       const doc = new jsPDF();
       
@@ -1419,7 +1419,7 @@ export const CollectionConsolidation: React.FC = () => {
                                  <div className="flex justify-between items-end mt-2">
                                     <div>
                                        <div className="text-xs text-slate-500">{new Date(plan.date).toLocaleDateString()} {new Date(plan.date).toLocaleTimeString().slice(0, 5)}</div>
-                                       <div className="text-[10px] text-slate-400 mt-1 uppercase">Usuario que liquidó: <span className="font-bold text-slate-600">{users.find(u => u.id === plan.user_id)?.name || 'Sistema'}</span></div>
+                                       <div className="text-[10px] text-slate-400 mt-1 uppercase">Usuario que liquidó: <span className="font-bold text-slate-600">{currentUser?.name || 'Sistema'}</span></div>
                                        {plan.glosa && <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={plan.glosa}>Glosa: {plan.glosa}</div>}
                                        <div className="text-xs text-slate-500 mt-1 font-medium">{plan.record_count} docs</div>
                                     </div>
