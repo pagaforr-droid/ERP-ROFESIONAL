@@ -4,6 +4,8 @@ import { Wallet, CheckSquare, Square, Save, Printer, User, Filter, AlertCircle, 
 import { CollectionPlanilla, CollectionRecord, Client } from '../types';
 import * as XLSX from 'xlsx';
 import { supabase } from '../services/supabase';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export const CollectionConsolidation: React.FC = () => {
    const { collectionRecords, collectionPlanillas, sellers, currentUser, sales, users, clients } = useStore();
@@ -429,6 +431,52 @@ export const CollectionConsolidation: React.FC = () => {
       setTimeout(() => {
          window.print();
       }, 500);
+   };
+
+   const handleDownloadPDF = (planillaId: string) => {
+      const plan = collectionPlanillas.find(p => p.id === planillaId);
+      if (!plan) return;
+      
+      const records = collectionRecords.filter(r => r.planilla_id === plan.id);
+      const creator = users.find(u => u.id === plan.user_id)?.name || 'SISTEMA';
+
+      const doc = new jsPDF();
+      
+      doc.setFontSize(18);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`LIQUIDACIÓN DE COBRANZAS: ${plan.code}`, 14, 22);
+      
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Fecha: ${new Date(plan.date).toLocaleString()}`, 14, 32);
+      doc.text(`Usuario: ${creator}`, 14, 38);
+      if (plan.glosa) doc.text(`Glosa: ${plan.glosa}`, 14, 44);
+      doc.text(`Estado: ${plan.status === 'ANNULLED' ? 'ANULADA' : 'CERRADA EN CAJA'}`, 140, 32);
+
+      const tableData = records.map((r, i) => {
+         const sellerName = sellers.find(s => s.id === r.seller_id)?.name || 'N/A';
+         return [
+            i + 1,
+            sellerName,
+            r.client_name,
+            r.document_ref,
+            new Date(r.date_reported).toLocaleDateString(),
+            `S/ ${r.amount_reported.toFixed(2)}`
+         ];
+      });
+
+      autoTable(doc, {
+         startY: 50,
+         head: [['N°', 'Vendedor', 'Cliente', 'Documento', 'Fecha Recibo', 'Importe']],
+         body: tableData,
+         theme: 'grid',
+         headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+         columnStyles: { 5: { halign: 'right' } },
+         foot: [['', '', '', '', 'TOTAL:', `S/ ${plan.total_amount.toFixed(2)}`]],
+         footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'right' }
+      });
+
+      doc.save(`Planilla_${plan.code}.pdf`);
    };
 
    const handleAnnulPlanilla = (planillaId: string) => {
@@ -1338,13 +1386,26 @@ export const CollectionConsolidation: React.FC = () => {
                                        <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200">CAJA</span>
                                     )}
                                  </div>
-                                 <div className="flex justify-between items-end">
+                                 <div className="flex justify-between items-end mt-2">
                                     <div>
                                        <div className="text-xs text-slate-500">{new Date(plan.date).toLocaleDateString()} {new Date(plan.date).toLocaleTimeString().slice(0, 5)}</div>
-                                       <div className="text-xs text-slate-400 mt-1">{plan.record_count} docs</div>
+                                       <div className="text-[10px] text-slate-400 mt-1 uppercase">Usuario: <span className="font-bold text-slate-600">{users.find(u => u.id === plan.user_id)?.name || 'Sistema'}</span></div>
+                                       {plan.glosa && <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={plan.glosa}>Glosa: {plan.glosa}</div>}
+                                       <div className="text-xs text-slate-500 mt-1 font-medium">{plan.record_count} docs</div>
                                     </div>
-                                    <div className="font-bold text-lg text-slate-900">
-                                       S/ {plan.total_amount.toFixed(2)}
+                                    <div className="text-right">
+                                       <div className="font-bold text-lg text-slate-900">
+                                          S/ {plan.total_amount.toFixed(2)}
+                                       </div>
+                                       <div className="mt-2 space-x-1 flex justify-end">
+                                          {plan.status === 'ACTIVE' && (
+                                             <>
+                                                <button onClick={(e) => { e.stopPropagation(); initiateAdminAuth("EDIT", plan.id); }} className="text-[10px] bg-blue-50 text-blue-700 px-2 py-1 rounded border border-blue-200 hover:bg-blue-100 transition-colors" title="Editar / Corregir Planilla">Editar</button>
+                                                <button onClick={(e) => { e.stopPropagation(); initiateAdminAuth("ANNUL", plan.id); }} className="text-[10px] bg-red-50 text-red-600 px-2 py-1 rounded border border-red-200 hover:bg-red-100 transition-colors" title="Anular Planilla">Anular</button>
+                                             </>
+                                          )}
+                                          <button onClick={(e) => { e.stopPropagation(); handleDownloadPDF(plan.id); }} className="text-[10px] bg-slate-100 text-slate-700 px-2 py-1 rounded border border-slate-300 hover:bg-slate-200 transition-colors font-bold flex items-center">PDF</button>
+                                       </div>
                                     </div>
                                  </div>
                               </div>
