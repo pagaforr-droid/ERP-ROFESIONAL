@@ -556,8 +556,10 @@ export const CollectionConsolidation: React.FC = () => {
 
             if (wasManual && planillaRecords.length > 0) {
                const restoredCartItems: ManualCartItem[] = [];
+               const freshSales = useStore.getState().sales;
+
                planillaRecords.forEach(r => {
-                  const sale = sales.find(s => s.id === r.sale_id);
+                  const sale = freshSales.find(s => s.id === r.sale_id);
                   if (sale) {
                      // Balance was restored by RPC!
                      const currentReturnedBalance = sale.balance !== undefined ? sale.balance : sale.total;
@@ -622,8 +624,8 @@ export const CollectionConsolidation: React.FC = () => {
       return (
          <div className="hidden print:block absolute inset-0 bg-white z-[9999] p-8 text-black" style={{ fontFamily: 'Arial, sans-serif' }}>
             <div className="text-center border-b-2 border-black pb-4 mb-6">
-               <h1 className="text-2xl font-bold uppercase tracking-wider">LIQUIDACIÃ“N DE COBRANZAS</h1>
-               <h2 className="text-xl font-bold mt-1">PLANILLA NÂ° {selectedPlanilla.code}</h2>
+               <h1 className="text-2xl font-bold uppercase tracking-wider">LIQUIDACIÓN DE COBRANZAS</h1>
+               <h2 className="text-xl font-bold mt-1">PLANILLA N° {selectedPlanilla.code}</h2>
                <div className="flex justify-between mt-4 text-sm font-bold text-gray-700">
                   <span>FECHA: {new Date(selectedPlanilla.date).toLocaleDateString()} {new Date(selectedPlanilla.date).toLocaleTimeString()}</span>
                   <span>GENERADO POR: {currentUser?.name || selectedPlanilla.user_id || 'SISTEMA'}</span>
@@ -633,7 +635,7 @@ export const CollectionConsolidation: React.FC = () => {
             <table className="w-full text-sm border-collapse mb-8">
                <thead>
                   <tr className="bg-gray-100 border-y-2 border-black text-left">
-                     <th className="py-2 px-1">NÂ°</th>
+                     <th className="py-2 px-1">N°</th>
                      <th className="py-2 px-1">Vendedor</th>
                      <th className="py-2 px-1">Cliente</th>
                      <th className="py-2 px-1">Documento</th>
@@ -1124,9 +1126,9 @@ export const CollectionConsolidation: React.FC = () => {
                      <input type="date" className="w-full border border-slate-300 rounded p-1 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500" value={planillaDate} onChange={(e) => setPlanillaDate(e.target.value)} />
                   </div>
                   <div className="flex-1 min-w-[150px]">
-                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">CategorÃ­a (Ingreso)</label>
+                     <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Categoría (Ingreso)</label>
                      <select className="w-full border border-slate-300 rounded p-1 text-xs font-bold outline-none focus:ring-2 focus:ring-blue-500 bg-white" value={selectedCategoryId} onChange={(e) => setSelectedCategoryId(e.target.value)}>
-                        <option value="">Seleccione CategorÃ­a...</option>
+                        <option value="">Seleccione Categoría...</option>
                         {expenseCategories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                      </select>
                   </div>
