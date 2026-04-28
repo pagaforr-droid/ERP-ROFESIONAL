@@ -89,16 +89,16 @@ export const CollectionConsolidation: React.FC = () => {
 
       // 1. Add Collection Planillas
       collectionPlanillas.forEach(p => {
-         const recs = collectionRecords.filter(r => p.records.includes(r.id));
+         const recs = collectionRecords.filter(r => (p.records || []).includes(r.id));
          if (selectedSeller !== 'ALL' && !recs.some(r => r.seller_id === selectedSeller)) return;
-         if (dateFilter && !p.date.startsWith(dateFilter)) return;
+         if (dateFilter && p.date && !p.date.startsWith(dateFilter)) return;
 
          unified.push({
             type: 'COLLECTION',
             id: p.id,
             code: p.code,
             date: p.date,
-            total_amount: p.total_amount,
+            total_amount: Number(p.total_amount) || 0,
             record_count: p.record_count,
             status: p.status,
             user_id: p.user_id,
@@ -110,7 +110,8 @@ export const CollectionConsolidation: React.FC = () => {
       // 2. Add Dispatch Liquidations
       if (selectedSeller === 'ALL') { // Dispatch liquidations usually apply globally (to drivers)
          dispatchLiquidations.forEach(liq => {
-            if (dateFilter && !liq.date.startsWith(dateFilter)) return;
+            const liqDate = liq.created_at || new Date().toISOString();
+            if (dateFilter && !liqDate.startsWith(dateFilter)) return;
             // Only show processed/completed liquidations
             if (liq.status !== 'PROCESADO' && liq.status !== 'COMPLETADO') return;
 
@@ -134,8 +135,8 @@ export const CollectionConsolidation: React.FC = () => {
                type: 'DISPATCH',
                id: liq.id,
                code: `RUT-${ds.code}`, // Use dispatch sheet code as Planilla Code
-               date: liq.date,
-               total_amount: liq.total_cash_collected || 0,
+               date: liqDate,
+               total_amount: Number(liq.total_cash_collected) || 0,
                record_count: docs.length,
                status: liq.status === 'COMPLETADO' ? 'ACTIVE' : 'ACTIVE', // map to ACTIVE for UI to allow viewing
                user_id: cm?.user_id,
@@ -147,13 +148,17 @@ export const CollectionConsolidation: React.FC = () => {
          });
       }
 
-      return unified.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return unified.sort((a, b) => {
+         const timeA = a.date ? new Date(a.date).getTime() : 0;
+         const timeB = b.date ? new Date(b.date).getTime() : 0;
+         return timeB - timeA;
+      });
    }, [collectionPlanillas, dateFilter, selectedSeller, collectionRecords, dispatchLiquidations, dispatchSheets, vehicles, drivers, cashMovements, liquidationDocs]);
 
    const totals = useMemo(() => {
       return pendingCollections.reduce((acc, curr) => {
          if (selectedIds.has(curr.id)) {
-            return acc + curr.amount_reported;
+            return acc + Number(curr.amount_reported || 0);
          }
          return acc;
       }, 0);
@@ -183,7 +188,7 @@ export const CollectionConsolidation: React.FC = () => {
             } as any;
          });
       }
-      return collectionRecords.filter(r => selectedPlanilla.original.records.includes(r.id));
+      return collectionRecords.filter(r => (selectedPlanilla.original.records || []).includes(r.id));
    }, [selectedPlanilla, collectionRecords, liquidationDocs, sales]);
 
    // --- DATA PREPARATION (MANUAL) ---
@@ -565,10 +570,7 @@ export const CollectionConsolidation: React.FC = () => {
       doc.setFont('helvetica', 'normal');
       doc.text(`Fecha: ${new Date(plan.date).toLocaleString()}`, 14, 32);
       doc.text(`Usuario: ${creator}`, 14, 38);
-      if (plan.type === 'DISPATCH') {
-         doc.text(`Chofer: ${plan.driver_name}`, 14, 44);
-         doc.text(`Responsable: ${plan.responsible_name}`, 14, 50);
-      } else if (plan.glosa) {
+      if (plan.glosa) {
          doc.text(`Glosa: ${plan.glosa}`, 14, 44);
       }
       doc.text(`Estado: ${plan.status === 'ANNULLED' ? 'ANULADA' : 'CERRADA EN CAJA'}`, 140, 32);
@@ -581,11 +583,11 @@ export const CollectionConsolidation: React.FC = () => {
             r.client_name,
             r.document_ref,
             new Date(r.date_reported).toLocaleDateString(),
-            `S/ ${r.amount_reported.toFixed(2)}`
+            `S/ ${Number(r.amount_reported || 0).toFixed(2)}`
          ];
       });
 
-      const startY = plan.type === 'DISPATCH' ? 56 : (plan.glosa ? 50 : 44);
+      const startY = plan.glosa ? 50 : 44;
 
       autoTable(doc, {
          startY,
@@ -594,7 +596,7 @@ export const CollectionConsolidation: React.FC = () => {
          theme: 'grid',
          headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
          columnStyles: { 5: { halign: 'right' } },
-         foot: [['', '', '', '', 'TOTAL:', `S/ ${plan.total_amount.toFixed(2)}`]],
+         foot: [['', '', '', '', 'TOTAL:', `S/ ${Number(plan.total_amount || 0).toFixed(2)}`]],
          footStyles: { fillColor: [240, 240, 240], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'right' }
       });
 
@@ -775,7 +777,7 @@ export const CollectionConsolidation: React.FC = () => {
                            <td className="py-2 px-1 max-w-[200px] truncate">{r.client_name}</td>
                            <td className="py-2 px-1">{r.document_ref}</td>
                            <td className="py-2 px-1">{new Date(r.date_reported).toLocaleDateString()}</td>
-                           <td className="py-2 px-1 text-right font-bold">S/ {r.amount_reported.toFixed(2)}</td>
+                           <td className="py-2 px-1 text-right font-bold">S/ {Number(r.amount_reported || 0).toFixed(2)}</td>
                         </tr>
                      );
                   })}
@@ -882,7 +884,7 @@ export const CollectionConsolidation: React.FC = () => {
                                              <div className="font-bold text-slate-800">{sellerMatch?.name || r.seller_id}</div>
                                              <div className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded inline-block mt-1 uppercase tracking-wider">{r.payment_method}</div>
                                           </td>
-                                          <td className="p-3 text-right font-bold text-green-700 text-sm">S/ {r.amount_reported.toFixed(2)}</td>
+                                          <td className="p-3 text-right font-bold text-green-700 text-sm">S/ {Number(r.amount_reported || 0).toFixed(2)}</td>
                                           <td className="p-3 text-center">
                                              <span className={`px-2 py-1 rounded-md text-[10px] uppercase font-bold border whitespace-nowrap inline-block shadow-sm ${statusColor}`}>
                                                 {statusLabel}
@@ -1380,7 +1382,7 @@ export const CollectionConsolidation: React.FC = () => {
                                     <td className="p-3 font-medium text-slate-800">{seller?.name || 'Desconocido'}</td>
                                     <td className="p-3 font-bold text-slate-800">{rec.client_name}</td>
                                     <td className="p-3 font-mono text-slate-600">{rec.document_ref}</td>
-                                    <td className="p-3 text-right font-bold text-slate-900">{rec.amount_reported.toFixed(2)}</td>
+                                    <td className="p-3 text-right font-bold text-slate-900">{Number(rec.amount_reported || 0).toFixed(2)}</td>
                                  </tr>
                               );
                            })}
@@ -1514,18 +1516,12 @@ export const CollectionConsolidation: React.FC = () => {
                                     <div>
                                        <div className="text-xs text-slate-500">{new Date(plan.date).toLocaleDateString()} {new Date(plan.date).toLocaleTimeString().slice(0, 5)}</div>
                                        <div className="text-[10px] text-slate-400 mt-1 uppercase">Usuario que liquidó: <span className="font-bold text-slate-600">{users.find(u => u.id === plan.user_id)?.name || 'Sistema'}</span></div>
-                                       {plan.type === 'DISPATCH' && (
-                                          <>
-                                             <div className="text-[10px] text-slate-400 mt-0.5 uppercase">Chofer: <span className="font-bold text-slate-600">{plan.driver_name}</span></div>
-                                             <div className="text-[10px] text-slate-400 mt-0.5 uppercase">Responsable: <span className="font-bold text-slate-600">{plan.responsible_name}</span></div>
-                                          </>
-                                       )}
                                        {plan.glosa && <div className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={plan.glosa}>Glosa: {plan.glosa}</div>}
                                        <div className="text-xs text-slate-500 mt-1 font-medium">{plan.record_count} docs</div>
                                     </div>
                                     <div className="text-right">
                                        <div className="font-bold text-lg text-slate-900">
-                                          S/ {plan.total_amount.toFixed(2)}
+                                          S/ {Number(plan.total_amount || 0).toFixed(2)}
                                        </div>
                                        <div className="mt-2 space-x-1 flex justify-end">
                                           {plan.status === 'ACTIVE' && plan.type === 'COLLECTION' && (
@@ -1624,7 +1620,7 @@ export const CollectionConsolidation: React.FC = () => {
                                        <td className="p-2 font-mono text-slate-600">{r.document_ref}</td>
                                        <td className="p-2 font-medium text-slate-800">{sellers.find(s => s.id === r.seller_id)?.name}</td>
                                        <td className="p-2 text-slate-700 truncate max-w-[150px]">{r.client_name}</td>
-                                       <td className="p-2 text-right font-bold text-slate-900">S/ {r.amount_reported.toFixed(2)}</td>
+                                       <td className="p-2 text-right font-bold text-slate-900">S/ {Number(r.amount_reported || 0).toFixed(2)}</td>
                                        <td className="p-2 text-center">
                                           {selectedPlanilla.status === 'ACTIVE' && (
                                              <button
