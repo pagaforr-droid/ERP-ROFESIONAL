@@ -1,0 +1,30 @@
+components/AdvancedOrderEntry.tsx(29,52): error TS2367: This comparison appears to be unintentional because the types '"SELLER" | "WAREHOUSE" | "LOGISTICS" | "CLIENT"' and '"SUPERADMIN"' have no overlap.
+components/CollectionConsolidation.tsx(138,76): error TS2448: Block-scoped variable 'dispatchLiquidations' used before its declaration.
+components/CollectionConsolidation.tsx(138,98): error TS2448: Block-scoped variable 'dispatchSheets' used before its declaration.
+components/CollectionConsolidation.tsx(138,114): error TS2448: Block-scoped variable 'vehicles' used before its declaration.
+components/CollectionConsolidation.tsx(138,124): error TS2448: Block-scoped variable 'drivers' used before its declaration.
+components/CollectionConsolidation.tsx(138,133): error TS2448: Block-scoped variable 'cashMovements' used before its declaration.
+components/CollectionConsolidation.tsx(138,148): error TS2448: Block-scoped variable 'liquidationDocs' used before its declaration.
+components/CollectionConsolidation.tsx(174,45): error TS2448: Block-scoped variable 'liquidationDocs' used before its declaration.
+components/Login.tsx(28,64): error TS2339: Property 'email' does not exist on type 'User'.
+components/MobileOrders.tsx(526,115): error TS2339: Property 'current_stock' does not exist on type 'Product'.
+components/PriceManager.tsx(32,52): error TS2367: This comparison appears to be unintentional because the types '"SELLER" | "WAREHOUSE" | "LOGISTICS" | "CLIENT"' and '"SUPERADMIN"' have no overlap.
+services/store.ts(442,25): error TS2339: Property 'warehouse_id' does not exist on type 'SaleItem'.
+services/store.ts(1103,11): error TS2345: Argument of type '(s: AppState) => AppState | { sales: (Sale | { status: any; payment_status: string; collection_status: string; balance: number; id: string; document_type: string; ... 28 more ...; origin_order_id?: string; })[]; batches: Batch[]; }' is not assignable to parameter of type 'AppState | Partial<AppState> | ((state: AppState) => AppState | Partial<AppState>)'.
+  Type '(s: AppState) => AppState | { sales: (Sale | { status: any; payment_status: string; collection_status: string; balance: number; id: string; document_type: string; ... 28 more ...; origin_order_id?: string; })[]; batches: Batch[]; }' is not assignable to type '(state: AppState) => AppState | Partial<AppState>'.
+    Type 'AppState | { sales: (Sale | { status: any; payment_status: string; collection_status: string; balance: number; id: string; document_type: string; series: string; number: string; ... 26 more ...; origin_order_id?: string; })[]; batches: Batch[]; }' is not assignable to type 'AppState | Partial<AppState>'.
+      Type '{ sales: (Sale | { status: any; payment_status: string; collection_status: string; balance: number; id: string; document_type: "FACTURA" | "BOLETA" | "NOTA_CREDITO" | string; ... 28 more ...; origin_order_id?: string; })[]; batches: Batch[]; }' is not assignable to type 'AppState | Partial<AppState>'.
+        Type '{ sales: (Sale | { status: any; payment_status: string; collection_status: string; balance: number; id: string; document_type: "FACTURA" | "BOLETA" | "NOTA_CREDITO" | string; ... 28 more ...; origin_order_id?: string; })[]; batches: Batch[]; }' is not assignable to type 'Partial<AppState>'.
+          Types of property 'sales' are incompatible.
+            Type '(Sale | { status: any; payment_status: string; collection_status: string; balance: number; id: string; document_type: string; series: string; number: string; payment_method: "CONTADO" | "CREDITO"; ... 25 more ...; origin_order_id?: string; })[]' is not assignable to type 'Sale[]'.
+              Type 'Sale | { status: any; payment_status: string; collection_status: string; balance: number; id: string; document_type: string; series: string; number: string; payment_method: "CONTADO" | "CREDITO"; ... 25 more ...; origin_order_id?: string; }' is not assignable to type 'Sale'.
+                Type '{ status: any; payment_status: string; collection_status: string; balance: number; id: string; document_type: "FACTURA" | "BOLETA" | "NOTA_CREDITO" | string; series: string; number: string; ... 26 more ...; origin_order_id?: string; }' is not assignable to type 'Sale'.
+                  Types of property 'payment_status' are incompatible.
+                    Type 'string' is not assignable to type '"PAID" | "PENDING"'.
+utils/invoicePdfGenerator.ts(252,58): error TS2339: Property 'product' does not exist on type 'SaleItem'.
+utils/invoicePdfGenerator.ts(253,31): error TS2339: Property 'product' does not exist on type 'SaleItem'.
+utils/invoicePdfGenerator.ts(253,96): error TS2339: Property 'product' does not exist on type 'SaleItem'.
+utils/invoicePdfGenerator.ts(254,65): error TS2339: Property 'product' does not exist on type 'SaleItem'.
+utils/invoicePdfGenerator.ts(255,31): error TS2339: Property 'product' does not exist on type 'SaleItem'.
+utils/invoicePdfGenerator.ts(279,26): error TS2304: Cannot find name 'finalTableY'.
+utils/invoicePdfGenerator.ts(280,30): error TS2304: Cannot find name 'finalTableY'.
