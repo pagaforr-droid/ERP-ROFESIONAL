@@ -37,10 +37,13 @@ export const DocumentManager: React.FC = () => {
    // --- ACTION MODAL STATE ---
    const [actionState, setActionState] = useState<{ type: 'ANNUL' | 'CLONE', doc: DisplayDocument } | null>(null);
    const [adminPassword, setAdminPassword] = useState('');
-   const [cloneDocType, setCloneDocType] = useState('FACTURA');
    const [cloneSeries, setCloneSeries] = useState('');
    const [isProcessingAction, setIsProcessingAction] = useState(false);
+   const isSavingRef = React.useRef(false);
    const { currentUser, annulSale } = useStore();
+
+   const [modalConfig, setModalConfig] = useState<{isOpen: boolean, type: 'info'|'warning'|'error'|'success', message: string}>({ isOpen: false, type: 'info', message: '' });
+   const showAlert = (message: string, type: 'info'|'warning'|'error'|'success' = 'info') => setModalConfig({ isOpen: true, type, message });
 
    // --- DATA UNIFICATION ---
    const allDocuments: DisplayDocument[] = useMemo(() => {
@@ -87,7 +90,7 @@ export const DocumentManager: React.FC = () => {
            setDbDocuments(data || []);
        } catch (error) {
            console.error("Error fetching docs", error);
-           alert("Error cargando documentos de la base de datos.");
+           showAlert("Error cargando documentos de la base de datos.", 'error');
        } finally {
            setIsLoading(false);
        }
@@ -140,9 +143,10 @@ export const DocumentManager: React.FC = () => {
 
    const confirmAction = async () => {
       if (!actionState) return;
-      if (!adminPassword) { alert('Ingrese la contraseña de administrador.'); return; }
+      if (!adminPassword) { showAlert('Ingrese la contraseña de administrador.', 'warning'); return; }
       
-      // Validar password Admin
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
       setIsProcessingAction(true);
       try {
          const { data: userAuth, error: authError } = await supabase.rpc('validate_admin_password', {
@@ -186,22 +190,44 @@ export const DocumentManager: React.FC = () => {
             const { error: cloneError } = await supabase.rpc('process_sale_transaction', { p_sale_data: clonedSalePayload });
             if (cloneError) throw cloneError;
             
-            alert(`Documento original anulado y clonado exitosamente a la serie ${cloneSeries}. Actualice la vista.`);
+            showAlert(`Documento original anulado y clonado exitosamente a la serie ${cloneSeries}. Actualice la vista.`, 'success');
          } else {
-            alert('Documento anulado con éxito. El stock ha sido restituido al Kardex.');
+            showAlert('Documento anulado con éxito. El stock ha sido restituido al Kardex.', 'success');
          }
          
          setActionState(null);
          fetchDocuments(); // Refresh data from Supabase
       } catch (error: any) {
-         alert("Error: " + error.message);
+         showAlert("Error: " + error.message, 'error');
       } finally {
+         isSavingRef.current = false;
          setIsProcessingAction(false);
       }
    };
 
    return (
       <div className="flex flex-col h-full space-y-4">
+
+         {/* --- CUSTOM ALERT MODAL --- */}
+         {modalConfig.isOpen && (
+            <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+               <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                  {modalConfig.type === 'error' && <X className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full" />}
+                  {modalConfig.type === 'warning' && <Lock className="w-12 h-12 text-amber-500 mx-auto mb-4 bg-amber-50 p-2 rounded-full" />}
+                  {modalConfig.type === 'success' && <FileText className="w-12 h-12 text-emerald-500 mx-auto mb-4 bg-emerald-50 p-2 rounded-full" />}
+                  {modalConfig.type === 'info' && <FileText className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full" />}
+                  
+                  <h3 className="text-lg font-black text-slate-800 mb-2">
+                     {modalConfig.type === 'error' ? 'Error' : modalConfig.type === 'warning' ? 'Aviso' : modalConfig.type === 'success' ? 'Éxito' : 'Información'}
+                  </h3>
+                  <p className="text-sm text-slate-600 mb-6">{modalConfig.message}</p>
+                  
+                  <div className="flex justify-center">
+                     <button onClick={() => setModalConfig({...modalConfig, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+                  </div>
+               </div>
+            </div>
+         )}
 
          {/* HEADER */}
          <div className="flex justify-between items-center">

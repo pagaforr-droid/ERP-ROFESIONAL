@@ -14,6 +14,7 @@ export const PrintBatch: React.FC = () => {
     const [dbDispatchSheets, setDbDispatchSheets] = useState<any[]>([]);
     const [dbCompany, setDbCompany] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const isSavingRef = React.useRef(false);
 
     // Filters
     const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
@@ -199,6 +200,8 @@ export const PrintBatch: React.FC = () => {
             return;
         }
 
+        if (isSavingRef.current) return;
+        isSavingRef.current = true;
         setIsPrinting(true);
         try {
             await PdfEngine.openDocument(selectedDocsInfo, 'BATCH', dbCompany || companyInfo);
@@ -207,15 +210,22 @@ export const PrintBatch: React.FC = () => {
             console.error(error);
             setAlertMessage("Error generando el archivo PDF.");
         } finally {
+            isSavingRef.current = false;
             setIsPrinting(false);
         }
     };
 
     const handleMarkAsPrinted = () => {
-        markDocumentsAsPrinted(selectedIds);
-        setIsPreviewOpen(false);
-        setSelectedIds([]);
-        setSelectedDocsInfo([]);
+        if (isSavingRef.current) return;
+        isSavingRef.current = true;
+        try {
+            markDocumentsAsPrinted(selectedIds);
+            setIsPreviewOpen(false);
+            setSelectedIds([]);
+            setSelectedDocsInfo([]);
+        } finally {
+            isSavingRef.current = false;
+        }
     };
 
     return (
