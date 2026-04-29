@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { supabase } from '../services/supabase'; // <-- ADIÓS MOCK_DB
-import { Building, Settings, FileText, Image, Save, Hash, Upload, RefreshCw, Trash2, Plus } from 'lucide-react';
+import { Building, Settings, FileText, Image, Save, Hash, Upload, RefreshCw, Trash2, Plus, Search } from 'lucide-react';
 import { DocumentSeries } from '../types';
 
 export const CompanySettings: React.FC = () => {
