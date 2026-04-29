@@ -115,7 +115,7 @@ interface AppState {
    updateDispatchStatus: (dispatchId: string, status: DispatchSheet['status']) => void;
    updateSaleStatus: (saleIds: string[], status: Sale['dispatch_status']) => void;
    updateSaleDeliveryStatus: (saleId: string, status: Sale['dispatch_status'], details?: { reason?: string; photo?: string; location?: { lat: number; lng: number } }) => void;
-   updateSunatStatus: (type: 'sale' | 'dispatch', id: string, status: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED', message?: string) => void;
+   updateSunatStatus: (type: 'sale' | 'dispatch', id: string, status: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED', message?: string) => Promise<{ success: boolean; msg: string }>;
    processDispatchLiquidation: (liquidation: DispatchLiquidation, userId: string) => Promise<{ success: boolean; msg: string; liquidation_id?: string }>;
    saveDispatchLiquidationDraft: (liquidation: DispatchLiquidation, userId: string) => Promise<{ success: boolean; msg: string; liquidation_id?: string }>;
    confirmDispatchLiquidationKardex: (liquidationId: string, userId: string) => Promise<{ success: boolean; msg: string }>;
@@ -913,17 +913,34 @@ export const useStore = create<AppState>((set, get) => ({
       })
    })),
 
-   updateSunatStatus: (type, id, status, message) => set((state) => {
-      if (type === 'sale') {
-         return {
-            sales: state.sales.map(s => s.id === id ? { ...s, sunat_status: status, sunat_message: message, sunat_sent_at: status !== 'PENDING' ? new Date().toISOString() : s.sunat_sent_at } : s)
-         };
-      } else {
-         return {
-            dispatchSheets: state.dispatchSheets.map(d => d.id === id ? { ...d, sunat_status: status, sunat_message: message, sunat_sent_at: status !== 'PENDING' ? new Date().toISOString() : d.sunat_sent_at } : d)
-         };
+   updateSunatStatus: async (type, id, status, message) => {
+      const updateData = {
+         sunat_status: status,
+         sunat_message: message || null,
+         sunat_sent_at: status !== 'PENDING' ? new Date().toISOString() : null
+      };
+
+      const table = type === 'sale' ? 'sales' : 'dispatch_sheets';
+      const { error } = await supabase.from(table).update(updateData).eq('id', id);
+
+      if (error) {
+         console.error(`Supabase Error updating sunat_status for ${table}:`, error);
+         return { success: false, msg: error.message };
       }
-   }),
+
+      set((state) => {
+         if (type === 'sale') {
+            return {
+               sales: state.sales.map(s => s.id === id ? { ...s, ...updateData } : s)
+            };
+         } else {
+            return {
+               dispatchSheets: state.dispatchSheets.map(d => d.id === id ? { ...d, ...updateData } : d)
+            };
+         }
+      });
+      return { success: true, msg: 'Actualizado correctamente en Supabase' };
+   },
 
    markDocumentsAsPrinted: async (saleIds) => {
       const { error } = await supabase.rpc('mark_documents_as_printed', {

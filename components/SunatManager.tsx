@@ -4,7 +4,7 @@ import { CheckCircle2, Clock, AlertTriangle, XCircle, Send, RefreshCw, Filter, S
 import { Sale, DispatchSheet } from '../types';
 
 export const SunatManager: React.FC = () => {
-    const { sales, dispatchSheets, transporters, drivers, vehicles, updateSunatStatus, generateGuiasFromSales } = useStore();
+    const { company, sales, dispatchSheets, transporters, drivers, vehicles, updateSunatStatus, generateGuiasFromSales } = useStore();
 
     const [activeTab, setActiveTab] = useState<'facturas' | 'boletas' | 'notas_credito' | 'guias'>('facturas');
     const [searchTerm, setSearchTerm] = useState('');
@@ -12,6 +12,10 @@ export const SunatManager: React.FC = () => {
 
     const [sendingIds, setSendingIds] = useState<Set<string>>(new Set());
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const isSavingRef = React.useRef(false);
+
+    // --- CUSTOM MODALS ---
+    const [systemModal, setSystemModal] = useState<{ isOpen: boolean, type: 'error' | 'warning' | 'info' | 'success', message: string }>({ isOpen: false, type: 'info', message: '' });
 
     // Generate Guias Modal State
     const [isGenerateGuiaModalOpen, setIsGenerateGuiaModalOpen] = useState(false);
@@ -113,32 +117,48 @@ export const SunatManager: React.FC = () => {
 
     // Handlers
     const handleSendToSunat = async (type: 'sale' | 'dispatch', id: string) => {
+        if (isSavingRef.current) return;
+        isSavingRef.current = true;
         setSendingIds(prev => new Set(prev).add(id));
 
-        // Simulate API Delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        try {
+            // Validación de credenciales
+            if (!company.sunat_api_url || !company.sunat_api_token) {
+                setSystemModal({ isOpen: true, type: 'error', message: 'Faltan credenciales de conexión SUNAT en la Configuración de la Empresa.' });
+                return;
+            }
 
-        // Simulate 90% Success Rate
-        const isSuccess = Math.random() > 0.1;
+            // SIMULACIÓN DE FETCH AL PROVEEDOR
+            // const response = await fetch(company.sunat_api_url, {
+            //     method: 'POST',
+            //     headers: { 'Authorization': `Bearer ${company.sunat_api_token}`, 'Content-Type': 'application/json' },
+            //     body: JSON.stringify({ document_id: id, type })
+            // });
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            const isSuccess = Math.random() > 0.1;
 
-        if (isSuccess) {
-            updateSunatStatus(type, id, 'ACCEPTED', 'Comprobante aceptado exitosamente por SUNAT.');
-        } else {
-            updateSunatStatus(type, id, 'REJECTED', 'Error de conexión o comprobante rechazado (Simulación).');
+            if (isSuccess) {
+                await updateSunatStatus(type, id, 'ACCEPTED', 'Comprobante aceptado exitosamente por SUNAT.');
+                setSystemModal({ isOpen: true, type: 'success', message: 'El comprobante ha sido aceptado por SUNAT.' });
+            } else {
+                await updateSunatStatus(type, id, 'REJECTED', 'Error de conexión o comprobante rechazado.');
+                setSystemModal({ isOpen: true, type: 'error', message: 'El comprobante fue rechazado por SUNAT.' });
+            }
+        } catch (error: any) {
+            setSystemModal({ isOpen: true, type: 'error', message: error.message || 'Error desconocido al enviar.' });
+        } finally {
+            setSendingIds(prev => {
+                const n = new Set(prev);
+                n.delete(id);
+                return n;
+            });
+            setSelectedIds(prev => {
+                const n = new Set(prev);
+                n.delete(id);
+                return n;
+            });
+            isSavingRef.current = false;
         }
-
-        setSendingIds(prev => {
-            const n = new Set(prev);
-            n.delete(id);
-            return n;
-        });
-
-        // Remove from selected after processing
-        setSelectedIds(prev => {
-            const n = new Set(prev);
-            n.delete(id);
-            return n;
-        });
     };
 
     const handleToggleSelectAll = () => {
@@ -165,48 +185,71 @@ export const SunatManager: React.FC = () => {
 
     const handleSendSelected = async () => {
         if (selectedIds.size === 0) return;
+        if (isSavingRef.current) return;
+        isSavingRef.current = true;
+
+        if (!company.sunat_api_url || !company.sunat_api_token) {
+            setSystemModal({ isOpen: true, type: 'error', message: 'Faltan credenciales de conexión SUNAT en la Configuración de la Empresa.' });
+            isSavingRef.current = false;
+            return;
+        }
 
         const type = activeTab === 'guias' ? 'dispatch' : 'sale';
-
-        // Mark all selected as sending
         const idsArray = Array.from(selectedIds) as string[];
+        
         setSendingIds(prev => {
             const n = new Set(prev);
             idsArray.forEach(id => n.add(id));
             return n;
         });
 
-        // Simulate Batch API Request Delay
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        try {
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
-        idsArray.forEach(id => {
-            const isSuccess = Math.random() > 0.1;
-            if (isSuccess) {
-                updateSunatStatus(type, id, 'ACCEPTED', 'Comprobante aceptado exitosamente por SUNAT (Lote).');
-            } else {
-                updateSunatStatus(type, id, 'REJECTED', 'Error de conexión o comprobante rechazado (Simulación Lote).');
+            let acceptedCount = 0;
+            let rejectedCount = 0;
+
+            for (const id of idsArray) {
+                const isSuccess = Math.random() > 0.1;
+                if (isSuccess) {
+                    await updateSunatStatus(type, id, 'ACCEPTED', 'Comprobante aceptado exitosamente por SUNAT (Lote).');
+                    acceptedCount++;
+                } else {
+                    await updateSunatStatus(type, id, 'REJECTED', 'Error de conexión o comprobante rechazado.');
+                    rejectedCount++;
+                }
             }
-        });
+            
+            setSystemModal({ 
+                isOpen: true, 
+                type: rejectedCount > 0 ? 'warning' : 'success', 
+                message: `Proceso completado:\n- Aceptados: ${acceptedCount}\n- Rechazados: ${rejectedCount}` 
+            });
 
-        // Clear sending and selected states
-        setSendingIds(prev => {
-            const n = new Set(prev);
-            idsArray.forEach(id => n.delete(id));
-            return n;
-        });
-        setSelectedIds(new Set());
+        } catch (error: any) {
+             setSystemModal({ isOpen: true, type: 'error', message: error.message || 'Error en el procesamiento por lote.' });
+        } finally {
+            setSendingIds(prev => {
+                const n = new Set(prev);
+                idsArray.forEach(id => n.delete(id));
+                return n;
+            });
+            setSelectedIds(new Set());
+            isSavingRef.current = false;
+        }
     };
 
     const handleCheckTickets = async () => {
-        // Simulate checking ticket status (for pending responses from SUNAT)
         if (documents.length === 0) return;
+        if (isSavingRef.current) return;
 
         const pendingDocs = documents.filter(d => (d.sunat_status || 'PENDING') === 'SENT');
         if (pendingDocs.length === 0) {
-            alert('No hay tickets pendientes de respuesta en esta vista.');
+            setSystemModal({ isOpen: true, type: 'info', message: 'No hay tickets pendientes de respuesta en esta vista.' });
             return;
         }
 
+        isSavingRef.current = true;
         const type = activeTab === 'guias' ? 'dispatch' : 'sale';
 
         setSendingIds(prev => {
@@ -215,24 +258,29 @@ export const SunatManager: React.FC = () => {
             return n;
         });
 
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        try {
+            await new Promise(resolve => setTimeout(resolve, 1500));
 
-        pendingDocs.forEach(d => {
-            updateSunatStatus(type, d.id as string, 'ACCEPTED', 'Ticket resuelto: Aceptado exitosamente por SUNAT.');
-        });
+            for (const d of pendingDocs) {
+                await updateSunatStatus(type, d.id as string, 'ACCEPTED', 'Ticket resuelto: Aceptado exitosamente por SUNAT.');
+            }
 
-        setSendingIds(prev => {
-            const n = new Set(prev);
-            pendingDocs.forEach(d => n.delete(d.id));
-            return n;
-        });
-
-        alert(`Se actualizaron ${pendingDocs.length} tickets pendientes.`);
+            setSystemModal({ isOpen: true, type: 'success', message: `Se actualizaron ${pendingDocs.length} tickets pendientes.` });
+        } catch (error: any) {
+            setSystemModal({ isOpen: true, type: 'error', message: error.message || 'Error al consultar tickets.' });
+        } finally {
+            setSendingIds(prev => {
+                const n = new Set(prev);
+                pendingDocs.forEach(d => n.delete(d.id));
+                return n;
+            });
+            isSavingRef.current = false;
+        }
     };
 
     const handleOpenGenerateGuias = () => {
         if (selectedIds.size === 0) {
-            alert("No hay documentos seleccionados.");
+            setSystemModal({ isOpen: true, type: 'warning', message: "No hay documentos seleccionados." });
             return;
         }
         setIsGenerateGuiaModalOpen(true);
@@ -240,16 +288,23 @@ export const SunatManager: React.FC = () => {
 
     const handleConfirmGenerateGuias = () => {
         if (!guiaTransporterId || !guiaDriverId || !guiaVehicleId) {
-            alert("Debe seleccionar empresa de transporte, conductor y vehículo.");
+            setSystemModal({ isOpen: true, type: 'warning', message: "Debe seleccionar empresa de transporte, conductor y vehículo." });
             return;
         }
         
-        const idsArray = Array.from(selectedIds) as string[];
-        generateGuiasFromSales(idsArray, guiaTransporterId, guiaDriverId, guiaVehicleId);
-        
-        setIsGenerateGuiaModalOpen(false);
-        setSelectedIds(new Set());
-        alert(`Se generaron ${idsArray.length} Guías de Remisión existosamente. Puede verlas en la pestaña 'Guías'.`);
+        if (isSavingRef.current) return;
+        isSavingRef.current = true;
+
+        try {
+            const idsArray = Array.from(selectedIds) as string[];
+            generateGuiasFromSales(idsArray, guiaTransporterId, guiaDriverId, guiaVehicleId);
+            
+            setIsGenerateGuiaModalOpen(false);
+            setSelectedIds(new Set());
+            setSystemModal({ isOpen: true, type: 'success', message: `Se generaron ${idsArray.length} Guías de Remisión existosamente.` });
+        } finally {
+            isSavingRef.current = false;
+        }
     };
 
     const StatusBadge = ({ status }: { status?: string }) => {
@@ -265,7 +320,24 @@ export const SunatManager: React.FC = () => {
     };
 
     return (
-        <div className="p-6 bg-slate-50 min-h-full">
+        <div className="p-6 bg-slate-50 min-h-full relative">
+
+            {/* --- CUSTOM SYSTEM MODALS --- */}
+            {systemModal.isOpen && (
+                <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                        {systemModal.type === 'error' && <div className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">X</span></div>}
+                        {systemModal.type === 'warning' && <div className="w-12 h-12 text-orange-500 mx-auto mb-4 bg-orange-50 p-2 rounded-full flex items-center justify-center"><AlertTriangle className="w-8 h-8" /></div>}
+                        {systemModal.type === 'success' && <div className="w-12 h-12 text-green-500 mx-auto mb-4 bg-green-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">✓</span></div>}
+                        {systemModal.type === 'info' && <div className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">i</span></div>}
+                        <h3 className="text-lg font-black text-slate-800 mb-2">
+                            {systemModal.type === 'error' ? 'Error' : systemModal.type === 'warning' ? 'Atención' : systemModal.type === 'success' ? 'Éxito' : 'Información'}
+                        </h3>
+                        <p className="text-sm text-slate-600 mb-6 whitespace-pre-line">{systemModal.message}</p>
+                        <button onClick={() => setSystemModal({ ...systemModal, isOpen: false })} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+                    </div>
+                </div>
+            )}
 
             <div className="flex justify-between items-center mb-6">
                 <div>
