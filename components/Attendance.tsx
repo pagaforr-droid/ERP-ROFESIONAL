@@ -89,7 +89,7 @@ export const Attendance: React.FC = () => {
       setIsLoading(true);
       try {
          const [employeesRes, recordsRes] = await Promise.all([
-            supabase.from('erp_employees').select('id, name, dni, is_active').eq('is_active', true),
+            supabase.from('erp_employees').select('id, name, dni, is_active, pin_code, photo_url').eq('is_active', true),
             supabase.from('attendance_records').select('*').order('check_in', { ascending: false })
          ]);
          
