@@ -47,6 +47,9 @@ ALTER TABLE erp_payroll_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE erp_employees ADD COLUMN IF NOT EXISTS pin_code VARCHAR(20);
 ALTER TABLE erp_employees ADD COLUMN IF NOT EXISTS photo_url TEXT;
 
+-- Permitir que attendance_records.user_id almacene el ID de erp_employees
+ALTER TABLE attendance_records DROP CONSTRAINT IF EXISTS fk_attend_user;
+
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS break_start TIMESTAMP WITH TIME ZONE;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS break_end TIMESTAMP WITH TIME ZONE;
 
