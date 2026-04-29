@@ -159,6 +159,10 @@ export interface CompanyConfig {
   sunat_api_url?: string;
   sunat_api_token?: string;
   
+  // API Consultas Externas (DNI/RUC)
+  api_dni_ruc_url?: string;
+  api_dni_ruc_token?: string;
+  
   // Impresion Masiva
   max_items_factura?: number;
   max_items_boleta?: number;

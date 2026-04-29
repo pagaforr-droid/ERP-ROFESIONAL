@@ -14,7 +14,6 @@ const generateUUID = () => {
    });
 };
 
-// ESTADO INICIAL EN BLANCO (CERO MOCK_DB)
 const INITIAL_COMPANY: CompanyConfig = {
    ruc: '',
    name: '',
@@ -24,7 +23,9 @@ const INITIAL_COMPANY: CompanyConfig = {
    currency_symbol: 'S/',
    email: '',
    phone: '',
-   series: []
+   series: [],
+   api_dni_ruc_url: '',
+   api_dni_ruc_token: ''
 };
 
 interface AppState {

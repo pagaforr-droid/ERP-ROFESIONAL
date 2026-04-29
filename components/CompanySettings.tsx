@@ -7,7 +7,7 @@ import { DocumentSeries } from '../types';
 export const CompanySettings: React.FC = () => {
   // Extraemos la compañía global y su función de actualización
   const { company: globalCompany, updateCompany: globalUpdateCompany } = useStore();
-  const [activeTab, setActiveTab] = useState<'GENERAL' | 'SERIES' | 'SUNAT'>('GENERAL');
+  const [activeTab, setActiveTab] = useState<'GENERAL' | 'SERIES' | 'SUNAT' | 'CONSULTAS'>('GENERAL');
   
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -29,7 +29,9 @@ export const CompanySettings: React.FC = () => {
     sunat_provider: '',
     sunat_api_url: '',
     sunat_api_token: '',
-    logo_url: ''
+    logo_url: '',
+    api_dni_ruc_url: '',
+    api_dni_ruc_token: ''
   });
 
   const [seriesList, setSeriesList] = useState<DocumentSeries[]>([]);
@@ -56,7 +58,9 @@ export const CompanySettings: React.FC = () => {
               sunat_provider: compData.sunat_provider || '',
               sunat_api_url: compData.sunat_api_url || '',
               sunat_api_token: compData.sunat_api_token || '',
-              logo_url: compData.logo_url || ''
+              logo_url: compData.logo_url || '',
+              api_dni_ruc_url: compData.api_dni_ruc_url || '',
+              api_dni_ruc_token: compData.api_dni_ruc_token || ''
             });
 
             // 2. Obtener Series Reales
@@ -258,6 +262,12 @@ export const CompanySettings: React.FC = () => {
           className={`flex-1 py-3 font-black text-sm flex items-center justify-center rounded-lg transition-all ${activeTab === 'SUNAT' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
         >
           <FileText className="w-4 h-4 mr-2" /> Facturación Electrónica (API)
+        </button>
+        <button
+          onClick={() => setActiveTab('CONSULTAS')}
+          className={`flex-1 py-3 font-black text-sm flex items-center justify-center rounded-lg transition-all ${activeTab === 'CONSULTAS' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}
+        >
+          <Search className="w-4 h-4 mr-2" /> Consultas DNI/RUC
         </button>
       </div>
 
@@ -500,6 +510,55 @@ export const CompanySettings: React.FC = () => {
               <button type="submit" disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold flex items-center shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50">
                 {isSaving ? <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> : <Save className="w-5 h-5 mr-2" />}
                 {isSaving ? 'Guardando...' : 'Guardar Credenciales Seguras'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* TAB 4: CONSULTAS DNI/RUC */}
+        {activeTab === 'CONSULTAS' && (
+          <form onSubmit={handleSaveSettings} className="p-8 max-w-3xl mx-auto animate-fade-in">
+            <div className="bg-blue-50 p-5 rounded-xl border border-blue-200 mb-8 flex items-start shadow-sm">
+              <div className="bg-blue-100 p-2.5 rounded-full mr-4 text-blue-700 shadow-inner">
+                <Search className="w-6 h-6" />
+              </div>
+              <div className="flex-1">
+                <h4 className="font-black text-blue-900 mb-1">API de Consultas DNI / RUC</h4>
+                <p className="text-xs text-blue-800 font-medium">
+                  Configure aquí el proveedor de consultas (ej. api.decolecta.com o apis.net.pe). El sistema usará esto para rellenar datos de clientes automáticamente.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-6 bg-white p-6 border border-slate-200 rounded-xl shadow-sm">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">URL del Endpoint Base</label>
+                <input
+                  type="url"
+                  placeholder="https://api.decolecta.com/v2/reniec/dni"
+                  className="w-full border-2 border-slate-200 p-3 rounded-lg text-blue-700 font-mono text-sm focus:border-blue-500 outline-none transition-colors"
+                  value={formData.api_dni_ruc_url}
+                  onChange={e => setFormData({ ...formData, api_dni_ruc_url: e.target.value })}
+                />
+                <p className="text-xs text-slate-500 mt-1 font-medium">Ejemplo: https://api.decolecta.com (el sistema añadirá automáticamente /v2/reniec/dni?numero=...)</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">Token de Acceso (Bearer)</label>
+                <input
+                  type="password"
+                  placeholder="••••••••••••••••••••••••••••••••••••••••••••••••"
+                  className="w-full border-2 border-slate-200 p-3 rounded-lg text-slate-900 font-mono text-sm focus:border-blue-500 outline-none transition-colors"
+                  value={formData.api_dni_ruc_token}
+                  onChange={e => setFormData({ ...formData, api_dni_ruc_token: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-8">
+              <button type="submit" disabled={isSaving} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-bold flex items-center shadow-lg shadow-blue-600/30 transition-all active:scale-95 disabled:opacity-50">
+                {isSaving ? <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> : <Save className="w-5 h-5 mr-2" />}
+                {isSaving ? 'Guardando...' : 'Guardar API de Consultas'}
               </button>
             </div>
           </form>

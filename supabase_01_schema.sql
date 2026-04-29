@@ -57,6 +57,8 @@ CREATE TABLE company_config (
     sunat_provider TEXT,
     sunat_api_url TEXT,
     sunat_api_token TEXT,
+    api_dni_ruc_url TEXT,
+    api_dni_ruc_token TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

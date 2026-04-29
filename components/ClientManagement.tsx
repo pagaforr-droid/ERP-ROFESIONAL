@@ -90,13 +90,25 @@ export const ClientManagement: React.FC = () => {
    };
 
    const handleNew = () => {
-      const nextCode = `CLI-${String(Date.now()).slice(-6)}`;
+      let maxCode = 0;
+      clients.forEach(c => {
+         const num = parseInt(c.code, 10);
+         if (!isNaN(num) && num > maxCode) maxCode = num;
+      });
+      const nextCode = String(maxCode + 1).padStart(6, '0');
       setFormData({ ...initialFormState, code: nextCode });
       setViewMode('DETAIL');
    };
 
    const handleSave = async (e: React.FormEvent) => {
       e.preventDefault();
+      
+      const duplicate = clients.find(c => c.code === formData.code && c.id !== formData.id);
+      if (duplicate) {
+          setSystemModal({ isOpen: true, type: 'error', message: 'El código de cliente ya existe. Por favor asigne uno diferente (sugerimos revisar el correlativo).' });
+          return;
+      }
+
       if (isSavingRef.current) return;
       isSavingRef.current = true;
       setIsSaving(true);
@@ -141,6 +153,52 @@ export const ClientManagement: React.FC = () => {
       return zone ? zone.assigned_seller_id : '---';
    };
 
+   const handleSearchDniRuc = async () => {
+       const { doc_type, doc_number } = formData;
+       if (!doc_number) {
+           setSystemModal({ isOpen: true, type: 'warning', message: 'Ingrese un número de documento.' });
+           return;
+       }
+       
+       const { company } = useStore.getState();
+       if (!company.api_dni_ruc_url || !company.api_dni_ruc_token) {
+           setSystemModal({ isOpen: true, type: 'warning', message: 'Debe configurar la API de Consultas DNI/RUC en Ajustes de Empresa.' });
+           return;
+       }
+
+       setIsLoading(true);
+       try {
+           const endpoint = doc_type === 'DNI' ? 'dni' : 'ruc';
+           const url = `${company.api_dni_ruc_url}/v2/reniec/${endpoint}?numero=${doc_number}`;
+           
+           const response = await fetch(url, {
+               headers: {
+                   'Authorization': `Bearer ${company.api_dni_ruc_token}`
+               }
+           });
+           
+           if (!response.ok) throw new Error('Documento no encontrado o error de API.');
+           
+           const data = await response.json();
+           
+           if (doc_type === 'DNI') {
+               const fullname = `${data.nombres || ''} ${data.apellidoPaterno || ''} ${data.apellidoMaterno || ''}`.trim();
+               setFormData(prev => ({ ...prev, name: fullname }));
+           } else {
+               setFormData(prev => ({ 
+                   ...prev, 
+                   name: data.razonSocial || prev.name, 
+                   address: data.direccion || prev.address,
+                   ubigeo: data.ubigeo || prev.ubigeo
+               }));
+           }
+       } catch (error: any) {
+           setSystemModal({ isOpen: true, type: 'error', message: 'Error en la consulta: ' + error.message });
+       } finally {
+           setIsLoading(false);
+       }
+   };
+
    if (viewMode === 'DETAIL') {
       return (
          <div className="flex flex-col h-full bg-slate-100 rounded-lg border border-slate-300 overflow-hidden font-sans text-sm relative">
@@ -173,7 +231,15 @@ export const ClientManagement: React.FC = () => {
 
             <div className="bg-slate-700 text-white p-3 flex justify-between items-center shadow-md z-10">
                <h2 className="font-bold flex items-center">
-                  {formData.id ? 'EDITAR CLIENTE' : 'NUEVO CLIENTE'} - <span className="ml-2 font-mono text-blue-300">{formData.code}</span>
+                  {formData.id ? 'EDITAR CLIENTE' : 'NUEVO CLIENTE'} - 
+                  <input 
+                     required 
+                     maxLength={6} 
+                     className="ml-2 w-24 bg-slate-800 text-blue-300 border border-slate-600 rounded px-2 py-1 font-mono outline-none focus:border-blue-400" 
+                     value={formData.code || ''} 
+                     onChange={e => setFormData({ ...formData, code: e.target.value.replace(/\D/g, '') })} 
+                     title="Código Numérico (Editable)"
+                  />
                </h2>
                <button onClick={() => !isSaving && setViewMode('LIST')} disabled={isSaving} className="bg-slate-600 hover:bg-slate-500 px-3 py-1.5 rounded font-bold text-xs border border-slate-500 disabled:opacity-50 transition-colors">
                   <ArrowLeft className="w-4 h-4 mr-1 inline" /> Volver
@@ -210,7 +276,9 @@ export const ClientManagement: React.FC = () => {
                                  </select>
                                  <div className="flex">
                                     <input required className="border-2 border-slate-200 p-2 rounded-l-lg w-40 font-mono font-bold text-slate-900 focus:border-blue-500 outline-none" placeholder="Número..." value={formData.doc_number} onChange={e => setFormData({ ...formData, doc_number: e.target.value })} />
-                                    <button type="button" className="bg-slate-800 hover:bg-slate-700 text-white px-4 rounded-r-lg text-xs font-bold transition-colors">« SUNAT</button>
+                                    <button type="button" onClick={handleSearchDniRuc} disabled={isLoading} className="bg-slate-800 hover:bg-slate-700 text-white px-4 rounded-r-lg text-xs font-bold transition-colors disabled:opacity-50 flex items-center">
+                                       {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 mr-1" />} Buscar
+                                    </button>
                                  </div>
                               </div>
                            </div>
