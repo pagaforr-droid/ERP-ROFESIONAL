@@ -10,6 +10,11 @@ export const CashFlow: React.FC = () => {
    const store = useStore();
    const [activeTab, setActiveTab] = useState<Tab>('DASHBOARD');
    const [isLoading, setIsLoading] = useState(true);
+   const isSavingRef = React.useRef(false);
+
+   const [systemModal, setSystemModal] = useState<{isOpen: boolean, type: 'info'|'warning'|'error'|'confirm', message: string, onConfirm?: () => void}>({ isOpen: false, type: 'info', message: '' });
+   const showAlert = (message: string, type: 'info'|'warning'|'error' = 'info') => setSystemModal({ isOpen: true, type, message });
+   const showConfirm = (message: string, onConfirm: () => void) => setSystemModal({ isOpen: true, type: 'confirm', message, onConfirm });
 
    // Filters & Global
    const [filterDateFrom, setFilterDateFrom] = useState(new Date().toISOString().split('T')[0]);
@@ -252,6 +257,8 @@ export const CashFlow: React.FC = () => {
 
       const handleSubmit = async () => {
          if (amount <= 0 || !catId || !date) return;
+         if (isSavingRef.current) return;
+         isSavingRef.current = true;
          setIsSaving(true);
          const cat = store.expenseCategories.find(c => c.id === catId);
 
@@ -282,23 +289,27 @@ export const CashFlow: React.FC = () => {
             }
             setShowModal(false);
          } catch (e: any) {
-            alert(`Error al guardar: ${e.message}`);
+            showAlert(`Error al guardar: ${e.message}`, 'error');
          } finally {
+            isSavingRef.current = false;
             setIsSaving(false);
          }
       };
 
       const handleDelete = async (id: string) => {
-         if (confirm("¿Estás seguro de eliminar este movimiento? Afectará el cuadre de caja actual.")) {
+         showConfirm("¿Estás seguro de eliminar este movimiento? Afectará el cuadre de caja actual.", async () => {
+            if (isSavingRef.current) return;
+            isSavingRef.current = true;
             setIsSaving(true);
             try {
                await store.deleteCashMovement(id);
             } catch (e: any) {
-               alert(`Error eliminando: ${e.message}`);
+               showAlert(`Error eliminando: ${e.message}`, 'error');
             } finally {
+               isSavingRef.current = false;
                setIsSaving(false);
             }
-         }
+         });
       };
 
       return (
@@ -479,6 +490,8 @@ export const CashFlow: React.FC = () => {
 
       const handleSaveSchedule = async () => {
          if (!formData.name || !formData.amount || !formData.category_id) return;
+         if (isSavingRef.current) return;
+         isSavingRef.current = true;
          
          try {
             if (editId) {
@@ -512,6 +525,8 @@ export const CashFlow: React.FC = () => {
             setFormData({ frequency: 'MONTHLY', amount: 0, next_due_date: new Date().toISOString().split('T')[0] });
          } catch(e: any) {
             setAlertState({show: true, type: 'ERROR', title: 'Error', message: 'No se pudo guardar la programación: ' + e.message});
+         } finally {
+            isSavingRef.current = false;
          }
       };
 
@@ -523,9 +538,12 @@ export const CashFlow: React.FC = () => {
             message: '¿Estás seguro de procesar este gasto? Se generará un egreso en la caja actual y se actualizará la próxima fecha de pago.',
             confirmText: 'Sí, Procesar Pago',
             onConfirm: async () => {
+               if (isSavingRef.current) return;
+               isSavingRef.current = true;
                setIsProcessing(true);
                const res = await store.processScheduledTransaction(txId, store.currentUser?.id || 'SISTEMA');
                setIsProcessing(false);
+               isSavingRef.current = false;
                if (res?.success) {
                   setAlertState({show: true, type: 'INFO', title: 'Éxito', message: 'Pago procesado correctamente.'});
                } else {
@@ -543,11 +561,15 @@ export const CashFlow: React.FC = () => {
             message: '¿Deseas eliminar este gasto fijo? Ya no se generarán pagos automáticos para él en el futuro.',
             confirmText: 'Eliminar',
             onConfirm: async () => {
+               if (isSavingRef.current) return;
+               isSavingRef.current = true;
                try {
                   await store.deleteScheduledTransaction(txId);
                   setAlertState({show: false, type: 'INFO', title: '', message: ''});
                } catch(e: any) {
                   setAlertState({show: true, type: 'ERROR', title: 'Error', message: 'No se pudo eliminar: ' + e.message});
+               } finally {
+                  isSavingRef.current = false;
                }
             }
          });
@@ -870,20 +892,25 @@ export const CashFlow: React.FC = () => {
 
       const handleOpen = async () => {
          if (openingAmount < 0) return;
+         if (isSavingRef.current) return;
+         isSavingRef.current = true;
          setIsProcessingSession(true);
          try {
             await store.openCashSession(openingAmount, store.currentUser?.id || 'SISTEMA');
             setOpeningAmount(0);
          } catch (error: any) {
-            alert(`Error al aperturar caja: ${error?.message || 'Revisa tu conexión'}`);
+            showAlert(`Error al aperturar caja: ${error?.message || 'Revisa tu conexión'}`, 'error');
          } finally {
+            isSavingRef.current = false;
             setIsProcessingSession(false);
          }
       };
 
       const handleClose = async () => {
          if (!activeSession) return;
-         if (confirm("¿Confirmar el cierre de caja y guardar el arqueo final? Esta acción no se puede deshacer.")) {
+         showConfirm("¿Confirmar el cierre de caja y guardar el arqueo final? Esta acción no se puede deshacer.", async () => {
+            if (isSavingRef.current) return;
+            isSavingRef.current = true;
             setIsProcessingSession(true);
             try {
                await store.closeCashSession(activeSession.id, {
@@ -899,11 +926,12 @@ export const CashFlow: React.FC = () => {
                setM5(0); setM2(0); setM1(0); setM05(0); setM02(0); setM01(0);
                setVouchers(0); setTransfers(0);
             } catch (error: any) {
-               alert(`Error al cerrar caja: ${error?.message || 'Verifica tu conexión'}`);
+               showAlert(`Error al cerrar caja: ${error?.message || 'Verifica tu conexión'}`, 'error');
             } finally {
+               isSavingRef.current = false;
                setIsProcessingSession(false);
             }
-         }
+         });
       };
 
       if (!activeSession) {
@@ -1137,7 +1165,36 @@ export const CashFlow: React.FC = () => {
    }
 
    return (
-      <div className="flex flex-col h-full space-y-4 font-sans text-sm">
+      <div className="flex flex-col h-full space-y-4 font-sans text-sm relative">
+
+         {/* --- CUSTOM SYSTEM MODAL --- */}
+         {systemModal.isOpen && (
+            <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+               <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                  {systemModal.type === 'error' && <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full" />}
+                  {systemModal.type === 'warning' && <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4 bg-amber-50 p-2 rounded-full" />}
+                  {systemModal.type === 'confirm' && <AlertTriangle className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full" />}
+                  {systemModal.type === 'info' && <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-4 bg-emerald-50 p-2 rounded-full" />}
+                  
+                  <h3 className="text-lg font-black text-slate-800 mb-2">
+                     {systemModal.type === 'error' ? 'Error' : systemModal.type === 'warning' ? 'Aviso' : systemModal.type === 'confirm' ? 'Confirmar Acción' : 'Información'}
+                  </h3>
+                  <p className="text-sm text-slate-600 mb-6">{systemModal.message}</p>
+                  
+                  <div className="flex justify-center gap-3">
+                     {systemModal.type === 'confirm' ? (
+                        <>
+                           <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-6 py-2 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">Cancelar</button>
+                           <button onClick={() => { setSystemModal({...systemModal, isOpen: false}); systemModal.onConfirm?.(); }} className="px-6 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Confirmar</button>
+                        </>
+                     ) : (
+                        <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+                     )}
+                  </div>
+               </div>
+            </div>
+         )}
+
          {/* Top Bar */}
          <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold text-slate-800 flex items-center">
