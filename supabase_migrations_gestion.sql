@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS erp_payroll_records (
 -- Tabla para el Control de Asistencia
 CREATE TABLE IF NOT EXISTS erp_attendance_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL, -- Reference to erp_users.id
+    employee_id UUID NOT NULL, -- Reference to erp_employees.id
     date DATE NOT NULL,
     check_in TIMESTAMP WITH TIME ZONE NOT NULL,
     check_out TIMESTAMP WITH TIME ZONE,

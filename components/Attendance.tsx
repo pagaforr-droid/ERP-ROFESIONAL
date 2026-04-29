@@ -4,7 +4,7 @@ import { Clock, User as UserIcon, LogIn, LogOut, Calendar, BarChart2, Lock, User
 import Webcam from 'react-webcam';
 
 export const Attendance: React.FC = () => {
-   const [users, setUsers] = useState<any[]>([]);
+   const [employees, setEmployees] = useState<any[]>([]);
    const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
    const [isLoading, setIsLoading] = useState(false);
 
@@ -12,13 +12,13 @@ export const Attendance: React.FC = () => {
    const [currentTime, setCurrentTime] = useState(new Date());
    const webcamRef = useRef<Webcam>(null);
 
-   const [authModal, setAuthModal] = useState<{ isOpen: boolean; userId: string | null; mode: 'IN' | 'OUT' | null }>({
-      isOpen: false, userId: null, mode: null
+   const [authModal, setAuthModal] = useState<{ isOpen: boolean; employeeId: string | null; mode: 'IN' | 'OUT' | null }>({
+      isOpen: false, employeeId: null, mode: null
    });
-   const [passwordInput, setPasswordInput] = useState('');
+   const [pinInput, setPinInput] = useState('');
    const [errorMsg, setErrorMsg] = useState('');
    const [isLoadingAuth, setIsLoadingAuth] = useState(false);
-   const passwordRef = useRef<HTMLInputElement>(null);
+   const pinRef = useRef<HTMLInputElement>(null);
 
    const [editingRecord, setEditingRecord] = useState<any | null>(null);
    const [editCheckIn, setEditCheckIn] = useState('');
@@ -31,12 +31,12 @@ export const Attendance: React.FC = () => {
    const fetchData = async () => {
       setIsLoading(true);
       try {
-         const [usersRes, recordsRes] = await Promise.all([
-            supabase.from('erp_users').select('id, name, username, role, password').eq('is_active', true).eq('requires_attendance', true),
+         const [employeesRes, recordsRes] = await Promise.all([
+            supabase.from('erp_employees').select('id, first_name, last_name, document_number').eq('status', 'ACTIVE'),
             supabase.from('erp_attendance_records').select('*').order('check_in', { ascending: false })
          ]);
          
-         if (usersRes.data) setUsers(usersRes.data);
+         if (employeesRes.data) setEmployees(employeesRes.data);
          if (recordsRes.data) setAttendanceRecords(recordsRes.data);
       } catch (err) {
          console.error('Error fetching data', err);
@@ -56,33 +56,33 @@ export const Attendance: React.FC = () => {
 
    useEffect(() => {
       if (authModal.isOpen) {
-         setTimeout(() => passwordRef.current?.focus(), 100);
+         setTimeout(() => pinRef.current?.focus(), 100);
       }
    }, [authModal.isOpen]);
 
-   const getUserStatus = (userId: string) => {
+   const getEmployeeStatus = (employeeId: string) => {
       const today = new Date().toISOString().split('T')[0];
-      return attendanceRecords.find(r => r.user_id === userId && r.date === today && r.status === 'OPEN');
+      return attendanceRecords.find(r => r.employee_id === employeeId && r.date === today && r.status === 'OPEN');
    };
 
-   const handleUserClick = (userId: string) => {
-      const currentRecord = getUserStatus(userId);
-      setAuthModal({ isOpen: true, userId, mode: currentRecord ? 'OUT' : 'IN' });
-      setPasswordInput('');
+   const handleEmployeeClick = (employeeId: string) => {
+      const currentRecord = getEmployeeStatus(employeeId);
+      setAuthModal({ isOpen: true, employeeId, mode: currentRecord ? 'OUT' : 'IN' });
+      setPinInput('');
       setErrorMsg('');
    };
 
    const handleAuthSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
-      if (!authModal.userId) return;
+      if (!authModal.employeeId) return;
 
-      const user = users.find(u => u.id === authModal.userId);
+      const employee = employees.find(e => e.id === authModal.employeeId);
 
-      // Verify Password - since some users don't have passwords in mock, we allow simple check
-      if (user?.password && user.password !== passwordInput && passwordInput !== 'admin') {
-         setErrorMsg('Contraseña incorrecta. Intente nuevamente.');
-         setPasswordInput('');
-         passwordRef.current?.focus();
+      // Verify PIN (Document Number)
+      if (employee?.document_number && employee.document_number !== pinInput && pinInput !== 'admin') {
+         setErrorMsg('PIN (DNI) incorrecto. Intente nuevamente.');
+         setPinInput('');
+         pinRef.current?.focus();
          return;
       }
 
@@ -115,7 +115,7 @@ export const Attendance: React.FC = () => {
 
          if (authModal.mode === 'IN') {
             const payload = {
-               user_id: authModal.userId,
+               employee_id: authModal.employeeId,
                date: todayDate,
                check_in: isoNow,
                photo_in: photoBase64,
@@ -126,7 +126,7 @@ export const Attendance: React.FC = () => {
             const { error } = await supabase.from('erp_attendance_records').insert([payload]);
             if (error) throw error;
          } else {
-            const currentRecord = getUserStatus(authModal.userId);
+            const currentRecord = getEmployeeStatus(authModal.employeeId);
             if (currentRecord) {
                const checkInTime = new Date(currentRecord.check_in).getTime();
                const diffMs = now.getTime() - checkInTime;
@@ -146,8 +146,8 @@ export const Attendance: React.FC = () => {
          }
 
          await fetchData();
-         setAuthModal({ isOpen: false, userId: null, mode: null });
-         setPasswordInput('');
+         setAuthModal({ isOpen: false, employeeId: null, mode: null });
+         setPinInput('');
       } catch (error: any) {
          console.error(error);
          setErrorMsg("Error al registrar: " + error.message);
@@ -171,7 +171,7 @@ export const Attendance: React.FC = () => {
 
    const reportData = useMemo(() => {
       return attendanceRecords.filter(r => {
-         const matchUser = reportUser === 'ALL' || r.user_id === reportUser;
+         const matchUser = reportUser === 'ALL' || r.employee_id === reportUser;
          const matchMonth = r.date.startsWith(reportMonth);
          return matchUser && matchMonth;
       });
@@ -183,7 +183,7 @@ export const Attendance: React.FC = () => {
          if (r.check_in && r.check_out) {
             const duration = new Date(r.check_out).getTime() - new Date(r.check_in).getTime();
             if (duration > 0) {
-               aggregates[r.user_id] = (aggregates[r.user_id] || 0) + duration;
+               aggregates[r.employee_id] = (aggregates[r.employee_id] || 0) + duration;
             }
          }
       });
@@ -276,14 +276,14 @@ export const Attendance: React.FC = () => {
 
                <div className="flex-1 overflow-auto p-8">
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-                     {users.map(user => {
-                        const activeRecord = getUserStatus(user.id);
+                     {employees.map(employee => {
+                        const activeRecord = getEmployeeStatus(employee.id);
                         const isOnShift = !!activeRecord;
 
                         return (
                            <button
-                              key={user.id}
-                              onClick={() => handleUserClick(user.id)}
+                              key={employee.id}
+                              onClick={() => handleEmployeeClick(employee.id)}
                               className={`relative group flex flex-col items-center p-6 rounded-2xl border-2 transition-all transform hover:-translate-y-1 hover:shadow-xl bg-white ${isOnShift ? 'border-green-400 shadow-green-100' : 'border-slate-200 hover:border-blue-400 shadow-sm'}`}
                            >
                               <div className={`absolute top-4 right-4 w-3 h-3 rounded-full ${isOnShift ? 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]' : 'bg-slate-300'}`}></div>
@@ -292,8 +292,8 @@ export const Attendance: React.FC = () => {
                                  <UserIcon className="w-12 h-12" />
                               </div>
 
-                              <h3 className="font-bold text-lg text-slate-800 mb-1">{user.name}</h3>
-                              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">{user.role}</p>
+                              <h3 className="font-bold text-lg text-slate-800 mb-1">{employee.first_name} {employee.last_name}</h3>
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">DNI: {employee.document_number}</p>
 
                               {isOnShift ? (
                                  <div className="bg-green-50 text-green-800 px-4 py-2 rounded-xl flex flex-col items-center border border-green-200 w-full">
@@ -310,10 +310,10 @@ export const Attendance: React.FC = () => {
                            </button>
                         );
                      })}
-                     {users.length === 0 && !isLoading && (
+                     {employees.length === 0 && !isLoading && (
                         <div className="col-span-full text-center text-slate-500 p-12">
                            <UserIcon className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-                           <p>No hay usuarios configurados con control de asistencia.</p>
+                           <p>No hay colaboradores registrados en el sistema.</p>
                         </div>
                      )}
                   </div>
@@ -323,7 +323,7 @@ export const Attendance: React.FC = () => {
                   <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
                      <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
                         <div className={`p-8 text-center ${authModal.mode === 'IN' ? 'bg-gradient-to-b from-green-500 to-green-600' : 'bg-gradient-to-b from-rose-500 to-rose-600'} text-white relative`}>
-                           <button onClick={() => setAuthModal({ isOpen: false, userId: null, mode: null })} className="absolute top-4 right-4 text-white/70 hover:text-white">
+                           <button onClick={() => setAuthModal({ isOpen: false, employeeId: null, mode: null })} className="absolute top-4 right-4 text-white/70 hover:text-white">
                               <X className="w-6 h-6" />
                            </button>
                            {authModal.mode === 'IN' ? <LogIn className="w-16 h-16 mx-auto mb-3 opacity-90" /> : <LogOut className="w-16 h-16 mx-auto mb-3 opacity-90" />}
@@ -331,7 +331,7 @@ export const Attendance: React.FC = () => {
                               {authModal.mode === 'IN' ? 'Entrada' : 'Salida'}
                            </h3>
                            <p className="text-white/90 text-sm font-medium">
-                              {users.find(u => u.id === authModal.userId)?.name}
+                              {employees.find(e => e.id === authModal.employeeId)?.first_name} {employees.find(e => e.id === authModal.employeeId)?.last_name}
                            </p>
                         </div>
 
@@ -341,15 +341,15 @@ export const Attendance: React.FC = () => {
                               <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg" videoConstraints={{ facingMode: "user" }} />
                            </div>
 
-                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 text-center">Clave de Seguridad</label>
+                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 text-center">PIN (DNI o Clave)</label>
                            <div className="relative mb-6">
                               <Lock className="absolute left-4 top-3.5 text-slate-400 w-6 h-6" />
                               <input
-                                 ref={passwordRef}
+                                 ref={pinRef}
                                  type="password"
                                  className="w-full pl-12 pr-4 py-3 border-2 border-slate-200 rounded-xl text-center text-2xl font-black tracking-[0.5em] focus:border-blue-500 focus:ring-0 outline-none transition-colors"
-                                 value={passwordInput}
-                                 onChange={e => setPasswordInput(e.target.value)}
+                                 value={pinInput}
+                                 onChange={e => setPinInput(e.target.value)}
                                  placeholder="••••••"
                                  autoComplete="off"
                                  disabled={isLoadingAuth}
@@ -364,7 +364,7 @@ export const Attendance: React.FC = () => {
 
                            <button
                               type="submit"
-                              disabled={!passwordInput || isLoadingAuth}
+                              disabled={!pinInput || isLoadingAuth}
                               className={`w-full py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all active:scale-95 flex justify-center items-center ${authModal.mode === 'IN' ? 'bg-green-600 hover:bg-green-700 shadow-green-600/30' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/30'} ${isLoadingAuth ? 'opacity-70 cursor-wait' : ''}`}
                            >
                               {isLoadingAuth ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'CONFIRMAR MARCAJE'}
@@ -396,7 +396,7 @@ export const Attendance: React.FC = () => {
                         onChange={e => setReportUser(e.target.value)}
                      >
                         <option value="ALL">Todos los colaboradores</option>
-                        {users.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                        {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
                      </select>
                   </div>
                </div>
@@ -406,12 +406,12 @@ export const Attendance: React.FC = () => {
                      <BarChart2 className="w-4 h-4 mr-2" /> Resumen Acumulado
                   </h3>
                   <div className="flex gap-4">
-                     {Object.entries(monthlyAggregates).map(([userId, totalMs]) => {
-                        const user = users.find(u => u.id === userId);
-                        if (!user || (reportUser !== 'ALL' && reportUser !== userId)) return null;
+                     {Object.entries(monthlyAggregates).map(([empId, totalMs]) => {
+                        const employee = employees.find(e => e.id === empId);
+                        if (!employee || (reportUser !== 'ALL' && reportUser !== empId)) return null;
                         return (
-                           <div key={userId} className="bg-slate-50 p-4 rounded-xl border border-slate-200 min-w-[220px]">
-                              <div className="font-bold text-slate-800 mb-2 truncate">{user.name}</div>
+                           <div key={empId} className="bg-slate-50 p-4 rounded-xl border border-slate-200 min-w-[220px]">
+                              <div className="font-bold text-slate-800 mb-2 truncate">{employee.first_name} {employee.last_name}</div>
                               <div className="text-3xl font-mono font-black text-blue-600">{formatDuration(Number(totalMs))}</div>
                               <div className="text-[10px] font-bold text-slate-400 uppercase mt-1">Horas Registradas</div>
                            </div>
@@ -439,7 +439,7 @@ export const Attendance: React.FC = () => {
                      </thead>
                      <tbody className="divide-y divide-slate-100">
                         {reportData.map(r => {
-                           const user = users.find(u => u.id === r.user_id);
+                           const employee = employees.find(e => e.id === r.employee_id);
                            const durationMs = (r.check_out && r.check_in)
                               ? new Date(r.check_out).getTime() - new Date(r.check_in).getTime()
                               : 0;
@@ -447,7 +447,7 @@ export const Attendance: React.FC = () => {
                            return (
                               <tr key={r.id} className="hover:bg-slate-50 group">
                                  <td className="p-4 font-mono font-medium text-slate-600">{r.date}</td>
-                                 <td className="p-4 font-bold text-slate-800">{user?.name || 'Usuario Eliminado'}</td>
+                                 <td className="p-4 font-bold text-slate-800">{employee ? `${employee.first_name} ${employee.last_name}` : 'Desconocido'}</td>
                                  <td className="p-4 text-center">
                                     <span className="bg-green-100 text-green-800 px-2 py-1 rounded-lg font-mono font-bold text-xs">{formatTime(r.check_in)}</span>
                                  </td>
