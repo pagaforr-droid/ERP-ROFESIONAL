@@ -964,13 +964,18 @@ export const DispatchLiquidationComp: React.FC = () => {
       try {
          const res = await store.confirmDispatchLiquidationKardex(actionTargetId, store.currentUser?.id as string);
          if (res.success) {
-         await fetchData();
-         showSystemAlert("Kardex Confirmado", res.msg, "success");
-      } else {
-         showSystemAlert("Error", res.msg, "error");
+            await fetchData();
+            showSystemAlert("Kardex Confirmado", res.msg, "success");
+         } else {
+            showSystemAlert("Error", res.msg, "error");
+         }
+      } catch (err: any) {
+         showSystemAlert("Error", err.message, "error");
+      } finally {
+         isSavingRef.current = false;
+         setActionTargetId(null);
+         if (activeModal === 'CONFIRM_KARDEX') setActiveModal('NONE');
       }
-      setActionTargetId(null);
-      if (activeModal === 'CONFIRM_KARDEX') setActiveModal('NONE');
    };
 
    // --- RENDERS ---
