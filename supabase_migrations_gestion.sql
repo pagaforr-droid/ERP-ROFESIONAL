@@ -42,9 +42,15 @@ CREATE TABLE IF NOT EXISTS erp_payroll_records (
 ALTER TABLE erp_employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE erp_salary_advances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE erp_payroll_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE erp_attendance_records ENABLE ROW LEVEL SECURITY;
 
+-- Clean up unused table if it was created previously
+DROP TABLE IF EXISTS erp_attendance_records CASCADE;
+
+DROP POLICY IF EXISTS "Enable read/write access for all users on erp_employees" ON erp_employees;
 CREATE POLICY "Enable read/write access for all users on erp_employees" ON erp_employees FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable read/write access for all users on erp_salary_advances" ON erp_salary_advances;
 CREATE POLICY "Enable read/write access for all users on erp_salary_advances" ON erp_salary_advances FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable read/write access for all users on erp_payroll_records" ON erp_payroll_records;
 CREATE POLICY "Enable read/write access for all users on erp_payroll_records" ON erp_payroll_records FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Enable read/write access for all users on erp_attendance_records" ON erp_attendance_records FOR ALL USING (true) WITH CHECK (true);
