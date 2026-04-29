@@ -64,17 +64,6 @@ export const Dispatch: React.FC = () => {
          if (pData.data) setProducts(pData.data as Product[]);
          if (supData.data) setSuppliers(supData.data);
 
-         // Fetch pending sales
-         const { data: salesData, error: salesError } = await supabase
-            .from('sales')
-            .select(`
-               *,
-               items:sale_items(*)
-            `)
-            .in('dispatch_status', ['pending', 'assigned']); // Need assigned for editing
-
-         if (salesError) throw salesError;
-
          // Fetch all dispatches for history
          const { data: dispatchData, error: dispatchError } = await supabase
             .from('dispatch_sheets')
@@ -95,7 +84,36 @@ export const Dispatch: React.FC = () => {
             sale_ids: dsSalesData?.filter(ds => ds.dispatch_sheet_id === d.id).map(ds => ds.sale_id) || []
          })) as DispatchSheet[];
 
-         setSales((salesData || []) as Sale[]);
+         // Identify sale_ids that belong to active dispatches so we definitely fetch them
+         const activeSaleIds = finalDispatches
+            .filter(d => d.status === 'pending')
+            .flatMap(d => d.sale_ids);
+
+         // Fetch pending/assigned sales
+         const { data: pendingSalesData, error: salesError } = await supabase
+            .from('sales')
+            .select(`*, items:sale_items(*)`)
+            .in('dispatch_status', ['pending', 'assigned']);
+
+         if (salesError) throw salesError;
+
+         let allSales = [...(pendingSalesData || [])];
+         const fetchedSaleIds = new Set(allSales.map(s => s.id));
+         const missingSaleIds = activeSaleIds.filter(id => !fetchedSaleIds.has(id));
+
+         // Fetch any missing sales that are part of active dispatches (e.g. already delivered)
+         if (missingSaleIds.length > 0) {
+            const { data: missingSalesData } = await supabase
+               .from('sales')
+               .select(`*, items:sale_items(*)`)
+               .in('id', missingSaleIds);
+            
+            if (missingSalesData) {
+               allSales = [...allSales, ...missingSalesData];
+            }
+         }
+
+         setSales(allSales as Sale[]);
          setDispatchSheets(finalDispatches);
       } catch (error: any) {
          console.error('Error fetching dispatch data:', error);
