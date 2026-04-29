@@ -11,6 +11,11 @@ export const CollectionConsolidation: React.FC = () => {
    const { collectionRecords, collectionPlanillas, sellers, currentUser, sales, users, clients } = useStore();
 
    // --- EXTENDED STATE (Moved to top to prevent ReferenceError) ---
+   const isSavingRef = React.useRef(false);
+   const [systemModal, setSystemModal] = useState<{isOpen: boolean, type: 'info'|'warning'|'error'|'confirm', message: string, onConfirm?: () => void}>({ isOpen: false, type: 'info', message: '' });
+   const showAlert = (message: string, type: 'info'|'warning'|'error' = 'info') => setSystemModal({ isOpen: true, type, message });
+   const showConfirm = (message: string, onConfirm: () => void) => setSystemModal({ isOpen: true, type: 'confirm', message, onConfirm });
+
    const [isSessionOpen, setIsSessionOpen] = useState(false);
    const [expenseCategories, setExpenseCategories] = useState<any[]>([]);
    const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
@@ -246,6 +251,8 @@ export const CollectionConsolidation: React.FC = () => {
    const handleConfirmProcess = async () => {
       setShowConfirmModal(null);
       setLastTotal(totals);
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
       setIsProcessing(true);
 
       try {
@@ -263,8 +270,9 @@ export const CollectionConsolidation: React.FC = () => {
 
          if (error) {
             console.error('Supabase Error:', error);
-            alert(`Error al procesar planilla: ${error.message}`);
+            showAlert(`Error al procesar planilla: ${error.message}`, 'error');
             setIsProcessing(false);
+            isSavingRef.current = false;
             return;
          }
 
@@ -273,11 +281,13 @@ export const CollectionConsolidation: React.FC = () => {
          setPlanillaGlosa('');
          if (editingPlanillaData?.type === 'PENDING') setEditingPlanillaData(null);
          setIsProcessing(false);
+         isSavingRef.current = false;
          setShowSuccessModal(true);
       } catch (error) {
          console.error(error);
          setIsProcessing(false);
-         alert("Ocurrió un error al procesar la planilla.");
+         isSavingRef.current = false;
+         showAlert("Ocurrió un error al procesar la planilla.", 'error');
       }
    };
 
@@ -377,6 +387,8 @@ export const CollectionConsolidation: React.FC = () => {
    const handleManualConfirmProcess = async () => {
       setShowConfirmModal(null);
       setLastTotal(manualTotals);
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
       setIsProcessing(true);
 
       try {
@@ -396,8 +408,9 @@ export const CollectionConsolidation: React.FC = () => {
 
          if (error) {
             console.error('Supabase Error:', error);
-            alert(`Error al procesar planilla manual: ${error.message}`);
+            showAlert(`Error al procesar planilla manual: ${error.message}`, 'error');
             setIsProcessing(false);
+            isSavingRef.current = false;
             return;
          }
 
@@ -406,11 +419,13 @@ export const CollectionConsolidation: React.FC = () => {
          setPlanillaGlosa('');
          if (editingPlanillaData?.type === 'MANUAL') setEditingPlanillaData(null);
          setIsProcessing(false);
+         isSavingRef.current = false;
          setShowSuccessModal(true);
       } catch (error) {
          console.error(error);
          setIsProcessing(false);
-         alert("Ocurrió un error al procesar la planilla manual.");
+         isSavingRef.current = false;
+         showAlert("Ocurrió un error al procesar la planilla manual.", 'error');
       }
    };
 
@@ -540,6 +555,8 @@ export const CollectionConsolidation: React.FC = () => {
 
    const confirmAnnulPlanilla = async () => {
       if (showAnnulModal) {
+         if (isSavingRef.current) return;
+         isSavingRef.current = true;
          try {
             const { error } = await supabase.rpc('annul_collection_planilla', {
                p_planilla_id: showAnnulModal,
@@ -555,7 +572,9 @@ export const CollectionConsolidation: React.FC = () => {
             }
          } catch (error: any) {
             console.error("Error al anular:", error);
-            alert(`Error al anular la planilla: ${error.message}`);
+            showAlert(`Error al anular la planilla: ${error.message}`, 'error');
+         } finally {
+            isSavingRef.current = false;
          }
       }
    };
@@ -567,6 +586,9 @@ export const CollectionConsolidation: React.FC = () => {
 
          const planillaRecords = collectionRecords.filter(r => r.planilla_id === p.id);
          const wasManual = planillaRecords.every(r => r.seller_id === null);
+
+         if (isSavingRef.current) return;
+         isSavingRef.current = true;
 
          try {
             const { error } = await supabase.rpc('revert_planilla_for_edit', {
@@ -617,27 +639,34 @@ export const CollectionConsolidation: React.FC = () => {
             setShowEditPlanillaId(null);
          } catch (error: any) {
             console.error("Error al revertir la planilla:", error);
-            alert(`Error al revertir la planilla para edición: ${error.message}`);
+            showAlert(`Error al revertir la planilla para edición: ${error.message}`, 'error');
+         } finally {
+            isSavingRef.current = false;
          }
       }
    };
 
    const handleRemoveRecordFromPlanilla = async (recordId: string) => {
       if (!selectedPlanillaId) return;
-      if (!window.confirm("¿Está seguro de extraer este documento de la planilla guardada? Esto recalculará los saldos automáticamente.")) return;
-      try {
-         const { error } = await supabase.rpc('remove_record_from_planilla', {
-            p_planilla_id: selectedPlanillaId,
-            p_record_id: recordId
-         });
+      showConfirm("¿Está seguro de extraer este documento de la planilla guardada? Esto recalculará los saldos automáticamente.", async () => {
+         if (isSavingRef.current) return;
+         isSavingRef.current = true;
+         try {
+            const { error } = await supabase.rpc('remove_record_from_planilla', {
+               p_planilla_id: selectedPlanillaId,
+               p_record_id: recordId
+            });
 
-         if (error) throw error;
+            if (error) throw error;
 
-         await syncSupabaseData();
-      } catch (error: any) {
-         console.error("Error al remover el registro:", error);
-         alert(`Error al intentar extraer el documento: ${error.message}`);
-      }
+            await syncSupabaseData();
+         } catch (error: any) {
+            console.error("Error al remover el registro:", error);
+            showAlert(`Error al intentar extraer el documento: ${error.message}`, 'error');
+         } finally {
+            isSavingRef.current = false;
+         }
+      });
    };
 
    // --- RENDER HELPERS ---
@@ -710,6 +739,34 @@ export const CollectionConsolidation: React.FC = () => {
 
    return (
       <div className="flex flex-col h-full space-y-4 font-sans text-sm relative print:bg-white print:p-0">
+
+         {/* --- CUSTOM SYSTEM MODAL --- */}
+         {systemModal.isOpen && (
+            <div className="absolute inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+               <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                  {systemModal.type === 'error' && <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full" />}
+                  {systemModal.type === 'warning' && <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4 bg-amber-50 p-2 rounded-full" />}
+                  {systemModal.type === 'confirm' && <AlertTriangle className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full" />}
+                  {systemModal.type === 'info' && <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-4 bg-emerald-50 p-2 rounded-full" />}
+                  
+                  <h3 className="text-lg font-black text-slate-800 mb-2">
+                     {systemModal.type === 'error' ? 'Error' : systemModal.type === 'warning' ? 'Aviso' : systemModal.type === 'confirm' ? 'Confirmar Acción' : 'Información'}
+                  </h3>
+                  <p className="text-sm text-slate-600 mb-6">{systemModal.message}</p>
+                  
+                  <div className="flex justify-center gap-3">
+                     {systemModal.type === 'confirm' ? (
+                        <>
+                           <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-6 py-2 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">Cancelar</button>
+                           <button onClick={() => { setSystemModal({...systemModal, isOpen: false}); systemModal.onConfirm?.(); }} className="px-6 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Confirmar</button>
+                        </>
+                     ) : (
+                        <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+                     )}
+                  </div>
+               </div>
+            </div>
+         )}
 
          {renderPrintablePlanilla()}
 
