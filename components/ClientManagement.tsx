@@ -194,11 +194,9 @@ export const ClientManagement: React.FC = () => {
            const endpointPath = doc_type === 'DNI' ? '/v1/reniec/dni' : '/v1/sunat/ruc';
            const url = `${baseUrl}${endpointPath}?numero=${doc_number}`;
            
-           const response = await fetch(url, {
-               headers: {
-                   'Authorization': `Bearer ${company.api_dni_ruc_token}`
-               }
-           });
+           // Usamos el proxy del backend para evitar errores de CORS en el navegador
+           const proxyUrl = `/api/external-query?url=${encodeURIComponent(url)}&token=${encodeURIComponent(company.api_dni_ruc_token || '')}`;
+           const response = await fetch(proxyUrl);
            
            if (!response.ok) throw new Error('Documento no encontrado o error de API.');
            
