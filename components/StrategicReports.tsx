@@ -267,73 +267,192 @@ export const StrategicReports: React.FC = () => {
 
      return sellers.map(seller => {
         const sellerZones = zones.filter(z => z.assigned_seller_id === seller.id).map(z => z.id);
-        const sellerClients = clients.filter(c => sellerZones.includes(c.zone_id)).map(c => c.id);
+        
+        let globalSales = 0;
+        const supplierSalesMap: Record<string, number> = {};
 
-        let currentSales = 0;
         validSales.forEach(s => {
            const c = clients.find(cl => cl.id === s.client_id || cl.doc_number === s.client_ruc);
            if (c && sellerZones.includes(c.zone_id)) {
-               currentSales += s.total;
+               if (s.items && Array.isArray(s.items)) {
+                  s.items.forEach((item: any) => {
+                     const product = products.find(p => p.id === item.product_id);
+                     if (product && product.supplier_id) {
+                        supplierSalesMap[product.supplier_id] = (supplierSalesMap[product.supplier_id] || 0) + (item.total_price || 0);
+                     }
+                     globalSales += (item.total_price || 0);
+                  });
+               }
            }
         });
 
         const periodStr = dateFrom.substring(0, 7);
-        const quotaRow = quotas.find(q => q.seller_id === seller.id && q.period === periodStr && q.target_type === 'GLOBAL');
-        const assignedQuota = quotaRow?.amount || 0;
+        const globalQuotaRow = quotas.find(q => q.seller_id === seller.id && q.period === periodStr && q.target_type === 'GLOBAL');
+        const globalQuota = globalQuotaRow?.amount || 0;
 
-        const projected = (currentSales / daysPassed) * totalDaysInRange;
-        const projPct = assignedQuota > 0 ? (projected / assignedQuota) * 100 : 0;
-        const currentPct = assignedQuota > 0 ? (currentSales / assignedQuota) * 100 : 0;
+        const globalProjected = (globalSales / daysPassed) * totalDaysInRange;
+        const globalProjPct = globalQuota > 0 ? (globalProjected / globalQuota) * 100 : 0;
+        const globalPct = globalQuota > 0 ? (globalSales / globalQuota) * 100 : 0;
+
+        const supplierRows: any[] = [];
+        suppliers.forEach(supplier => {
+           const quotaRow = quotas.find(q => q.seller_id === seller.id && q.period === periodStr && q.target_type === 'SUPPLIER' && q.target_id === supplier.id);
+           const assignedQuota = quotaRow?.amount || 0;
+           const currentSales = supplierSalesMap[supplier.id] || 0;
+           
+           if (assignedQuota > 0 || currentSales > 0) {
+              const projected = (currentSales / daysPassed) * totalDaysInRange;
+              const projPct = assignedQuota > 0 ? (projected / assignedQuota) * 100 : 0;
+              const currentPct = assignedQuota > 0 ? (currentSales / assignedQuota) * 100 : 0;
+              
+              supplierRows.push({
+                 supplierId: supplier.id,
+                 supplierName: supplier.name,
+                 assignedQuota,
+                 currentSales,
+                 currentPct,
+                 projected,
+                 projPct,
+                 gap: assignedQuota - projected
+              });
+           }
+        });
 
         return {
            seller,
-           assignedQuota,
-           currentSales,
-           currentPct,
-           projected,
-           projPct,
-           gap: assignedQuota - projected
+           globalQuota,
+           globalSales,
+           globalPct,
+           globalProjected,
+           globalProjPct,
+           globalGap: globalQuota - globalProjected,
+           suppliers: supplierRows.sort((a,b) => b.currentSales - a.currentSales)
         };
-     }).sort((a, b) => b.currentSales - a.currentSales);
-  }, [sales, activeTab, dateFrom, dateTo, sellers, zones, clients, quotas]);
+     }).sort((a, b) => b.globalSales - a.globalSales);
+  }, [sales, activeTab, dateFrom, dateTo, sellers, zones, clients, quotas, suppliers, products]);
 
   // --- EXPORT LOGIC ---
   const handleExportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(processedData.rows.map(r => ({
-      'Segmento': r.label,
-      'Ventas (S/)': r.value.toFixed(2),
-      'Costo Aprox (S/)': r.cost.toFixed(2),
-      'Margen Bruto (S/)': r.margin.toFixed(2),
-      'Participación (%)': r.percentage.toFixed(2),
-      'Cant. Items': r.itemsSold,
-      'Cobertura (Clientes)': r.clients.size
-    })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Reporte Estratégico");
-    XLSX.writeFile(wb, `Reporte_${groupBy}_${dateFrom}_al_${dateTo}.xlsx`);
+    if (activeTab === 'SELLER_ADVANCE') {
+        const flatData: any[] = [];
+        sellerAdvanceData.forEach(row => {
+            flatData.push({
+                'Vendedor': row.seller.name,
+                'Proveedor / Meta': 'META GLOBAL',
+                'Cuota Mes (S/)': row.globalQuota.toFixed(2),
+                'Venta Actual (S/)': row.globalSales.toFixed(2),
+                'Avance %': row.globalPct.toFixed(2),
+                'Proyección (S/)': row.globalProjected.toFixed(2),
+                'Proj. %': row.globalProjPct.toFixed(2)
+            });
+            row.suppliers.forEach((sup: any) => {
+               flatData.push({
+                'Vendedor': row.seller.name,
+                'Proveedor / Meta': sup.supplierName,
+                'Cuota Mes (S/)': sup.assignedQuota.toFixed(2),
+                'Venta Actual (S/)': sup.currentSales.toFixed(2),
+                'Avance %': sup.currentPct.toFixed(2),
+                'Proyección (S/)': sup.projected.toFixed(2),
+                'Proj. %': sup.projPct.toFixed(2)
+               });
+            });
+        });
+        const ws = XLSX.utils.json_to_sheet(flatData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Avance Vendedores");
+        XLSX.writeFile(wb, `Avance_Vendedores_${dateFrom}_al_${dateTo}.xlsx`);
+    } else {
+        const ws = XLSX.utils.json_to_sheet(processedData.rows.map(r => ({
+          'Segmento': r.label,
+          'Ventas (S/)': r.value.toFixed(2),
+          'Costo Aprox (S/)': r.cost.toFixed(2),
+          'Margen Bruto (S/)': r.margin.toFixed(2),
+          'Participación (%)': r.percentage.toFixed(2),
+          'Cant. Items': r.itemsSold,
+          'Cobertura (Clientes)': r.clients.size
+        })));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Reporte Estratégico");
+        XLSX.writeFile(wb, `Reporte_${groupBy}_${dateFrom}_al_${dateTo}.xlsx`);
+    }
   };
 
   const handleExportPDF = () => {
     const doc = new jsPDF();
+    
+    // Professional Header
     doc.setFontSize(16);
-    doc.text(`Reporte Estratégico - Análisis por ${groupBy}`, 14, 20);
-    doc.setFontSize(10);
-    doc.text(`Periodo: ${dateFrom} al ${dateTo}`, 14, 28);
-    doc.text(`Total Ventas: S/ ${processedData.kpis.totalSales.toFixed(2)}`, 14, 34);
+    doc.setTextColor(30, 58, 138); // Blue 900
+    doc.text("ERP PROFESIONAL - REPORTE DE BUSINESS INTELLIGENCE", 14, 20);
     
-    autoTable(doc, {
-      startY: 40,
-      head: [['Segmento', 'Ventas (S/)', 'Margen (S/)', 'Part. %', 'Cobertura']],
-      body: processedData.rows.map(r => [
-         r.label, 
-         `S/ ${r.value.toFixed(2)}`, 
-         `S/ ${r.margin.toFixed(2)}`, 
-         `${r.percentage.toFixed(1)}%`,
-         r.clients.size
-      ]),
-    });
+    doc.setFontSize(11);
+    doc.setTextColor(100);
     
-    doc.save(`Reporte_${groupBy}_${dateFrom}_al_${dateTo}.pdf`);
+    if (activeTab === 'SELLER_ADVANCE') {
+        doc.text(`Módulo: Avance Detallado por Vendedor y Proveedor`, 14, 28);
+        doc.setFontSize(9);
+        doc.text(`Periodo evaluado: ${dateFrom} al ${dateTo}`, 14, 34);
+
+        const body: any[] = [];
+        sellerAdvanceData.forEach(row => {
+            body.push([
+                { content: row.seller.name, colSpan: 2, styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [15, 23, 42] } },
+                { content: `S/ ${row.globalQuota.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+                { content: `S/ ${row.globalSales.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [29, 78, 216] } },
+                { content: `${row.globalPct.toFixed(1)}%`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+                { content: `S/ ${row.globalProjected.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+                { content: `${row.globalProjPct.toFixed(1)}%`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+            ]);
+            row.suppliers.forEach((sup: any) => {
+               body.push([
+                   '',
+                   sup.supplierName,
+                   sup.assignedQuota > 0 ? `S/ ${sup.assignedQuota.toLocaleString('es-PE', { maximumFractionDigits: 0 })}` : '-',
+                   `S/ ${sup.currentSales.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`,
+                   `${sup.currentPct.toFixed(1)}%`,
+                   `S/ ${sup.projected.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`,
+                   `${sup.projPct.toFixed(1)}%`
+               ]);
+            });
+        });
+
+        autoTable(doc, {
+            startY: 40,
+            head: [['Vendedor', 'Proveedor', 'Cuota (S/)', 'Venta (S/)', 'Avance %', 'Proy. (S/)', 'Proy %']],
+            body: body,
+            theme: 'grid',
+            headStyles: { fillColor: [30, 58, 138], textColor: 255 }, 
+            styles: { fontSize: 8 },
+            columnStyles: {
+               0: { cellWidth: 40 },
+               1: { cellWidth: 40 },
+            }
+        });
+        
+        doc.save(`Avance_Vendedores_${dateFrom}_al_${dateTo}.pdf`);
+
+    } else {
+        doc.text(`Módulo: Análisis Histórico por ${groupBy}`, 14, 28);
+        doc.setFontSize(9);
+        doc.text(`Periodo evaluado: ${dateFrom} al ${dateTo}`, 14, 34);
+        doc.text(`Total Ventas: S/ ${processedData.kpis.totalSales.toLocaleString('es-PE', { minimumFractionDigits: 2 })}`, 14, 40);
+        
+        autoTable(doc, {
+          startY: 45,
+          head: [['Segmento', 'Ventas (S/)', 'Margen (S/)', 'Part. %', 'Cobertura']],
+          body: processedData.rows.map(r => [
+             r.label, 
+             `S/ ${r.value.toFixed(2)}`, 
+             `S/ ${r.margin.toFixed(2)}`, 
+             `${r.percentage.toFixed(1)}%`,
+             r.clients.size
+          ]),
+          theme: 'grid',
+          headStyles: { fillColor: [30, 58, 138], textColor: 255 }, 
+        });
+        
+        doc.save(`Reporte_${groupBy}_${dateFrom}_al_${dateTo}.pdf`);
+    }
   };
 
   return (
@@ -568,7 +687,7 @@ export const StrategicReports: React.FC = () => {
                   <table className="w-full text-left text-sm">
                      <thead className="bg-slate-100 text-slate-600 font-bold">
                         <tr>
-                           <th className="p-4 border-b border-slate-200">Vendedor</th>
+                           <th className="p-4 border-b border-slate-200">Vendedor / Proveedor</th>
                            <th className="p-4 border-b border-slate-200 text-right">Cuota Mes (S/)</th>
                            <th className="p-4 border-b border-slate-200 text-right">Venta Actual (S/)</th>
                            <th className="p-4 border-b border-slate-200 text-right">Avance %</th>
@@ -578,23 +697,48 @@ export const StrategicReports: React.FC = () => {
                      </thead>
                      <tbody className="divide-y divide-slate-100">
                         {sellerAdvanceData.map(row => (
-                           <tr key={row.seller.id} className="hover:bg-slate-50 transition-colors">
-                              <td className="p-4 font-bold text-slate-800">{row.seller.name}</td>
-                              <td className="p-4 text-right font-mono text-slate-600">{row.assignedQuota > 0 ? row.assignedQuota.toLocaleString('es-PE', { minimumFractionDigits: 0 }) : '-'}</td>
-                              <td className="p-4 text-right font-mono font-bold text-blue-700">{row.currentSales.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</td>
-                              <td className="p-4 text-right">
-                                 <div className="inline-block px-2 py-1 rounded bg-blue-50 text-blue-700 font-bold text-xs">
-                                    {row.currentPct.toFixed(1)}%
-                                 </div>
-                              </td>
-                              <td className="p-4 text-right font-mono font-bold text-indigo-700">{row.projected.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</td>
-                              <td className="p-4 text-right">
-                                 <div className={`inline-block px-2 py-1 rounded font-bold text-xs ${row.projPct >= 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                    {row.projPct.toFixed(1)}%
-                                 </div>
-                              </td>
-                           </tr>
+                           <React.Fragment key={row.seller.id}>
+                              <tr className="bg-slate-50 border-t-2 border-slate-200">
+                                 <td className="p-4 font-black text-blue-900 uppercase flex items-center">
+                                    <Users className="w-4 h-4 mr-2 text-blue-500" /> {row.seller.name}
+                                 </td>
+                                 <td className="p-4 text-right font-mono font-bold text-slate-700">{row.globalQuota > 0 ? row.globalQuota.toLocaleString('es-PE', { minimumFractionDigits: 0 }) : '-'}</td>
+                                 <td className="p-4 text-right font-mono font-black text-blue-700">{row.globalSales.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</td>
+                                 <td className="p-4 text-right">
+                                    <div className="inline-block px-2 py-1 rounded bg-blue-100 text-blue-800 font-black text-xs">
+                                       {row.globalPct.toFixed(1)}%
+                                    </div>
+                                 </td>
+                                 <td className="p-4 text-right font-mono font-bold text-indigo-700">{row.globalProjected.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</td>
+                                 <td className="p-4 text-right">
+                                    <div className={`inline-block px-2 py-1 rounded font-black text-xs ${row.globalProjPct >= 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                       {row.globalProjPct.toFixed(1)}%
+                                    </div>
+                                 </td>
+                              </tr>
+                              {row.suppliers.map((sup: any) => (
+                                 <tr key={sup.supplierId} className="hover:bg-slate-50 transition-colors">
+                                    <td className="p-3 pl-12 font-medium text-slate-600 flex items-center text-xs">
+                                       <Layers className="w-3 h-3 mr-2 text-slate-400" /> {sup.supplierName}
+                                    </td>
+                                    <td className="p-3 text-right font-mono text-slate-500 text-xs">{sup.assignedQuota > 0 ? sup.assignedQuota.toLocaleString('es-PE', { minimumFractionDigits: 0 }) : '-'}</td>
+                                    <td className="p-3 text-right font-mono font-bold text-slate-700 text-xs">{sup.currentSales.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</td>
+                                    <td className="p-3 text-right">
+                                       <span className="text-slate-500 font-bold text-xs">{sup.currentPct.toFixed(1)}%</span>
+                                    </td>
+                                    <td className="p-3 text-right font-mono text-slate-500 text-xs">{sup.projected.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</td>
+                                    <td className="p-3 text-right">
+                                       <span className={`font-bold text-xs ${sup.projPct >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>{sup.projPct.toFixed(1)}%</span>
+                                    </td>
+                                 </tr>
+                              ))}
+                           </React.Fragment>
                         ))}
+                        {sellerAdvanceData.length === 0 && (
+                           <tr>
+                              <td colSpan={6} className="p-8 text-center text-slate-400">No hay metas asignadas ni ventas en este periodo.</td>
+                           </tr>
+                        )}
                      </tbody>
                   </table>
                </div>
