@@ -36,8 +36,14 @@ export const Dispatch: React.FC = () => {
    const [activePrintTab, setActivePrintTab] = useState<'picking' | 'sellers' | 'guia'>('picking');
    const [isPrinting, setIsPrinting] = useState(false);
    const [isSaving, setIsSaving] = useState(false);
+   const isSavingRef = React.useRef(false);
    const [dbSeries, setDbSeries] = useState<any[]>([]);
    const [selectedSeries, setSelectedSeries] = useState('');
+
+   // --- CUSTOM SYSTEM MODAL ---
+   const [systemModal, setSystemModal] = useState<{isOpen: boolean, type: 'info'|'warning'|'error'|'confirm', message: string, onConfirm?: () => void}>({ isOpen: false, type: 'info', message: '' });
+   const showAlert = (message: string, type: 'info'|'warning'|'error' = 'info') => setSystemModal({ isOpen: true, type, message });
+   const showConfirm = (message: string, onConfirm: () => void) => setSystemModal({ isOpen: true, type: 'confirm', message, onConfirm });
 
    // --- EDIT MODE STATE ---
    const [editMode, setEditMode] = useState(false);
@@ -117,7 +123,7 @@ export const Dispatch: React.FC = () => {
          setDispatchSheets(finalDispatches);
       } catch (error: any) {
          console.error('Error fetching dispatch data:', error);
-         alert('Error cargando datos de despacho: ' + error.message);
+         showAlert('Error cargando datos de despacho: ' + error.message, 'error');
       } finally {
          setIsLoading(false);
       }
@@ -240,8 +246,9 @@ export const Dispatch: React.FC = () => {
    };
 
    const confirmDispatch = async () => {
-      if (!selectedVehicleId) { alert("Seleccione un vehículo primero."); return; }
-
+      if (!selectedVehicleId) { showAlert("Seleccione un vehículo primero.", "warning"); return; }
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
       setIsSaving(true);
       try {
          if (editMode && editingDispatchId) {
@@ -277,7 +284,7 @@ export const Dispatch: React.FC = () => {
                if (err5) throw err5;
             }
 
-            alert("¡Hoja de Ruta actualizada exitosamente!");
+            showAlert("¡Hoja de Ruta actualizada exitosamente!", "info");
             await fetchData();
          } else {
             const dispatchId = crypto.randomUUID();
@@ -319,12 +326,13 @@ export const Dispatch: React.FC = () => {
                if (!insSales || insSales.length === 0) throw new Error("Supabase RLS bloqueó silenciosamente el vínculo de los documentos (dispatch_sales). Ejecuta el SQL de permisos.");
             }
 
-            alert(`¡Hoja de Ruta creada! Código: ${real_code}`);
+            showAlert(`¡Hoja de Ruta creada! Código: ${real_code}`, "info");
             await fetchData();
          }
       } catch (error: any) {
-         alert("Error al guardar en Supabase: " + error.message);
+         showAlert("Error al guardar en Supabase: " + error.message, "error");
       } finally {
+         isSavingRef.current = false;
          setIsSaving(false);
          setSelectedSaleIds([]);
          setSelectedVehicleId('');
@@ -335,11 +343,12 @@ export const Dispatch: React.FC = () => {
    };
 
    const annulDispatch = async (dispatchId: string) => {
-      if (!confirm('¿Está seguro de que desea anular esta Hoja de Ruta? Todas las ventas asociadas volverán a estar pendientes.')) return;
-
-      try {
-         const dispatch = dispatchSheets.find(d => d.id === dispatchId);
-         if (!dispatch) return;
+      showConfirm('¿Está seguro de que desea anular esta Hoja de Ruta? Todas las ventas asociadas volverán a estar pendientes.', async () => {
+         if (isSavingRef.current) return;
+         isSavingRef.current = true;
+         try {
+            const dispatch = dispatchSheets.find(d => d.id === dispatchId);
+            if (!dispatch) return;
 
          // 1. Update sales dispatch_status back to pending
          if (dispatch.sale_ids.length > 0) {
@@ -355,13 +364,16 @@ export const Dispatch: React.FC = () => {
          // 3. Delete or update dispatch status to canceled
          const { data: up2, error: err2 } = await supabase.from('dispatch_sheets').update({ status: 'canceled' }).eq('id', dispatchId).select();
          if (err2) throw err2;
-         if (!up2 || up2.length === 0) throw new Error("Bloqueo de seguridad: No se pudo anular la planilla. Ejecuta el SQL de RLS.");
+            if (!up2 || up2.length === 0) throw new Error("Bloqueo de seguridad: No se pudo anular la planilla. Ejecuta el SQL de RLS.");
 
-         alert('Hoja de Ruta anulada correctamente.');
-         await fetchData();
-      } catch (error: any) {
-         alert('Error anulando Hoja de Ruta: ' + error.message);
-      }
+            showAlert('Hoja de Ruta anulada correctamente.', "info");
+            await fetchData();
+         } catch (error: any) {
+            showAlert('Error anulando Hoja de Ruta: ' + error.message, "error");
+         } finally {
+            isSavingRef.current = false;
+         }
+      });
    };
 
    const enterEditMode = (dispatch: import('../types').DispatchSheet) => {
@@ -776,7 +788,7 @@ export const Dispatch: React.FC = () => {
          await PdfEngine.openDocument(consolidatedPayload, 'GUIA_CONSOLIDADA', company);
       } catch (error) {
          console.error("Failed to generate PDF:", error);
-         alert("Hubo un error al generar el documento PDF.");
+         showAlert("Hubo un error al generar el documento PDF.", "error");
       } finally {
          setIsPrinting(false);
       }
@@ -788,6 +800,35 @@ export const Dispatch: React.FC = () => {
       // PREVIEW MODE / EDIT MODE SUMMARY
       return (
          <div className="fixed inset-0 bg-slate-100 z-50 flex flex-col p-4 overflow-hidden">
+            
+            {/* --- CUSTOM SYSTEM MODAL FOR PREVIEW --- */}
+            {systemModal.isOpen && (
+               <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+                  <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                     {systemModal.type === 'error' && <X className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full" />}
+                     {systemModal.type === 'warning' && <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4 bg-amber-50 p-2 rounded-full" />}
+                     {systemModal.type === 'confirm' && <AlertTriangle className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full" />}
+                     {systemModal.type === 'info' && <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-4 bg-emerald-50 p-2 rounded-full" />}
+                     
+                     <h3 className="text-lg font-black text-slate-800 mb-2">
+                        {systemModal.type === 'error' ? 'Error' : systemModal.type === 'warning' ? 'Aviso' : systemModal.type === 'confirm' ? 'Confirmar Acción' : 'Información'}
+                     </h3>
+                     <p className="text-sm text-slate-600 mb-6">{systemModal.message}</p>
+                     
+                     <div className="flex justify-center gap-3">
+                        {systemModal.type === 'confirm' ? (
+                           <>
+                              <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-6 py-2 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">Cancelar</button>
+                              <button onClick={() => { setSystemModal({...systemModal, isOpen: false}); systemModal.onConfirm?.(); }} className="px-6 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Confirmar</button>
+                           </>
+                        ) : (
+                           <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+                        )}
+                     </div>
+                  </div>
+               </div>
+            )}
+
             <div className="bg-white shadow-lg rounded-lg flex flex-col h-full max-w-5xl mx-auto w-full border border-slate-300">
                {/* Header - Control */}
                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-800 text-white rounded-t-lg print:hidden">

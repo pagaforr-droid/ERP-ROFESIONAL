@@ -76,6 +76,7 @@ export const DispatchLiquidationComp: React.FC = () => {
       fetchData();
    }, []);
    const [currentStep, setCurrentStep] = useState<Step>('LIST');
+   const isSavingRef = React.useRef(false);
 
    // Selection State
    const [selectedDispatch, setSelectedDispatch] = useState<DispatchSheet | null>(null);
@@ -772,6 +773,8 @@ export const DispatchLiquidationComp: React.FC = () => {
    };
 
    const executeSaveDraft = async () => {
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
       try {
          const docsArray: LiquidationDocument[] = Object.values(processedDocs);
 
@@ -804,10 +807,14 @@ export const DispatchLiquidationComp: React.FC = () => {
       } catch (err) {
          console.error(err);
          showSystemAlert('Error Crítico', 'Ocurrió un error al guardar el borrador de la liquidación.', 'error');
+      } finally {
+         isSavingRef.current = false;
       }
    };
 
    const executeFinalize = async () => {
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
       try {
          const docsArray: LiquidationDocument[] = Object.values(processedDocs);
 
@@ -859,11 +866,15 @@ export const DispatchLiquidationComp: React.FC = () => {
          console.error("Liquidation Error:", error);
          setActiveModal('NONE');
          showSystemAlert("Error Crítico", "Ocurrió un error crítico al procesar la liquidación: " + error.message, "error");
+      } finally {
+         isSavingRef.current = false;
       }
    };
 
    const executeDirectFinalize = async (liqId: string) => {
       showConfirmDialog('Confirmar Finalización', '¿Está seguro de procesar y enviar a caja esta liquidación de forma definitiva? Esto también actualizará el Kardex.', async () => {
+         if (isSavingRef.current) return;
+         isSavingRef.current = true;
          try {
             const existingLiq = dispatchLiquidations.find(l => l.id === liqId);
             if (!existingLiq) {
@@ -899,6 +910,8 @@ export const DispatchLiquidationComp: React.FC = () => {
          } catch (error: any) {
             console.error(error);
             showSystemAlert("Error", "Ocurrió un error: " + error.message, "error");
+         } finally {
+            isSavingRef.current = false;
          }
       });
    };
@@ -910,24 +923,33 @@ export const DispatchLiquidationComp: React.FC = () => {
 
    const executeRevertLiquidation = async () => {
       if (!actionTargetId) return;
-      const res = await store.revertDispatchLiquidation(actionTargetId, store.currentUser?.id as string);
-      if (res.success) {
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
+      try {
+         const res = await store.revertDispatchLiquidation(actionTargetId, store.currentUser?.id as string);
+         if (res.success) {
          await fetchData();
          showSystemAlert("Revertido", res.msg, "success");
          // Auto-load the reverted dispatch to continue editing
-         const liq = dispatchLiquidations.find(l => l.id === actionTargetId);
-         if (liq) {
-            const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
-            if (ds) {
-               startLiquidation(ds);
-               setActiveTab('PENDING');
+            await fetchData();
+            showSystemAlert("Revertido", res.msg, "success");
+            // Auto-load the reverted dispatch to continue editing
+            const liq = dispatchLiquidations.find(l => l.id === actionTargetId);
+            if (liq) {
+               const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
+               if (ds) {
+                  startLiquidation(ds);
+                  setActiveTab('PENDING');
+               }
             }
+         } else {
+            showSystemAlert("Error", res.msg, "error");
          }
-      } else {
-         showSystemAlert("Error", res.msg, "error");
+      } finally {
+         isSavingRef.current = false;
+         setActionTargetId(null);
+         if (activeModal === 'CONFIRM_REVERT') setActiveModal('NONE');
       }
-      setActionTargetId(null);
-      if (activeModal === 'CONFIRM_REVERT') setActiveModal('NONE');
    };
 
    const handleRequestConfirmKardex = (liqId: string) => {
@@ -937,8 +959,11 @@ export const DispatchLiquidationComp: React.FC = () => {
 
    const executeConfirmKardex = async () => {
       if (!actionTargetId) return;
-      const res = await store.confirmDispatchLiquidationKardex(actionTargetId, store.currentUser?.id as string);
-      if (res.success) {
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
+      try {
+         const res = await store.confirmDispatchLiquidationKardex(actionTargetId, store.currentUser?.id as string);
+         if (res.success) {
          await fetchData();
          showSystemAlert("Kardex Confirmado", res.msg, "success");
       } else {
