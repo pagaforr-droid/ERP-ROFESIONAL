@@ -88,7 +88,7 @@ export const StrategicReports: React.FC = () => {
         const endDate = `${dateTo}T23:59:59.999Z`;
 
         const [salesRes, clientsRes, zonesRes, sellersRes, suppliersRes, productsRes, quotasRes] = await Promise.all([
-           supabase.from('sales').select('*').gte('created_at', startDate).lte('created_at', endDate),
+           supabase.from('sales').select('*, items:sale_items(*)').gte('created_at', startDate).lte('created_at', endDate),
            supabase.from('clients').select('*'),
            supabase.from('zones').select('*'),
            supabase.from('sellers').select('*'),
