@@ -35,6 +35,7 @@ import { QuotaManager } from './components/QuotaManager';
 import { AccountingReports } from './components/AccountingReports';
 import { Login } from './components/Login';
 import { SystemMaintenance } from './components/SystemMaintenance';
+import { Inventory } from './components/Inventory';
 import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight, FileSpreadsheet, ChevronLeft, ChevronRight, Edit3, HardDrive } from 'lucide-react';
 import { ViewState } from './types';
 import { useStore } from './services/store';
@@ -165,6 +166,7 @@ export default function App() {
       case 'price-manager': return <PriceManager />;
       case 'virtual-store': return <VirtualStore />;
       case 'system-maintenance': return <SystemMaintenance />;
+      case 'inventory': return <Inventory />;
       default: return <Dashboard />;
     }
   };

@@ -12,6 +12,10 @@ export const Inventory: React.FC = () => {
   
   const [activeTab, setActiveTab] = useState<'MONITOR' | 'INCOME'>('MONITOR');
   const [isDataVisible, setIsDataVisible] = useState(false); // <--- ESTADO DE RENDIMIENTO Y RENDER DIFERIDO
+  const isSavingRef = React.useRef(false);
+
+  // --- MODALS ---
+  const [systemModal, setSystemModal] = useState<{ isOpen: boolean, type: 'error' | 'warning' | 'confirm' | 'info', message: string, onConfirm?: () => void }>({ isOpen: false, type: 'info', message: '' });
 
   // === ESTADOS SUPABASE ===
   const [realProducts, setRealProducts] = useState<any[]>([]);
@@ -55,29 +59,23 @@ export const Inventory: React.FC = () => {
     expirationDate: ''
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.productId) return;
-
-    // --- PROTECCIÓN: CONFIRMACIÓN ANTES DE INSERTAR LOTE ---
-    if (!window.confirm("¿Está seguro de registrar este ingreso manual al Kardex? Esta acción actualizará el stock disponible.")) {
-       return;
-    }
-
-    if (USE_MOCK_DB) {
-      addBatch({
-        id: crypto.randomUUID(),
-        product_id: formData.productId,
-        code: formData.code,
-        quantity_initial: formData.quantity,
-        quantity_current: formData.quantity,
-        cost: formData.cost,
-        expiration_date: formData.expirationDate,
-        created_at: new Date().toISOString()
-      });
-      alert("¡Lote recepcionado correctamente (Mock)!");
-    } else {
-      try {
+  const processSubmit = async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    try {
+      if (USE_MOCK_DB) {
+        addBatch({
+          id: crypto.randomUUID(),
+          product_id: formData.productId,
+          code: formData.code,
+          quantity_initial: formData.quantity,
+          quantity_current: formData.quantity,
+          cost: formData.cost,
+          expiration_date: formData.expirationDate,
+          created_at: new Date().toISOString()
+        });
+        setSystemModal({ isOpen: true, type: 'info', message: "¡Lote recepcionado correctamente (Mock)!" });
+      } else {
         const { error } = await supabase.from('batches').insert([{
           product_id: formData.productId,
           code: formData.code,
@@ -87,16 +85,29 @@ export const Inventory: React.FC = () => {
           expiration_date: formData.expirationDate || null
         }]);
         if (error) throw error;
-        alert("¡Lote recepcionado correctamente en Supabase!");
-      } catch (error: any) {
-        alert("Error de BD: " + error.message);
-        return;
+        setSystemModal({ isOpen: true, type: 'info', message: "¡Lote recepcionado correctamente en Supabase!" });
       }
-    }
 
-    setFormData({ productId: '', code: '', quantity: 0, cost: 0, expirationDate: '' });
-    setActiveTab('MONITOR');
-    setIsDataVisible(false); // Resetear visibilidad al regresar al monitor
+      setFormData({ productId: '', code: '', quantity: 0, cost: 0, expirationDate: '' });
+      setActiveTab('MONITOR');
+      setIsDataVisible(false); // Resetear visibilidad al regresar al monitor
+    } catch (error: any) {
+      setSystemModal({ isOpen: true, type: 'error', message: "Error de BD: " + error.message });
+    } finally {
+      isSavingRef.current = false;
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.productId) return;
+
+    setSystemModal({
+      isOpen: true,
+      type: 'confirm',
+      message: "¿Está seguro de registrar este ingreso manual al Kardex? Esta acción actualizará el stock disponible.",
+      onConfirm: processSubmit
+    });
   };
 
   // === MONITOR STATE ===
@@ -224,8 +235,35 @@ export const Inventory: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-6rem)] space-y-4 font-sans max-w-7xl mx-auto">
-      
+    <div className="flex flex-col h-[calc(100vh-6rem)] space-y-4 font-sans max-w-7xl mx-auto relative">
+      {/* --- CUSTOM SYSTEM MODAL --- */}
+      {systemModal.isOpen && (
+         <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+               {systemModal.type === 'error' && <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full" />}
+               {systemModal.type === 'warning' && <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4 bg-amber-50 p-2 rounded-full" />}
+               {systemModal.type === 'confirm' && <AlertTriangle className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full" />}
+               {systemModal.type === 'info' && <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-4 bg-emerald-50 p-2 rounded-full" />}
+               
+               <h3 className="text-lg font-black text-slate-800 mb-2">
+                  {systemModal.type === 'error' ? 'Error' : systemModal.type === 'warning' ? 'Aviso' : systemModal.type === 'confirm' ? 'Confirmar Acción' : 'Información'}
+               </h3>
+               <p className="text-sm text-slate-600 mb-6">{systemModal.message}</p>
+               
+               <div className="flex justify-center gap-3">
+                  {systemModal.type === 'confirm' ? (
+                     <>
+                        <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-6 py-2 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">Cancelar</button>
+                        <button onClick={() => { setSystemModal({...systemModal, isOpen: false}); systemModal.onConfirm?.(); }} className="px-6 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Confirmar</button>
+                     </>
+                  ) : (
+                     <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+                  )}
+               </div>
+            </div>
+         </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h2 className="text-2xl font-bold text-slate-800 flex items-center">
           <Layers className="mr-3 h-7 w-7 text-accent" /> Control de Inventario y Reportes
