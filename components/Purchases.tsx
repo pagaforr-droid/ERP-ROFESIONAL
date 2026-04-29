@@ -42,6 +42,7 @@ export const Purchases: React.FC = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: 'error' | 'success' | 'warning' }>>([]);
+  const isSavingRef = useRef(false);
 
   // === CUSTOM MODAL STATE ===
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -378,6 +379,8 @@ export const Purchases: React.FC = () => {
       }
     }
 
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsProcessing(true);
 
     // Simulate API Delay
@@ -470,6 +473,7 @@ export const Purchases: React.FC = () => {
     } catch (err: any) {
       showToast("Error de BD: " + err.message, "error");
     } finally {
+      isSavingRef.current = false;
       setIsProcessing(false);
     }
   };
@@ -523,6 +527,8 @@ export const Purchases: React.FC = () => {
       return;
     }
 
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsProcessing(true);
     try {
         // LÓGICA SUPABASE PARA PAGOS Y CAJA
@@ -565,6 +571,7 @@ export const Purchases: React.FC = () => {
     } catch(err: any) {
       showToast("Error registrando pago: " + err.message, "error");
     } finally {
+      isSavingRef.current = false;
       setIsProcessing(false);
     }
   };

@@ -19,6 +19,12 @@ export const ProductManagement: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const isSavingRef = React.useRef(false);
+
+  // --- MODALS ---
+  const [systemModal, setSystemModal] = useState<{ isOpen: boolean, type: 'error' | 'warning' | 'confirm' | 'info', message: string, onConfirm?: () => void }>({ isOpen: false, type: 'info', message: '' });
+  const [promptModal, setPromptModal] = useState<{ isOpen: boolean, title: string, placeholder: string, onConfirm: (val: string) => void }>({ isOpen: false, title: '', placeholder: '', onConfirm: () => {} });
+  const [promptValue, setPromptValue] = useState('');
 
   // --- ESTADOS PARA ALTA RÁPIDA DE PROVEEDOR ---
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
@@ -96,16 +102,18 @@ export const ProductManagement: React.FC = () => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.sku || formData.sku.trim() === '') {
-      alert("El código de producto no puede estar vacío");
+      setSystemModal({ isOpen: true, type: 'error', message: "El código de producto no puede estar vacío" });
       return;
     }
 
     const duplicate = products.find(p => p.sku === formData.sku && p.id !== formData.id);
     if (duplicate) {
-      alert(`Ya existe un producto con el código ${formData.sku}. Ingrese un código único.`);
+      setSystemModal({ isOpen: true, type: 'error', message: `Ya existe un producto con el código ${formData.sku}. Ingrese un código único.` });
       return;
     }
 
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsSaving(true);
 
     try {
@@ -149,8 +157,9 @@ export const ProductManagement: React.FC = () => {
       
       setViewMode('LIST');
     } catch (err: any) {
-      alert("Error de Base de Datos: " + err.message);
+      setSystemModal({ isOpen: true, type: 'error', message: "Error de Base de Datos: " + err.message });
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -159,6 +168,8 @@ export const ProductManagement: React.FC = () => {
   const handleQuickSupplierSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSupplier.name.trim()) return;
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsSavingSupplier(true);
 
     try {
@@ -179,8 +190,9 @@ export const ProductManagement: React.FC = () => {
           setNewSupplier({ ruc: '', name: '' });
        }
     } catch (err: any) {
-       alert("Error creando proveedor: " + err.message);
+       setSystemModal({ isOpen: true, type: 'error', message: "Error creando proveedor: " + err.message });
     } finally {
+       isSavingRef.current = false;
        setIsSavingSupplier(false);
     }
   };
@@ -190,6 +202,8 @@ export const ProductManagement: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsImporting(true);
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -261,12 +275,13 @@ export const ProductManagement: React.FC = () => {
            await fetchCatalog(); 
         }
 
-        alert(`Importación Masiva Exitosa.\n✅ Agregados: ${newProductsToInsert.length}\n⚠️ Omitidos (Duplicados/Sin Código): ${skippedCount}`);
+        setSystemModal({ isOpen: true, type: 'info', message: `Importación Masiva Exitosa.\n✅ Agregados: ${newProductsToInsert.length}\n⚠️ Omitidos (Duplicados/Sin Código): ${skippedCount}` });
 
         if (fileInputRef.current) fileInputRef.current.value = '';
       } catch (error: any) {
-        alert("Error crítico en importación masiva: " + error.message);
+        setSystemModal({ isOpen: true, type: 'error', message: "Error crítico en importación masiva: " + error.message });
       } finally {
+        isSavingRef.current = false;
         setIsImporting(false);
       }
     };
@@ -317,6 +332,34 @@ export const ProductManagement: React.FC = () => {
   if (viewMode === 'DETAIL') {
     return (
       <div className="flex flex-col h-full bg-slate-100 rounded-lg border border-slate-300 overflow-hidden relative">
+        {/* --- CUSTOM SYSTEM MODALS --- */}
+        {systemModal.isOpen && (
+           <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                 {systemModal.type === 'error' && <div className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full flex items-center justify-center"><X className="w-8 h-8" /></div>}
+                 {systemModal.type === 'info' && <div className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full flex items-center justify-center"><RefreshCw className="w-8 h-8" /></div>}
+                 <h3 className="text-lg font-black text-slate-800 mb-2">
+                    {systemModal.type === 'error' ? 'Error' : 'Información'}
+                 </h3>
+                 <p className="text-sm text-slate-600 mb-6 whitespace-pre-line">{systemModal.message}</p>
+                 <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+              </div>
+           </div>
+        )}
+
+        {promptModal.isOpen && (
+           <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                 <h3 className="text-lg font-black text-slate-800 mb-4">{promptModal.title}</h3>
+                 <input autoFocus className="w-full border-2 border-slate-300 p-3 rounded-lg text-sm uppercase text-slate-900 font-bold focus:border-blue-500 outline-none mb-6" placeholder={promptModal.placeholder} value={promptValue} onChange={e => setPromptValue(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') { setPromptModal({...promptModal, isOpen: false}); promptModal.onConfirm(promptValue); setPromptValue(''); e.preventDefault(); } }} />
+                 <div className="flex justify-center gap-3">
+                    <button onClick={() => { setPromptModal({...promptModal, isOpen: false}); setPromptValue(''); }} className="px-6 py-2 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">Cancelar</button>
+                    <button onClick={() => { setPromptModal({...promptModal, isOpen: false}); promptModal.onConfirm(promptValue); setPromptValue(''); }} className="px-6 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Confirmar</button>
+                 </div>
+              </div>
+           </div>
+        )}
+
         <div className="bg-slate-700 text-white p-3 flex justify-between items-center shadow-md z-10">
           <h2 className="font-bold text-sm flex items-center">
             {formData.id ? 'EDITAR PRODUCTO' : 'NUEVO PRODUCTO'} - <span className="ml-2 text-blue-300 font-mono">{formData.sku || 'SIN CÓDIGO'}</span>
@@ -385,12 +428,18 @@ export const ProductManagement: React.FC = () => {
                           {unitTypes.map(u => <option key={u} value={u}>{u}</option>)}
                         </select>
                         <button type="button" onClick={() => {
-                          const val = prompt('Nueva Abreviatura Unidad Base (Ej. BOT, PAQ):');
-                          if (val) {
-                             const cleanVal = val.trim().toUpperCase().substring(0,4);
-                             setUnitTypes(prev => [...new Set([...prev, cleanVal])].sort());
-                             setFormData({ ...formData, unit_type: cleanVal });
-                          }
+                          setPromptModal({
+                            isOpen: true,
+                            title: 'Nueva Unidad Base',
+                            placeholder: 'Ej. BOT, PAQ',
+                            onConfirm: (val) => {
+                              if (val) {
+                                 const cleanVal = val.trim().toUpperCase().substring(0,4);
+                                 setUnitTypes(prev => [...new Set([...prev, cleanVal])].sort());
+                                 setFormData({ ...formData, unit_type: cleanVal });
+                              }
+                            }
+                          });
                         }} className="bg-slate-800 text-white px-2 rounded-r hover:bg-slate-700"><Plus className="w-4 h-4" /></button>
                       </div>
                     </div>
@@ -409,12 +458,18 @@ export const ProductManagement: React.FC = () => {
                           {packageTypes.map(p => <option key={p} value={p}>{p}</option>)}
                         </select>
                         <button type="button" onClick={() => {
-                          const val = prompt('Nueva Abreviatura Empaque (Ej. CJA, DIS):');
-                          if (val) {
-                             const cleanVal = val.trim().toUpperCase().substring(0,4);
-                             setPackageTypes(prev => [...new Set([...prev, cleanVal])].sort());
-                             setFormData({ ...formData, package_type: cleanVal });
-                          }
+                          setPromptModal({
+                            isOpen: true,
+                            title: 'Nuevo Empaque',
+                            placeholder: 'Ej. CJA, DIS',
+                            onConfirm: (val) => {
+                              if (val) {
+                                 const cleanVal = val.trim().toUpperCase().substring(0,4);
+                                 setPackageTypes(prev => [...new Set([...prev, cleanVal])].sort());
+                                 setFormData({ ...formData, package_type: cleanVal });
+                              }
+                            }
+                          });
                         }} className="bg-slate-800 text-white px-2 rounded-r hover:bg-slate-700"><Plus className="w-4 h-4" /></button>
                       </div>
                     </div>
@@ -447,12 +502,18 @@ export const ProductManagement: React.FC = () => {
                            <div className="flex justify-between items-center mb-1">
                              <label className="block text-xs font-bold text-slate-600">Categoría</label>
                              <button type="button" onClick={() => {
-                               const val = prompt('Nueva Categoría:');
-                               if (val) {
-                                  const cleanVal = val.trim().toUpperCase();
-                                  setCategories(prev => [...new Set([...prev, cleanVal])].sort());
-                                  setFormData({ ...formData, category: cleanVal });
-                               }
+                               setPromptModal({
+                                 isOpen: true,
+                                 title: 'Nueva Categoría',
+                                 placeholder: 'Nombre de Categoría',
+                                 onConfirm: (val) => {
+                                   if (val) {
+                                      const cleanVal = val.trim().toUpperCase();
+                                      setCategories(prev => [...new Set([...prev, cleanVal])].sort());
+                                      setFormData({ ...formData, category: cleanVal });
+                                   }
+                                 }
+                               });
                              }} className="bg-slate-100 text-blue-600 font-bold hover:bg-slate-200 px-2 py-0.5 rounded text-[10px]">Añadir</button>
                            </div>
                            <select className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900" value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })}>
@@ -464,12 +525,18 @@ export const ProductManagement: React.FC = () => {
                            <div className="flex justify-between items-center mb-1">
                              <label className="block text-xs font-bold text-slate-600">Sub-Categoría</label>
                              <button type="button" onClick={() => {
-                               const val = prompt('Nueva Sub-Cat:');
-                               if (val) {
-                                  const cleanVal = val.trim().toUpperCase();
-                                  setSubcategories(prev => [...new Set([...prev, cleanVal])].sort());
-                                  setFormData({ ...formData, subcategory: cleanVal });
-                               }
+                               setPromptModal({
+                                 isOpen: true,
+                                 title: 'Nueva Sub-Categoría',
+                                 placeholder: 'Nombre de Sub-Categoría',
+                                 onConfirm: (val) => {
+                                   if (val) {
+                                      const cleanVal = val.trim().toUpperCase();
+                                      setSubcategories(prev => [...new Set([...prev, cleanVal])].sort());
+                                      setFormData({ ...formData, subcategory: cleanVal });
+                                   }
+                                 }
+                               });
                              }} className="bg-slate-100 text-blue-600 font-bold hover:bg-slate-200 px-2 py-0.5 rounded text-[10px]">Añadir</button>
                            </div>
                            <select className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900" value={formData.subcategory} onChange={e => setFormData({ ...formData, subcategory: e.target.value })}>
@@ -501,12 +568,18 @@ export const ProductManagement: React.FC = () => {
                            <div className="flex justify-between items-center mb-1">
                              <label className="block text-xs font-bold text-slate-600">Marca</label>
                              <button type="button" onClick={() => {
-                               const val = prompt('Nueva Marca:');
-                               if (val) {
-                                  const cleanVal = val.trim().toUpperCase();
-                                  setBrands(prev => [...new Set([...prev, cleanVal])].sort());
-                                  setFormData({ ...formData, brand: cleanVal });
-                               }
+                               setPromptModal({
+                                 isOpen: true,
+                                 title: 'Nueva Marca',
+                                 placeholder: 'Nombre de la Marca',
+                                 onConfirm: (val) => {
+                                   if (val) {
+                                      const cleanVal = val.trim().toUpperCase();
+                                      setBrands(prev => [...new Set([...prev, cleanVal])].sort());
+                                      setFormData({ ...formData, brand: cleanVal });
+                                   }
+                                 }
+                               });
                              }} className="bg-slate-100 text-blue-600 font-bold hover:bg-slate-200 px-2 py-0.5 rounded text-[10px]">Añadir</button>
                            </div>
                            <select className="w-full border border-slate-300 p-2 rounded text-sm uppercase text-slate-900" value={formData.brand} onChange={e => setFormData({ ...formData, brand: e.target.value })}>
@@ -636,7 +709,22 @@ export const ProductManagement: React.FC = () => {
 
   // --- VISTA DE LISTADO ---
   return (
-    <div className="space-y-4 h-full flex flex-col">
+    <div className="space-y-4 h-full flex flex-col relative">
+      {/* --- CUSTOM SYSTEM MODALS --- */}
+      {systemModal.isOpen && (
+         <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+               {systemModal.type === 'error' && <div className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full flex items-center justify-center"><X className="w-8 h-8" /></div>}
+               {systemModal.type === 'info' && <div className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full flex items-center justify-center"><RefreshCw className="w-8 h-8" /></div>}
+               <h3 className="text-lg font-black text-slate-800 mb-2">
+                  {systemModal.type === 'error' ? 'Error' : 'Información'}
+               </h3>
+               <p className="text-sm text-slate-600 mb-6 whitespace-pre-line">{systemModal.message}</p>
+               <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+            </div>
+         </div>
+      )}
+
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
         <h2 className="text-xl font-black text-slate-800 flex items-center">
           <Barcode className="w-6 h-6 mr-2 text-blue-600" /> Catálogo de Productos
