@@ -42,6 +42,7 @@ export const CreditNotes: React.FC = () => {
     const [glosa, setGlosa] = useState('');
     const [sunatMotivo, setSunatMotivo] = useState('07');
 
+    const isSavingRef = React.useRef(false);
     const [isSaving, setIsSaving] = useState(false);
     const [dbSeries, setDbSeries] = useState<any[]>([]);
     const [selectedSeries, setSelectedSeries] = useState('');
@@ -218,6 +219,8 @@ export const CreditNotes: React.FC = () => {
         }
 
         showConfirm(`¿Está seguro de generar una NOTA DE CRÉDITO por ${ncType} que afectará a la ${originalSale.document_type} ${originalSale.series}-${originalSale.number}?`, async () => {
+            if (isSavingRef.current) return;
+            isSavingRef.current = true;
             setIsSaving(true);
             try {
                 let itemsPayload: SaleItem[] = [];
@@ -276,6 +279,7 @@ export const CreditNotes: React.FC = () => {
             } catch (e: any) {
                 showAlert("Error al generar NC: " + e.message, 'error');
             } finally {
+                isSavingRef.current = false;
                 setIsSaving(false);
             }
         });

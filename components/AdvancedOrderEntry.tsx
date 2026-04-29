@@ -33,6 +33,8 @@ export const AdvancedOrderEntry: React.FC = () => {
   const qtyInputRef = useRef<HTMLInputElement>(null);
   const addBtnRef = useRef<HTMLButtonElement>(null);
 
+  const isSavingRef = useRef(false);
+
   const [dialog, setDialog] = useState<{ isOpen: boolean; type: 'success' | 'error' | 'warning' | 'confirm' | 'info'; title: string; message: string; onConfirm?: () => void }>({
       isOpen: false, type: 'info', title: '', message: ''
   });
@@ -717,10 +719,12 @@ export const AdvancedOrderEntry: React.FC = () => {
   };
 
   const handleSaveOrder = async () => {
+    if (isSavingRef.current) return;
     if (!clientName) { showDialog('warning', 'Faltan Datos', "Debe ingresar un cliente."); clientInputRef.current?.focus(); return; }
     if (cart.length === 0) { showDialog('warning', 'Faltan Datos', "El pedido no puede estar vacío."); productInputRef.current?.focus(); return; }
     if (!pedidoSeries && !isEditMode) { showDialog('error', 'Error de Configuración', "Configure una serie para PEDIDO en ajustes."); return; }
 
+    isSavingRef.current = true;
     setIsSaving(true);
     
     // 🔥 CÁLCULO EN TIEMPO REAL: Leemos de nuevo todo el carrito y aseguramos el total
@@ -776,6 +780,7 @@ export const AdvancedOrderEntry: React.FC = () => {
     } catch (error: any) { 
         showDialog('error', 'Error al guardar', error.message);
     } finally { 
+        isSavingRef.current = false;
         setIsSaving(false); 
     }
   };
