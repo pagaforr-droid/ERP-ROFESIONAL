@@ -36,24 +36,6 @@ CREATE TABLE IF NOT EXISTS erp_payroll_records (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Tabla para el Control de Asistencia
-CREATE TABLE IF NOT EXISTS erp_attendance_records (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    employee_id UUID NOT NULL, -- Reference to erp_employees.id
-    date DATE NOT NULL,
-    check_in TIMESTAMP WITH TIME ZONE NOT NULL,
-    check_out TIMESTAMP WITH TIME ZONE,
-    photo_in TEXT, -- Base64 or URL
-    photo_out TEXT,
-    location_in_lat NUMERIC(10,7),
-    location_in_lng NUMERIC(10,7),
-    location_out_lat NUMERIC(10,7),
-    location_out_lng NUMERIC(10,7),
-    total_hours NUMERIC(10,2) DEFAULT 0,
-    status VARCHAR(20) NOT NULL DEFAULT 'OPEN',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
 -- Configuraciones de seguridad básica (Políticas)
 -- Para propósitos de este ERP, permitimos acceso anon/authenticated completo 
 -- ya que la lógica asume que la autenticación está validada o se usa de manera interna.

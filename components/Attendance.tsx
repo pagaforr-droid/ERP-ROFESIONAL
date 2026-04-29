@@ -32,8 +32,8 @@ export const Attendance: React.FC = () => {
       setIsLoading(true);
       try {
          const [employeesRes, recordsRes] = await Promise.all([
-            supabase.from('erp_employees').select('id, first_name, last_name, document_number').eq('status', 'ACTIVE'),
-            supabase.from('erp_attendance_records').select('*').order('check_in', { ascending: false })
+            supabase.from('erp_employees').select('id, name, dni, is_active').eq('is_active', true),
+            supabase.from('attendance_records').select('*').order('check_in', { ascending: false })
          ]);
          
          if (employeesRes.data) setEmployees(employeesRes.data);
@@ -62,7 +62,7 @@ export const Attendance: React.FC = () => {
 
    const getEmployeeStatus = (employeeId: string) => {
       const today = new Date().toISOString().split('T')[0];
-      return attendanceRecords.find(r => r.employee_id === employeeId && r.date === today && r.status === 'OPEN');
+      return attendanceRecords.find(r => r.user_id === employeeId && r.date === today && r.status === 'OPEN');
    };
 
    const handleEmployeeClick = (employeeId: string) => {
@@ -79,7 +79,7 @@ export const Attendance: React.FC = () => {
       const employee = employees.find(e => e.id === authModal.employeeId);
 
       // Verify PIN (Document Number)
-      if (employee?.document_number && employee.document_number !== pinInput && pinInput !== 'admin') {
+      if (employee?.dni && employee.dni !== pinInput && pinInput !== 'admin') {
          setErrorMsg('PIN (DNI) incorrecto. Intente nuevamente.');
          setPinInput('');
          pinRef.current?.focus();
@@ -115,15 +115,14 @@ export const Attendance: React.FC = () => {
 
          if (authModal.mode === 'IN') {
             const payload = {
-               employee_id: authModal.employeeId,
+               user_id: authModal.employeeId, // Usamos la columna user_id existente
                date: todayDate,
                check_in: isoNow,
                photo_in: photoBase64,
-               location_in_lat: location?.lat,
-               location_in_lng: location?.lng,
+               location_in: location ? { lat: location.lat, lng: location.lng } : null,
                status: 'OPEN'
             };
-            const { error } = await supabase.from('erp_attendance_records').insert([payload]);
+            const { error } = await supabase.from('attendance_records').insert([payload]);
             if (error) throw error;
          } else {
             const currentRecord = getEmployeeStatus(authModal.employeeId);
@@ -135,12 +134,11 @@ export const Attendance: React.FC = () => {
                const payload = {
                   check_out: isoNow,
                   photo_out: photoBase64,
-                  location_out_lat: location?.lat,
-                  location_out_lng: location?.lng,
+                  location_out: location ? { lat: location.lat, lng: location.lng } : null,
                   total_hours: totalHours,
                   status: 'CLOSED'
                };
-               const { error } = await supabase.from('erp_attendance_records').update(payload).eq('id', currentRecord.id);
+               const { error } = await supabase.from('attendance_records').update(payload).eq('id', currentRecord.id);
                if (error) throw error;
             }
          }
@@ -171,7 +169,7 @@ export const Attendance: React.FC = () => {
 
    const reportData = useMemo(() => {
       return attendanceRecords.filter(r => {
-         const matchUser = reportUser === 'ALL' || r.employee_id === reportUser;
+         const matchUser = reportUser === 'ALL' || r.user_id === reportUser;
          const matchMonth = r.date.startsWith(reportMonth);
          return matchUser && matchMonth;
       });
@@ -183,7 +181,7 @@ export const Attendance: React.FC = () => {
          if (r.check_in && r.check_out) {
             const duration = new Date(r.check_out).getTime() - new Date(r.check_in).getTime();
             if (duration > 0) {
-               aggregates[r.employee_id] = (aggregates[r.employee_id] || 0) + duration;
+               aggregates[r.user_id] = (aggregates[r.user_id] || 0) + duration;
             }
          }
       });
@@ -292,8 +290,8 @@ export const Attendance: React.FC = () => {
                                  <UserIcon className="w-12 h-12" />
                               </div>
 
-                              <h3 className="font-bold text-lg text-slate-800 mb-1">{employee.first_name} {employee.last_name}</h3>
-                              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">DNI: {employee.document_number}</p>
+                              <h3 className="font-bold text-lg text-slate-800 mb-1">{employee.name}</h3>
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">DNI: {employee.dni}</p>
 
                               {isOnShift ? (
                                  <div className="bg-green-50 text-green-800 px-4 py-2 rounded-xl flex flex-col items-center border border-green-200 w-full">
@@ -331,7 +329,7 @@ export const Attendance: React.FC = () => {
                               {authModal.mode === 'IN' ? 'Entrada' : 'Salida'}
                            </h3>
                            <p className="text-white/90 text-sm font-medium">
-                              {employees.find(e => e.id === authModal.employeeId)?.first_name} {employees.find(e => e.id === authModal.employeeId)?.last_name}
+                              {employees.find(e => e.id === authModal.employeeId)?.name}
                            </p>
                         </div>
 
@@ -396,7 +394,7 @@ export const Attendance: React.FC = () => {
                         onChange={e => setReportUser(e.target.value)}
                      >
                         <option value="ALL">Todos los colaboradores</option>
-                        {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
+                        {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                      </select>
                   </div>
                </div>
@@ -411,7 +409,7 @@ export const Attendance: React.FC = () => {
                         if (!employee || (reportUser !== 'ALL' && reportUser !== empId)) return null;
                         return (
                            <div key={empId} className="bg-slate-50 p-4 rounded-xl border border-slate-200 min-w-[220px]">
-                              <div className="font-bold text-slate-800 mb-2 truncate">{employee.first_name} {employee.last_name}</div>
+                              <div className="font-bold text-slate-800 mb-2 truncate">{employee.name}</div>
                               <div className="text-3xl font-mono font-black text-blue-600">{formatDuration(Number(totalMs))}</div>
                               <div className="text-[10px] font-bold text-slate-400 uppercase mt-1">Horas Registradas</div>
                            </div>
@@ -439,7 +437,7 @@ export const Attendance: React.FC = () => {
                      </thead>
                      <tbody className="divide-y divide-slate-100">
                         {reportData.map(r => {
-                           const employee = employees.find(e => e.id === r.employee_id);
+                           const employee = employees.find(e => e.id === r.user_id);
                            const durationMs = (r.check_out && r.check_in)
                               ? new Date(r.check_out).getTime() - new Date(r.check_in).getTime()
                               : 0;
@@ -447,7 +445,7 @@ export const Attendance: React.FC = () => {
                            return (
                               <tr key={r.id} className="hover:bg-slate-50 group">
                                  <td className="p-4 font-mono font-medium text-slate-600">{r.date}</td>
-                                 <td className="p-4 font-bold text-slate-800">{employee ? `${employee.first_name} ${employee.last_name}` : 'Desconocido'}</td>
+                                 <td className="p-4 font-bold text-slate-800">{employee ? employee.name : 'Desconocido'}</td>
                                  <td className="p-4 text-center">
                                     <span className="bg-green-100 text-green-800 px-2 py-1 rounded-lg font-mono font-bold text-xs">{formatTime(r.check_in)}</span>
                                  </td>
