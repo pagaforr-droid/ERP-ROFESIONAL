@@ -215,14 +215,17 @@ export const SunatManager: React.FC = () => {
                  throw new Error("El envío de Guías aún no está implementado en la API.");
             }
 
-            // Real Fetch
-            const response = await fetch(company.sunat_api_url, {
+            // Backend Proxy Fetch (Bypass CORS)
+            const response = await fetch('/api/nubefact', {
                 method: 'POST',
                 headers: { 
-                    'Authorization': `Bearer ${company.sunat_api_token}`, 
                     'Content-Type': 'application/json' 
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify({
+                    url: company.sunat_api_url,
+                    token: company.sunat_api_token,
+                    payload: payload
+                })
             });
 
             const responseData = await response.json();
