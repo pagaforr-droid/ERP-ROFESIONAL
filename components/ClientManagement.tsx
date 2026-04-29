@@ -159,6 +159,21 @@ export const ClientManagement: React.FC = () => {
            setSystemModal({ isOpen: true, type: 'warning', message: 'Ingrese un número de documento.' });
            return;
        }
+
+       // CHEQUEO CANDADO ANTES DE BUSCAR
+       const existingClient = clients.find(c => c.doc_number === doc_number && c.id !== formData.id);
+       if (existingClient) {
+           const sellerId = getSellerForZone(existingClient.zone_id || '');
+           const seller = useStore.getState().sellers.find(s => s.id === sellerId);
+           const sellerName = seller ? seller.name : 'SIN ASIGNAR';
+           
+           setSystemModal({ 
+              isOpen: true, 
+              type: 'warning', 
+              message: `¡CANDADO! Este documento ya está registrado en el sistema.\n\nCódigo: ${existingClient.code}\nNombre: ${existingClient.name}\nVendedor Asignado: ${sellerName}` 
+           });
+           return;
+       }
        
        const { company } = useStore.getState();
        if (!company.api_dni_ruc_url || !company.api_dni_ruc_token) {
