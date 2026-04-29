@@ -86,7 +86,7 @@ export const Dispatch: React.FC = () => {
 
          // Identify sale_ids that belong to active dispatches so we definitely fetch them
          const activeSaleIds = finalDispatches
-            .filter(d => d.status === 'pending')
+            .filter(d => ['pending', 'in_transit', 'assigned'].includes(d.status))
             .flatMap(d => d.sale_ids);
 
          // Fetch pending/assigned sales
