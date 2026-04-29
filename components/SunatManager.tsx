@@ -314,7 +314,7 @@ export const SunatManager: React.FC = () => {
         setIsGenerateGuiaModalOpen(true);
     };
 
-    const handleConfirmGenerateGuias = () => {
+    const handleConfirmGenerateGuias = async () => {
         if (!guiaTransporterId || !guiaDriverId || !guiaVehicleId) {
             setSystemModal({ isOpen: true, type: 'warning', message: "Debe seleccionar empresa de transporte, conductor y vehículo." });
             return;
