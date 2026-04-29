@@ -63,6 +63,7 @@ export const MobileOrders: React.FC = () => {
    const [isLoadingInitial, setIsLoadingInitial] = useState(true);
    const [isLoadingData, setIsLoadingData] = useState(false);
    const [isSaving, setIsSaving] = useState(false);
+   const isSavingRef = React.useRef(false);
    const [isEditMode, setIsEditMode] = useState(false);
    const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
    const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
@@ -568,6 +569,8 @@ export const MobileOrders: React.FC = () => {
          title: isEditMode ? 'Sobreescribir Pedido' : 'Enviar Pedido',
          message: '¿Está seguro de CERRAR Y ENVIAR este pedido por S/ ' + currentTotal.toFixed(2) + '?',
          onConfirm: async () => {
+            if (isSavingRef.current) return;
+            isSavingRef.current = true;
             setIsSaving(true);
             const orderPayload = {
                id: isEditMode && originalOrder ? originalOrder.id : generateUUID(),
@@ -617,6 +620,7 @@ export const MobileOrders: React.FC = () => {
             } catch (error: any) {
                setSystemAlert({ show: true, message: 'Error al guardar: ' + (error.message || JSON.stringify(error)), type: 'error' });
             } finally {
+               isSavingRef.current = false;
                setIsSaving(false);
             }
          }
@@ -636,6 +640,8 @@ export const MobileOrders: React.FC = () => {
       const currentBalance = selectedSale.balance !== undefined && selectedSale.balance !== null ? selectedSale.balance : selectedSale.total;
       if (paymentAmount > currentBalance) { setSystemAlert({ show: true, message: 'El monto supera el saldo.', type: 'error' }); return; }
 
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
       setIsSaving(true);
       try {
          const { error } = await supabase.rpc('process_collection', {
@@ -646,7 +652,10 @@ export const MobileOrders: React.FC = () => {
          setIsPaymentModalOpen(false); setPaymentAmount(0); setSelectedSale(null);
          handleSellerSelect(currentSellerId);
       } catch (e: any) { setSystemAlert({ show: true, message: 'Error reportando cobro: ' + e.message, type: 'error' }); }
-      finally { setIsSaving(false); }
+      finally { 
+         isSavingRef.current = false;
+         setIsSaving(false); 
+      }
    };
 
    const confirmExitApp = () => {
@@ -656,6 +665,8 @@ export const MobileOrders: React.FC = () => {
 
    const confirmAnnulOrder = async () => {
       if (!orderToAnnul) return;
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
       setIsSaving(true);
       try {
          const { success, msg } = await annulOrder(orderToAnnul.id, currentUser?.id || 'SELLER');
@@ -667,6 +678,7 @@ export const MobileOrders: React.FC = () => {
       } catch (e: any) {
          setSystemAlert({ show: true, message: 'Error anulando pedido: ' + e.message, type: 'error' });
       } finally {
+         isSavingRef.current = false;
          setIsSaving(false);
       }
    };
