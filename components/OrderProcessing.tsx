@@ -68,9 +68,14 @@ export const OrderProcessing: React.FC = () => {
 
    // Modal State
    const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+   const isProcessingRef = React.useRef(false);
    const [isProcessing, setIsProcessing] = useState(false);
    const [processResult, setProcessResult] = useState<{ facturas: number, boletas: number } | null>(null);
    const [ordersPendingPurge, setOrdersPendingPurge] = useState<string[]>([]);
+
+   // Native Alert State
+   const [modalConfig, setModalConfig] = useState<{isOpen: boolean, type: 'info'|'warning'|'error', message: string}>({ isOpen: false, type: 'info', message: '' });
+   const showAlert = (message: string, type: 'info'|'warning'|'error' = 'info') => setModalConfig({ isOpen: true, type, message });
 
    // Max Items Limits
    const [maxItemsFactura, setMaxItemsFactura] = useState<number>(15);
@@ -130,7 +135,7 @@ export const OrderProcessing: React.FC = () => {
          setOrders(filtered);
       } catch (e: any) {
          console.error("Error fetching orders:", e);
-         alert("Error al cargar pedidos: " + e.message);
+         showAlert("Error al cargar pedidos: " + e.message, 'error');
       } finally {
          setIsLoading(false);
       }
@@ -200,6 +205,8 @@ export const OrderProcessing: React.FC = () => {
 
    // 3. Execute
    const executeProcess = async () => {
+      if (isProcessingRef.current) return;
+      isProcessingRef.current = true;
       setIsProcessing(true);
 
       const summary = processSummary;
@@ -320,9 +327,10 @@ export const OrderProcessing: React.FC = () => {
 
       } catch (error: any) {
          console.error("Error processing orders:", error);
-         alert("Ocurrió un error al procesar masivamente: " + error.message);
+         showAlert("Ocurrió un error al procesar masivamente: " + error.message, 'error');
          setIsConfirmOpen(false);
       } finally {
+         isProcessingRef.current = false;
          setIsProcessing(false);
       }
    };
@@ -338,6 +346,8 @@ export const OrderProcessing: React.FC = () => {
          closeAndReset();
          return;
       }
+      if (isProcessingRef.current) return;
+      isProcessingRef.current = true;
       setIsProcessing(true);
       try {
          const { error: e1 } = await supabase.from('sales').update({ origin_order_id: null }).in('origin_order_id', ordersPendingPurge);
@@ -354,15 +364,18 @@ export const OrderProcessing: React.FC = () => {
          closeAndReset();
       } catch (err: any) {
          console.error("Purge error:", err);
-         alert("ATENCIÓN: Se insertaron los documentos fiscales con éxito, pero hubo un error al purgar los pedidos originales. Detalles: " + err.message);
+         showAlert("ATENCIÓN: Se insertaron los documentos fiscales con éxito, pero hubo un error al purgar los pedidos originales. Detalles: " + err.message, 'warning');
          closeAndReset();
       } finally {
+         isProcessingRef.current = false;
          setIsProcessing(false);
       }
    };
 
    const confirmAnnulOrder = async () => {
       if (!orderToAnnul) return;
+      if (isProcessingRef.current) return;
+      isProcessingRef.current = true;
       setIsProcessing(true);
       try {
          const { data, error } = await supabase.rpc('annul_order_transaction', {
@@ -382,14 +395,29 @@ export const OrderProcessing: React.FC = () => {
          setOrderToAnnul(null);
          handleSearch(); // Refresh data
       } catch (e: any) {
-         alert("Error anulando pedido: " + e.message);
+         showAlert("Error anulando pedido: " + e.message, 'error');
       } finally {
+         isProcessingRef.current = false;
          setIsProcessing(false);
       }
    };
 
    return (
       <div className="h-full flex flex-col space-y-4 font-sans text-sm relative">
+
+         {/* --- CUSTOM ALERT MODAL --- */}
+         {modalConfig.isOpen && (
+            <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+               <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                  {modalConfig.type === 'error' && <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />}
+                  {modalConfig.type === 'warning' && <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />}
+                  {modalConfig.type === 'info' && <CheckCircle className="w-12 h-12 text-blue-500 mx-auto mb-4" />}
+                  <h3 className="text-lg font-black text-slate-800 mb-2">{modalConfig.type === 'error' ? 'Error' : modalConfig.type === 'warning' ? 'Aviso' : 'Información'}</h3>
+                  <p className="text-sm text-slate-600 mb-6">{modalConfig.message}</p>
+                  <button onClick={() => setModalConfig({...modalConfig, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+               </div>
+            </div>
+         )}
 
          {/* --- CONFIRMATION MODAL --- */}
          {isConfirmOpen && processSummary && (
@@ -571,7 +599,7 @@ export const OrderProcessing: React.FC = () => {
                <button 
                   onClick={async () => {
                      if (!companyConfigId) {
-                         alert('Error: No se encontró la configuración de la empresa.');
+                         showAlert('Error: No se encontró la configuración de la empresa.', 'error');
                          return;
                      }
                      try {
@@ -580,9 +608,9 @@ export const OrderProcessing: React.FC = () => {
                              max_items_boleta: maxItemsBoleta
                          }).eq('id', companyConfigId);
                          if (error) throw error;
-                         alert('Configuración guardada exitosamente en Supabase.');
+                         showAlert('Configuración guardada exitosamente en Supabase.', 'success' as any);
                      } catch (err: any) {
-                         alert('Error al guardar: ' + err.message);
+                         showAlert('Error al guardar: ' + err.message, 'error');
                      }
                   }}
                   className="bg-amber-600 text-white font-bold py-2 px-4 rounded text-sm hover:bg-amber-700 transition-colors h-[38px] flex items-center shadow"

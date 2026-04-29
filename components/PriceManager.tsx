@@ -72,8 +72,12 @@ export const PriceManager: React.FC = () => {
   const [targetMargin, setTargetMargin] = useState<number>(30); // Porcentaje de ganancia sobre costo
   
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const isSavingRef = React.useRef(false);
   const [isSaving, setIsSaving] = useState(false);
   const [notification, setNotification] = useState<{msg: string, type: 'success'|'error'} | null>(null);
+
+  const [modalConfig, setModalConfig] = useState<{isOpen: boolean, type: 'info'|'warning'|'error'|'confirm', message: string, onConfirm?: () => void}>({ isOpen: false, type: 'info', message: '' });
+  const showConfirm = (message: string, onConfirm: () => void) => setModalConfig({ isOpen: true, type: 'confirm', message, onConfirm });
   
   const [manualPrices, setManualPrices] = useState<Record<string, number>>({});
 
@@ -231,6 +235,8 @@ export const PriceManager: React.FC = () => {
         return;
      }
      
+     if (isSavingRef.current) return;
+     isSavingRef.current = true;
      setIsSaving(true);
 
      try {
@@ -266,8 +272,9 @@ export const PriceManager: React.FC = () => {
      } catch (error: any) {
         setNotification({ msg: `Error de Base de Datos: ${error.message}`, type: 'error' });
      } finally {
-        setTimeout(() => setNotification(null), 4000);
+        isSavingRef.current = false;
         setIsSaving(false);
+        setTimeout(() => setNotification(null), 4000);
      }
   };
 
@@ -275,6 +282,8 @@ export const PriceManager: React.FC = () => {
   const handleSaveList = async (e: React.FormEvent) => {
      e.preventDefault();
      if (!editingList?.name) return;
+     if (isSavingRef.current) return;
+     isSavingRef.current = true;
      setIsSaving(true);
 
      let finalFactor = 1.0;
@@ -306,6 +315,7 @@ export const PriceManager: React.FC = () => {
      } catch (error: any) {
         setNotification({ msg: "Error al guardar: " + error.message, type: 'error' });
      } finally {
+        isSavingRef.current = false;
         setIsSaving(false);
         setTimeout(() => setNotification(null), 4000);
      }
@@ -313,18 +323,23 @@ export const PriceManager: React.FC = () => {
 
   const handleDeleteList = async (id: string, e: React.MouseEvent) => {
      e.stopPropagation();
-     if(!confirm('¿Eliminar esta lista? Si hay clientes o vendedores en esta lista, podrían perder su asignación.')) return;
-     
-     try {
-        const { error } = await supabase.from('price_lists').delete().eq('id', id);
-        if (error) throw error;
-        setPriceLists(prev => prev.filter(l => l.id !== id));
-        setNotification({ msg: "Lista eliminada permanentemente.", type: 'success' });
-     } catch(err: any) {
-        setNotification({ msg: "Error al eliminar: " + err.message, type: 'error' });
-     } finally {
-        setTimeout(() => setNotification(null), 3000);
-     }
+     showConfirm('¿Eliminar esta lista? Si hay clientes o vendedores en esta lista, podrían perder su asignación.', async () => {
+         if (isSavingRef.current) return;
+         isSavingRef.current = true;
+         setIsSaving(true);
+         try {
+            const { error } = await supabase.from('price_lists').delete().eq('id', id);
+            if (error) throw error;
+            setPriceLists(prev => prev.filter(l => l.id !== id));
+            setNotification({ msg: "Lista eliminada permanentemente.", type: 'success' });
+         } catch(err: any) {
+            setNotification({ msg: "Error al eliminar: " + err.message, type: 'error' });
+         } finally {
+            isSavingRef.current = false;
+            setIsSaving(false);
+            setTimeout(() => setNotification(null), 3000);
+         }
+     });
   }
 
   // --- 3. ASIGNACIÓN DE VENDEDORES ---
@@ -340,6 +355,8 @@ export const PriceManager: React.FC = () => {
 
   const saveAssignments = async () => {
      if (!hasChanges) return;
+     if (isSavingRef.current) return;
+     isSavingRef.current = true;
      setIsSaving(true);
      
      try {
@@ -357,6 +374,7 @@ export const PriceManager: React.FC = () => {
      } catch(err:any) {
         setNotification({ msg: "Error al sincronizar matriz: " + err.message, type: 'error' });
      } finally {
+        isSavingRef.current = false;
         setIsSaving(false);
         setTimeout(() => setNotification(null), 3000);
      }
@@ -449,6 +467,21 @@ export const PriceManager: React.FC = () => {
   return (
     <div className="h-full flex flex-col space-y-4 font-sans text-slate-800 relative bg-slate-50/50">
        {notification && <Notification msg={notification.msg} type={notification.type} onClose={() => setNotification(null)} />}
+
+       {/* --- CUSTOM CONFIRM MODAL --- */}
+       {modalConfig.isOpen && (
+          <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+             <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                {modalConfig.type === 'confirm' && <AlertCircle className="w-12 h-12 text-blue-500 mx-auto mb-4" />}
+                <h3 className="text-lg font-black text-slate-800 mb-2">Confirmar Acción</h3>
+                <p className="text-sm text-slate-600 mb-6">{modalConfig.message}</p>
+                <div className="flex gap-3 justify-center">
+                   <button onClick={() => setModalConfig({...modalConfig, isOpen: false})} className="px-6 py-2 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">Cancelar</button>
+                   <button onClick={() => { setModalConfig({...modalConfig, isOpen: false}); modalConfig.onConfirm?.(); }} className="px-6 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Confirmar</button>
+                </div>
+             </div>
+          </div>
+       )}
 
        {/* HEADER ELITE */}
        <div className="flex justify-between items-center bg-white/80 backdrop-blur-md p-5 rounded-2xl shadow-sm border border-slate-200/60 relative overflow-hidden">
