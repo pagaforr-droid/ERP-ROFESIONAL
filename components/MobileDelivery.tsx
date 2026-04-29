@@ -27,6 +27,7 @@ export const MobileDelivery: React.FC = () => {
     const [modal, setModal] = useState<DeliveryModalState>({ isOpen: false, sale: null, actionType: null });
     const [reason, setReason] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
+    const isSavingRef = React.useRef(false);
     const [showFinishConfirm, setShowFinishConfirm] = useState(false);
     const [systemAlert, setSystemAlert] = useState<{ show: boolean, message: string, type: 'success' | 'error' | 'info' }>({ show: false, message: '', type: 'info' });
 
@@ -110,6 +111,8 @@ export const MobileDelivery: React.FC = () => {
     };
 
     const handleDispatchSelect = async (id: string) => {
+        if (isSavingRef.current) return;
+        isSavingRef.current = true;
         setIsProcessing(true);
         try {
             // Optimistically update status if it was pending
@@ -123,6 +126,7 @@ export const MobileDelivery: React.FC = () => {
         } catch (error) {
             console.error("Error updating dispatch:", error);
         } finally {
+            isSavingRef.current = false;
             setIsProcessing(false);
         }
     };
@@ -141,6 +145,8 @@ export const MobileDelivery: React.FC = () => {
             return;
         }
 
+        if (isSavingRef.current) return;
+        isSavingRef.current = true;
         setIsProcessing(true);
 
         // Captura GPS Silenciosa
@@ -178,6 +184,7 @@ export const MobileDelivery: React.FC = () => {
             console.error("Error saving delivery:", error);
             setSystemAlert({ show: true, message: "Error al guardar: " + error.message, type: "error" });
         } finally {
+            isSavingRef.current = false;
             setIsProcessing(false);
         }
     };
@@ -192,6 +199,8 @@ export const MobileDelivery: React.FC = () => {
 
     const handleFinishRoute = async () => {
         if (!currentDispatchId) return;
+        if (isSavingRef.current) return;
+        isSavingRef.current = true;
         setIsProcessing(true);
         try {
             const { error } = await supabase.from('dispatch_sheets').update({ status: 'delivered' }).eq('id', currentDispatchId);
@@ -205,6 +214,7 @@ export const MobileDelivery: React.FC = () => {
         } catch (error: any) {
             setSystemAlert({ show: true, message: "Error al cerrar ruta: " + error.message, type: "error" });
         } finally {
+            isSavingRef.current = false;
             setIsProcessing(false);
         }
     };
