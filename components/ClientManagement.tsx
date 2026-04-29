@@ -191,7 +191,7 @@ export const ClientManagement: React.FC = () => {
                baseUrl = baseUrl.slice(0, -1);
            }
            
-           const endpointPath = doc_type === 'DNI' ? '/v1/reniec/dni' : '/v1/sunat/ruc';
+           const endpointPath = doc_type === 'DNI' ? '/v1/reniec/dni' : '/v1/sunat/ruc/full';
            const url = `${baseUrl}${endpointPath}?numero=${doc_number}`;
            
            // Usamos el proxy del backend para evitar errores de CORS en el navegador
