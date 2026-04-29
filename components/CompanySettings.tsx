@@ -12,6 +12,11 @@ export const CompanySettings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [companyId, setCompanyId] = useState<string | null>(null);
+  const isSavingRef = React.useRef(false);
+
+  // --- CUSTOM MODALS ---
+  const [systemModal, setSystemModal] = useState<{ isOpen: boolean, type: 'error' | 'warning' | 'info' | 'success', message: string }>({ isOpen: false, type: 'info', message: '' });
+  const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
   // Estados locales para edición antes de ir a la Nube
   const [formData, setFormData] = useState({
@@ -76,6 +81,8 @@ export const CompanySettings: React.FC = () => {
   // --- GUARDADO: GENERAL & SUNAT (100% SUPABASE) ---
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsSaving(true);
     
     try {
@@ -93,20 +100,25 @@ export const CompanySettings: React.FC = () => {
         
         // Puente de Sincronización Inmediata
         globalUpdateCompany({ ...globalCompany, ...formData });
-        alert('Configuración de la Empresa guardada exitosamente en la Base de Datos.');
+        setSystemModal({ isOpen: true, type: 'success', message: 'Configuración de la Empresa guardada exitosamente en la Base de Datos.' });
     } catch (error: any) {
-      alert("Error al guardar en la base de datos: " + error.message);
+      setSystemModal({ isOpen: true, type: 'error', message: "Error al guardar en la base de datos: " + error.message });
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
 
   // --- GUARDADO: SERIES Y CORRELATIVOS (100% SUPABASE) ---
   const handleSeriesSave = async () => {
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
     setIsSaving(true);
     try {
         if (!companyId) {
-           alert("Primero debe guardar los Datos Generales de la empresa antes de configurar series.");
+           setSystemModal({ isOpen: true, type: 'error', message: "Primero debe guardar los Datos Generales de la empresa antes de configurar series." });
+           isSavingRef.current = false;
+           setIsSaving(false);
            return;
         }
 
@@ -132,10 +144,11 @@ export const CompanySettings: React.FC = () => {
 
         // Puente de Sincronización Inmediata
         globalUpdateCompany({ ...globalCompany, series: seriesList });
-        alert("Series y correlativos sincronizados con la Base de Datos y listos para facturar.");
+        setSystemModal({ isOpen: true, type: 'success', message: "Series y correlativos sincronizados con la Base de Datos y listos para facturar." });
     } catch (error: any) {
-      alert("Error guardando series: " + error.message);
+      setSystemModal({ isOpen: true, type: 'error', message: "Error guardando series: " + error.message });
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -157,10 +170,15 @@ export const CompanySettings: React.FC = () => {
   };
 
   const handleRemoveSeries = (id: string) => {
-    if (window.confirm('¿Seguro que desea eliminar esta serie? Podría afectar correlativos históricos.')) {
-      setSeriesList(prev => prev.filter(s => s.id !== id));
-      setSeriesToDelete(prev => [...prev, id]); // Marca para borrado real en Supabase
-    }
+    setConfirmModal({
+       isOpen: true,
+       title: 'Eliminar Serie',
+       message: '¿Seguro que desea eliminar esta serie? Podría afectar correlativos históricos.',
+       onConfirm: () => {
+         setSeriesList(prev => prev.filter(s => s.id !== id));
+         setSeriesToDelete(prev => [...prev, id]); // Marca para borrado real en Supabase
+       }
+    });
   };
 
   // --- LOGO UPLOAD (Base64 Seguro) ---
@@ -168,7 +186,7 @@ export const CompanySettings: React.FC = () => {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
-         alert("El logo es demasiado pesado. El tamaño máximo es 2MB.");
+         setSystemModal({ isOpen: true, type: 'error', message: "El logo es demasiado pesado. El tamaño máximo es 2MB." });
          return;
       }
       const reader = new FileReader();
@@ -184,7 +202,37 @@ export const CompanySettings: React.FC = () => {
   }
 
   return (
-    <div className="h-full flex flex-col space-y-4">
+    <div className="h-full flex flex-col space-y-4 relative">
+      {/* --- CUSTOM SYSTEM MODALS --- */}
+      {systemModal.isOpen && (
+         <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+               {systemModal.type === 'error' && <div className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">X</span></div>}
+               {systemModal.type === 'success' && <div className="w-12 h-12 text-green-500 mx-auto mb-4 bg-green-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">✓</span></div>}
+               {systemModal.type === 'info' && <div className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full flex items-center justify-center"><RefreshCw className="w-8 h-8" /></div>}
+               <h3 className="text-lg font-black text-slate-800 mb-2">
+                  {systemModal.type === 'error' ? 'Error' : systemModal.type === 'success' ? 'Éxito' : 'Información'}
+               </h3>
+               <p className="text-sm text-slate-600 mb-6 whitespace-pre-line">{systemModal.message}</p>
+               <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+            </div>
+         </div>
+      )}
+
+      {confirmModal.isOpen && (
+         <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center border-t-4 border-yellow-500 animate-scale-up">
+               <div className="w-16 h-16 text-yellow-500 mx-auto mb-4 bg-yellow-50 p-2 rounded-full flex items-center justify-center"><Trash2 className="w-8 h-8" /></div>
+               <h3 className="text-xl font-extrabold text-slate-800 mb-2">{confirmModal.title}</h3>
+               <p className="text-sm text-slate-600 mb-6">{confirmModal.message}</p>
+               <div className="flex justify-center gap-3">
+                  <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="px-5 py-2.5 bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold rounded shadow-sm transition-colors">Cancelar</button>
+                  <button onClick={() => { confirmModal.onConfirm(); setConfirmModal({...confirmModal, isOpen: false}); }} className="px-5 py-2.5 bg-yellow-500 text-white hover:bg-yellow-600 font-bold rounded shadow-sm transition-colors">Sí, Confirmar</button>
+               </div>
+            </div>
+         </div>
+      )}
+
       <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
         <h2 className="text-xl font-black text-slate-800 flex items-center">
           <Settings className="mr-3 text-blue-600 w-6 h-6" /> Ajustes Globales del Sistema

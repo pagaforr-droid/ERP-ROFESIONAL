@@ -11,6 +11,11 @@ export const LogisticsManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('VEHICULOS');
   const [viewMode, setViewMode] = useState<'LIST' | 'FORM'>('LIST');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = React.useRef(false);
+
+  // --- CUSTOM MODALS ---
+  const [systemModal, setSystemModal] = useState<{ isOpen: boolean, type: 'error' | 'warning' | 'info' | 'success', message: string }>({ isOpen: false, type: 'info', message: '' });
 
   const [realTransporters, setRealTransporters] = useState<Transporter[]>([]);
   const [realDrivers, setRealDrivers] = useState<Driver[]>([]);
@@ -58,61 +63,66 @@ export const LogisticsManagement: React.FC = () => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (activeTab === 'TRANSPORTISTAS') {
-       if(!transporterForm.ruc || !transporterForm.name) return;
-       const payload = { ...transporterForm, id: editingId || crypto.randomUUID() } as Transporter;
-       if (USE_MOCK_DB) {
-         store.addTransporter(payload);
-       } else {
-         try {
-           if (editingId) {
-             await supabase.from('transporters').update(payload).eq('id', editingId);
-             setRealTransporters(prev => prev.map(t => t.id === editingId ? payload : t));
-           } else {
-             await supabase.from('transporters').insert([payload]);
-             setRealTransporters(prev => [...prev, payload]);
-           }
+    if (isSavingRef.current) return;
+    isSavingRef.current = true;
+    setIsSaving(true);
+    
+    try {
+      if (activeTab === 'TRANSPORTISTAS') {
+         if(!transporterForm.ruc || !transporterForm.name) return;
+         const payload = { ...transporterForm, id: editingId || crypto.randomUUID() } as Transporter;
+         if (USE_MOCK_DB) {
            store.addTransporter(payload);
-         } catch (err: any) { alert(err.message); }
-       }
-    } else if (activeTab === 'CHOFERES') {
-       if(!driverForm.dni || !driverForm.name) return;
-       const payload = { ...driverForm, id: editingId || crypto.randomUUID() } as Driver;
-       if (USE_MOCK_DB) {
-         store.addDriver(payload);
-       } else {
-         try {
-           if (editingId) {
-             await supabase.from('drivers').update(payload).eq('id', editingId);
-             setRealDrivers(prev => prev.map(d => d.id === editingId ? payload : d));
-           } else {
-             await supabase.from('drivers').insert([payload]);
-             setRealDrivers(prev => [...prev, payload]);
-           }
+         } else {
+             if (editingId) {
+               await supabase.from('transporters').update(payload).eq('id', editingId);
+               setRealTransporters(prev => prev.map(t => t.id === editingId ? payload : t));
+             } else {
+               await supabase.from('transporters').insert([payload]);
+               setRealTransporters(prev => [...prev, payload]);
+             }
+             store.addTransporter(payload);
+         }
+      } else if (activeTab === 'CHOFERES') {
+         if(!driverForm.dni || !driverForm.name) return;
+         const payload = { ...driverForm, id: editingId || crypto.randomUUID() } as Driver;
+         if (USE_MOCK_DB) {
            store.addDriver(payload);
-         } catch (err: any) { alert(err.message); }
-       }
-    } else if (activeTab === 'VEHICULOS') {
-       if(!vehicleForm.plate || !vehicleForm.transporter_id || !vehicleForm.driver_id) return;
-       const payload = { ...vehicleForm, id: editingId || crypto.randomUUID() } as Vehicle;
-       if (USE_MOCK_DB) {
-         if (editingId && store.updateVehicle) store.updateVehicle(payload);
-         else store.addVehicle(payload);
-       } else {
-         try {
-           if (editingId) {
-             await supabase.from('vehicles').update(payload).eq('id', editingId);
-             setRealVehicles(prev => prev.map(v => v.id === editingId ? payload : v));
-             if (store.updateVehicle) store.updateVehicle(payload);
-           } else {
-             await supabase.from('vehicles').insert([payload]);
-             setRealVehicles(prev => [...prev, payload]);
-             store.addVehicle(payload);
-           }
-         } catch (err: any) { alert(err.message); }
-       }
+         } else {
+             if (editingId) {
+               await supabase.from('drivers').update(payload).eq('id', editingId);
+               setRealDrivers(prev => prev.map(d => d.id === editingId ? payload : d));
+             } else {
+               await supabase.from('drivers').insert([payload]);
+               setRealDrivers(prev => [...prev, payload]);
+             }
+             store.addDriver(payload);
+         }
+      } else if (activeTab === 'VEHICULOS') {
+         if(!vehicleForm.plate || !vehicleForm.transporter_id || !vehicleForm.driver_id) return;
+         const payload = { ...vehicleForm, id: editingId || crypto.randomUUID() } as Vehicle;
+         if (USE_MOCK_DB) {
+           if (editingId && store.updateVehicle) store.updateVehicle(payload);
+           else store.addVehicle(payload);
+         } else {
+             if (editingId) {
+               await supabase.from('vehicles').update(payload).eq('id', editingId);
+               setRealVehicles(prev => prev.map(v => v.id === editingId ? payload : v));
+               if (store.updateVehicle) store.updateVehicle(payload);
+             } else {
+               await supabase.from('vehicles').insert([payload]);
+               setRealVehicles(prev => [...prev, payload]);
+               store.addVehicle(payload);
+             }
+         }
+      }
+      setViewMode('LIST');
+    } catch (err: any) {
+      setSystemModal({ isOpen: true, type: 'error', message: err.message });
+    } finally {
+      isSavingRef.current = false;
+      setIsSaving(false);
     }
-    setViewMode('LIST');
   };
 
   const renderList = () => {
@@ -271,8 +281,10 @@ export const LogisticsManagement: React.FC = () => {
              )}
 
              <div className="flex justify-end gap-2 pt-4 border-t border-slate-200 mt-4">
-                <button type="button" onClick={() => setViewMode('LIST')} className="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium">Cancelar</button>
-                <button type="submit" className="bg-accent text-white px-6 py-2 rounded font-bold shadow-sm hover:bg-blue-700">Guardar</button>
+                <button type="button" onClick={() => setViewMode('LIST')} disabled={isSaving} className="px-4 py-2 text-slate-600 hover:text-slate-800 font-medium disabled:opacity-50">Cancelar</button>
+                <button type="submit" disabled={isSaving} className="bg-accent text-white px-6 py-2 rounded font-bold shadow-sm hover:bg-blue-700 disabled:opacity-50 flex items-center">
+                   {isSaving ? 'Guardando...' : 'Guardar'}
+                </button>
              </div>
           </form>
        </div>
@@ -280,7 +292,23 @@ export const LogisticsManagement: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex flex-col space-y-4">
+    <div className="h-full flex flex-col space-y-4 relative">
+      {/* --- CUSTOM SYSTEM MODALS --- */}
+      {systemModal.isOpen && (
+         <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+               {systemModal.type === 'error' && <div className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">X</span></div>}
+               {systemModal.type === 'success' && <div className="w-12 h-12 text-green-500 mx-auto mb-4 bg-green-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">✓</span></div>}
+               {systemModal.type === 'info' && <div className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">i</span></div>}
+               <h3 className="text-lg font-black text-slate-800 mb-2">
+                  {systemModal.type === 'error' ? 'Error' : systemModal.type === 'success' ? 'Éxito' : 'Información'}
+               </h3>
+               <p className="text-sm text-slate-600 mb-6 whitespace-pre-line">{systemModal.message}</p>
+               <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+            </div>
+         </div>
+      )}
+
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-bold text-slate-800 flex items-center">
           <Truck className="mr-2" /> Gestión Logística (Flota)
