@@ -43,6 +43,13 @@ ALTER TABLE erp_employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE erp_salary_advances ENABLE ROW LEVEL SECURITY;
 ALTER TABLE erp_payroll_records ENABLE ROW LEVEL SECURITY;
 
+-- Nuevas columnas para control avanzado (Fotos, PIN y Refrigerio)
+ALTER TABLE erp_employees ADD COLUMN IF NOT EXISTS pin_code VARCHAR(20);
+ALTER TABLE erp_employees ADD COLUMN IF NOT EXISTS photo_url TEXT;
+
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS break_start TIMESTAMP WITH TIME ZONE;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS break_end TIMESTAMP WITH TIME ZONE;
+
 -- Clean up unused table if it was created previously
 DROP TABLE IF EXISTS erp_attendance_records CASCADE;
 
