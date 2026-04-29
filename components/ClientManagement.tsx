@@ -13,6 +13,11 @@ export const ClientManagement: React.FC = () => {
    const [realPriceLists, setRealPriceLists] = useState<any[]>([]);
    const [isLoading, setIsLoading] = useState(false);
    const [isSaving, setIsSaving] = useState(false);
+   const isSavingRef = React.useRef(false);
+
+   // --- MODALS ---
+   const [systemModal, setSystemModal] = useState<{ isOpen: boolean, type: 'error' | 'warning' | 'info', message: string }>({ isOpen: false, type: 'info', message: '' });
+   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
    useEffect(() => {
      fetchData();
@@ -92,6 +97,8 @@ export const ClientManagement: React.FC = () => {
 
    const handleSave = async (e: React.FormEvent) => {
       e.preventDefault();
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
       setIsSaving(true);
       
       try {
@@ -122,8 +129,9 @@ export const ClientManagement: React.FC = () => {
             setViewMode('LIST');
          }
       } catch (err: any) {
-         alert("Error guardando cliente: " + err.message);
+         setSystemModal({ isOpen: true, type: 'error', message: "Error guardando cliente: " + err.message });
       } finally {
+         isSavingRef.current = false;
          setIsSaving(false);
       }
    };
@@ -136,6 +144,33 @@ export const ClientManagement: React.FC = () => {
    if (viewMode === 'DETAIL') {
       return (
          <div className="flex flex-col h-full bg-slate-100 rounded-lg border border-slate-300 overflow-hidden font-sans text-sm relative">
+            {/* --- CUSTOM SYSTEM MODALS --- */}
+            {systemModal.isOpen && (
+               <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+                  <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                     {systemModal.type === 'error' && <div className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">X</span></div>}
+                     {systemModal.type === 'info' && <div className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full flex items-center justify-center"><RefreshCw className="w-8 h-8" /></div>}
+                     <h3 className="text-lg font-black text-slate-800 mb-2">{systemModal.type === 'error' ? 'Error' : 'Información'}</h3>
+                     <p className="text-sm text-slate-600 mb-6 whitespace-pre-line">{systemModal.message}</p>
+                     <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+                  </div>
+               </div>
+            )}
+
+            {confirmModal.isOpen && (
+               <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+                  <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center border-t-4 border-yellow-500 animate-scale-up">
+                     <div className="w-16 h-16 text-yellow-500 mx-auto mb-4 bg-yellow-50 p-2 rounded-full flex items-center justify-center"><Trash2 className="w-8 h-8" /></div>
+                     <h3 className="text-xl font-extrabold text-slate-800 mb-2">{confirmModal.title}</h3>
+                     <p className="text-sm text-slate-600 mb-6">{confirmModal.message}</p>
+                     <div className="flex justify-center gap-3">
+                        <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="px-5 py-2.5 bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold rounded shadow-sm transition-colors">Cancelar</button>
+                        <button onClick={() => { confirmModal.onConfirm(); setConfirmModal({...confirmModal, isOpen: false}); }} className="px-5 py-2.5 bg-yellow-500 text-white hover:bg-yellow-600 font-bold rounded shadow-sm transition-colors">Sí, Confirmar</button>
+                     </div>
+                  </div>
+               </div>
+            )}
+
             <div className="bg-slate-700 text-white p-3 flex justify-between items-center shadow-md z-10">
                <h2 className="font-bold flex items-center">
                   {formData.id ? 'EDITAR CLIENTE' : 'NUEVO CLIENTE'} - <span className="ml-2 font-mono text-blue-300">{formData.code}</span>
@@ -365,11 +400,16 @@ export const ClientManagement: React.FC = () => {
                                        <button
                                           type="button"
                                           onClick={() => {
-                                             if (confirm('¿Eliminar esta sucursal de entrega?')) {
-                                                const newBranches = [...formData.branches!];
-                                                newBranches.splice(index, 1);
-                                                setFormData({ ...formData, branches: newBranches });
-                                             }
+                                             setConfirmModal({
+                                                isOpen: true,
+                                                title: 'Eliminar Sucursal',
+                                                message: '¿Eliminar esta sucursal de entrega?',
+                                                onConfirm: () => {
+                                                   const newBranches = [...formData.branches!];
+                                                   newBranches.splice(index, 1);
+                                                   setFormData({ ...formData, branches: newBranches });
+                                                }
+                                             });
                                           }}
                                           className="text-red-400 hover:text-red-600 p-2 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
                                           title="Eliminar Sucursal"
