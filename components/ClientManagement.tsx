@@ -183,8 +183,16 @@ export const ClientManagement: React.FC = () => {
 
        setIsLoading(true);
        try {
+           let baseUrl = company.api_dni_ruc_url.trim();
+           if (!baseUrl.startsWith('http')) {
+               baseUrl = 'https://' + baseUrl;
+           }
+           if (baseUrl.endsWith('/')) {
+               baseUrl = baseUrl.slice(0, -1);
+           }
+           
            const endpoint = doc_type === 'DNI' ? 'dni' : 'ruc';
-           const url = `${company.api_dni_ruc_url}/v2/reniec/${endpoint}?numero=${doc_number}`;
+           const url = `${baseUrl}/v2/reniec/${endpoint}?numero=${doc_number}`;
            
            const response = await fetch(url, {
                headers: {
