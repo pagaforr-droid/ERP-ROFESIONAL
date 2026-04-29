@@ -2,13 +2,18 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { CheckCircle2, Clock, AlertTriangle, XCircle, Send, RefreshCw, Filter, Search, FileText, CheckSquare, FileWarning, Eye } from 'lucide-react';
 import { Sale, DispatchSheet } from '../types';
+import { supabase } from '../services/supabase';
 
 export const SunatManager: React.FC = () => {
-    const { company, sales, dispatchSheets, transporters, drivers, vehicles, updateSunatStatus, generateGuiasFromSales } = useStore();
+    const { company, transporters, drivers, vehicles, updateSunatStatus, generateGuiasFromSales } = useStore();
 
     const [activeTab, setActiveTab] = useState<'facturas' | 'boletas' | 'notas_credito' | 'guias'>('facturas');
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED'>('ALL');
+
+    const [realSales, setRealSales] = useState<Sale[]>([]);
+    const [realDispatchSheets, setRealDispatchSheets] = useState<DispatchSheet[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
 
     const [sendingIds, setSendingIds] = useState<Set<string>>(new Set());
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -22,6 +27,26 @@ export const SunatManager: React.FC = () => {
     const [guiaTransporterId, setGuiaTransporterId] = useState('');
     const [guiaDriverId, setGuiaDriverId] = useState('');
     const [guiaVehicleId, setGuiaVehicleId] = useState('');
+
+    // Fetch Data from Supabase
+    const fetchData = async () => {
+        setIsLoading(true);
+        try {
+            const { data: salesData } = await supabase.from('sales').select('*').order('created_at', { ascending: false }).limit(200);
+            const { data: dsData } = await supabase.from('dispatch_sheets').select('*').order('created_at', { ascending: false }).limit(200);
+            
+            if (salesData) setRealSales(salesData as Sale[]);
+            if (dsData) setRealDispatchSheets(dsData as DispatchSheet[]);
+        } catch (error) {
+            console.error("Error fetching SUNAT docs:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    React.useEffect(() => {
+        fetchData();
+    }, []);
 
     // Calculate Days since emission
     const getDaysSince = (dateStr: string) => {
@@ -49,9 +74,9 @@ export const SunatManager: React.FC = () => {
         if (activeTab === 'facturas' || activeTab === 'boletas' || activeTab === 'notas_credito') {
             // Filter sales
             const typeFilter = activeTab === 'facturas' ? 'FACTURA' : (activeTab === 'boletas' ? 'BOLETA' : 'NOTA_CREDITO');
-            filtered = sales.filter(s => s.document_type === typeFilter);
+            filtered = realSales.filter(s => s.document_type === typeFilter);
         } else if (activeTab === 'guias') {
-            filtered = dispatchSheets.map(d => ({
+            filtered = realDispatchSheets.map(d => ({
                 ...d,
                 document_type: 'GUIA',
                 series: d.code.split('-')[0],
@@ -76,7 +101,7 @@ export const SunatManager: React.FC = () => {
         }
 
         return filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    }, [sales, dispatchSheets, activeTab, searchTerm, statusFilter]);
+    }, [realSales, realDispatchSheets, activeTab, searchTerm, statusFilter]);
 
     // Derived Selection State
     const allSelectableIds = useMemo(() => {
@@ -94,7 +119,7 @@ export const SunatManager: React.FC = () => {
     const metrics = useMemo(() => {
         let pending = 0, accepted = 0, rejected = 0, expired = 0;
 
-        const allDocs = [...sales, ...dispatchSheets.map(d => ({ ...d, document_type: 'GUIA', created_at: d.date }))];
+        const allDocs = [...realSales, ...realDispatchSheets.map(d => ({ ...d, document_type: 'GUIA', created_at: d.date }))];
 
         allDocs.forEach(d => {
             const status = d.sunat_status || 'PENDING';
@@ -113,7 +138,7 @@ export const SunatManager: React.FC = () => {
         });
 
         return { pending, accepted, rejected, expired };
-    }, [sales, dispatchSheets]);
+    }, [realSales, realDispatchSheets]);
 
     // Handlers
     const handleSendToSunat = async (type: 'sale' | 'dispatch', id: string) => {
@@ -144,6 +169,7 @@ export const SunatManager: React.FC = () => {
                 await updateSunatStatus(type, id, 'REJECTED', 'Error de conexión o comprobante rechazado.');
                 setSystemModal({ isOpen: true, type: 'error', message: 'El comprobante fue rechazado por SUNAT.' });
             }
+            await fetchData();
         } catch (error: any) {
             setSystemModal({ isOpen: true, type: 'error', message: error.message || 'Error desconocido al enviar.' });
         } finally {
@@ -225,6 +251,7 @@ export const SunatManager: React.FC = () => {
                 type: rejectedCount > 0 ? 'warning' : 'success', 
                 message: `Proceso completado:\n- Aceptados: ${acceptedCount}\n- Rechazados: ${rejectedCount}` 
             });
+            await fetchData();
 
         } catch (error: any) {
              setSystemModal({ isOpen: true, type: 'error', message: error.message || 'Error en el procesamiento por lote.' });
@@ -265,6 +292,7 @@ export const SunatManager: React.FC = () => {
                 await updateSunatStatus(type, d.id as string, 'ACCEPTED', 'Ticket resuelto: Aceptado exitosamente por SUNAT.');
             }
 
+            await fetchData();
             setSystemModal({ isOpen: true, type: 'success', message: `Se actualizaron ${pendingDocs.length} tickets pendientes.` });
         } catch (error: any) {
             setSystemModal({ isOpen: true, type: 'error', message: error.message || 'Error al consultar tickets.' });
@@ -301,6 +329,7 @@ export const SunatManager: React.FC = () => {
             
             setIsGenerateGuiaModalOpen(false);
             setSelectedIds(new Set());
+            await fetchData();
             setSystemModal({ isOpen: true, type: 'success', message: `Se generaron ${idsArray.length} Guías de Remisión existosamente.` });
         } finally {
             isSavingRef.current = false;
