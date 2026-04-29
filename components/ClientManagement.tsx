@@ -203,14 +203,16 @@ export const ClientManagement: React.FC = () => {
            const data = await response.json();
            
            if (doc_type === 'DNI') {
-               const fullname = `${data.nombres || ''} ${data.apellidoPaterno || ''} ${data.apellidoMaterno || ''}`.trim();
-               setFormData(prev => ({ ...prev, name: fullname }));
+               // Mapeo robusto para DNI (Decolecta/ApisNet)
+               const fullname = data.nombre || `${data.nombres || ''} ${data.apellidoPaterno || ''} ${data.apellidoMaterno || ''}`.trim();
+               setFormData(prev => ({ ...prev, name: fullname || prev.name }));
            } else {
+               // Mapeo robusto para RUC (Decolecta/ApisNet)
                setFormData(prev => ({ 
                    ...prev, 
-                   name: data.razonSocial || prev.name, 
-                   address: data.direccion || prev.address,
-                   ubigeo: data.ubigeo || prev.ubigeo
+                   name: data.nombre || data.razonSocial || data.razon_social || data.denominacion || prev.name, 
+                   address: data.direccion || data.direccion_fisica || prev.address,
+                   ubigeo: data.ubigeo || data.codigo_ubigeo || prev.ubigeo
                }));
            }
        } catch (error: any) {
