@@ -153,21 +153,87 @@ export const SunatManager: React.FC = () => {
                 return;
             }
 
-            // SIMULACIÓN DE FETCH AL PROVEEDOR
-            // const response = await fetch(company.sunat_api_url, {
-            //     method: 'POST',
-            //     headers: { 'Authorization': `Bearer ${company.sunat_api_token}`, 'Content-Type': 'application/json' },
-            //     body: JSON.stringify({ document_id: id, type })
-            // });
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            const isSuccess = Math.random() > 0.1;
+            let payload: any = null;
 
-            if (isSuccess) {
-                await updateSunatStatus(type, id, 'ACCEPTED', 'Comprobante aceptado exitosamente por SUNAT.');
-                setSystemModal({ isOpen: true, type: 'success', message: 'El comprobante ha sido aceptado por SUNAT.' });
+            if (type === 'sale') {
+                const sale = realSales.find(s => s.id === id);
+                if (!sale) throw new Error("Venta no encontrada");
+                
+                // Fetch items
+                const { data: items } = await supabase.from('sale_items').select('*').eq('sale_id', id);
+                if (!items || items.length === 0) throw new Error("La venta no tiene items");
+
+                let tipo_de_comprobante = 1;
+                if (sale.document_type === 'BOLETA') tipo_de_comprobante = 2;
+                if (sale.document_type === 'NOTA_CREDITO') tipo_de_comprobante = 3;
+
+                let cliente_tipo_de_documento = 6;
+                if (sale.client_ruc.length === 8) cliente_tipo_de_documento = 1;
+                else if (sale.client_ruc.length !== 11) cliente_tipo_de_documento = 0;
+
+                payload = {
+                    "operacion": "generar_comprobante",
+                    "tipo_de_comprobante": tipo_de_comprobante,
+                    "serie": sale.series,
+                    "numero": parseInt(sale.number, 10).toString(),
+                    "sunat_transaction": 1,
+                    "cliente_tipo_de_documento": cliente_tipo_de_documento,
+                    "cliente_numero_de_documento": sale.client_ruc,
+                    "cliente_denominacion": sale.client_name,
+                    "cliente_direccion": sale.client_address || "LIMA",
+                    "cliente_email": "",
+                    "fecha_de_emision": new Date(sale.created_at || new Date()).toLocaleDateString('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'),
+                    "moneda": 1,
+                    "porcentaje_de_igv": 18.00,
+                    "total_gravada": Number(sale.subtotal).toFixed(2),
+                    "total_igv": Number(sale.igv).toFixed(2),
+                    "total": Number(sale.total).toFixed(2),
+                    "items": items.map(item => {
+                        const qty = item.quantity_presentation || item.quantity || 1;
+                        const price = Number(item.unit_price);
+                        const valUnit = price / 1.18;
+                        const subtotal = qty * valUnit;
+                        const total = qty * price;
+                        const igv = total - subtotal;
+                        
+                        return {
+                            "unidad_de_medida": item.selected_unit === 'UND' ? 'NIU' : 'BX',
+                            "codigo": item.product_sku || item.product_id.substring(0,8),
+                            "descripcion": item.product_name,
+                            "cantidad": qty,
+                            "valor_unitario": valUnit.toFixed(2),
+                            "precio_unitario": price.toFixed(2),
+                            "subtotal": subtotal.toFixed(2),
+                            "tipo_de_igv": 1,
+                            "igv": igv.toFixed(2),
+                            "total": total.toFixed(2),
+                            "anticipo_regularizacion": "false"
+                        };
+                    })
+                };
             } else {
-                await updateSunatStatus(type, id, 'REJECTED', 'Error de conexión o comprobante rechazado.');
-                setSystemModal({ isOpen: true, type: 'error', message: 'El comprobante fue rechazado por SUNAT.' });
+                 throw new Error("El envío de Guías aún no está implementado en la API.");
+            }
+
+            // Real Fetch
+            const response = await fetch(company.sunat_api_url, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': `Bearer ${company.sunat_api_token}`, 
+                    'Content-Type': 'application/json' 
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const responseData = await response.json();
+
+            if (response.ok && !responseData.errors) {
+                await updateSunatStatus(type, id, 'ACCEPTED', responseData.sunat_description || 'Comprobante aceptado exitosamente por SUNAT.');
+                setSystemModal({ isOpen: true, type: 'success', message: 'El comprobante ha sido aceptado por SUNAT.\n\n' + (responseData.sunat_description || '') });
+            } else {
+                const errorMsg = responseData.errors || 'Error de conexión o comprobante rechazado.';
+                await updateSunatStatus(type, id, 'REJECTED', errorMsg);
+                setSystemModal({ isOpen: true, type: 'error', message: `El comprobante fue rechazado por SUNAT.\n\nDetalle: ${errorMsg}` });
             }
             await fetchData();
         } catch (error: any) {
