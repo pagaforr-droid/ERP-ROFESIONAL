@@ -17,6 +17,7 @@ export const EditSale: React.FC = () => {
    const priceInputRef = useRef<HTMLInputElement>(null);
    const addButtonRef = useRef<HTMLButtonElement>(null);
 
+   const isSavingRef = useRef(false);
    const [priceLocked, setPriceLocked] = useState(false); 
    const [isSaving, setIsSaving] = useState(false);
 
@@ -573,9 +574,11 @@ export const EditSale: React.FC = () => {
    };
 
    const executeSaveEdit = async () => {
+      if (isSavingRef.current) return;
       if (!originalSale) return;
       if (cart.length === 0) { showDialog('error', 'Error', 'El comprobante no puede estar vacío.'); return; }
 
+      isSavingRef.current = true;
       setIsSaving(true);
       try {
          // 1. Fetch fresh batches for all products to recalculate allocations correctly
@@ -669,6 +672,7 @@ export const EditSale: React.FC = () => {
       } catch (err: any) { 
          showDialog('error', 'Error de Edición', err.message);
       } finally { 
+         isSavingRef.current = false;
          setIsSaving(false); 
       }
    };

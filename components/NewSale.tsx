@@ -19,6 +19,7 @@ export const NewSale: React.FC = () => {
    const discountInputRef = useRef<HTMLInputElement>(null);
    const addButtonRef = useRef<HTMLButtonElement>(null);
 
+   const isSavingRef = useRef(false);
    const [priceLocked, setPriceLocked] = useState(true);
    const [isSaving, setIsSaving] = useState(false);
 
@@ -603,6 +604,7 @@ export const NewSale: React.FC = () => {
    const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => { applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent); };
 
    const executeSaveSale = async () => {
+      if (isSavingRef.current) return;
       if (!series || !docNumber) { showDialog('error', 'Error', "No hay serie asignada."); return; }
 
       // 🚨 INYECCIÓN DEL NOMBRE DEL VENDEDOR PARA VENTAS NUEVAS
@@ -634,6 +636,7 @@ export const NewSale: React.FC = () => {
          previous_debt: clientCreditInfo.debt
       };
 
+      isSavingRef.current = true;
       setIsSaving(true);
 
       try {
@@ -653,6 +656,7 @@ export const NewSale: React.FC = () => {
       } catch (err: any) { 
          showDialog('error', 'Error Crítico', err.message);
       } finally { 
+         isSavingRef.current = false;
          setIsSaving(false); 
       }
    };
@@ -1135,8 +1139,8 @@ export const NewSale: React.FC = () => {
             <button
                type="button"
                onClick={handleSaveSale}
-               disabled={isViewMode && !originalSale}
-               className={`w-32 bg-green-600 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${(isViewMode && !originalSale) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-700'}`}
+               disabled={(isViewMode && !originalSale) || isSaving}
+               className={`w-32 bg-green-600 text-white font-bold rounded shadow-lg flex flex-col items-center justify-center ${((isViewMode && !originalSale) || isSaving) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-green-700'}`}
             >
                <Save className="w-6 h-6 mb-1" />
                {isViewMode ? 'IMPRIMIR' : 'GUARDAR (F10)'}
