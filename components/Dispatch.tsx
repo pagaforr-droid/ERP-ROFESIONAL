@@ -107,6 +107,27 @@ export const Dispatch: React.FC = () => {
 
    useEffect(() => {
       fetchData();
+
+      // Suscripción en tiempo real para sincronizar el avance del reparto desde la App Móvil
+      const channel = supabase
+         .channel('dispatch_sales_monitoring')
+         .on(
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'sales' },
+            (payload) => {
+               const updatedSale = payload.new as Partial<Sale>;
+               setSales(prev => prev.map(s => 
+                  s.id === updatedSale.id 
+                     ? { ...s, ...updatedSale, items: s.items } 
+                     : s
+               ));
+            }
+         )
+         .subscribe();
+
+      return () => {
+         supabase.removeChannel(channel);
+      };
    }, []);
 
    // --- DATA PREPARATION ---

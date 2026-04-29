@@ -37,7 +37,7 @@ export const CashFlow: React.FC = () => {
                supabase.from('vehicles').select('*'),
                supabase.from('erp_users').select('id, name, username')
             ]);
-            
+
             const stateUpdates: any = {};
             if (sessionsRes.data) {
                stateUpdates.cashSessions = sessionsRes.data;
@@ -47,7 +47,7 @@ export const CashFlow: React.FC = () => {
             if (categoriesRes.data) stateUpdates.expenseCategories = categoriesRes.data;
             if (movementsRes.data) stateUpdates.cashMovements = movementsRes.data;
             if (scheduledRes.data) stateUpdates.scheduledTransactions = scheduledRes.data;
-            
+
             if (Object.keys(stateUpdates).length > 0) {
                useStore.setState(stateUpdates);
             }
@@ -282,9 +282,9 @@ export const CashFlow: React.FC = () => {
             }
             setShowModal(false);
          } catch (e: any) {
-             alert(`Error al guardar: ${e.message}`);
+            alert(`Error al guardar: ${e.message}`);
          } finally {
-             setIsSaving(false);
+            setIsSaving(false);
          }
       };
 
@@ -293,7 +293,7 @@ export const CashFlow: React.FC = () => {
             setIsSaving(true);
             try {
                await store.deleteCashMovement(id);
-            } catch(e: any) {
+            } catch (e: any) {
                alert(`Error eliminando: ${e.message}`);
             } finally {
                setIsSaving(false);
@@ -352,22 +352,22 @@ export const CashFlow: React.FC = () => {
                                        ? (() => {
                                           const parsedId = m.reference_id || m.description.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
                                           if (!parsedId) return `${m.description} (No ID)`;
-                                          
+
                                           const liq = localLiquidations.find(l => l.id === parsedId);
                                           if (!liq) return `${m.description} (No Liq)`;
-                                          
+
                                           const sheet = localDispatchSheets.find(s => s.id === liq.dispatch_sheet_id);
                                           if (!sheet) return `${m.description} (No Sheet)`;
-                                          
+
                                           const vehicle = localVehicles.find(v => v.id === sheet.vehicle_id);
                                           const driver = localDrivers.find(d => d.id === (vehicle?.driver_id || sheet.driver_id));
-                                          
+
                                           const user = localUsers.find(u => u.id === m.user_id);
                                           const userName = user ? (user.name === 'Nuevo Usuario' ? user.username : user.name) : (m.user_id || 'SISTEMA');
-                                          
+
                                           const respMatch = m.description.match(/- Resp: (.*?) -/);
                                           const rindio = respMatch ? respMatch[1].trim() : null;
-                                          
+
                                           return `Planilla N° ${sheet.code} - Chofer: ${driver?.name || 'S/D'}${rindio ? ` - Rindió: ${rindio}` : ''} - Reg: ${userName}`;
                                        })()
                                        : m.description
@@ -874,7 +874,7 @@ export const CashFlow: React.FC = () => {
          try {
             await store.openCashSession(openingAmount, store.currentUser?.id || 'SISTEMA');
             setOpeningAmount(0);
-         } catch(error: any) {
+         } catch (error: any) {
             alert(`Error al aperturar caja: ${error?.message || 'Revisa tu conexión'}`);
          } finally {
             setIsProcessingSession(false);
@@ -898,7 +898,7 @@ export const CashFlow: React.FC = () => {
                setB200(0); setB100(0); setB50(0); setB20(0); setB10(0);
                setM5(0); setM2(0); setM1(0); setM05(0); setM02(0); setM01(0);
                setVouchers(0); setTransfers(0);
-            } catch(error: any) {
+            } catch (error: any) {
                alert(`Error al cerrar caja: ${error?.message || 'Verifica tu conexión'}`);
             } finally {
                setIsProcessingSession(false);
