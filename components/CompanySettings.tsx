@@ -535,12 +535,12 @@ export const CompanySettings: React.FC = () => {
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase">URL del Endpoint Base</label>
                 <input
                   type="url"
-                  placeholder="https://api.decolecta.com/v2/reniec/dni"
+                  placeholder="https://api.decolecta.com"
                   className="w-full border-2 border-slate-200 p-3 rounded-lg text-blue-700 font-mono text-sm focus:border-blue-500 outline-none transition-colors"
                   value={formData.api_dni_ruc_url}
                   onChange={e => setFormData({ ...formData, api_dni_ruc_url: e.target.value })}
                 />
-                <p className="text-xs text-slate-500 mt-1 font-medium">Ejemplo: https://api.decolecta.com (el sistema añadirá automáticamente /v2/reniec/dni?numero=...)</p>
+                <p className="text-xs text-slate-500 mt-1 font-medium">Ejemplo: https://api.decolecta.com (el sistema añadirá automáticamente /v1/reniec/dni o /v1/sunat/ruc)</p>
               </div>
 
               <div>

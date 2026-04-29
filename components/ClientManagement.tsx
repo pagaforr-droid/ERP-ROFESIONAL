@@ -191,8 +191,8 @@ export const ClientManagement: React.FC = () => {
                baseUrl = baseUrl.slice(0, -1);
            }
            
-           const endpoint = doc_type === 'DNI' ? 'dni' : 'ruc';
-           const url = `${baseUrl}/v2/reniec/${endpoint}?numero=${doc_number}`;
+           const endpointPath = doc_type === 'DNI' ? '/v1/reniec/dni' : '/v1/sunat/ruc';
+           const url = `${baseUrl}${endpointPath}?numero=${doc_number}`;
            
            const response = await fetch(url, {
                headers: {
