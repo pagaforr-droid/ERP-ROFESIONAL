@@ -11,6 +11,7 @@ export const ClientManagement: React.FC = () => {
    const [realClients, setRealClients] = useState<Client[]>([]);
    const [realZones, setRealZones] = useState<any[]>([]);
    const [realPriceLists, setRealPriceLists] = useState<any[]>([]);
+   const [realSellers, setRealSellers] = useState<any[]>([]);
    const [isLoading, setIsLoading] = useState(false);
    const [isSaving, setIsSaving] = useState(false);
    const isSavingRef = React.useRef(false);
@@ -27,15 +28,17 @@ export const ClientManagement: React.FC = () => {
      if (!USE_MOCK_DB) {
        setIsLoading(true);
        try {
-         const [clientsRes, zonesRes, plRes] = await Promise.all([
+         const [clientsRes, zonesRes, plRes, sellersRes] = await Promise.all([
            supabase.from('clients').select('*').order('name'),
            supabase.from('zones').select('*').order('name'),
-           supabase.from('price_lists').select('*').order('name')
+           supabase.from('price_lists').select('*').order('name'),
+           supabase.from('sellers').select('*').order('name')
          ]);
          
          if (clientsRes.data) setRealClients(clientsRes.data as Client[]);
          if (zonesRes.data) setRealZones(zonesRes.data);
          if (plRes.data) setRealPriceLists(plRes.data);
+         if (sellersRes.data) setRealSellers(sellersRes.data);
        } catch (err: any) {
          console.error("Error cargando datos de clientes:", err.message);
        } finally {
@@ -47,6 +50,7 @@ export const ClientManagement: React.FC = () => {
    const clients = USE_MOCK_DB ? mockClients : realClients;
    const zones = USE_MOCK_DB ? useStore.getState().zones : realZones;
    const priceLists = USE_MOCK_DB ? useStore.getState().priceLists : realPriceLists;
+   const sellers = USE_MOCK_DB ? useStore.getState().sellers : realSellers;
 
    const [viewMode, setViewMode] = useState<'LIST' | 'DETAIL'>('LIST');
    const [activeTab, setActiveTab] = useState<'MAIN' | 'SECONDARY' | 'BRANCHES'>('MAIN');
@@ -150,7 +154,9 @@ export const ClientManagement: React.FC = () => {
 
    const getSellerForZone = (zoneId: string) => {
       const zone = zones.find(z => z.id === zoneId);
-      return zone ? zone.assigned_seller_id : '---';
+      if (!zone || !zone.assigned_seller_id) return '---';
+      const seller = sellers.find(s => s.id === zone.assigned_seller_id);
+      return seller ? seller.name : zone.assigned_seller_id;
    };
 
    const handleSearchDniRuc = async () => {
@@ -163,9 +169,7 @@ export const ClientManagement: React.FC = () => {
        // CHEQUEO CANDADO ANTES DE BUSCAR
        const existingClient = clients.find(c => c.doc_number === doc_number && c.id !== formData.id);
        if (existingClient) {
-           const sellerId = getSellerForZone(existingClient.zone_id || '');
-           const seller = useStore.getState().sellers.find(s => s.id === sellerId);
-           const sellerName = seller ? seller.name : 'SIN ASIGNAR';
+           const sellerName = getSellerForZone(existingClient.zone_id || '');
            
            setSystemModal({ 
               isOpen: true, 
@@ -600,7 +604,7 @@ export const ClientManagement: React.FC = () => {
                                  {zone ? (
                                     <div className="bg-slate-100 border border-slate-200 rounded-lg p-1.5 inline-block">
                                        <div className="font-black text-slate-800">{zone.code}</div>
-                                       <div className="text-[9px] text-slate-500 font-bold">{zone.assigned_seller_id}</div>
+                                       <div className="text-[9px] text-slate-500 font-bold">{getSellerForZone(zone.id)}</div>
                                     </div>
                                  ) : <span className="text-xs font-bold text-slate-300 italic">SIN ZONA</span>}
                                  {pl && <div className="mt-1"><span className="bg-green-100 text-green-800 text-[9px] px-2 py-0.5 rounded-full border border-green-200 font-bold">{pl.name}</span></div>}
