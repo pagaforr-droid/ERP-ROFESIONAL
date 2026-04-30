@@ -204,15 +204,20 @@ export const ClientManagement: React.FC = () => {
            
            if (doc_type === 'DNI') {
                // Mapeo robusto para DNI (Decolecta/ApisNet)
-               const fullname = data.nombre || `${data.nombres || ''} ${data.apellidoPaterno || ''} ${data.apellidoMaterno || ''}`.trim();
+               const fullname = data.full_name || data.nombre || `${data.nombres || data.first_name || ''} ${data.apellidoPaterno || data.first_last_name || ''} ${data.apellidoMaterno || data.second_last_name || ''}`.trim();
                setFormData(prev => ({ ...prev, name: fullname || prev.name }));
            } else {
                // Mapeo robusto para RUC (Decolecta/ApisNet)
+               const address = (data.direccion || data.direccion_fisica || '').trim();
+               const dept = (data.departamento || '').toUpperCase();
+               const cityMatch = PERU_CITIES.find(c => c.toUpperCase() === dept);
+               
                setFormData(prev => ({ 
                    ...prev, 
                    name: data.nombre || data.razonSocial || data.razon_social || data.denominacion || prev.name, 
-                   address: data.direccion || data.direccion_fisica || prev.address,
-                   ubigeo: data.ubigeo || data.codigo_ubigeo || prev.ubigeo
+                   address: address || prev.address,
+                   ubigeo: data.ubigeo || data.codigo_ubigeo || prev.ubigeo,
+                   city: cityMatch || prev.city
                }));
            }
        } catch (error: any) {
