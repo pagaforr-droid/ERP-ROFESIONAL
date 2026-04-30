@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase } from '../services/supabase';
 import { Seller, Order } from '../types';
 import { Loader2, MapPin, Search, AlertTriangle, Route, Clock, Navigation, Flag, CheckCircle2, Navigation2 } from 'lucide-react';
 
