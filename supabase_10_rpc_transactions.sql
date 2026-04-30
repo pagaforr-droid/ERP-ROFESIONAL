@@ -50,7 +50,7 @@ BEGIN
     -- 2. Insertar Cabecera de Pedido
     INSERT INTO orders (
         id, code, client_id, client_name, client_doc_type, client_doc_number,
-        seller_id, suggested_document_type, payment_method, total, status, delivery_address
+        seller_id, suggested_document_type, payment_method, total, status, delivery_address, creation_location
     ) VALUES (
         COALESCE(NULLIF(p_order_data->>'id', ''), uuid_generate_v4()::text)::uuid,
         v_code,
@@ -63,7 +63,8 @@ BEGIN
         (p_order_data->>'payment_method')::payment_method,
         (p_order_data->>'total')::numeric,
         COALESCE(NULLIF(p_order_data->>'status', ''), 'pending')::general_status,
-        p_order_data->>'delivery_address'
+        p_order_data->>'delivery_address',
+        p_order_data->'creation_location'
     ) RETURNING id INTO v_order_id;
     
     -- 3. Procesar Items y Asignar Lotes (FIFO)
@@ -143,6 +144,7 @@ BEGIN
         payment_method = (p_order_data->>'payment_method')::payment_method,
         total = (p_order_data->>'total')::numeric,
         delivery_address = p_order_data->>'delivery_address',
+        creation_location = COALESCE(p_order_data->'creation_location', creation_location),
         updated_at = NOW()
     WHERE id = v_order_id;
 
