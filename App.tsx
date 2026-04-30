@@ -36,6 +36,7 @@ import { AccountingReports } from './components/AccountingReports';
 import { Login } from './components/Login';
 import { SystemMaintenance } from './components/SystemMaintenance';
 import { Inventory } from './components/Inventory';
+import SellerTrackingReport from './components/SellerTrackingReport';
 import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight, FileSpreadsheet, ChevronLeft, ChevronRight, Edit3, HardDrive } from 'lucide-react';
 import { ViewState } from './types';
 import { useStore } from './services/store';
@@ -157,6 +158,7 @@ export default function App() {
       case 'document-manager': return <DocumentManager />;
       case 'reports': return <StrategicReports />;
       case 'accounting-reports': return <AccountingReports />;
+      case 'seller-tracking': return <SellerTrackingReport />;
       case 'quota-manager': return <QuotaManager />;
       case 'kardex': return <Kardex />;
       case 'users': return <UserManagement />;
@@ -303,6 +305,7 @@ export default function App() {
           <Section title="Gestión" theme="purple">
             <NavItem view="reports" icon={PieChart} label="Reportes & BI" />
             <NavItem view="accounting-reports" icon={FileSpreadsheet} label="Reportes Contables" />
+            <NavItem view="seller-tracking" icon={Map} label="Tracking de Vendedores" />
             <NavItem view="quota-manager" icon={ClipboardList} label="Gestión de Cuotas" />
             <NavItem view="users" icon={Shield} label="Usuarios & Permisos" />
             <NavItem view="system-maintenance" icon={HardDrive} label="Mantenimiento DB" />

@@ -727,6 +727,20 @@ export const AdvancedOrderEntry: React.FC = () => {
     isSavingRef.current = true;
     setIsSaving(true);
     
+    // 🔥 CAPTURA GPS SILENCIOSA (Max 6 segundos)
+    let creationLocation = null;
+    if ("geolocation" in navigator) {
+        try {
+            creationLocation = await new Promise((resolve) => {
+                navigator.geolocation.getCurrentPosition(
+                    (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                    (err) => resolve(null),
+                    { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+                );
+            });
+        } catch (e) { /* Silencioso */ }
+    }
+
     // 🔥 CÁLCULO EN TIEMPO REAL: Leemos de nuevo todo el carrito y aseguramos el total
     const currentTotal = cart.reduce((sum, item) => sum + item.total_price, 0);
 
@@ -743,6 +757,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       total: Number(currentTotal.toFixed(2)), // Re-calculado para evitar desfases
       status: 'pending', 
       delivery_address: clientAddress.trim() || null, 
+      creation_location: creationLocation, // NUEVO: Tracking GPS
       items: cart.map(c => {
         const conversionFactor = Number((c.unit_type || '').split('/')[1]) || 1;
         const qtyBase = c.quantity * conversionFactor;

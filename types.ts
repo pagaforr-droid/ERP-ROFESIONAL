@@ -396,6 +396,7 @@ export interface Order {
 
   observation?: string;
   delivery_address?: string;
+  creation_location?: { lat: number; lng: number } | null;
 
   created_at: string;
   items: OrderItem[];
@@ -746,4 +747,5 @@ export type ViewState =
   | 'advanced-orders'
   | 'mobile-delivery'
   | 'accounts-receivable' // NEW: Cuentas por Cobrar
-  | 'personnel-management';
+  | 'personnel-management'
+  | 'seller-tracking';

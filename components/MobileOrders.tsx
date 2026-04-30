@@ -572,6 +572,21 @@ export const MobileOrders: React.FC = () => {
             if (isSavingRef.current) return;
             isSavingRef.current = true;
             setIsSaving(true);
+
+            // 🔥 CAPTURA GPS SILENCIOSA (Max 6 segundos)
+            let creationLocation = null;
+            if ("geolocation" in navigator) {
+                try {
+                    creationLocation = await new Promise((resolve) => {
+                        navigator.geolocation.getCurrentPosition(
+                            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                            (err) => resolve(null),
+                            { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+                        );
+                    });
+                } catch (e) { /* Silencioso */ }
+            }
+
             const orderPayload = {
                id: isEditMode && originalOrder ? originalOrder.id : generateUUID(),
                code: isEditMode && originalOrder ? originalOrder.code : pedidoSeries + '-' + pedidoNumber,
@@ -585,6 +600,7 @@ export const MobileOrders: React.FC = () => {
                total: Number(currentTotal.toFixed(2)),
                status: 'pending',
                delivery_address: clientAddress || null,
+               creation_location: creationLocation, // NUEVO: Tracking GPS
                items: cart.map(c => {
                   const conversionFactor = Number((c.unit_type || '').split('/')[1]) || 1;
                   const qtyBase = c.quantity * conversionFactor;

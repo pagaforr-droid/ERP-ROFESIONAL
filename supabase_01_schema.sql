@@ -315,6 +315,7 @@ CREATE TABLE orders (
     delivery_mode delivery_mode,
     observation TEXT,
     delivery_address TEXT,
+    creation_location JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
