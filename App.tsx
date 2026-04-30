@@ -123,7 +123,7 @@ export default function App() {
 
   // --- PERMISSION CHECK ---
   const canAccess = (view: string) => {
-    return currentUser.permissions?.includes(view) || view === 'edit-sale' || view === 'accounts-receivable'; 
+    return currentUser.permissions?.includes(view) || view === 'edit-sale' || view === 'accounts-receivable' || view === 'seller-tracking'; 
   };
 
   const renderContent = () => {
