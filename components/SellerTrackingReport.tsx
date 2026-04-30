@@ -30,10 +30,11 @@ export default function SellerTrackingReport() {
     setIsLoading(true);
     setError('');
     try {
-      const startOfDay = new Date(selectedDate);
+      const [year, month, day] = selectedDate.split('-');
+      const startOfDay = new Date(Number(year), Number(month) - 1, Number(day));
       startOfDay.setHours(0, 0, 0, 0);
       
-      const endOfDay = new Date(selectedDate);
+      const endOfDay = new Date(Number(year), Number(month) - 1, Number(day));
       endOfDay.setHours(23, 59, 59, 999);
 
       const { data, error: fetchError } = await supabase
