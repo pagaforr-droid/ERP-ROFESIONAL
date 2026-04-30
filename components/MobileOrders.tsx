@@ -573,15 +573,18 @@ export const MobileOrders: React.FC = () => {
             isSavingRef.current = true;
             setIsSaving(true);
 
-            // 🔥 CAPTURA GPS SILENCIOSA (Max 6 segundos)
+            // 🔥 CAPTURA GPS SILENCIOSA (Max 15 segundos)
             let creationLocation = null;
             if ("geolocation" in navigator) {
                 try {
                     creationLocation = await new Promise((resolve) => {
                         navigator.geolocation.getCurrentPosition(
                             (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-                            (err) => resolve(null),
-                            { enableHighAccuracy: true, timeout: 6000, maximumAge: 0 }
+                            (err) => {
+                                console.warn("GPS Error:", err);
+                                resolve(null);
+                            },
+                            { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
                         );
                     });
                 } catch (e) { /* Silencioso */ }
