@@ -234,7 +234,6 @@ export const MobileDelivery: React.FC = () => {
         }
     };
 
-    );
 
     // --- VIEWS ---
     const renderContent = () => {
