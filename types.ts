@@ -345,6 +345,7 @@ export interface Driver {
   name: string; // Nombres completos
   address: string;
   phone?: string;
+  pin_code?: string; // NEW: Password/PIN para acceso a la App Reparto
 }
 
 export interface Vehicle {

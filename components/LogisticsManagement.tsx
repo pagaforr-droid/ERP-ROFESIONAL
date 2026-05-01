@@ -241,9 +241,16 @@ export const LogisticsManagement: React.FC = () => {
                       <div><label className="block text-xs font-bold text-slate-700 mb-1">Licencia</label><input required className="w-full border border-slate-300 p-2 rounded text-slate-900" value={driverForm.license || ''} onChange={e => setDriverForm({...driverForm, license: e.target.value})} /></div>
                    </div>
                    <div><label className="block text-xs font-bold text-slate-700 mb-1">Nombres Completos</label><input required className="w-full border border-slate-300 p-2 rounded text-slate-900" value={driverForm.name || ''} onChange={e => setDriverForm({...driverForm, name: e.target.value})} /></div>
-                   <div className="grid grid-cols-2 gap-4">
+                   <div className="grid grid-cols-3 gap-4">
                       <div><label className="block text-xs font-bold text-slate-700 mb-1">Teléfono</label><input className="w-full border border-slate-300 p-2 rounded text-slate-900" value={driverForm.phone || ''} onChange={e => setDriverForm({...driverForm, phone: e.target.value})} /></div>
-                      <div><label className="block text-xs font-bold text-slate-700 mb-1">Dirección</label><input className="w-full border border-slate-300 p-2 rounded text-slate-900" value={driverForm.address || ''} onChange={e => setDriverForm({...driverForm, address: e.target.value})} /></div>
+                      <div className="col-span-2"><label className="block text-xs font-bold text-slate-700 mb-1">Dirección</label><input className="w-full border border-slate-300 p-2 rounded text-slate-900" value={driverForm.address || ''} onChange={e => setDriverForm({...driverForm, address: e.target.value})} /></div>
+                   </div>
+                   <div>
+                     <label className="block text-xs font-bold text-slate-700 mb-1 flex justify-between">
+                       <span>Contraseña / PIN App</span>
+                       <span className="text-[10px] text-slate-400 font-normal">Para App Reparto</span>
+                     </label>
+                     <input type="text" className="w-full border border-slate-300 p-2 rounded text-slate-900 font-mono font-bold" placeholder="Ej. 1234" value={driverForm.pin_code || ''} onChange={e => setDriverForm({...driverForm, pin_code: e.target.value})} />
                    </div>
                 </>
              )}

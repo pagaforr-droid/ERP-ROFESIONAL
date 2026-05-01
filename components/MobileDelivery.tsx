@@ -106,6 +106,17 @@ export const MobileDelivery: React.FC = () => {
     // Handlers
     const handleDriverSelect = (id: string) => {
         if (!id) return;
+
+        const driver = dbDrivers.find(d => d.id === id);
+        if (driver && driver.pin_code && viewMode === 'DRIVER_SELECT') {
+           const enteredPin = window.prompt(`🔑 INGRESO SEGURO\nHola ${driver.name},\nPor favor, ingresa tu Contraseña / PIN para acceder a tu ruta de reparto:`);
+           if (enteredPin !== driver.pin_code) {
+               window.alert("❌ Acceso Denegado: Contraseña incorrecta.");
+               setCurrentDriverId('');
+               return;
+           }
+        }
+
         setCurrentDriverId(id);
         setViewMode('DISPATCH_SELECT');
     };
