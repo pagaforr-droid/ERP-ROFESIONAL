@@ -234,31 +234,10 @@ export const MobileDelivery: React.FC = () => {
         }
     };
 
-    // --- SYSTEM ALERT COMPONENT ---
-    const SystemAlert = () => (
-        systemAlert.show ? (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
-                <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center">
-                    {systemAlert.type === 'error' && <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />}
-                    {systemAlert.type === 'success' && <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />}
-                    {systemAlert.type === 'info' && <Info className="w-16 h-16 text-blue-500 mx-auto mb-4" />}
-                    
-                    <h3 className="text-xl font-black text-slate-800 mb-2">
-                        {systemAlert.type === 'error' ? 'Aviso Importante' : 'Completado'}
-                    </h3>
-                    <p className="text-slate-600 mb-6 font-medium">{systemAlert.message}</p>
-                    <button 
-                        onClick={() => setSystemAlert({ ...systemAlert, show: false })}
-                        className={`w-full py-3 text-white rounded-xl font-bold shadow-lg active:scale-95 transition-transform ${systemAlert.type === 'error' ? 'bg-red-600 shadow-red-600/30' : 'bg-green-600 shadow-green-600/30'}`}
-                    >
-                        Entendido
-                    </button>
-                </div>
-            </div>
-        ) : null
     );
 
     // --- VIEWS ---
+    const renderContent = () => {
 
     if (isLoadingData && viewMode === 'DRIVER_SELECT') {
         return <div className="h-full flex items-center justify-center bg-slate-100"><Loader2 className="w-8 h-8 animate-spin text-indigo-600" /></div>;
@@ -586,8 +565,35 @@ export const MobileDelivery: React.FC = () => {
         );
     }
 
+    return null;
+    };
+
     return (
         <>
+            {renderContent()}
+
+            {/* SYSTEM ALERTS AND MODALS */}
+            {systemAlert.show && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full text-center">
+                        {systemAlert.type === 'error' && <AlertTriangle className="w-16 h-16 text-red-500 mx-auto mb-4" />}
+                        {systemAlert.type === 'success' && <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />}
+                        {systemAlert.type === 'info' && <Info className="w-16 h-16 text-blue-500 mx-auto mb-4" />}
+                        
+                        <h3 className="text-xl font-black text-slate-800 mb-2">
+                            {systemAlert.type === 'error' ? 'Aviso Importante' : 'Completado'}
+                        </h3>
+                        <p className="text-slate-600 mb-6 font-medium">{systemAlert.message}</p>
+                        <button 
+                            onClick={() => setSystemAlert({ ...systemAlert, show: false })}
+                            className={`w-full py-3 text-white rounded-xl font-bold shadow-lg active:scale-95 transition-transform ${systemAlert.type === 'error' ? 'bg-red-600 shadow-red-600/30' : 'bg-green-600 shadow-green-600/30'}`}
+                        >
+                            Entendido
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* PIN PROMPT MODAL */}
             {pinPrompt.show && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6 animate-fade-in">
