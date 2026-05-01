@@ -385,7 +385,7 @@ export const MobileDelivery: React.FC = () => {
 
                                 {(modal.actionType === 'failed' || modal.actionType === 'partial') && (
                                     <div className="mb-6">
-                                        <label className="bLock, Info text-xs font-black text-slate-600 mb-2 uppercase tracking-wider">Motivo de la incidencia (Obligatorio)</label>
+                                        <label className="block text-xs font-black text-slate-600 mb-2 uppercase tracking-wider">Motivo de la incidencia (Obligatorio)</label>
                                         <textarea
                                             className="w-full border-2 border-slate-200 bg-slate-50 rounded-xl p-3 text-sm focus:border-indigo-500 focus:bg-white outline-none transition-all"
                                             rows={3}
@@ -458,7 +458,7 @@ export const MobileDelivery: React.FC = () => {
                             </div>
                         </div>
                         <div className="text-right bg-white/10 px-4 py-2 rounded-xl backdrop-blur-md border border-white/10">
-                            <span className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider bLock, Info mb-0.5">Avance</span>
+                            <span className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider block mb-0.5">Avance</span>
                             <span className="font-black text-2xl text-white leading-none">
                                 {groupedSales.closed.length}<span className="text-indigo-300 text-lg">/{dispatchSales.length}</span>
                             </span>
@@ -593,7 +593,7 @@ export const MobileDelivery: React.FC = () => {
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6 animate-fade-in">
                     <div className="bg-white w-full max-w-xs rounded-3xl shadow-2xl p-8 text-center animate-slide-up border border-slate-100">
                         <div className="mx-auto mb-6 bg-blue-50 w-20 h-20 flex items-center justify-center rounded-full shadow-inner">
-                            <Lock, Info className="w-10 h-10 text-blue-600" />
+                            <Lock className="w-10 h-10 text-blue-600" />
                         </div>
                         <h3 className="text-2xl font-black text-slate-800 mb-2">Ingreso Seguro</h3>
                         <p className="text-slate-500 text-sm mb-6">Por favor, ingresa tu código PIN de acceso.</p>
