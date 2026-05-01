@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Truck, MapPin, X, CheckCircle, Navigation, PackageX, AlertTriangle, Loader2, PlayCircle, Flag, ChevronRight } from 'lucide-react';
+import { Truck, MapPin, X, CheckCircle, Navigation, PackageX, AlertTriangle, Loader2, PlayCircle, Flag, ChevronRight, Lock, Info } from 'lucide-react';
 import { Sale, DispatchSheet } from '../types';
 import { supabase } from '../services/supabase';
 
@@ -30,6 +30,9 @@ export const MobileDelivery: React.FC = () => {
     const isSavingRef = React.useRef(false);
     const [showFinishConfirm, setShowFinishConfirm] = useState(false);
     const [systemAlert, setSystemAlert] = useState<{ show: boolean, message: string, type: 'success' | 'error' | 'info' }>({ show: false, message: '', type: 'info' });
+
+    const [pinPrompt, setPinPrompt] = useState<{ show: boolean, driverId: string, expectedPin: string }>({ show: false, driverId: '', expectedPin: '' });
+    const [pinInput, setPinInput] = useState('');
 
     // Initial Load
     useEffect(() => {
@@ -109,14 +112,15 @@ export const MobileDelivery: React.FC = () => {
 
         const driver = dbDrivers.find(d => d.id === id);
         if (driver && driver.pin_code && viewMode === 'DRIVER_SELECT') {
-           const enteredPin = window.prompt(`🔑 INGRESO SEGURO\nHola ${driver.name},\nPor favor, ingresa tu Contraseña / PIN para acceder a tu ruta de reparto:`);
-           if (enteredPin !== driver.pin_code) {
-               window.alert("❌ Acceso Denegado: Contraseña incorrecta.");
-               setCurrentDriverId('');
-               return;
-           }
+            setPinPrompt({ show: true, driverId: id, expectedPin: driver.pin_code });
+            setPinInput('');
+            return;
         }
 
+        completeDriverSelect(id);
+    };
+
+    const completeDriverSelect = (id: string) => {
         setCurrentDriverId(id);
         setViewMode('DISPATCH_SELECT');
     };
@@ -381,7 +385,7 @@ export const MobileDelivery: React.FC = () => {
 
                                 {(modal.actionType === 'failed' || modal.actionType === 'partial') && (
                                     <div className="mb-6">
-                                        <label className="block text-xs font-black text-slate-600 mb-2 uppercase tracking-wider">Motivo de la incidencia (Obligatorio)</label>
+                                        <label className="bLock, Info text-xs font-black text-slate-600 mb-2 uppercase tracking-wider">Motivo de la incidencia (Obligatorio)</label>
                                         <textarea
                                             className="w-full border-2 border-slate-200 bg-slate-50 rounded-xl p-3 text-sm focus:border-indigo-500 focus:bg-white outline-none transition-all"
                                             rows={3}
@@ -454,7 +458,7 @@ export const MobileDelivery: React.FC = () => {
                             </div>
                         </div>
                         <div className="text-right bg-white/10 px-4 py-2 rounded-xl backdrop-blur-md border border-white/10">
-                            <span className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider block mb-0.5">Avance</span>
+                            <span className="text-[10px] text-indigo-200 font-bold uppercase tracking-wider bLock, Info mb-0.5">Avance</span>
                             <span className="font-black text-2xl text-white leading-none">
                                 {groupedSales.closed.length}<span className="text-indigo-300 text-lg">/{dispatchSales.length}</span>
                             </span>
@@ -582,5 +586,49 @@ export const MobileDelivery: React.FC = () => {
         );
     }
 
-    return null;
+    return (
+        <>
+            {/* PIN PROMPT MODAL */}
+            {pinPrompt.show && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6 animate-fade-in">
+                    <div className="bg-white w-full max-w-xs rounded-3xl shadow-2xl p-8 text-center animate-slide-up border border-slate-100">
+                        <div className="mx-auto mb-6 bg-blue-50 w-20 h-20 flex items-center justify-center rounded-full shadow-inner">
+                            <Lock, Info className="w-10 h-10 text-blue-600" />
+                        </div>
+                        <h3 className="text-2xl font-black text-slate-800 mb-2">Ingreso Seguro</h3>
+                        <p className="text-slate-500 text-sm mb-6">Por favor, ingresa tu código PIN de acceso.</p>
+                        <input 
+                            type="password" 
+                            autoFocus 
+                            maxLength={4} 
+                            value={pinInput}
+                            onChange={(e) => setPinInput(e.target.value)}
+                            className="w-full text-center text-4xl font-black text-slate-800 p-4 rounded-xl bg-slate-50 border-2 border-slate-200 focus:border-blue-500 focus:bg-white outline-none mb-6 tracking-widest transition-colors"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    if (pinInput === pinPrompt.expectedPin) {
+                                        completeDriverSelect(pinPrompt.driverId);
+                                        setPinPrompt({ show: false, driverId: '', expectedPin: '' });
+                                    } else {
+                                        setSystemAlert({ show: true, message: "Contraseña incorrecta.", type: "error" });
+                                    }
+                                }
+                            }}
+                        />
+                        <div className="flex gap-2">
+                            <button onClick={() => setPinPrompt({ show: false, driverId: '', expectedPin: '' })} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold active:scale-95 transition-transform">Cancelar</button>
+                            <button onClick={() => {
+                                if (pinInput === pinPrompt.expectedPin) {
+                                    completeDriverSelect(pinPrompt.driverId);
+                                    setPinPrompt({ show: false, driverId: '', expectedPin: '' });
+                                } else {
+                                    setSystemAlert({ show: true, message: "Contraseña incorrecta.", type: "error" });
+                                }
+                            }} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold active:scale-95 transition-transform">Entrar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
+    );
 };

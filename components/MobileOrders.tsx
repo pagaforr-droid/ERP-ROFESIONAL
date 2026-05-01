@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
-import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User, ArrowRight, Edit, Minus, Eye, ShoppingCart } from 'lucide-react';
+import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User, ArrowRight, Edit, Minus, Eye, ShoppingCart, Lock } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
 
@@ -94,6 +94,9 @@ export const MobileOrders: React.FC = () => {
 
    const [cart, setCart] = useState<CartItem[]>([]);
 
+   const [pinPrompt, setPinPrompt] = useState<{ show: boolean, sellerId: string, expectedPin: string }>({ show: false, sellerId: '', expectedPin: '' });
+   const [pinInput, setPinInput] = useState('');
+
    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
    const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
    const [paymentAmount, setPaymentAmount] = useState<number>(0);
@@ -134,14 +137,14 @@ export const MobileOrders: React.FC = () => {
 
       const seller = dbSellers.find(s => s.id === sellerId);
       if (seller && seller.pin_code && viewMode === 'SELLER_SELECT') {
-         const enteredPin = window.prompt(`🔑 INGRESO SEGURO\nHola ${seller.name},\nPor favor, ingresa tu Contraseña / PIN para acceder a tu ruta:`);
-         if (enteredPin !== seller.pin_code) {
-             window.alert("❌ Acceso Denegado: Contraseña incorrecta.");
-             setCurrentSellerId(''); 
-             return;
-         }
+         setPinPrompt({ show: true, sellerId: sellerId, expectedPin: seller.pin_code });
+         setPinInput('');
+         return;
       }
+      completeSellerSelect(sellerId);
+   };
 
+   const completeSellerSelect = async (sellerId: string) => {
       setCurrentSellerId(sellerId);
       setIsLoadingData(true);
       setViewMode('CLIENT_LIST');
@@ -1314,6 +1317,48 @@ export const MobileOrders: React.FC = () => {
                   </div>
                </div>
             </div>
+         )}
+
+         {/* PIN PROMPT MODAL */}
+         {pinPrompt.show && (
+             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-6 animate-fade-in">
+                 <div className="bg-white w-full max-w-xs rounded-3xl shadow-2xl p-8 text-center animate-slide-up border border-slate-100">
+                     <div className="mx-auto mb-6 bg-blue-50 w-20 h-20 flex items-center justify-center rounded-full shadow-inner">
+                         <Lock className="w-10 h-10 text-blue-600" />
+                     </div>
+                     <h3 className="text-2xl font-black text-slate-800 mb-2">Ingreso Seguro</h3>
+                     <p className="text-slate-500 text-sm mb-6">Por favor, ingresa tu código PIN de acceso.</p>
+                     <input 
+                         type="password" 
+                         autoFocus 
+                         maxLength={4} 
+                         value={pinInput}
+                         onChange={(e) => setPinInput(e.target.value)}
+                         className="w-full text-center text-4xl font-black text-slate-800 p-4 rounded-xl bg-slate-50 border-2 border-slate-200 focus:border-blue-500 focus:bg-white outline-none mb-6 tracking-widest transition-colors"
+                         onKeyDown={(e) => {
+                             if (e.key === 'Enter') {
+                                 if (pinInput === pinPrompt.expectedPin) {
+                                     completeSellerSelect(pinPrompt.sellerId);
+                                     setPinPrompt({ show: false, sellerId: '', expectedPin: '' });
+                                 } else {
+                                     setSystemAlert({ show: true, message: "Contraseña incorrecta", type: "error" });
+                                 }
+                             }
+                         }}
+                     />
+                     <div className="flex gap-2">
+                         <button onClick={() => setPinPrompt({ show: false, sellerId: '', expectedPin: '' })} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold active:scale-95 transition-transform">Cancelar</button>
+                         <button onClick={() => {
+                             if (pinInput === pinPrompt.expectedPin) {
+                                 completeSellerSelect(pinPrompt.sellerId);
+                                 setPinPrompt({ show: false, sellerId: '', expectedPin: '' });
+                             } else {
+                                 setSystemAlert({ show: true, message: "Contraseña incorrecta", type: "error" });
+                             }
+                         }} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold active:scale-95 transition-transform">Entrar</button>
+                     </div>
+                 </div>
+             </div>
          )}
          
       </>
