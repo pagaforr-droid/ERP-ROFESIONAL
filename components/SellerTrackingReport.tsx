@@ -77,13 +77,30 @@ export default function SellerTrackingReport() {
 
   const getGoogleMapsLink = (lat: number, lng: number) => `https://www.google.com/maps?q=${lat},${lng}`;
   const getGoogleMapsRouteLink = (lat1: number, lng1: number, lat2: number, lng2: number) => 
-    `https://www.google.com/maps/dir/${lat1},${lng1}/${lat2},${lng2}`;
-
+    `https://www.google.com/maps/dir/?api=1&origin=${lat1},${lng1}&destination=${lat2},${lng2}&travelmode=driving`;
+  
   const getFullRouteLink = () => {
     const validNodes = trackingNodes.filter(n => n.currentLoc);
     if (validNodes.length === 0) return '#';
-    const pathSegments = validNodes.map(n => `${n.currentLoc!.lat},${n.currentLoc!.lng}`);
-    return `https://www.google.com/maps/dir/${pathSegments.join('/')}`;
+
+    // Si solo hay un punto válido, solo marcamos ese punto
+    if (validNodes.length === 1) {
+      return `https://www.google.com/maps/search/?api=1&query=${validNodes[0].currentLoc!.lat},${validNodes[0].currentLoc!.lng}`;
+    }
+
+    // Si hay más de un punto, creamos una ruta (Direcciones)
+    const origin = `${validNodes[0].currentLoc!.lat},${validNodes[0].currentLoc!.lng}`;
+    const destination = `${validNodes[validNodes.length - 1].currentLoc!.lat},${validNodes[validNodes.length - 1].currentLoc!.lng}`;
+    
+    let url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+    
+    // Puntos intermedios (waypoints)
+    if (validNodes.length > 2) {
+      const waypoints = validNodes.slice(1, validNodes.length - 1).map(n => `${n.currentLoc!.lat},${n.currentLoc!.lng}`);
+      url += `&waypoints=${encodeURIComponent(waypoints.join('|'))}`;
+    }
+    
+    return url;
   };
 
   const formatTimeDifference = (ms: number) => {
