@@ -79,6 +79,13 @@ export default function SellerTrackingReport() {
   const getGoogleMapsRouteLink = (lat1: number, lng1: number, lat2: number, lng2: number) => 
     `https://www.google.com/maps/dir/${lat1},${lng1}/${lat2},${lng2}`;
 
+  const getFullRouteLink = () => {
+    const validNodes = trackingNodes.filter(n => n.currentLoc);
+    if (validNodes.length === 0) return '#';
+    const pathSegments = validNodes.map(n => `${n.currentLoc!.lat},${n.currentLoc!.lng}`);
+    return `https://www.google.com/maps/dir/${pathSegments.join('/')}`;
+  };
+
   const formatTimeDifference = (ms: number) => {
     const totalMinutes = Math.floor(ms / 60000);
     const hours = Math.floor(totalMinutes / 60);
@@ -221,8 +228,20 @@ export default function SellerTrackingReport() {
                 {/* Header Tabla Estilo Excel (como la idea del cliente) */}
                 <div className="bg-indigo-600 text-white flex px-4 py-3 items-center">
                   <div className="flex-1 font-bold text-sm">TRACKING: RUTA DE PEDIDOS</div>
-                  <div className="font-black text-sm uppercase tracking-wide">
-                    VENDEDOR: {dbSellers.find(s => s.id === selectedSeller)?.name}
+                  <div className="font-black text-sm uppercase tracking-wide flex items-center gap-4">
+                    <span>VENDEDOR: {dbSellers.find(s => s.id === selectedSeller)?.name}</span>
+                    {trackingNodes.filter(n => n.currentLoc).length > 0 && (
+                      <a 
+                        href={getFullRouteLink()}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="bg-white text-indigo-700 hover:bg-indigo-50 px-3 py-1.5 rounded shadow-sm text-xs flex items-center gap-1.5 transition-colors"
+                        title="Abrir Google Maps conectando todos los puntos de venta"
+                      >
+                        <MapPin className="w-3.5 h-3.5" />
+                        Ver Ruta Completa en Mapa
+                      </a>
+                    )}
                   </div>
                 </div>
                 
