@@ -223,10 +223,23 @@ export const TerritoryManagement: React.FC = () => {
         }
         setEditingSeller(null);
     } catch (error: any) {
-      setSystemModal({ isOpen: true, type: 'error', message: "Error guardando vendedor: " + error.message });
+      window.alert("Error guardando vendedor: " + error.message);
     } finally {
       isSavingRef.current = false;
       setIsSaving(false);
+    }
+  };
+
+  const handleDeleteSeller = async (id: string) => {
+    if (window.confirm("¿Estás seguro de eliminar permanentemente a este vendedor? Esta acción no se puede deshacer y puede afectar si ya tiene historial.")) {
+        try {
+            const { error } = await supabase.from('sellers').delete().eq('id', id);
+            if (error) throw error;
+            setSellers(prev => prev.filter(s => s.id !== id));
+            window.alert("Vendedor eliminado correctamente del sistema.");
+        } catch(e: any) {
+            window.alert("No se puede eliminar el vendedor porque ya tiene registros o historial asociados. Te recomendamos simplemente cambiar su estado a INACTIVO.");
+        }
     }
   };
 
@@ -268,7 +281,8 @@ export const TerritoryManagement: React.FC = () => {
                     }
                   </td>
                   <td className="p-4 text-right">
-                    <button onClick={() => setEditingSeller(seller)} className="text-blue-600 p-2 hover:bg-blue-100 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"><Edit className="w-4 h-4"/></button>
+                    <button onClick={() => setEditingSeller(seller)} className="text-blue-600 p-2 hover:bg-blue-100 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity" title="Editar"><Edit className="w-4 h-4"/></button>
+                    <button onClick={() => handleDeleteSeller(seller.id)} className="text-red-500 p-2 hover:bg-red-100 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity ml-1" title="Eliminar"><Trash2 className="w-4 h-4"/></button>
                   </td>
                 </tr>
               ))}
@@ -309,6 +323,13 @@ export const TerritoryManagement: React.FC = () => {
                     <option value="0">INACTIVO</option>
                  </select>
                </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase flex items-center justify-between">
+                <span>Contraseña / PIN de App</span>
+                <span className="text-[10px] text-slate-400 font-normal normal-case">Para App Vendedores</span>
+              </label>
+              <input type="text" className="w-full border-2 border-slate-200 p-2.5 rounded-lg text-slate-900 font-mono font-bold focus:border-blue-500 outline-none transition-colors" placeholder="Ej. 1234 o Mipass123" value={editingSeller.pin_code || ''} onChange={e => setEditingSeller({...editingSeller, pin_code: e.target.value})} />
             </div>
             
             <div className="flex justify-end gap-3 pt-6 border-t border-slate-100">

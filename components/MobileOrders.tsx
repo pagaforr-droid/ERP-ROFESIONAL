@@ -131,6 +131,17 @@ export const MobileOrders: React.FC = () => {
 
    const handleSellerSelect = async (sellerId: string) => {
       if (!sellerId) return;
+
+      const seller = dbSellers.find(s => s.id === sellerId);
+      if (seller && seller.pin_code && viewMode === 'SELLER_SELECT') {
+         const enteredPin = window.prompt(`🔑 INGRESO SEGURO\nHola ${seller.name},\nPor favor, ingresa tu Contraseña / PIN para acceder a tu ruta:`);
+         if (enteredPin !== seller.pin_code) {
+             window.alert("❌ Acceso Denegado: Contraseña incorrecta.");
+             setCurrentSellerId(''); 
+             return;
+         }
+      }
+
       setCurrentSellerId(sellerId);
       setIsLoadingData(true);
       setViewMode('CLIENT_LIST');

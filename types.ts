@@ -310,6 +310,7 @@ export interface Seller {
   phone: string;
   email?: string;
   is_active: boolean;
+  pin_code?: string; // NEW: Password/PIN para acceso a la App Vendedores
   price_list_id?: string; // NEW: Default price list for this seller's route
 }
 
