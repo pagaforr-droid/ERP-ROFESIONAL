@@ -63,6 +63,7 @@ export const MobileOrders: React.FC = () => {
    const [isLoadingInitial, setIsLoadingInitial] = useState(true);
    const [isLoadingData, setIsLoadingData] = useState(false);
    const [isSaving, setIsSaving] = useState(false);
+   const [savingMessage, setSavingMessage] = useState('Sincronizando con Base...');
    const isSavingRef = React.useRef(false);
    const [isEditMode, setIsEditMode] = useState(false);
    const [originalOrder, setOriginalOrder] = useState<Order | null>(null);
@@ -569,26 +570,39 @@ export const MobileOrders: React.FC = () => {
          title: isEditMode ? 'Sobreescribir Pedido' : 'Enviar Pedido',
          message: '¿Está seguro de CERRAR Y ENVIAR este pedido por S/ ' + currentTotal.toFixed(2) + '?',
          onConfirm: async () => {
-            if (isSavingRef.current) return;
             isSavingRef.current = true;
             setIsSaving(true);
+            setSavingMessage('Localizando GPS (Alta precisión)...');
 
-            // 🔥 CAPTURA GPS SILENCIOSA (Max 15 segundos)
+            // 🔥 CAPTURA GPS ROBUSTA CON FALLBACK
             let creationLocation = null;
             if ("geolocation" in navigator) {
                 try {
-                    creationLocation = await new Promise((resolve) => {
+                    creationLocation = await new Promise((resolve, reject) => {
                         navigator.geolocation.getCurrentPosition(
-                            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-                            (err) => {
-                                console.warn("GPS Error:", err);
-                                resolve(null);
-                            },
-                            { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+                            (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+                            (err) => reject(err),
+                            { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 } // 5 min cache
                         );
                     });
-                } catch (e) { /* Silencioso */ }
+                } catch (e) {
+                    // Fallback a baja precisión (red/wifi) si el GPS puro falla en interiores
+                    setSavingMessage('GPS débil. Intentando red...');
+                    try {
+                        creationLocation = await new Promise((resolve) => {
+                            navigator.geolocation.getCurrentPosition(
+                                (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+                                () => resolve(null),
+                                { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 }
+                            );
+                        });
+                    } catch (e2) {
+                        creationLocation = null;
+                    }
+                }
             }
+
+            setSavingMessage('Guardando Pedido...');
 
             const orderPayload = {
                id: isEditMode && originalOrder ? originalOrder.id : generateUUID(),
@@ -641,6 +655,7 @@ export const MobileOrders: React.FC = () => {
             } finally {
                isSavingRef.current = false;
                setIsSaving(false);
+               setSavingMessage('Sincronizando con Base...');
             }
          }
       });
@@ -881,7 +896,7 @@ export const MobileOrders: React.FC = () => {
       return (
          <div className="fixed inset-0 flex flex-col bg-slate-50 relative pb-safe overflow-hidden">
 
-            {isSaving && <div className="absolute inset-0 bg-white/90 z-[100] flex flex-col items-center justify-center"><Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" /><p className="font-bold text-slate-600">Sincronizando con Base...</p></div>}
+            {isSaving && <div className="absolute inset-0 bg-white/90 z-[100] flex flex-col items-center justify-center"><Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" /><p className="font-bold text-slate-600 px-6 text-center">{savingMessage}</p></div>}
 
             {isPaymentModalOpen && selectedSale && (
                <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-0 sm:p-4">

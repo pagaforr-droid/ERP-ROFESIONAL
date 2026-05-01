@@ -101,15 +101,15 @@ export default function SellerTrackingReport() {
   // Process data to include differences and flags
   const trackingNodes = useMemo(() => {
     return orders.map((order, index) => {
-      const currentLoc = order.creation_location as {lat: number, lng: number} | null;
+      const currentLoc = order.creation_location as {lat: number, lng: number, accuracy?: number} | null;
       let timeDiffMs = 0;
       let distanceKm = 0;
       let isFlagged = false;
-      let prevLoc: {lat: number, lng: number} | null = null;
+      let prevLoc: {lat: number, lng: number, accuracy?: number} | null = null;
       
       if (index > 0) {
         const prevOrder = orders[index - 1];
-        prevLoc = prevOrder.creation_location as {lat: number, lng: number} | null;
+        prevLoc = prevOrder.creation_location as {lat: number, lng: number, accuracy?: number} | null;
         
         timeDiffMs = new Date(order.created_at).getTime() - new Date(prevOrder.created_at).getTime();
         
@@ -271,6 +271,9 @@ export default function SellerTrackingReport() {
                             >
                               <MapPin className="w-3 h-3 mr-1" /> GPS (Abrir)
                             </a>
+                            {node.currentLoc.accuracy && (
+                              <span className="text-[9px] text-slate-400 font-medium tracking-tight">Precisión: ±{Math.round(node.currentLoc.accuracy)}m</span>
+                            )}
                             {i > 0 && node.prevLoc && (
                               <a 
                                 href={getGoogleMapsRouteLink(node.prevLoc.lat, node.prevLoc.lng, node.currentLoc.lat, node.currentLoc.lng)}
