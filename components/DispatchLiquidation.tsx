@@ -371,10 +371,12 @@ export const DispatchLiquidationComp: React.FC = () => {
 
             returnedItemsList.push({
                product_id: item.product_id,
+               product_sku: item.product_sku,
                product_name: item.product_name,
                quantity_base: returnedBaseUnits, // Update Kardex with this
                quantity_presentation: returnedBaseUnits, // Simplified for display
                unit_type: 'MIXTO', // Custom label
+               selected_unit: item.selected_unit,
                unit_price: item.unit_price, // Reference
                total_refund: refundAmount
             });
@@ -553,14 +555,14 @@ export const DispatchLiquidationComp: React.FC = () => {
 
          if (pDoc.action === 'VOID') {
             sale.items.forEach(i => {
-               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit === 'PKG' ? 'CJA' : 'UND'} (Anulación)`, i.total_price.toFixed(2)]);
-               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id };
+               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit} (Anulación)`, i.total_price.toFixed(2)]);
+               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, unit: i.selected_unit };
                consolidatedReturns[i.product_id].baseQty += i.quantity_base;
             });
          } else if (pDoc.action === 'PARTIAL_RETURN') {
             pDoc.returned_items.forEach(i => {
-               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_base} Base (NC)`, i.total_refund.toFixed(2)]);
-               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id };
+               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit || 'UND'} (NC)`, i.total_refund.toFixed(2)]);
+               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, unit: i.selected_unit || 'UND' };
                consolidatedReturns[i.product_id].baseQty += i.quantity_base;
             });
          }
@@ -572,12 +574,14 @@ export const DispatchLiquidationComp: React.FC = () => {
          doc.setFont("helvetica", "bold");
          doc.text("CONSOLIDADO DE MERCADERÍA REGRESADA AL ALMACÉN", 15, finalY);
 
-         const consolidatedRows = Object.values(consolidatedReturns).map(ret => {
+         const consolidatedRows = Object.values(consolidatedReturns).map((ret: any) => {
             const product = products.find(p => p.id === ret.product_id);
             const factor = product?.package_content || 1;
             const cjas = Math.floor(ret.baseQty / factor);
             const unds = ret.baseQty % factor;
-            const formatQty = `${cjas > 0 ? cjas + ' CJAS ' : ''}${unds > 0 || cjas === 0 ? unds + ' UNDS' : ''}`;
+            const pkgName = product?.package_type ? product.package_type.toUpperCase() : 'CJAS';
+            const undName = product?.unit_type ? product.unit_type.toUpperCase() : 'UNDS';
+            const formatQty = `${cjas > 0 ? cjas + ' ' + pkgName + ' ' : ''}${unds > 0 || cjas === 0 ? unds + ' ' + undName : ''}`;
             return [ret.name, formatQty, ret.baseQty.toString()];
          });
 
@@ -712,14 +716,14 @@ export const DispatchLiquidationComp: React.FC = () => {
 
          if (pDoc.action === 'VOID') {
             sale.items.forEach(i => {
-               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit === 'PKG' ? 'CJA' : 'UND'} (Anulación)`, i.total_price.toFixed(2)]);
-               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id };
+               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit} (Anulación)`, i.total_price.toFixed(2)]);
+               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, unit: i.selected_unit };
                consolidatedReturns[i.product_id].baseQty += i.quantity_base;
             });
          } else if (pDoc.action === 'PARTIAL_RETURN') {
             (pDoc.returned_items || []).forEach((i: any) => {
-               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_base} Base (NC)`, (i.total_refund || 0).toFixed(2)]);
-               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id };
+               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit || 'UND'} (NC)`, (i.total_refund || 0).toFixed(2)]);
+               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, unit: i.selected_unit || 'UND' };
                consolidatedReturns[i.product_id].baseQty += i.quantity_base;
             });
          }
@@ -730,12 +734,14 @@ export const DispatchLiquidationComp: React.FC = () => {
          docPdf.setFont("helvetica", "bold");
          docPdf.text("CONSOLIDADO DE MERCADERÍA REGRESADA AL ALMACÉN", 15, finalY);
 
-         const consolidatedRows = Object.values(consolidatedReturns).map(ret => {
+         const consolidatedRows = Object.values(consolidatedReturns).map((ret: any) => {
             const product = products.find(p => p.id === ret.product_id);
             const factor = product?.package_content || 1;
             const cjas = Math.floor(ret.baseQty / factor);
             const unds = ret.baseQty % factor;
-            const formatQty = `${cjas > 0 ? cjas + ' CJAS ' : ''}${unds > 0 || cjas === 0 ? unds + ' UNDS' : ''}`;
+            const pkgName = product?.package_type ? product.package_type.toUpperCase() : 'CJAS';
+            const undName = product?.unit_type ? product.unit_type.toUpperCase() : 'UNDS';
+            const formatQty = `${cjas > 0 ? cjas + ' ' + pkgName + ' ' : ''}${unds > 0 || cjas === 0 ? unds + ' ' + undName : ''}`;
             return [ret.name, formatQty, ret.baseQty.toString()];
          });
 

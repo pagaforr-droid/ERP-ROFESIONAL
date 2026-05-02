@@ -554,10 +554,12 @@ export interface LiquidationDocument {
 
   returned_items: {
     product_id: string;
+    product_sku?: string;
     product_name: string;
     quantity_base: number; // Units returned
     quantity_presentation: number; // For UI
     unit_type: string; // For UI
+    selected_unit?: string;
     unit_price: number; // Original price
     total_refund: number;
   }[];

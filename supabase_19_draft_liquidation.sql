@@ -203,7 +203,7 @@ BEGIN
                 INSERT INTO sale_items (
                     id, sale_id, product_id, product_sku, product_name, selected_unit, quantity_presentation, quantity_base, unit_price, total_price, is_bonus
                 ) VALUES (
-                    uuid_generate_v4(), v_new_sale_id, (v_item->>'product_id')::UUID, '', v_item->>'product_name', 'UND', (v_item->>'quantity_presentation')::INT, (v_item->>'quantity_base')::INT, (v_item->>'unit_price')::DECIMAL, (v_item->>'total_refund')::DECIMAL, false
+                    uuid_generate_v4(), v_new_sale_id, (v_item->>'product_id')::UUID, COALESCE(v_item->>'product_sku', ''), v_item->>'product_name', COALESCE(v_item->>'selected_unit', 'UND'), (v_item->>'quantity_presentation')::INT, (v_item->>'quantity_base')::INT, (v_item->>'unit_price')::DECIMAL, (v_item->>'total_refund')::DECIMAL, false
                 );
             END LOOP;
 
