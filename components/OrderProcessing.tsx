@@ -96,7 +96,7 @@ export const OrderProcessing: React.FC = () => {
             .from('orders')
             .select(`
                *,
-               items:order_items(*)
+               items:order_items(*, batch_allocations(*))
             `)
             .gte('created_at', `${startDate}T00:00:00.000Z`)
             .lte('created_at', `${endDate}T23:59:59.999Z`);
