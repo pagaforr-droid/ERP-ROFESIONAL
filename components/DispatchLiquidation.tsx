@@ -138,7 +138,7 @@ export const DispatchLiquidationComp: React.FC = () => {
 
    const dispatchSales = useMemo(() => getSalesForDispatch(), [selectedDispatch, sales, extraSaleIds]);
    const pendingDispatches = useMemo(() => dispatchSheets.filter(d => 
-      (d.status === 'pending' || d.status === 'assigned' || d.status === 'in_transit') && 
+      (d.status === 'pending' || d.status === 'assigned' || d.status === 'in_transit' || d.status === 'delivered') && 
       !dispatchLiquidations.some(l => l.dispatch_sheet_id === d.id && (l.status === 'processed' || l.status === 'liquidated' || l.status === 'COMPLETADO'))
    ), [dispatchSheets, dispatchLiquidations]);
    const processedDispatches = useMemo(() => [...dispatchLiquidations].filter(l => l.status === 'processed').sort((a, b) => new Date(b.date || Date.now()).getTime() - new Date(a.date || Date.now()).getTime()), [dispatchLiquidations]);
