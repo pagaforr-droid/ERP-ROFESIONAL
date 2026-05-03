@@ -331,7 +331,6 @@ export const MobileDelivery: React.FC = () => {
     if (viewMode === 'DELIVERY_LIST') {
         return (
             <div className="h-full flex flex-col bg-slate-100 relative">
-                <SystemAlert />
 
                 {/* ACTION MODAL */}
                 {modal.isOpen && modal.sale && (
