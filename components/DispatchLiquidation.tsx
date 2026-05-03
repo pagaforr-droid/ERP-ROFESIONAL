@@ -1511,7 +1511,9 @@ export const DispatchLiquidationComp: React.FC = () => {
                                                       value={entries.boxes}
                                                       onChange={e => handleReturnChange(itemKey, 'boxes', parseInt(e.target.value) || 0)}
                                                    />
-                                                   <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1.5 rounded border border-indigo-100 font-bold w-12 text-center">CJA</span>
+                                                   <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1.5 rounded border border-indigo-100 font-bold min-w-[3rem] max-w-[4rem] text-center uppercase truncate" title={product?.package_type || 'CJA'}>
+                                                      {product?.package_type || 'CJA'}
+                                                   </span>
                                                 </div>
                                              )}
                                              <div className="flex items-center gap-1">
@@ -1522,7 +1524,9 @@ export const DispatchLiquidationComp: React.FC = () => {
                                                    value={entries.units}
                                                    onChange={e => handleReturnChange(itemKey, 'units', parseInt(e.target.value) || 0)}
                                                 />
-                                                <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1.5 rounded border border-indigo-100 font-bold w-12 text-center">UND</span>
+                                                <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1.5 rounded border border-indigo-100 font-bold min-w-[3rem] max-w-[4rem] text-center uppercase truncate" title={product?.unit_type || 'UND'}>
+                                                      {product?.unit_type || 'UND'}
+                                                </span>
                                              </div>
                                           </div>
                                        </td>
