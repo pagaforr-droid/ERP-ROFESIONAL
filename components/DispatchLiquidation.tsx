@@ -546,64 +546,56 @@ export const DispatchLiquidationComp: React.FC = () => {
       let finalY = (doc as any).lastAutoTable.finalY + 15;
 
       // KARDEX RETURN TABLE
-      const returnEntriesForPdf: any[] = [];
-      const consolidatedReturns: Record<string, { name: string, baseQty: number, product_id: string }> = {};
+      const consolidatedReturns: Record<string, { name: string, baseQty: number, product_id: string, docs: Set<string>, totalValue: number }> = {};
 
       Object.values(processedDocs).forEach((pDoc: LiquidationDocument) => {
          const sale = dispatchSales.find(s => s.id === pDoc.sale_id);
          if (!sale) return;
+         const docRef = `${sale.series}-${sale.number}`;
 
          if (pDoc.action === 'VOID') {
             sale.items.forEach(i => {
-               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit} (Anulación)`, i.total_price.toFixed(2)]);
-               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, unit: i.selected_unit };
+               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, docs: new Set(), totalValue: 0 };
                consolidatedReturns[i.product_id].baseQty += i.quantity_base;
+               consolidatedReturns[i.product_id].docs.add(docRef);
+               consolidatedReturns[i.product_id].totalValue += i.total_price;
             });
          } else if (pDoc.action === 'PARTIAL_RETURN') {
             pDoc.returned_items.forEach(i => {
-               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit || 'UND'} (NC)`, i.total_refund.toFixed(2)]);
-               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, unit: i.selected_unit || 'UND' };
+               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, docs: new Set(), totalValue: 0 };
                consolidatedReturns[i.product_id].baseQty += i.quantity_base;
+               consolidatedReturns[i.product_id].docs.add(docRef);
+               consolidatedReturns[i.product_id].totalValue += i.total_refund;
             });
          }
       });
 
-      if (returnEntriesForPdf.length > 0) {
-         // CONSOLIDATED RETURNS
+      if (Object.keys(consolidatedReturns).length > 0) {
          doc.setFontSize(10);
          doc.setFont("helvetica", "bold");
-         doc.text("CONSOLIDADO DE MERCADERÍA REGRESADA AL ALMACÉN", 15, finalY);
+         doc.text("REPORTE DE RETORNO DE MERCADERÍA (KARDEX)", 15, finalY);
 
-         const consolidatedRows = Object.values(consolidatedReturns).map((ret: any) => {
+         const consolidatedRows = Object.values(consolidatedReturns).map((ret) => {
             const product = products.find(p => p.id === ret.product_id);
             const factor = product?.package_content || 1;
             const cjas = Math.floor(ret.baseQty / factor);
             const unds = ret.baseQty % factor;
-            const pkgName = product?.package_type ? product.package_type.toUpperCase() : 'CJAS';
-            const undName = product?.unit_type ? product.unit_type.toUpperCase() : 'UNDS';
-            const formatQty = `${cjas > 0 ? cjas + ' ' + pkgName + ' ' : ''}${unds > 0 || cjas === 0 ? unds + ' ' + undName : ''}`;
-            return [ret.name, formatQty, ret.baseQty.toString()];
+            const pkgName = product?.package_type ? product.package_type.toUpperCase() : 'CJA';
+            const undName = product?.unit_type ? product.unit_type.toUpperCase() : 'UND';
+            
+            let formatQty = [];
+            if (cjas > 0) formatQty.push(`${cjas} ${pkgName}`);
+            if (unds > 0 || cjas === 0) formatQty.push(`${unds} ${undName}`);
+            
+            return [ret.name, Array.from(ret.docs).join(', '), formatQty.join(' + '), `S/ ${ret.totalValue.toFixed(2)}`];
          });
 
          autoTable(doc, {
             startY: finalY + 5,
-            head: [['Producto', 'Cant. (Cajas / Unidades)', 'Total Unid. Base']],
+            head: [['Producto', 'Origen (Doc)', 'Cant. Retornada', 'Valor']],
             body: consolidatedRows,
             theme: 'grid',
-            headStyles: { fillColor: [150, 0, 0] },
-            styles: { fontSize: 8, fontStyle: 'bold' }
-         });
-         finalY = (doc as any).lastAutoTable.finalY + 15;
-
-         doc.setFontSize(10);
-         doc.setFont("helvetica", "bold");
-         doc.text("Detalle de Retorno por Documento", 15, finalY);
-
-         autoTable(doc, {
-            startY: finalY + 5,
-            head: [['Producto', 'Documento Origen', 'Cant. Retornada', 'Valor (S/)']],
-            body: returnEntriesForPdf,
-            theme: 'grid',
+            headStyles: { fillColor: [50, 50, 50] },
             styles: { fontSize: 7, cellPadding: 0.8 }
          });
          finalY = (doc as any).lastAutoTable.finalY + 15;
@@ -707,63 +699,56 @@ export const DispatchLiquidationComp: React.FC = () => {
       let finalY = (docPdf as any).lastAutoTable.finalY + 15;
 
       // KARDEX RETURN TABLE
-      const returnEntriesForPdf: any[] = [];
-      const consolidatedReturns: Record<string, { name: string, baseQty: number, product_id: string }> = {};
+      const consolidatedReturns: Record<string, { name: string, baseQty: number, product_id: string, docs: Set<string>, totalValue: number }> = {};
 
       docs.forEach(pDoc => {
          const sale = liqSales.find(s => s.id === pDoc.sale_id);
          if (!sale) return;
+         const docRef = `${sale.series}-${sale.number}`;
 
          if (pDoc.action === 'VOID') {
             sale.items.forEach(i => {
-               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit} (Anulación)`, i.total_price.toFixed(2)]);
-               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, unit: i.selected_unit };
+               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, docs: new Set(), totalValue: 0 };
                consolidatedReturns[i.product_id].baseQty += i.quantity_base;
+               consolidatedReturns[i.product_id].docs.add(docRef);
+               consolidatedReturns[i.product_id].totalValue += i.total_price;
             });
          } else if (pDoc.action === 'PARTIAL_RETURN') {
             (pDoc.returned_items || []).forEach((i: any) => {
-               returnEntriesForPdf.push([i.product_name, `${sale.series}-${sale.number}`, `${i.quantity_presentation} ${i.selected_unit || 'UND'} (NC)`, (i.total_refund || 0).toFixed(2)]);
-               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, unit: i.selected_unit || 'UND' };
+               if (!consolidatedReturns[i.product_id]) consolidatedReturns[i.product_id] = { name: i.product_name, baseQty: 0, product_id: i.product_id, docs: new Set(), totalValue: 0 };
                consolidatedReturns[i.product_id].baseQty += i.quantity_base;
+               consolidatedReturns[i.product_id].docs.add(docRef);
+               consolidatedReturns[i.product_id].totalValue += (i.total_refund || 0);
             });
          }
       });
 
-      if (returnEntriesForPdf.length > 0) {
+      if (Object.keys(consolidatedReturns).length > 0) {
          docPdf.setFontSize(10);
          docPdf.setFont("helvetica", "bold");
-         docPdf.text("CONSOLIDADO DE MERCADERÍA REGRESADA AL ALMACÉN", 15, finalY);
+         docPdf.text("REPORTE DE RETORNO DE MERCADERÍA (KARDEX)", 15, finalY);
 
-         const consolidatedRows = Object.values(consolidatedReturns).map((ret: any) => {
+         const consolidatedRows = Object.values(consolidatedReturns).map((ret) => {
             const product = products.find(p => p.id === ret.product_id);
             const factor = product?.package_content || 1;
             const cjas = Math.floor(ret.baseQty / factor);
             const unds = ret.baseQty % factor;
-            const pkgName = product?.package_type ? product.package_type.toUpperCase() : 'CJAS';
-            const undName = product?.unit_type ? product.unit_type.toUpperCase() : 'UNDS';
-            const formatQty = `${cjas > 0 ? cjas + ' ' + pkgName + ' ' : ''}${unds > 0 || cjas === 0 ? unds + ' ' + undName : ''}`;
-            return [ret.name, formatQty, ret.baseQty.toString()];
+            const pkgName = product?.package_type ? product.package_type.toUpperCase() : 'CJA';
+            const undName = product?.unit_type ? product.unit_type.toUpperCase() : 'UND';
+            
+            let formatQty = [];
+            if (cjas > 0) formatQty.push(`${cjas} ${pkgName}`);
+            if (unds > 0 || cjas === 0) formatQty.push(`${unds} ${undName}`);
+            
+            return [ret.name, Array.from(ret.docs).join(', '), formatQty.join(' + '), `S/ ${ret.totalValue.toFixed(2)}`];
          });
 
          autoTable(docPdf, {
             startY: finalY + 5,
-            head: [['Producto', 'Cant. (Cajas / Unidades)', 'Total Unid. Base']],
+            head: [['Producto', 'Origen (Doc)', 'Cant. Retornada', 'Valor']],
             body: consolidatedRows,
             theme: 'grid',
-            headStyles: { fillColor: [150, 0, 0] },
-            styles: { fontSize: 8, fontStyle: 'bold' }
-         });
-         finalY = (docPdf as any).lastAutoTable.finalY + 15;
-
-         docPdf.setFontSize(10);
-         docPdf.setFont("helvetica", "bold");
-         docPdf.text("Detalle de Retorno por Documento", 15, finalY);
-
-         autoTable(docPdf, {
-            startY: finalY + 5,
-            head: [['Producto', 'Documento Origen', 'Cant. Retornada', 'Valor (S/)']],
-            body: returnEntriesForPdf,
-            theme: 'grid',
+            headStyles: { fillColor: [50, 50, 50] },
             styles: { fontSize: 7, cellPadding: 0.8 }
          });
       }
