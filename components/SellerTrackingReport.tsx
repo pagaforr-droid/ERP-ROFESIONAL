@@ -104,12 +104,14 @@ export default function SellerTrackingReport() {
   };
 
   const formatTimeDifference = (ms: number) => {
-    const totalMinutes = Math.floor(ms / 60000);
+    const totalSeconds = Math.floor(ms / 1000);
+    if (totalSeconds < 60) return `${totalSeconds} seg`;
+    const totalMinutes = Math.floor(totalSeconds / 60);
     const hours = Math.floor(totalMinutes / 60);
     const minutes = totalMinutes % 60;
     
-    if (hours > 0) return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} hr`;
-    return `00:${minutes.toString().padStart(2, '0')} hr`;
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes} min`;
   };
 
   const formatTime = (isoString: string) => {
@@ -329,7 +331,7 @@ export default function SellerTrackingReport() {
                       {/* Diferencia & Alerta */}
                       <div className="col-span-2 flex flex-col items-center justify-center">
                         {i === 0 ? (
-                          <span className="text-xs font-bold text-slate-400">00:00 hr</span>
+                          <span className="text-xs font-bold text-slate-400">Inicio</span>
                         ) : (
                           <>
                             <span className="text-sm font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">

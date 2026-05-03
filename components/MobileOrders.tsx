@@ -596,7 +596,7 @@ export const MobileOrders: React.FC = () => {
                         navigator.geolocation.getCurrentPosition(
                             (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
                             (err) => reject(err),
-                            { enableHighAccuracy: true, timeout: 8000, maximumAge: 300000 } // 5 min cache
+                            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 } // Forzar GPS fresco
                         );
                     });
                 } catch (e) {
@@ -607,7 +607,7 @@ export const MobileOrders: React.FC = () => {
                             navigator.geolocation.getCurrentPosition(
                                 (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
                                 () => resolve(null),
-                                { enableHighAccuracy: false, timeout: 7000, maximumAge: 300000 }
+                                { enableHighAccuracy: false, timeout: 7000, maximumAge: 0 }
                             );
                         });
                     } catch (e2) {
