@@ -152,9 +152,20 @@ export const CollectionConsolidation: React.FC = () => {
 
    // Filter sales ONLY for selected client
    const manualPendingSales = useMemo(() => {
-      if (!manualSelectedClient) return [];
-
       const searchLower = manualSearch.toLowerCase();
+
+      if (!manualSelectedClient) {
+         if (!searchLower || searchLower.length < 3) return []; // Global search needs at least 3 chars
+         return sales
+            .filter(s => {
+               const currentBalance = s.balance ?? s.total;
+               return currentBalance > 0 && s.status !== 'canceled';
+            })
+            .filter(s => `${s.series}-${s.number}`.toLowerCase().includes(searchLower))
+            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+            .slice(0, 50); // Limit to 50 results
+      }
+
       return sales
          .filter(s => s.client_id === manualSelectedClient.id || s.client_ruc === manualSelectedClient.doc_number)
          .filter(s => {
@@ -249,6 +260,10 @@ export const CollectionConsolidation: React.FC = () => {
    };
 
    const handleConfirmProcess = async () => {
+      if (!isSessionOpen) {
+         showAlert("No se puede procesar: No hay un turno de caja abierto.", "error");
+         return;
+      }
       setShowConfirmModal(null);
       setLastTotal(totals);
       if (isSavingRef.current) return;
@@ -385,6 +400,10 @@ export const CollectionConsolidation: React.FC = () => {
    };
 
    const handleManualConfirmProcess = async () => {
+      if (!isSessionOpen) {
+         showAlert("No se puede procesar: No hay un turno de caja abierto.", "error");
+         return;
+      }
       setShowConfirmModal(null);
       setLastTotal(manualTotals);
       if (isSavingRef.current) return;
@@ -891,6 +910,12 @@ export const CollectionConsolidation: React.FC = () => {
                               placeholder="Escriba para buscar..."
                               value={manualClientSearch}
                               onChange={(e) => setManualClientSearch(e.target.value)}
+                              onKeyDown={(e) => {
+                                 if (e.key === 'Enter' && manualClientsFound.length > 0) {
+                                    handleSelectClientForManual(manualClientsFound[0]);
+                                    setTimeout(() => document.getElementById('manualDocSearchInput')?.focus(), 100);
+                                 }
+                              }}
                            />
                         </div>
                         <div className="flex-1 overflow-y-auto p-2 space-y-1">
@@ -913,81 +938,100 @@ export const CollectionConsolidation: React.FC = () => {
                         </div>
                      </div>
 
-                     {/* RIGHT COL: Pending Sales for selected client */}
+                     {/* RIGHT COL: Pending Sales for selected client or Global Search */}
                      <div className="w-2/3 flex flex-col bg-white overflow-hidden relative">
-                        {manualSelectedClient ? (
-                           <>
-                              <div className="p-2 border-b border-slate-200 bg-slate-100 flex items-center justify-between">
-                                 <div>
-                                    <div className="text-[10px] font-bold text-slate-500 uppercase">Documentos Pendientes</div>
-                                    <div className="font-bold text-sm text-slate-800 truncate max-w-[300px]">{manualSelectedClient.name}</div>
-                                 </div>
-                                 <div>
-                                    <input
-                                       type="text"
-                                       placeholder="Filtrar doc (F001...)"
-                                       value={manualSearch}
-                                       onChange={(e) => setManualSearch(e.target.value)}
-                                       className="border border-slate-300 rounded text-xs px-2 py-1 outline-none focus:border-blue-500"
-                                    />
-                                 </div>
+                        <div className="p-2 border-b border-slate-200 bg-slate-100 flex items-center justify-between">
+                           <div>
+                              <div className="text-[10px] font-bold text-slate-500 uppercase">Documentos Pendientes</div>
+                              <div className="font-bold text-sm text-slate-800 truncate max-w-[300px]">
+                                 {manualSelectedClient ? manualSelectedClient.name : 'Búsqueda Global (Todos los Clientes)'}
                               </div>
-                              <div className="flex-1 overflow-auto bg-white">
-                                 <table className="w-full text-xs text-left">
-                                    <thead className="bg-white sticky top-0 shadow-sm font-bold text-slate-600">
-                                       <tr>
-                                          <th className="p-2 w-8 text-center">Sel.</th>
-                                          <th className="p-2">Documento</th>
-                                          <th className="p-2 hidden sm:table-cell">F.Doc</th>
-                                          <th className="p-2 text-right">Total.Doc</th>
-                                          <th className="p-2 text-right">Saldo</th>
-                                          <th className="p-2 text-right w-24">A Cobrar</th>
-                                       </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                       {manualPendingSales.map(sale => {
-                                          const isSelected = manualSelectedIds.has(sale.id);
-                                          const currentBalance = sale.balance !== undefined ? sale.balance : sale.total;
-                                          const amountToPay = manualAmounts[sale.id] || 0;
-                                          return (
-                                             <tr key={sale.id} className={isSelected ? 'bg-blue-50/50' : 'hover:bg-slate-50'}>
-                                                <td className="p-2 text-center align-middle" onClick={() => handleManualToggleSelect(sale.id, currentBalance)}>
-                                                   <div className={`w-4 h-4 rounded border flex items-center justify-center mx-auto cursor-pointer ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
-                                                      {isSelected && <CheckSquare className="w-2.5 h-2.5 text-white" />}
-                                                   </div>
-                                                </td>
-                                                <td className="p-2 font-mono font-medium text-slate-700">{sale.series}-{sale.number}</td>
-                                                <td className="p-2 text-slate-500 hidden sm:table-cell">{new Date(sale.created_at).toLocaleDateString()}</td>
-                                                <td className="p-2 text-right font-bold text-slate-500">S/ {sale.total.toFixed(2)}</td>
-                                                <td className="p-2 text-right font-bold text-red-600">S/ {currentBalance.toFixed(2)}</td>
-                                                <td className="p-2 text-right">
-                                                   <input
-                                                      type="number"
-                                                      min="0.01"
-                                                      step="0.01"
-                                                      max={currentBalance}
-                                                      disabled={!isSelected}
-                                                      className="w-full min-w-[70px] text-right font-bold text-slate-900 border border-slate-300 rounded px-1 py-1 outline-none focus:border-blue-500 disabled:opacity-30 disabled:bg-transparent"
-                                                      value={amountToPay === 0 ? '' : amountToPay}
-                                                      onChange={(e) => handleManualAmountChange(sale.id, e.target.value, currentBalance)}
-                                                   />
-                                                </td>
-                                             </tr>
-                                          );
-                                       })}
-                                       {manualPendingSales.length === 0 && (
-                                          <tr><td colSpan={5} className="text-center p-8 text-slate-400">Sin facturas vigentes.</td></tr>
-                                       )}
-                                    </tbody>
-                                 </table>
-                              </div>
-                           </>
-                        ) : (
-                           <div className="flex-1 flex flex-col items-center justify-center text-slate-300 p-8">
-                              <Search className="w-16 h-16 mb-4 opacity-30" />
-                              <p className="font-medium text-slate-400">Seleccione un cliente a la izquierda</p>
                            </div>
-                        )}
+                           <div className="flex items-center gap-2">
+                              {manualSelectedClient && (
+                                 <button onClick={handleClearManualClient} className="text-[10px] font-bold text-red-600 hover:text-red-800 px-2 py-1 bg-red-50 hover:bg-red-100 rounded border border-red-200 transition-colors">
+                                    X Quitar Cliente
+                                 </button>
+                              )}
+                              <input
+                                 id="manualDocSearchInput"
+                                 type="text"
+                                 placeholder={manualSelectedClient ? "Filtrar doc (F001...)" : "Buscar por Nro Doc..."}
+                                 value={manualSearch}
+                                 onChange={(e) => setManualSearch(e.target.value)}
+                                 onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && manualPendingSales.length === 1) {
+                                       const sale = manualPendingSales[0];
+                                       const currentBalance = sale.balance !== undefined ? sale.balance : sale.total;
+                                       handleManualToggleSelect(sale.id, currentBalance);
+                                       setTimeout(() => document.getElementById(`amountInput-${sale.id}`)?.focus(), 50);
+                                    }
+                                 }}
+                                 className="border border-slate-300 rounded text-xs px-2 py-1 outline-none focus:border-blue-500 w-48 font-mono"
+                              />
+                           </div>
+                        </div>
+                        <div className="flex-1 overflow-auto bg-white">
+                           <table className="w-full text-xs text-left">
+                              <thead className="bg-white sticky top-0 shadow-sm font-bold text-slate-600 z-10">
+                                 <tr>
+                                    <th className="p-2 w-8 text-center">Sel.</th>
+                                    <th className="p-2">Documento</th>
+                                    {!manualSelectedClient && <th className="p-2">Cliente</th>}
+                                    <th className="p-2 hidden sm:table-cell">F.Doc</th>
+                                    <th className="p-2 text-right">Total.Doc</th>
+                                    <th className="p-2 text-right">Saldo</th>
+                                    <th className="p-2 text-right w-24">A Cobrar</th>
+                                 </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                 {manualPendingSales.map(sale => {
+                                    const isSelected = manualSelectedIds.has(sale.id);
+                                    const currentBalance = sale.balance !== undefined ? sale.balance : sale.total;
+                                    const amountToPay = manualAmounts[sale.id] || 0;
+                                    return (
+                                       <tr key={sale.id} className={isSelected ? 'bg-blue-50/50' : 'hover:bg-slate-50'}>
+                                          <td className="p-2 text-center align-middle" onClick={() => handleManualToggleSelect(sale.id, currentBalance)}>
+                                             <div className={`w-4 h-4 rounded border flex items-center justify-center mx-auto cursor-pointer ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
+                                                {isSelected && <CheckSquare className="w-2.5 h-2.5 text-white" />}
+                                             </div>
+                                          </td>
+                                          <td className="p-2 font-mono font-medium text-slate-700">{sale.series}-{sale.number}</td>
+                                          {!manualSelectedClient && <td className="p-2 truncate max-w-[150px]" title={sale.client_name}>{sale.client_name}</td>}
+                                          <td className="p-2 text-slate-500 hidden sm:table-cell">{new Date(sale.created_at).toLocaleDateString()}</td>
+                                          <td className="p-2 text-right font-bold text-slate-500">S/ {sale.total.toFixed(2)}</td>
+                                          <td className="p-2 text-right font-bold text-red-600">S/ {currentBalance.toFixed(2)}</td>
+                                          <td className="p-2 text-right">
+                                             <input
+                                                id={`amountInput-${sale.id}`}
+                                                type="number"
+                                                min="0.01"
+                                                step="0.01"
+                                                max={currentBalance}
+                                                disabled={!isSelected}
+                                                className="w-full min-w-[70px] text-right font-bold text-slate-900 border border-slate-300 rounded px-1 py-1 outline-none focus:border-blue-500 disabled:opacity-30 disabled:bg-transparent"
+                                                value={amountToPay === 0 ? '' : amountToPay}
+                                                onChange={(e) => handleManualAmountChange(sale.id, e.target.value, currentBalance)}
+                                                onKeyDown={(e) => {
+                                                   if (e.key === 'Enter') handleAddModalSelectionToCart();
+                                                }}
+                                             />
+                                          </td>
+                                       </tr>
+                                    );
+                                 })}
+                                 {manualPendingSales.length === 0 && (
+                                    <tr>
+                                       <td colSpan={!manualSelectedClient ? 7 : 6} className="text-center p-8 text-slate-400">
+                                          {!manualSelectedClient 
+                                             ? (!manualSearch || manualSearch.length < 3 ? 'Escriba al menos 3 caracteres del Nro de Documento en el buscador global para encontrar facturas.' : 'No se encontraron documentos vigentes.') 
+                                             : 'Sin facturas vigentes para este cliente.'}
+                                       </td>
+                                    </tr>
+                                 )}
+                              </tbody>
+                           </table>
+                        </div>
                      </div>
                   </div>
 
