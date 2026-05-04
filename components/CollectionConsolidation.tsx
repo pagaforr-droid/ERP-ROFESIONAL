@@ -324,6 +324,11 @@ export const CollectionConsolidation: React.FC = () => {
    };
 
    const handleManualToggleSelect = (id: string, defAmount: number) => {
+      if (manualCart.some(c => c.saleId === id)) {
+         showAlert("Este documento ya se encuentra agregado a la planilla actual.", "warning");
+         return;
+      }
+
       const newSet = new Set(manualSelectedIds);
       const newAmounts = { ...manualAmounts };
 
