@@ -86,7 +86,7 @@ BEGIN
         v_code := p_edit_planilla_code;
         -- Limpiar rastro de la planilla que estaba en estado EDITING antes de re-consolidar
         DELETE FROM collection_planillas WHERE id = v_planilla_id;
-        DELETE FROM cash_movements WHERE reference_id = v_planilla_id::TEXT;
+        DELETE FROM cash_movements WHERE reference_id = v_planilla_id;
     ELSE
         -- Generar Autocódigo PLAN-0001
         SELECT COALESCE(MAX(NULLIF(regexp_replace(code, '\D', '', 'g'), '')), '0')::INT 
@@ -99,7 +99,7 @@ BEGIN
 
     -- Inserción directa en CAJA (Flujo de Efectivo) validando Categoría "Cobranza Vendedores"
     INSERT INTO cash_movements (type, category_id, category_name, description, amount, date, user_id, reference_id)
-    VALUES ('INCOME', p_category_id, 'COBRANZAS VENDEDORES', COALESCE(p_glosa, 'Planilla de Cobranzas') || ' ' || v_code, v_total, p_planilla_date, p_user_id, v_planilla_id::TEXT)
+    VALUES ('INCOME', p_category_id, 'COBRANZAS VENDEDORES', COALESCE(p_glosa, 'Planilla de Cobranzas') || ' ' || v_code, v_total, p_planilla_date, p_user_id, v_planilla_id)
     RETURNING id INTO v_cash_mov_id;
 
     -- Generar Recibo de Planilla Único
