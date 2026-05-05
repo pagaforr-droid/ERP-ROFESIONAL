@@ -25,7 +25,7 @@ interface Movement {
 }
 
 export const Kardex: React.FC = () => {
-  const store = useStore();
+  const { currentUser } = useStore();
   const [activeTab, setActiveTab] = useState<ViewTab>('INVENTORY');
   const [isDataVisible, setIsDataVisible] = useState(false); // ESTADO DE RENDIMIENTO
   const [isRecalculating, setIsRecalculating] = useState(false);
@@ -70,7 +70,7 @@ export const Kardex: React.FC = () => {
   };
 
   const handleRecalculateKardex = async () => {
-     if (store.userRole !== 'ADMIN') {
+     if (currentUser?.role !== 'ADMIN') {
         alert("Acceso denegado: Solo el Administrador puede recalcular el Kardex.");
         return;
      }
@@ -316,7 +316,7 @@ export const Kardex: React.FC = () => {
              </div>
           </div>
           <div className="flex gap-2">
-             {store.userRole === 'ADMIN' && (
+             {currentUser?.role === 'ADMIN' && (
                 <button onClick={handleRecalculateKardex} disabled={isRecalculating} className="bg-red-50 hover:bg-red-100 text-red-700 px-4 py-2 rounded-lg flex items-center transition-colors shadow-sm border border-red-200 font-bold text-sm disabled:opacity-50" title="Auditoría: Recalcular matemática del stock">
                    <Settings className={`w-4 h-4 mr-2 ${isRecalculating ? 'animate-spin' : ''}`} /> {isRecalculating ? 'Recalculando...' : 'Recalcular Kardex'}
                 </button>
