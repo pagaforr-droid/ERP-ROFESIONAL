@@ -423,33 +423,93 @@ export const Purchases: React.FC = () => {
           const cartChanged = JSON.stringify(cart) !== JSON.stringify(originalCartRef.current);
           
           if (cartChanged) {
-            // 2. BORRAR ITEMS Y LOTES ANTERIORES PARA REHACERLOS
-            const { error: batchErr } = await supabase.from('batches').delete().eq('purchase_id', editingId);
-            if (batchErr) {
-               throw new Error("No se puede editar el detalle de esta compra porque sus productos ya tienen salidas en Kardex (han sido vendidos). Solo se guardaron los cambios del documento.");
-            }
-            
-            const { error: itemErr } = await supabase.from('purchase_items').delete().eq('purchase_id', editingId);
-            if (itemErr) throw itemErr;
+            // 2. FETCH EXISTING BATCHES PARA PARCHEO INTELIGENTE
+            const { data: existingBatches, error: eBatches } = await supabase.from('batches').select('*').eq('purchase_id', editingId);
+            if (eBatches) throw eBatches;
 
-            // 3. REINSERTAR NUEVOS ITEMS Y LOTES
+            const existingBatchesList = existingBatches || [];
+
+            // A) ELIMINAR ITEMS QUE YA NO ESTÁN EN EL CART
+            for (const orig of originalCartRef.current) {
+               const stillExists = cart.some((c: any) => c.id === (orig as any).id);
+               if (!stillExists) {
+                  const batch = existingBatchesList.find(b => b.product_id === orig.product_id && b.code === orig.batch_code);
+                  if (batch) {
+                     if (batch.quantity_current < batch.quantity_initial) {
+                        throw new Error(`No puedes eliminar un producto porque ya tiene ${batch.quantity_initial - batch.quantity_current} unidades vendidas.`);
+                     }
+                     await supabase.from('batches').delete().eq('id', batch.id);
+                  }
+                  await supabase.from('purchase_items').delete().eq('id', (orig as any).id);
+               }
+            }
+
+            // B) PROCESAR ITEMS DEL CART (ACTUALIZAR O INSERTAR)
             for (const item of cart) {
-              const { id, created_at, purchase_id, ...itemToInsert } = item as any;
-              await supabase.from('purchase_items').insert({ ...itemToInsert, purchase_id: editingId });
-              
-              await supabase.from('batches').insert({
-                product_id: item.product_id,
-                purchase_id: editingId,
-                warehouse_id: warehouseId || null,
-                code: item.batch_code,
-                quantity_initial: item.quantity_base,
-                quantity_current: item.quantity_base,
-                cost: item.unit_price / item.factor,
-                expiration_date: item.expiration_date || null
-              });
-              
-              // Actualizar último costo en el producto (AHORA CON IGV)
-              await supabase.from('products').update({ last_cost: item.unit_price / item.factor }).eq('id', item.product_id);
+               const { id, created_at, purchase_id, ...itemToInsert } = item as any;
+
+               if (id) {
+                  // Es un item existente
+                  const orig = originalCartRef.current.find((o: any) => o.id === id);
+                  if (orig) {
+                     const batch = existingBatchesList.find(b => b.product_id === orig.product_id && b.code === orig.batch_code);
+                     if (batch) {
+                        const diff = item.quantity_base - orig.quantity_base;
+                        const newCurrent = batch.quantity_current + diff;
+                        
+                        if (newCurrent < 0) {
+                           throw new Error(`No puedes reducir la cantidad del producto a menos de lo que ya se vendió (${batch.quantity_initial - batch.quantity_current} unid).`);
+                        }
+
+                        if (orig.product_id !== item.product_id && batch.quantity_current < batch.quantity_initial) {
+                           throw new Error("No puedes cambiar de producto en una línea que ya tiene ventas. Borra y crea una nueva, o haz un ajuste.");
+                        }
+
+                        // Actualizar Batch
+                        await supabase.from('batches').update({
+                           product_id: item.product_id,
+                           code: item.batch_code,
+                           quantity_initial: item.quantity_base,
+                           quantity_current: newCurrent,
+                           cost: item.unit_price / item.factor,
+                           expiration_date: item.expiration_date || null
+                        }).eq('id', batch.id);
+
+                        // Actualizar Purchase Item
+                        await supabase.from('purchase_items').update({ ...itemToInsert }).eq('id', id);
+                     } else {
+                        // Failsafe por si el lote no existe en BD
+                        await supabase.from('purchase_items').update({ ...itemToInsert }).eq('id', id);
+                        await supabase.from('batches').insert({
+                           product_id: item.product_id,
+                           purchase_id: editingId,
+                           warehouse_id: warehouseId || null,
+                           code: item.batch_code,
+                           quantity_initial: item.quantity_base,
+                           quantity_current: item.quantity_base,
+                           cost: item.unit_price / item.factor,
+                           expiration_date: item.expiration_date || null
+                        });
+                     }
+                  }
+               } else {
+                  // Es un item completamente NUEVO agregado en la edición
+                  await supabase.from('purchase_items').insert({ ...itemToInsert, purchase_id: editingId });
+                  
+                  await supabase.from('batches').insert({
+                    product_id: item.product_id,
+                    purchase_id: editingId,
+                    warehouse_id: warehouseId || null,
+                    code: item.batch_code,
+                    quantity_initial: item.quantity_base,
+                    quantity_current: item.quantity_base,
+                    cost: item.unit_price / item.factor,
+                    expiration_date: item.expiration_date || null
+                  });
+               }
+               
+               // Actualizar último costo en el producto (AHORA CON IGV)
+               await supabase.from('products').update({ last_cost: item.unit_price / item.factor }).eq('id', item.product_id);
             }
           }
           showToast(cartChanged ? "Compra actualizada y Kardex rectificado en la nube." : "Datos de cabecera actualizados (Kardex intacto).", "success");
