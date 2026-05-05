@@ -267,9 +267,15 @@ export const StrategicReports: React.FC = () => {
   const sellerAdvanceData = useMemo(() => {
      if (activeTab !== 'SELLER_ADVANCE') return [];
 
-     const totalDaysInRange = getWorkingDaysInRange(dateFrom, dateTo);
+     // FIXED: Calculate total working days in the month, not just the selected range
+     const endOfMonth = new Date(new Date(dateFrom).getFullYear(), new Date(dateFrom).getMonth() + 1, 0).toISOString().split('T')[0];
+     const totalDaysInMonth = getWorkingDaysInRange(dateFrom, endOfMonth);
+     
      let daysPassed = getWorkingDaysPassed(dateFrom, dateTo);
      if (daysPassed === 0) daysPassed = 1;
+
+     let remainingDays = totalDaysInMonth - daysPassed;
+     if (remainingDays <= 0) remainingDays = 1; // Prevenir división por cero
 
      const validSales = sales.filter(s => s.status !== 'canceled');
 
@@ -298,9 +304,10 @@ export const StrategicReports: React.FC = () => {
         const globalQuotaRow = quotas.find(q => q.seller_id === seller.id && q.period === periodStr && q.target_type === 'GLOBAL');
         const globalQuota = globalQuotaRow?.amount || 0;
 
-        const globalProjected = (globalSales / daysPassed) * totalDaysInRange;
+        const globalProjected = (globalSales / daysPassed) * totalDaysInMonth;
         const globalProjPct = globalQuota > 0 ? (globalProjected / globalQuota) * 100 : 0;
         const globalPct = globalQuota > 0 ? (globalSales / globalQuota) * 100 : 0;
+        const globalDailyRequired = globalQuota > globalSales ? (globalQuota - globalSales) / remainingDays : 0;
 
         const supplierRows: any[] = [];
         suppliers.forEach(supplier => {
@@ -309,9 +316,10 @@ export const StrategicReports: React.FC = () => {
            const currentSales = supplierSalesMap[supplier.id] || 0;
            
            if (assignedQuota > 0 || currentSales > 0) {
-              const projected = (currentSales / daysPassed) * totalDaysInRange;
+              const projected = (currentSales / daysPassed) * totalDaysInMonth;
               const projPct = assignedQuota > 0 ? (projected / assignedQuota) * 100 : 0;
               const currentPct = assignedQuota > 0 ? (currentSales / assignedQuota) * 100 : 0;
+              const dailyRequired = assignedQuota > currentSales ? (assignedQuota - currentSales) / remainingDays : 0;
               
               supplierRows.push({
                  supplierId: supplier.id,
@@ -321,7 +329,8 @@ export const StrategicReports: React.FC = () => {
                  currentPct,
                  projected,
                  projPct,
-                 gap: assignedQuota - projected
+                 gap: assignedQuota - projected,
+                 dailyRequired
               });
            }
         });
@@ -334,6 +343,7 @@ export const StrategicReports: React.FC = () => {
            globalProjected,
            globalProjPct,
            globalGap: globalQuota - globalProjected,
+           globalDailyRequired,
            suppliers: supplierRows.sort((a,b) => b.currentSales - a.currentSales)
         };
      }).sort((a, b) => b.globalSales - a.globalSales);
@@ -350,8 +360,9 @@ export const StrategicReports: React.FC = () => {
                 'Cuota Mes (S/)': row.globalQuota.toFixed(2),
                 'Venta Actual (S/)': row.globalSales.toFixed(2),
                 'Avance %': row.globalPct.toFixed(2),
-                'Proyección (S/)': row.globalProjected.toFixed(2),
-                'Proj. %': row.globalProjPct.toFixed(2)
+                'Proy. Cierre (S/)': row.globalProjected.toFixed(2),
+                'Proj. %': row.globalProjPct.toFixed(2),
+                'Req. Diario (S/)': row.globalDailyRequired.toFixed(2)
             });
             row.suppliers.forEach((sup: any) => {
                flatData.push({
@@ -360,8 +371,9 @@ export const StrategicReports: React.FC = () => {
                 'Cuota Mes (S/)': sup.assignedQuota.toFixed(2),
                 'Venta Actual (S/)': sup.currentSales.toFixed(2),
                 'Avance %': sup.currentPct.toFixed(2),
-                'Proyección (S/)': sup.projected.toFixed(2),
-                'Proj. %': sup.projPct.toFixed(2)
+                'Proy. Cierre (S/)': sup.projected.toFixed(2),
+                'Proj. %': sup.projPct.toFixed(2),
+                'Req. Diario (S/)': sup.dailyRequired.toFixed(2)
                });
             });
         });
@@ -410,6 +422,7 @@ export const StrategicReports: React.FC = () => {
                 { content: `${row.globalPct.toFixed(1)}%`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
                 { content: `S/ ${row.globalProjected.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
                 { content: `${row.globalProjPct.toFixed(1)}%`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249] } },
+                { content: `S/ ${row.globalDailyRequired.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`, styles: { fontStyle: 'bold', fillColor: [241, 245, 249], textColor: [217, 119, 6] } },
             ]);
             row.suppliers.forEach((sup: any) => {
                body.push([
@@ -419,21 +432,22 @@ export const StrategicReports: React.FC = () => {
                    `S/ ${sup.currentSales.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`,
                    `${sup.currentPct.toFixed(1)}%`,
                    `S/ ${sup.projected.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`,
-                   `${sup.projPct.toFixed(1)}%`
+                   `${sup.projPct.toFixed(1)}%`,
+                   `S/ ${sup.dailyRequired.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`
                ]);
             });
         });
 
         autoTable(doc, {
             startY: 40,
-            head: [['Vendedor', 'Proveedor', 'Cuota (S/)', 'Venta (S/)', 'Avance %', 'Proy. (S/)', 'Proy %']],
+            head: [['Vendedor', 'Proveedor', 'Cuota (S/)', 'Venta (S/)', 'Avance %', 'Proy. Cierre', 'Proy %', 'Req. Diario']],
             body: body,
             theme: 'grid',
             headStyles: { fillColor: [30, 58, 138], textColor: 255 }, 
-            styles: { fontSize: 8 },
+            styles: { fontSize: 7, cellPadding: 1 },
             columnStyles: {
-               0: { cellWidth: 40 },
-               1: { cellWidth: 40 },
+               0: { cellWidth: 32 },
+               1: { cellWidth: 32 },
             }
         });
         
@@ -699,8 +713,9 @@ export const StrategicReports: React.FC = () => {
                            <th className="p-4 border-b border-slate-200 text-right">Cuota Mes (S/)</th>
                            <th className="p-4 border-b border-slate-200 text-right">Venta Actual (S/)</th>
                            <th className="p-4 border-b border-slate-200 text-right">Avance %</th>
-                           <th className="p-4 border-b border-slate-200 text-right">Proyección (S/)</th>
+                           <th className="p-4 border-b border-slate-200 text-right">Proy. Cierre (S/)</th>
                            <th className="p-4 border-b border-slate-200 text-right">Proj. %</th>
+                           <th className="p-4 border-b border-slate-200 text-right text-amber-700">Req. Diario (S/)</th>
                         </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-100">
@@ -723,6 +738,9 @@ export const StrategicReports: React.FC = () => {
                                        {row.globalProjPct.toFixed(1)}%
                                     </div>
                                  </td>
+                                 <td className="p-4 text-right font-mono font-bold text-amber-600">
+                                    {row.globalDailyRequired.toLocaleString('es-PE', { minimumFractionDigits: 0 })}
+                                 </td>
                               </tr>
                               {row.suppliers.map((sup: any) => (
                                  <tr key={sup.supplierId} className="hover:bg-slate-50 transition-colors">
@@ -737,6 +755,9 @@ export const StrategicReports: React.FC = () => {
                                     <td className="p-3 text-right font-mono text-slate-500 text-xs">{sup.projected.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</td>
                                     <td className="p-3 text-right">
                                        <span className={`font-bold text-xs ${sup.projPct >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>{sup.projPct.toFixed(1)}%</span>
+                                    </td>
+                                    <td className="p-3 text-right font-mono font-bold text-amber-600 text-xs">
+                                       {sup.dailyRequired.toLocaleString('es-PE', { minimumFractionDigits: 0 })}
                                     </td>
                                  </tr>
                               ))}
