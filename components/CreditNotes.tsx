@@ -589,8 +589,10 @@ export const CreditNotes: React.FC = () => {
                                             const returnQty = retState.qty;
                                             const returnUnit = retState.unit;
 
-                                            const maxBaseQty = item.quantity_base || (item.selected_unit === 'PKG' ? item.quantity_presentation * packageContent : item.quantity_presentation);
-                                            const retBaseQty = returnUnit === 'PKG' ? returnQty * packageContent : returnQty;
+                                            const originalIsPkg = isPackageUnit(item.selected_unit, product);
+                                            const maxBaseQty = item.quantity_base || (originalIsPkg ? item.quantity_presentation * packageContent : item.quantity_presentation);
+                                            const retIsPkg = isPackageUnit(returnUnit, product);
+                                            const retBaseQty = retIsPkg ? returnQty * packageContent : returnQty;
                                             const ratio = maxBaseQty > 0 ? (retBaseQty / maxBaseQty) : 0;
                                             const itemReturnTotalUI = item.total_price * ratio;
 
