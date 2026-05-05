@@ -162,6 +162,7 @@ export const CollectionConsolidation: React.FC = () => {
             id: `draft-rec-${i}`,
             document_ref: item.docRef,
             seller_id: null,
+            sale_id: item.saleId,
             client_name: item.clientName,
             amount_reported: item.amountToPay,
             date_reported: item.date
@@ -607,7 +608,17 @@ export const CollectionConsolidation: React.FC = () => {
       doc.text(`Estado: ${plan.status === 'ANNULLED' ? 'ANULADA' : 'CERRADA EN CAJA'}`, 140, 32);
 
       const tableData = recordsToPrint.map((r, i) => {
-         const sellerName = sellers.find(s => s.id === r.seller_id)?.name || 'N/A';
+         let sellerName = sellers.find(s => s.id === r.seller_id)?.name;
+         
+         if (!sellerName && r.sale_id) {
+            const sale = sales.find(s => s.id === r.sale_id);
+            if (sale && sale.seller_id) {
+               sellerName = sellers.find(s => s.id === sale.seller_id)?.name;
+            }
+         }
+         
+         if (!sellerName) sellerName = 'Oficina / Manual';
+
          return [
             i + 1,
             sellerName,
@@ -1749,7 +1760,18 @@ export const CollectionConsolidation: React.FC = () => {
                                  {selectedPlanillaRecords.map(r => (
                                     <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                                        <td className="p-2 font-mono text-slate-600">{r.document_ref}</td>
-                                       <td className="p-2 font-medium text-slate-800">{sellers.find(s => s.id === r.seller_id)?.name}</td>
+                                       <td className="p-2 font-medium text-slate-800">
+                                          {(() => {
+                                             let sName = sellers.find(s => s.id === r.seller_id)?.name;
+                                             if (!sName && (r as any).sale_id) {
+                                                const sale = sales.find(s => s.id === (r as any).sale_id);
+                                                if (sale && sale.seller_id) {
+                                                   sName = sellers.find(s => s.id === sale.seller_id)?.name;
+                                                }
+                                             }
+                                             return sName || 'Oficina / Manual';
+                                          })()}
+                                       </td>
                                        <td className="p-2 text-slate-700 truncate max-w-[150px]">{r.client_name}</td>
                                        <td className="p-2 text-right font-bold text-slate-900">S/ {Number(r.amount_reported || 0).toFixed(2)}</td>
                                        <td className="p-2 text-center">
