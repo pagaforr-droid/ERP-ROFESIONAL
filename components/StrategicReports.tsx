@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-import { BarChart3, PieChart, Calendar, Download, Printer, Filter, TrendingUp, DollarSign, Users, Target, Layers, ShoppingBag, MapPin, X, FileDown, Edit3, Loader2, RefreshCw } from 'lucide-react';
+import { BarChart3, PieChart, Calendar, Download, Printer, Filter, TrendingUp, DollarSign, Users, Target, Layers, ShoppingBag, MapPin, X, FileDown, Edit3, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -124,8 +124,16 @@ export const StrategicReports: React.FC = () => {
      let matchedQuotas = quotas.filter(q => q.period === periodStr);
      
      if (filterSeller) matchedQuotas = matchedQuotas.filter(q => q.seller_id === filterSeller);
-     if (filterSupplier) matchedQuotas = matchedQuotas.filter(q => q.target_type === 'SUPPLIER' && q.target_id === filterSupplier);
-     if (filterCategory) matchedQuotas = matchedQuotas.filter(q => q.target_type === 'CATEGORY' && q.target_id === filterCategory);
+     
+     // CRITICAL FIX: To avoid double counting, we must choose which target_type to sum based on filters
+     if (filterSupplier) {
+         matchedQuotas = matchedQuotas.filter(q => q.target_type === 'SUPPLIER' && q.target_id === filterSupplier);
+     } else if (filterCategory) {
+         matchedQuotas = matchedQuotas.filter(q => q.target_type === 'CATEGORY' && q.target_id === filterCategory);
+     } else {
+         // If no specific target filter, sum only GLOBAL quotas
+         matchedQuotas = matchedQuotas.filter(q => q.target_type === 'GLOBAL');
+     }
      
      const total = matchedQuotas.reduce((acc, q) => acc + q.amount, 0);
      return total > 0 ? total : projectionGoal;
