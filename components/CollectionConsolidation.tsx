@@ -575,7 +575,20 @@ export const CollectionConsolidation: React.FC = () => {
       const plan = historyPlanillas.find(p => p.id === planillaId);
       if (!plan) return;
       
-      const recordsToPrint = collectionRecords.filter(r => r.planilla_id === plan.id || (plan.original.records || []).includes(r.id));
+      let recordsToPrint: any[] = [];
+      if (plan.status === 'DRAFT') {
+         recordsToPrint = (plan.original.cart || []).map((item: any, i: number) => ({
+            id: `draft-rec-${i}`,
+            document_ref: item.docRef,
+            seller_id: null,
+            client_name: item.clientName,
+            amount_reported: item.amountToPay,
+            date_reported: item.date
+         }));
+      } else {
+         recordsToPrint = collectionRecords.filter(r => r.planilla_id === plan.id || (plan.original.records || []).includes(r.id));
+      }
+
       let creator = allUsers.find(u => u.id === plan.user_id)?.name || 'SISTEMA';
 
       const doc = new jsPDF();
@@ -732,7 +745,7 @@ export const CollectionConsolidation: React.FC = () => {
             } else {
                setActiveTab('PENDING');
                // We need to set selectedIds for editing pending vouchers
-               setSelectedIds(new Set(p.records));
+               setSelectedIds(new Set(planillaRecords.map(r => r.id)));
                setPlanillaDate(p.date ? p.date.split('T')[0] : new Date().toISOString().split('T')[0]);
                setPlanillaGlosa(p.glosa || '');
             }
