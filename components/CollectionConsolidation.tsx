@@ -70,6 +70,7 @@ export const CollectionConsolidation: React.FC = () => {
    const [manualSelectedIds, setManualSelectedIds] = useState<Set<string>>(new Set());
    const [manualAmounts, setManualAmounts] = useState<Record<string, number>>({});
    const [showManualSearchModal, setShowManualSearchModal] = useState(false);
+   const [hasDraft, setHasDraft] = useState(false);
 
    // History Modal State
    const [showHistoryModalTarget, setShowHistoryModalTarget] = useState<string | null>(null);
@@ -441,6 +442,8 @@ export const CollectionConsolidation: React.FC = () => {
          await syncSupabaseData();
          setManualCart([]);
          setPlanillaGlosa('');
+         localStorage.removeItem('manualCollectionDraft');
+         setHasDraft(false);
          if (editingPlanillaData?.type === 'MANUAL') setEditingPlanillaData(null);
          setIsProcessing(false);
          isSavingRef.current = false;
@@ -450,6 +453,31 @@ export const CollectionConsolidation: React.FC = () => {
          setIsProcessing(false);
          isSavingRef.current = false;
          showAlert("Ocurrió un error al procesar la planilla manual.", 'error');
+      }
+   };
+
+   const handleSaveManualDraft = () => {
+      localStorage.setItem('manualCollectionDraft', JSON.stringify({
+         cart: manualCart,
+         date: planillaDate,
+         glosa: planillaGlosa
+      }));
+      setHasDraft(true);
+      showAlert('Planilla guardada en modo edición (Borrador local). Puede continuar luego o recargar la página.', 'info');
+   };
+
+   const handleLoadManualDraft = () => {
+      const draftStr = localStorage.getItem('manualCollectionDraft');
+      if (draftStr) {
+         try {
+            const draft = JSON.parse(draftStr);
+            setManualCart(draft.cart || []);
+            setPlanillaDate(draft.date || new Date().toISOString().split('T')[0]);
+            setPlanillaGlosa(draft.glosa || '');
+            showAlert('Borrador recuperado correctamente. Puede continuar editando.', 'info');
+         } catch (e) {
+            console.error("Error parsing draft", e);
+         }
       }
    };
 
@@ -769,9 +797,9 @@ export const CollectionConsolidation: React.FC = () => {
             <div className="absolute inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
                <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
                   {systemModal.type === 'error' && <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full" />}
-                  {systemModal.type === 'warning' && <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4 bg-amber-50 p-2 rounded-full" />}
-                  {systemModal.type === 'confirm' && <AlertTriangle className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full" />}
-                  {systemModal.type === 'info' && <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-4 bg-emerald-50 p-2 rounded-full" />}
+                  {systemModal.type === 'warning' && <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4 bg-amber-50 p-2 rounded-full" />}
+                  {systemModal.type === 'confirm' && <AlertCircle className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full" />}
+                  {systemModal.type === 'info' && <CheckCircle2 className="w-12 h-12 text-emerald-500 mx-auto mb-4 bg-emerald-50 p-2 rounded-full" />}
                   
                   <h3 className="text-lg font-black text-slate-800 mb-2">
                      {systemModal.type === 'error' ? 'Error' : systemModal.type === 'warning' ? 'Aviso' : systemModal.type === 'confirm' ? 'Confirmar Acción' : 'Información'}
@@ -1326,6 +1354,15 @@ export const CollectionConsolidation: React.FC = () => {
                         <span className="text-[10px] text-green-800 font-bold uppercase tracking-wider">Total Carrito</span>
                         <span className="text-lg font-bold text-green-700">S/ {manualTotals.toFixed(2)}</span>
                      </div>
+                     {manualCart.length > 0 && (
+                        <button
+                           onClick={handleSaveManualDraft}
+                           className="bg-white text-blue-700 px-4 py-2 rounded font-bold shadow-sm hover:bg-blue-50 border border-blue-200 transition-colors text-sm flex items-center"
+                           title="Guardar como borrador para continuar después"
+                        >
+                           <Save className="w-4 h-4 mr-2" /> Dejar en Edición
+                        </button>
+                     )}
                      <button
                         onClick={handleManualRequestConsolidate}
                         disabled={manualCart.length === 0 || isProcessing || !isSessionOpen}
@@ -1480,13 +1517,24 @@ export const CollectionConsolidation: React.FC = () => {
                         <p className="text-sm mt-2 text-slate-500 max-w-sm text-center">
                            Aún no ha agregado documentos a esta planilla de cobranza múltiple.
                         </p>
-                        <button
-                           onClick={() => setShowManualSearchModal(true)}
-                           className="mt-6 font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-6 py-2 rounded-lg border border-blue-200 transition-colors flex items-center"
-                        >
-                           <Search className="w-4 h-4 mr-2" />
-                           Buscar Cuentas por Cobrar
-                        </button>
+                        <div className="flex gap-4 mt-6">
+                           <button
+                              onClick={() => setShowManualSearchModal(true)}
+                              className="font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-6 py-2 rounded-lg border border-blue-200 transition-colors flex items-center"
+                           >
+                              <Search className="w-4 h-4 mr-2" />
+                              Buscar Cuentas por Cobrar
+                           </button>
+                           {hasDraft && (
+                              <button
+                                 onClick={handleLoadManualDraft}
+                                 className="font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 px-6 py-2 rounded-lg border border-amber-200 transition-colors flex items-center shadow-sm"
+                              >
+                                 <FileText className="w-4 h-4 mr-2" />
+                                 Recuperar Planilla en Edición
+                              </button>
+                           )}
+                        </div>
                      </div>
                   )}
                </div>
