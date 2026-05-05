@@ -165,7 +165,7 @@ export const MobileOrders: React.FC = () => {
             clientQuery,
             // 🔥 CORRECCIÓN 1: Ahora consultamos la vista que trae el stock precalculado de los lotes
             supabase.from('vw_active_products').select('*'),
-            supabase.from('sales').select('*').eq('payment_status', 'PENDING').eq('payment_method', 'CREDITO'),
+            supabase.from('sales').select('*').or('balance.gt.0,and(balance.is.null,total.gt.0)').neq('status', 'canceled').neq('document_type', 'NOTA_CREDITO'),
             supabase.from('orders').select('*').eq('seller_id', sellerId).gte('created_at', today),
             supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true)
          ]);
@@ -763,7 +763,11 @@ export const MobileOrders: React.FC = () => {
    const pendingBills = useMemo(() => {
       try {
          if (!selectedClient) return [];
-         return (dbSales || []).filter(s => s && s.client_id === selectedClient.id).sort((a, b) => {
+         return (dbSales || []).filter(s => {
+            if (!s || s.client_id !== selectedClient.id) return false;
+            const balance = s.balance ?? s.total ?? 0;
+            return balance > 0;
+         }).sort((a, b) => {
             const getSafeTime = (dateVal: any) => {
                try {
                   if (!dateVal) return 0;
@@ -879,7 +883,10 @@ export const MobileOrders: React.FC = () => {
 
             <div className="flex-1 overflow-y-auto p-4 pb-[200px] space-y-3">
                {listTab === 'CLIENTS' && filteredClientsList.map(c => {
-                  const debt = dbSales.filter(s => s.client_id === c.id && s.payment_status === 'PENDING').reduce((sum, s) => sum + Number(s.balance ?? s.total ?? 0), 0);
+                  const debt = dbSales.filter(s => {
+                     const balance = s.balance ?? s.total ?? 0;
+                     return s.client_id === c.id && balance > 0;
+                  }).reduce((sum, s) => sum + Number(s.balance ?? s.total ?? 0), 0);
                   return (
                      <div key={c.id} onClick={() => handleClientSelect(c)} className="bg-white p-4 rounded-2xl shadow-sm active:scale-95 transition-transform cursor-pointer border border-slate-100">
                         <div className="flex justify-between items-start mb-2">
