@@ -125,6 +125,7 @@ export const Purchases: React.FC = () => {
   const [isBonus, setIsBonus] = useState(false);
 
   const [cart, setCart] = useState<PurchaseItem[]>([]);
+  const originalCartRef = useRef<PurchaseItem[]>([]);
 
   // === REFS FOR KEYBOARD NAVIGATION ===
   const productSearchRef = useRef<HTMLInputElement>(null);
@@ -419,29 +420,39 @@ export const Purchases: React.FC = () => {
           // 1. UPDATE HEADER
           await supabase.from('purchases').update(purchaseHeader).eq('id', editingId);
           
-          // 2. BORRAR ITEMS Y LOTES ANTERIORES PARA REHACERLOS
-          await supabase.from('purchase_items').delete().eq('purchase_id', editingId);
-          await supabase.from('batches').delete().eq('purchase_id', editingId);
+          const cartChanged = JSON.stringify(cart) !== JSON.stringify(originalCartRef.current);
+          
+          if (cartChanged) {
+            // 2. BORRAR ITEMS Y LOTES ANTERIORES PARA REHACERLOS
+            const { error: batchErr } = await supabase.from('batches').delete().eq('purchase_id', editingId);
+            if (batchErr) {
+               throw new Error("No se puede editar el detalle de esta compra porque sus productos ya tienen salidas en Kardex (han sido vendidos). Solo se guardaron los cambios del documento.");
+            }
+            
+            const { error: itemErr } = await supabase.from('purchase_items').delete().eq('purchase_id', editingId);
+            if (itemErr) throw itemErr;
 
-          // 3. REINSERTAR NUEVOS ITEMS Y LOTES
-          for (const item of cart) {
-            await supabase.from('purchase_items').insert({ ...item, purchase_id: editingId });
-            
-            await supabase.from('batches').insert({
-              product_id: item.product_id,
-              purchase_id: editingId,
-              warehouse_id: warehouseId || null,
-              code: item.batch_code,
-              quantity_initial: item.quantity_base,
-              quantity_current: item.quantity_base,
-              cost: item.unit_price / item.factor,
-              expiration_date: item.expiration_date || null
-            });
-            
-            // Actualizar último costo en el producto (AHORA CON IGV)
-            await supabase.from('products').update({ last_cost: item.unit_price / item.factor }).eq('id', item.product_id);
+            // 3. REINSERTAR NUEVOS ITEMS Y LOTES
+            for (const item of cart) {
+              const { id, created_at, purchase_id, ...itemToInsert } = item as any;
+              await supabase.from('purchase_items').insert({ ...itemToInsert, purchase_id: editingId });
+              
+              await supabase.from('batches').insert({
+                product_id: item.product_id,
+                purchase_id: editingId,
+                warehouse_id: warehouseId || null,
+                code: item.batch_code,
+                quantity_initial: item.quantity_base,
+                quantity_current: item.quantity_base,
+                cost: item.unit_price / item.factor,
+                expiration_date: item.expiration_date || null
+              });
+              
+              // Actualizar último costo en el producto (AHORA CON IGV)
+              await supabase.from('products').update({ last_cost: item.unit_price / item.factor }).eq('id', item.product_id);
+            }
           }
-          showToast("Compra actualizada y Kardex rectificado en la nube.", "success");
+          showToast(cartChanged ? "Compra actualizada y Kardex rectificado en la nube." : "Datos de cabecera actualizados (Kardex intacto).", "success");
         } else {
           // 1. INSERT HEADER
           const newId = crypto.randomUUID();
@@ -479,7 +490,7 @@ export const Purchases: React.FC = () => {
   };
 
   const resetForm = () => {
-    setCart([]); setDocSeries(''); setDocNumber(''); setSupplierId(''); setObservation('');
+    setCart([]); originalCartRef.current = []; setDocSeries(''); setDocNumber(''); setSupplierId(''); setObservation('');
     setPercepcion(0); setDetraccion(0);
     setEditingId(null);
     setIssueDate(new Date().toISOString().split('T')[0]);
@@ -501,7 +512,9 @@ export const Purchases: React.FC = () => {
     setDueDate(p.due_date);
     setObservation(p.observation || '');
     setCurrency(p.currency);
-    setCart(p.items || []); // Protección contra arrays nulos
+    const items = p.items || [];
+    setCart(items); // Protección contra arrays nulos
+    originalCartRef.current = JSON.parse(JSON.stringify(items));
     setActiveTab('FORM');
     showToast("Modo Edición: Se revertirá el stock anterior al guardar.", "success");
   };
