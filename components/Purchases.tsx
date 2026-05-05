@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { ShoppingBag, Plus, Trash2, Calendar, DollarSign, Package, CheckSquare, Save, CreditCard, AlertTriangle, Search, FileText, Loader2, XCircle, CheckCircle, Clock, Edit, List } from 'lucide-react';
+import { ShoppingBag, Plus, Trash2, Calendar, DollarSign, Package, CheckSquare, Save, CreditCard, AlertTriangle, Search, FileText, Loader2, XCircle, CheckCircle, Clock, Edit, List, Printer } from 'lucide-react';
 import { PurchaseItem, Purchase, Product } from '../types';
 import { supabase } from '../services/supabase';
 import { calculateBaseQuantity } from '../utils/productUtils';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // Simple Toast Component
 interface ToastProps {
@@ -649,6 +651,94 @@ export const Purchases: React.FC = () => {
     }
   };
 
+  const handleExportPurchasePDF = (p: Purchase) => {
+     const doc = new jsPDF('portrait');
+     
+     // Cabecera Documento
+     doc.setFontSize(18);
+     doc.setTextColor(15, 23, 42); // slate-900
+     doc.text('Ingreso de Mercadería', 14, 20);
+     
+     doc.setFontSize(10);
+     doc.setTextColor(100);
+     doc.text(`Fecha Impresión: ${new Date().toLocaleDateString()}`, 14, 26);
+
+     // Info de la Compra
+     doc.setFontSize(12);
+     doc.setTextColor(0);
+     doc.text(`Proveedor:`, 14, 40);
+     doc.setFont(undefined, 'normal');
+     const sName = p.supplier_name || suppliers.find(s => s.id === p.supplier_id)?.name || 'Proveedor Desconocido';
+     doc.text(sName, 40, 40);
+
+     doc.setFont(undefined, 'bold');
+     doc.text(`Documento:`, 14, 46);
+     doc.setFont(undefined, 'normal');
+     doc.text(`${p.document_type} ${p.document_series ? p.document_series + '-' : ''}${p.document_number}`, 40, 46);
+
+     doc.setFont(undefined, 'bold');
+     doc.text(`F. Emisión:`, 130, 40);
+     doc.setFont(undefined, 'normal');
+     doc.text(p.issue_date, 155, 40);
+
+     doc.setFont(undefined, 'bold');
+     doc.text(`F. Ingreso:`, 130, 46);
+     doc.setFont(undefined, 'normal');
+     doc.text(p.entry_date || p.issue_date, 155, 46);
+
+     // Tabla de Productos
+     const tableColumn = ["SKU", "Producto", "Cant", "U.M", "Fct", "Lote", "Vence", "Costo", "Subtot"];
+     const tableRows = (p.items || []).map((item: any) => {
+         const prod = products.find(x => x.id === item.product_id);
+         return [
+            prod?.sku || '-',
+            prod?.name || 'Producto Desconocido',
+            item.quantity_presentation.toString(),
+            item.unit_type,
+            item.factor.toString(),
+            item.batch_code || '-',
+            item.expiration_date || '-',
+            `${p.currency === 'USD' ? '$' : 'S/'} ${(item.unit_price || 0).toFixed(2)}`,
+            `${p.currency === 'USD' ? '$' : 'S/'} ${(item.total_cost || item.total_value || 0).toFixed(2)}`
+         ];
+     });
+
+     autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: 55,
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [15, 23, 42] as [number, number, number], textColor: 255 },
+        columnStyles: {
+            2: { halign: 'right' },
+            4: { halign: 'center' },
+            7: { halign: 'right' },
+            8: { halign: 'right', fontStyle: 'bold' }
+        }
+     });
+
+     // Totales Footer
+     const finalY = (doc as any).lastAutoTable.finalY || 100;
+     doc.setFontSize(10);
+     doc.setFont(undefined, 'bold');
+     
+     if (p.igv > 0) {
+        doc.text(`Subtotal: ${p.currency === 'USD' ? '$' : 'S/'} ${p.subtotal.toFixed(2)}`, 140, finalY + 10);
+        doc.text(`IGV (18%): ${p.currency === 'USD' ? '$' : 'S/'} ${p.igv.toFixed(2)}`, 140, finalY + 16);
+        doc.text(`Total: ${p.currency === 'USD' ? '$' : 'S/'} ${p.total.toFixed(2)}`, 140, finalY + 22);
+     } else {
+        doc.text(`Total: ${p.currency === 'USD' ? '$' : 'S/'} ${p.total.toFixed(2)}`, 140, finalY + 10);
+     }
+
+     if (p.observation) {
+        doc.setFontSize(9);
+        doc.setTextColor(100);
+        doc.text(`Glosa/Obs: ${p.observation}`, 14, finalY + 10);
+     }
+
+     doc.save(`INGRESO_${p.document_type}_${p.document_number}.pdf`);
+  };
+
   const sumTotalValue = cart.reduce((acc, item) => acc + item.total_value, 0); 
   const sumTotalImport = cart.reduce((acc, item) => acc + item.total_cost, 0); 
   const sumIgv = sumTotalImport - sumTotalValue;
@@ -784,6 +874,9 @@ export const Purchases: React.FC = () => {
                    </td>
                    <td className="p-3 text-right">
                       <div className="flex items-center justify-end space-x-3">
+                        <button onClick={() => handleExportPurchasePDF(p)} className="text-slate-600 hover:text-slate-900 font-bold flex items-center" title="Imprimir PDF">
+                          <Printer className="w-4 h-4 mr-1" /> Imprimir
+                        </button>
                         {p.payment_status !== 'PAID' && (
                           <button onClick={() => handleOpenPaymentModal(p)} className="text-emerald-600 hover:text-emerald-800 font-bold flex items-center" title="Registrar Pago">
                             <CreditCard className="w-4 h-4 mr-1" /> Pagar
