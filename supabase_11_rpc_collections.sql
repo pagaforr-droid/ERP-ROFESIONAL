@@ -103,8 +103,8 @@ BEGIN
     RETURNING id INTO v_cash_mov_id;
 
     -- Generar Recibo de Planilla Único
-    INSERT INTO collection_planillas (id, code, date, total_amount, record_count, user_id, cash_movement_id, glosa, status, records)
-    VALUES (v_planilla_id, v_code, p_planilla_date, v_total, array_length(p_record_ids, 1), p_user_id, v_cash_mov_id, p_glosa, 'ACTIVE', p_record_ids);
+    INSERT INTO collection_planillas (id, code, date, total_amount, record_count, user_id, cash_movement_id, glosa, status)
+    VALUES (v_planilla_id, v_code, p_planilla_date, v_total, array_length(p_record_ids, 1), p_user_id, v_cash_mov_id, p_glosa, 'ACTIVE');
 
     -- Actualizar estado de records sueltos y amarrarlos
     UPDATE collection_records 

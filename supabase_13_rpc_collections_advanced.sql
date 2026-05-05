@@ -104,8 +104,8 @@ BEGIN
     RETURNING id INTO v_cash_mov_id;
 
     -- Generar Planilla
-    INSERT INTO collection_planillas (id, code, date, total_amount, record_count, user_id, cash_movement_id, glosa, status, records)
-    VALUES (v_planilla_id, v_code, p_date, v_total, array_length(v_records, 1), p_user_id, v_cash_mov_id, p_glosa, 'ACTIVE', v_records);
+    INSERT INTO collection_planillas (id, code, date, total_amount, record_count, user_id, cash_movement_id, glosa, status)
+    VALUES (v_planilla_id, v_code, p_date, v_total, array_length(v_records, 1), p_user_id, v_cash_mov_id, p_glosa, 'ACTIVE');
 
     -- Actualizar registros con el ID de la planilla recién creada para evitar fk_collrec_planilla error
     UPDATE collection_records SET planilla_id = v_planilla_id WHERE id = ANY(v_records);

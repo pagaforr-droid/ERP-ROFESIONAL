@@ -89,7 +89,7 @@ export const CollectionConsolidation: React.FC = () => {
 
       // 1. Add Collection Planillas
       collectionPlanillas.forEach(p => {
-         const recs = collectionRecords.filter(r => (p.records || []).includes(r.id));
+         const recs = collectionRecords.filter(r => r.planilla_id === p.id);
          if (selectedSeller !== 'ALL' && !recs.some(r => r.seller_id === selectedSeller)) return;
          if (dateFilter && p.date && !p.date.startsWith(dateFilter)) return;
 
@@ -167,7 +167,7 @@ export const CollectionConsolidation: React.FC = () => {
             date_reported: item.date
          }));
       }
-      return collectionRecords.filter(r => (selectedPlanilla.original.records || []).includes(r.id));
+      return collectionRecords.filter(r => r.planilla_id === selectedPlanilla.id);
    }, [selectedPlanilla, collectionRecords]);
 
    // --- DATA PREPARATION (MANUAL) ---
