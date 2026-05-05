@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase, USE_MOCK_DB } from '../services/supabase';
 import { Product, Batch, Purchase, Sale, DispatchLiquidation } from '../types';
-import { Package, ArrowUpRight, ArrowDownLeft, Search, Filter, Calendar, BarChart3, FileText, Layers, RefreshCw, Printer, AlertTriangle, ArrowUpDown, FileDown, Plus, DollarSign, Hash, Briefcase, CheckCircle, Eye } from 'lucide-react';
+import { useStore } from '../services/store';
+import { Package, ArrowUpRight, ArrowDownLeft, Search, Filter, Calendar, BarChart3, FileText, Layers, RefreshCw, Printer, AlertTriangle, ArrowUpDown, FileDown, Plus, DollarSign, Hash, Briefcase, CheckCircle, Eye, Settings } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -24,8 +25,10 @@ interface Movement {
 }
 
 export const Kardex: React.FC = () => {
+  const store = useStore();
   const [activeTab, setActiveTab] = useState<ViewTab>('INVENTORY');
   const [isDataVisible, setIsDataVisible] = useState(false); // ESTADO DE RENDIMIENTO
+  const [isRecalculating, setIsRecalculating] = useState(false);
   
   // --- ESTADOS SUPABASE ---
   const [dbProducts, setDbProducts] = useState<Product[]>([]);
@@ -63,6 +66,31 @@ export const Kardex: React.FC = () => {
         } finally {
            setIsLoading(false);
         }
+     }
+  };
+
+  const handleRecalculateKardex = async () => {
+     if (store.userRole !== 'ADMIN') {
+        alert("Acceso denegado: Solo el Administrador puede recalcular el Kardex.");
+        return;
+     }
+     
+     if (!window.confirm("⚠️ ADVERTENCIA: Esta es una operación de base de datos intensiva.\n\nRecalculará el Stock Físico de TODOS los productos basándose estrictamente en su historial de entradas y salidas.\n\n¿Estás seguro de continuar?")) {
+        return;
+     }
+
+     setIsRecalculating(true);
+     try {
+        const { error } = await supabase.rpc('admin_recalculate_kardex');
+        if (error) throw error;
+        
+        alert("¡Éxito! El Kardex ha sido recalculado matemáticamente.");
+        await fetchMasterData(); // Recargar datos frescos
+     } catch (err: any) {
+        console.error("Error al recalcular Kardex:", err);
+        alert("Error al recalcular Kardex: " + err.message);
+     } finally {
+        setIsRecalculating(false);
      }
   };
 
@@ -288,6 +316,11 @@ export const Kardex: React.FC = () => {
              </div>
           </div>
           <div className="flex gap-2">
+             {store.userRole === 'ADMIN' && (
+                <button onClick={handleRecalculateKardex} disabled={isRecalculating} className="bg-red-50 hover:bg-red-100 text-red-700 px-4 py-2 rounded-lg flex items-center transition-colors shadow-sm border border-red-200 font-bold text-sm disabled:opacity-50" title="Auditoría: Recalcular matemática del stock">
+                   <Settings className={`w-4 h-4 mr-2 ${isRecalculating ? 'animate-spin' : ''}`} /> {isRecalculating ? 'Recalculando...' : 'Recalcular Kardex'}
+                </button>
+             )}
              <button onClick={fetchMasterData} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg flex items-center transition-colors shadow-sm border border-slate-200 font-bold text-sm">
                 <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin text-orange-600' : ''}`} /> Sincronizar
              </button>
