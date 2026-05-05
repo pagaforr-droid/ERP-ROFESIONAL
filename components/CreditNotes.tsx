@@ -62,7 +62,7 @@ export const CreditNotes: React.FC = () => {
 
     const handleSearch = React.useCallback(async () => {
         try {
-            let query = supabase.from('sales').select('*, items:sale_items(*)').in('document_type', ['FACTURA', 'BOLETA']).neq('status', 'canceled');
+            let query = supabase.from('sales').select('*, items:sale_items(*, batch_allocations(*))').in('document_type', ['FACTURA', 'BOLETA']).neq('status', 'canceled');
 
             if (dateFrom) {
                 query = query.gte('created_at', `${dateFrom}T00:00:00`);
@@ -134,9 +134,7 @@ export const CreditNotes: React.FC = () => {
         const initialReturns: Record<string, { qty: number, unit: string }> = {};
         sale.items.forEach((item, idx) => {
             const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
-            const product = products.find(p => p.id === item.product_id);
-            const defaultUnit = product?.unit_type || 'UND';
-            initialReturns[itemKey] = { qty: 0, unit: defaultUnit }; // Default to base unit for safety
+            initialReturns[itemKey] = { qty: 0, unit: item.selected_unit }; // Default to original unit invoiced
         });
         setReturnQuantities(initialReturns);
     };
@@ -599,7 +597,7 @@ export const CreditNotes: React.FC = () => {
                                                         <div className="text-[10px] text-slate-500">{item.product_sku} | {item.selected_unit === 'UND' ? 'Unidades' : 'Cajas'} {item.is_bonus && '| Bonif.'}</div>
                                                     </div>
                                                     <div className="w-20 text-center font-mono text-xs text-slate-500 bg-slate-100 py-1 rounded">
-                                                        {originalQty} {item.selected_unit}
+                                                        {originalQty} <span className="font-bold">{item.selected_unit}</span>
                                                     </div>
                                                     <div className="w-20 text-right text-xs font-mono text-slate-600">
                                                         S/ {item.unit_price.toFixed(2)}
@@ -624,9 +622,9 @@ export const CreditNotes: React.FC = () => {
                                                             value={returnUnit}
                                                             onChange={e => setReturnQuantities(prev => ({ ...prev, [itemKey]: { qty: 0, unit: e.target.value } }))}
                                                         >
-                                                            <option value={product?.unit_type || 'UND'}>{(product?.unit_type || 'UND').substring(0,3).toUpperCase()}</option>
-                                                            {isPackageUnit(item.selected_unit, product) && !item.is_bonus && (
-                                                                <option value={item.selected_unit}>{item.selected_unit.split('/')[0].substring(0,3).toUpperCase()}</option>
+                                                            <option value={item.selected_unit}>{item.selected_unit}</option>
+                                                            {item.selected_unit !== (product?.unit_type || 'UND') && (
+                                                                <option value={product?.unit_type || 'UND'}>{product?.unit_type || 'UND'}</option>
                                                             )}
                                                         </select>
                                                     </div>
