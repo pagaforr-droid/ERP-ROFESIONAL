@@ -102,15 +102,19 @@ export const CreditNotes: React.FC = () => {
     }, [dateFrom, dateTo, searchTerm, searchType]);
 
     useEffect(() => {
-        const fetchSeries = async () => {
+        const fetchConfig = async () => {
             const { data } = await supabase.from('document_series').select('*').eq('type', 'NOTA_CREDITO').eq('is_active', true);
             if (data && data.length > 0) {
                 setDbSeries(data);
                 setSelectedSeries(data[0].series);
             }
+            if (products.length === 0) {
+                const { data: pData } = await supabase.from('products').select('*');
+                if (pData) useStore.setState({ products: pData });
+            }
         };
-        fetchSeries();
-    }, []);
+        fetchConfig();
+    }, [products.length]);
 
     useEffect(() => {
         handleSearch();
