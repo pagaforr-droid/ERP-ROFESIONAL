@@ -690,16 +690,19 @@ export const Purchases: React.FC = () => {
      const tableColumn = ["SKU", "Producto", "Cant", "U.M", "Fct", "Lote", "Vence", "Costo", "Subtot"];
      const tableRows = (p.items || []).map((item: any) => {
          const prod = products.find(x => x.id === item.product_id);
+         const displayUm = item.unit_type === 'PKG' ? (prod?.package_type || 'PKG') : (prod?.unit_type || 'UND');
+         const subtotalExact = item.quantity_presentation * (item.unit_price || 0);
+
          return [
             prod?.sku || '-',
             prod?.name || 'Producto Desconocido',
             item.quantity_presentation.toString(),
-            item.unit_type,
+            displayUm,
             item.factor.toString(),
             item.batch_code || '-',
             item.expiration_date || '-',
             `${p.currency === 'USD' ? '$' : 'S/'} ${(item.unit_price || 0).toFixed(2)}`,
-            `${p.currency === 'USD' ? '$' : 'S/'} ${(item.total_cost || item.total_value || 0).toFixed(2)}`
+            `${p.currency === 'USD' ? '$' : 'S/'} ${subtotalExact.toFixed(2)}`
          ];
      });
 
