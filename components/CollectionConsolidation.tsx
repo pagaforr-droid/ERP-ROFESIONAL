@@ -265,7 +265,20 @@ export const CollectionConsolidation: React.FC = () => {
         }
      };
      initSupabase();
+     setHasDraft(!!localStorage.getItem('manualCollectionDraft'));
    }, []);
+
+   // Auto-save draft whenever the manual cart changes
+   useEffect(() => {
+      if (manualCart.length > 0) {
+         localStorage.setItem('manualCollectionDraft', JSON.stringify({
+            cart: manualCart,
+            date: planillaDate,
+            glosa: planillaGlosa
+         }));
+         setHasDraft(true);
+      }
+   }, [manualCart, planillaDate, planillaGlosa]);
 
    const handleToggleSelect = (id: string) => {
       const newSet = new Set(selectedIds);
