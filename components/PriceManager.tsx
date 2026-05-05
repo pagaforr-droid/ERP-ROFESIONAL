@@ -154,8 +154,8 @@ export const PriceManager: React.FC = () => {
         const matchSearch = searchTerm === '' || p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase());
         return matchSup && matchCat && matchSearch;
      }).map(p => {
-        // Importe Unitario (con IGV) = Valor Unitario (last_cost, sin IGV) * 1.18
-        const costWithIgv = p.last_cost ? p.last_cost * 1.18 : 0;
+        // Importe Unitario (con IGV) = Ahora last_cost ya incluye IGV por defecto
+        const costWithIgv = p.last_cost || 0;
         
         // 1. CÁLCULO DIRECTO: Costo de Presentación Mínima (con IGV) + Margen% = NUEVO PRECIO BASE UNIDAD
         // O utilizar el precio manual sobreescrito por el administrador
@@ -414,7 +414,7 @@ export const PriceManager: React.FC = () => {
       p.category || '-',
       p.unit_type,
       p.package_content.toString(),
-      `S/ ${(p.last_cost * 1.18).toFixed(3)}`,
+      `S/ ${(p.last_cost || 0).toFixed(3)}`,
       `S/ ${p.price_unit.toFixed(2)}`,
       ...priceLists.map(l => `S/ ${p.listPrices[l.name].toFixed(2)}`)
     ]);
@@ -447,7 +447,7 @@ export const PriceManager: React.FC = () => {
         'MARCA': p.brand || '-',
         'UNIDAD DE MEDIDA': p.unit_type,
         'FACTOR DE CAJA': p.package_content,
-        'COSTO ÚLTIMA COMPRA (S/)': Number((p.last_cost * 1.18).toFixed(3)),
+        'COSTO ÚLTIMA COMPRA (S/)': Number(((p.last_cost) || 0).toFixed(3)),
         'PRECIO BASE TIENDA (S/)': p.price_unit,
         'PRECIO CAJA CERRADA (S/)': p.price_package,
       };

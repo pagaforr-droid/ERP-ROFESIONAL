@@ -222,7 +222,7 @@ export const StrategicReports: React.FC = () => {
 
     const result = Object.values(groups).map(g => ({
        ...g,
-       margin: g.value - (g.cost * 1.18),
+       margin: g.value - g.cost,
        percentage: totalGlobalSales > 0 ? (g.value / totalGlobalSales) * 100 : 0
     })).sort((a, b) => b.value - a.value);
 
@@ -231,7 +231,7 @@ export const StrategicReports: React.FC = () => {
        kpis: {
           totalSales: totalGlobalSales,
           totalCost: totalGlobalCost,
-          grossMargin: totalGlobalSales - (totalGlobalCost * 1.18),
+          grossMargin: totalGlobalSales - totalGlobalCost,
           uniqueClients: uniqueClientsGlobal.size,
           itemsSold: result.reduce((acc, r) => acc + r.itemsSold, 0)
        }

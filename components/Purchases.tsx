@@ -438,8 +438,8 @@ export const Purchases: React.FC = () => {
               expiration_date: item.expiration_date || null
             });
             
-            // Actualizar último costo en el producto
-            await supabase.from('products').update({ last_cost: item.unit_value / item.factor }).eq('id', item.product_id);
+            // Actualizar último costo en el producto (AHORA CON IGV)
+            await supabase.from('products').update({ last_cost: item.unit_price / item.factor }).eq('id', item.product_id);
           }
           showToast("Compra actualizada y Kardex rectificado en la nube.", "success");
         } else {
@@ -463,7 +463,7 @@ export const Purchases: React.FC = () => {
               expiration_date: item.expiration_date || null
             });
 
-            await supabase.from('products').update({ last_cost: item.unit_value / item.factor }).eq('id', item.product_id);
+            await supabase.from('products').update({ last_cost: item.unit_price / item.factor }).eq('id', item.product_id);
           }
           showToast(status === 'PAID' ? "Compra registrada y PAGADA en la Nube." : "Compra registrada como PENDIENTE.", "success");
         }
