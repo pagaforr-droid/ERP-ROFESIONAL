@@ -107,12 +107,39 @@ export const CollectionConsolidation: React.FC = () => {
          });
       });
 
+      if (hasDraft) {
+         const draftStr = localStorage.getItem('manualCollectionDraft');
+         if (draftStr) {
+            try {
+               const draft = JSON.parse(draftStr);
+               const cart = draft.cart || [];
+               if (cart.length > 0) {
+                  const total = cart.reduce((acc: number, curr: any) => acc + curr.amountToPay, 0);
+                  unified.push({
+                     type: 'COLLECTION_DRAFT',
+                     id: 'DRAFT_MANUAL',
+                     code: 'BORRADOR MANUAL',
+                     date: draft.date || new Date().toISOString(),
+                     total_amount: total,
+                     record_count: cart.length,
+                     status: 'DRAFT',
+                     user_id: currentUser?.id,
+                     glosa: draft.glosa || 'Planilla en edición (no procesada)',
+                     original: draft
+                  });
+               }
+            } catch (e) {
+               console.error(e);
+            }
+         }
+      }
+
       return unified.sort((a, b) => {
          const timeA = a.date ? new Date(a.date).getTime() : 0;
          const timeB = b.date ? new Date(b.date).getTime() : 0;
          return timeB - timeA;
       });
-   }, [collectionPlanillas, dateFilter, selectedSeller, collectionRecords]);
+   }, [collectionPlanillas, dateFilter, selectedSeller, collectionRecords, hasDraft, currentUser]);
 
    const totals = useMemo(() => {
       return pendingCollections.reduce((acc, curr) => {
@@ -130,6 +157,16 @@ export const CollectionConsolidation: React.FC = () => {
 
    const selectedPlanillaRecords = useMemo(() => {
       if (!selectedPlanilla) return [];
+      if (selectedPlanilla.status === 'DRAFT') {
+         return (selectedPlanilla.original.cart || []).map((item: any, i: number) => ({
+            id: `draft-rec-${i}`,
+            document_ref: item.docRef,
+            seller_id: null,
+            client_name: item.clientName,
+            amount_reported: item.amountToPay,
+            date_reported: item.date
+         }));
+      }
       return collectionRecords.filter(r => (selectedPlanilla.original.records || []).includes(r.id));
    }, [selectedPlanilla, collectionRecords]);
 
@@ -1563,8 +1600,10 @@ export const CollectionConsolidation: React.FC = () => {
                                     </div>
                                     {plan.status === 'ANNULLED' ? (
                                        <span className="text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded border border-red-200">ANULADO</span>
+                                    ) : plan.status === 'DRAFT' ? (
+                                       <span className="text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded border border-amber-300 animate-pulse">EN EDICIÓN</span>
                                     ) : (
-                                       <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200">CAJA</span>
+                                       <span className="text-[10px] font-bold bg-green-100 text-green-700 px-2 py-0.5 rounded border border-green-200">PROCESADO</span>
                                     )}
                                  </div>
                                  <div className="flex justify-between items-end mt-2">
@@ -1605,6 +1644,17 @@ export const CollectionConsolidation: React.FC = () => {
                               <p className="text-xs text-slate-500">Detalle de recaudación financiera</p>
                            </div>
                            <div className="flex gap-2">
+                              {selectedPlanilla.status === 'DRAFT' && (
+                                 <button
+                                    onClick={() => {
+                                       handleLoadManualDraft();
+                                       setActiveTab('MANUAL');
+                                    }}
+                                    className="flex items-center text-xs font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 px-3 py-1.5 rounded border border-amber-200 transition-colors"
+                                 >
+                                    <Edit className="w-4 h-4 mr-1" /> Continuar Edición
+                                 </button>
+                              )}
                               {selectedPlanilla.status === 'ACTIVE' && selectedPlanilla.type === 'COLLECTION' && (
                                  <>
                                     <button
