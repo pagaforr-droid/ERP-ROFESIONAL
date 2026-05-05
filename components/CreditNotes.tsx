@@ -123,6 +123,14 @@ export const CreditNotes: React.FC = () => {
         setNcType('DEVOLUCION');
         setDiscountAmount(0);
 
+        const isFactura = sale.document_type === 'FACTURA';
+        const compatibleSeries = dbSeries.filter(s => s.series.startsWith(isFactura ? 'F' : 'B'));
+        if (compatibleSeries.length > 0) {
+            setSelectedSeries(compatibleSeries[0].series);
+        } else {
+            setSelectedSeries('');
+        }
+
         const initialReturns: Record<string, { qty: number, unit: string }> = {};
         sale.items.forEach((item, idx) => {
             const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
@@ -197,7 +205,17 @@ export const CreditNotes: React.FC = () => {
         ? returnedItemsList.reduce((sum, item) => sum + item.total_price, 0)
         : discountAmount;
 
-    const returnSubtotal = returnGrandTotal / (1 + (company.igv_percent / 100));
+    let returnSubtotal = 0;
+    if (ncType === 'DEVOLUCION') {
+        returnSubtotal = returnedItemsList.reduce((sum, item) => {
+            const itemSub = item.total_price / (1 + (company.igv_percent / 100));
+            return sum + itemSub;
+        }, 0);
+    } else {
+        returnSubtotal = discountAmount / (1 + (company.igv_percent / 100));
+    }
+    
+    // Se calcula el IGV como diferencia global para evitar desfases de 0.01
     const returnIgv = returnGrandTotal - returnSubtotal;
 
     const handleGenerateNC = async () => {
@@ -509,8 +527,18 @@ export const CreditNotes: React.FC = () => {
                                             value={selectedSeries}
                                             onChange={(e) => setSelectedSeries(e.target.value)}
                                         >
-                                            {dbSeries.map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
-                                            {dbSeries.length === 0 && <option value="NC01">NC01 (Auto)</option>}
+                                            {dbSeries
+                                                .filter(s => {
+                                                    if (!originalSale) return true;
+                                                    const isFactura = originalSale.document_type === 'FACTURA';
+                                                    return s.series.startsWith(isFactura ? 'F' : 'B');
+                                                })
+                                                .map(s => <option key={s.id} value={s.series}>{s.series}</option>)}
+                                            {dbSeries.filter(s => {
+                                                if (!originalSale) return true;
+                                                const isFactura = originalSale.document_type === 'FACTURA';
+                                                return s.series.startsWith(isFactura ? 'F' : 'B');
+                                            }).length === 0 && <option value="">No hay series compatibles</option>}
                                         </select>
                                     </div>
                                     <div>

@@ -176,15 +176,17 @@ BEGIN
             UPDATE sales SET status = 'canceled'::general_status, payment_status = 'PENDING', collection_status = 'NONE'::collection_status, balance = total, dispatch_status = 'liquidated'::dispatch_status WHERE id = v_sale.id;
             
         ELSIF v_doc->>'action' = 'PARTIAL_RETURN' THEN
-            -- Generar Serie para NC
-            UPDATE document_series SET current_number = current_number + 1 WHERE type = 'NOTA_CREDITO' AND is_active = true RETURNING series, LPAD(current_number::TEXT, 8, '0') INTO v_nc_series, v_nc_number;
-            IF v_nc_series IS NULL THEN
-                v_nc_series := 'NC01';
-                v_nc_number := LPAD(FLOOR(RANDOM() * 100000)::TEXT, 8, '0');
+            -- Obtener Serie para NC del Frontend
+            v_nc_series := COALESCE(v_doc->>'credit_note_series', 'NC01');
+            
+            UPDATE document_series SET current_number = current_number + 1 WHERE type = 'NOTA_CREDITO' AND series = v_nc_series RETURNING LPAD(current_number::TEXT, 8, '0') INTO v_nc_number;
+            IF v_nc_number IS NULL THEN
+                -- Si no existe la serie exacta, creamos una por defecto o la insertamos
+                INSERT INTO document_series (type, series, current_number, is_active) VALUES ('NOTA_CREDITO', v_nc_series, 1, true) RETURNING LPAD(current_number::TEXT, 8, '0') INTO v_nc_number;
             END IF;
             v_nc_full := v_nc_series || '-' || v_nc_number;
 
-            UPDATE liquidation_documents SET credit_note_series = v_nc_full WHERE dispatch_liquidation_id = v_liquidation_id AND sale_id = v_sale.id;
+            UPDATE liquidation_documents SET credit_note_series = v_nc_full, reason = COALESCE(v_doc->>'sunat_motivo', v_doc->>'reason') WHERE dispatch_liquidation_id = v_liquidation_id AND sale_id = v_sale.id;
 
             v_new_sale_id := uuid_generate_v4();
             
@@ -193,9 +195,9 @@ BEGIN
                 id, origin_order_id, document_type, series, number, payment_method, payment_status, collection_status, client_id, seller_id, client_name, client_ruc, client_address, subtotal, igv, total, balance, observation, status, dispatch_status, sunat_status
             ) VALUES (
                 v_new_sale_id, v_sale.origin_order_id, 'NOTA_CREDITO', v_nc_series, v_nc_number, 'CONTADO'::payment_method, 'PAID', 'NONE'::collection_status, v_sale.client_id, v_sale.seller_id, v_sale.client_name, v_sale.client_ruc, v_sale.client_address, 
-                ((v_doc->>'amount_credit_note')::DECIMAL / 1.18), 
-                ((v_doc->>'amount_credit_note')::DECIMAL - ((v_doc->>'amount_credit_note')::DECIMAL / 1.18)), 
-                (v_doc->>'amount_credit_note')::DECIMAL, 0, 'Devolución de Liquidación ' || v_liquidation_id || ' - Doc. Org: ' || v_sale.series || '-' || v_sale.number, 'completed'::general_status, 'liquidated'::dispatch_status, 'PENDING'::sunat_status
+                COALESCE((v_doc->>'subtotal_credit_note')::DECIMAL, ((v_doc->>'amount_credit_note')::DECIMAL / 1.18)), 
+                COALESCE((v_doc->>'igv_credit_note')::DECIMAL, ((v_doc->>'amount_credit_note')::DECIMAL - ((v_doc->>'amount_credit_note')::DECIMAL / 1.18))), 
+                (v_doc->>'amount_credit_note')::DECIMAL, 0, COALESCE(v_doc->>'sunat_motivo', '07') || ' | Devolución Liq ' || v_liquidation_id || ' - Doc. Org: ' || v_sale.series || '-' || v_sale.number, 'completed'::general_status, 'liquidated'::dispatch_status, 'PENDING'::sunat_status
             );
 
             -- Insertar sale_items

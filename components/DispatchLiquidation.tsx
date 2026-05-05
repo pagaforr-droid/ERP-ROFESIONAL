@@ -111,6 +111,8 @@ export const DispatchLiquidationComp: React.FC = () => {
    // Partial Modal Data: Now tracks Boxes and Units separately
    const [returnEntries, setReturnEntries] = useState<Record<string, ReturnEntry>>({});
    const [partialBalanceType, setPartialBalanceType] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
+   const [selectedNCSeries, setSelectedNCSeries] = useState<string>('');
+   const [selectedNCMotivo, setSelectedNCMotivo] = useState<string>('07');
 
    // Void Modal Data
    const [voidReason, setVoidReason] = useState('');
@@ -322,6 +324,12 @@ export const DispatchLiquidationComp: React.FC = () => {
       });
       setReturnEntries(initialEntries);
 
+      // Default series and motivo
+      const isFactura = sale?.document_type === 'FACTURA';
+      const availableSeries = store.company.series.filter(s => s.type === 'NOTA_CREDITO' && s.is_active && s.series.startsWith(isFactura ? 'F' : 'B'));
+      setSelectedNCSeries(availableSeries.length > 0 ? availableSeries[0].series : '');
+      setSelectedNCMotivo('07');
+
       // Set default balance type based on original sale
       setPartialBalanceType(sale?.payment_method === 'CREDITO' ? 'CREDITO' : 'CONTADO');
       setActiveModal('PARTIAL');
@@ -340,7 +348,13 @@ export const DispatchLiquidationComp: React.FC = () => {
       const sale = dispatchSales.find(s => s.id === targetSaleId);
       if (!sale) return;
 
+      if (!selectedNCSeries) {
+         showSystemAlert('Error', 'Debe seleccionar una Serie para la Nota de Crédito.', 'error');
+         return;
+      }
+
       let totalRefund = 0;
+      let totalRefundSubtotal = 0;
       const returnedItemsList: any[] = [];
 
       // Calculate Refund with Flexibility
@@ -366,8 +380,11 @@ export const DispatchLiquidationComp: React.FC = () => {
             // Proportional Refund Calculation
             const refundRatio = returnedBaseUnits / item.quantity_base;
             const refundAmount = item.total_price * refundRatio;
+            const itemSubtotal = item.total_price / 1.18; // Assumption: All items are 18% IGV right now
+            const refundSubtotalAmount = itemSubtotal * refundRatio;
 
             totalRefund += refundAmount;
+            totalRefundSubtotal += refundSubtotalAmount;
 
             returnedItemsList.push({
                product_id: item.product_id,
@@ -407,7 +424,10 @@ export const DispatchLiquidationComp: React.FC = () => {
          amount_credit: Number(credit.toFixed(2)),
          amount_void: 0,
          amount_credit_note: totalRefund,
-         credit_note_series: 'TBD', // Let the store assign a real series and correlative later
+         subtotal_credit_note: Number(totalRefundSubtotal.toFixed(2)),
+         igv_credit_note: Number((totalRefund - totalRefundSubtotal).toFixed(2)),
+         credit_note_series: selectedNCSeries,
+         sunat_motivo: selectedNCMotivo,
          balance_payment_method: partialBalanceType,
          returned_items: returnedItemsList
       };
@@ -1534,6 +1554,37 @@ export const DispatchLiquidationComp: React.FC = () => {
                         </div>
 
                         <div className="flex items-center gap-6">
+                           <div className="flex flex-col gap-2 border-r border-indigo-200 pr-4">
+                              <div className="flex items-center gap-2">
+                                 <div className="text-[10px] font-bold text-indigo-500 uppercase w-20">Serie NC</div>
+                                 <select
+                                    className="text-sm font-bold border border-indigo-200 rounded p-1 focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900 flex-1"
+                                    value={selectedNCSeries}
+                                    onChange={(e) => setSelectedNCSeries(e.target.value)}
+                                 >
+                                    <option value="">Seleccione...</option>
+                                    {(() => {
+                                       const s = dispatchSales.find(s => s.id === targetSaleId);
+                                       const isFactura = s?.document_type === 'FACTURA';
+                                       return store.company.series
+                                          .filter(ser => ser.type === 'NOTA_CREDITO' && ser.is_active && ser.series.startsWith(isFactura ? 'F' : 'B'))
+                                          .map(ser => <option key={ser.id} value={ser.series}>{ser.series}</option>);
+                                    })()}
+                                 </select>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                 <div className="text-[10px] font-bold text-indigo-500 uppercase w-20">Motivo</div>
+                                 <select
+                                    className="text-sm font-bold border border-indigo-200 rounded p-1 focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900 flex-1"
+                                    value={selectedNCMotivo}
+                                    onChange={(e) => setSelectedNCMotivo(e.target.value)}
+                                 >
+                                    <option value="07">07 - Devolución por ítem</option>
+                                    <option value="01">01 - Anulación de la operación</option>
+                                 </select>
+                              </div>
+                           </div>
+
                            <div className="text-right">
                               <div className="text-[10px] font-bold text-indigo-500 uppercase">Destino Saldo</div>
                               <select

@@ -545,11 +545,14 @@ export interface LiquidationDocument {
   amount_collected: number; // Efectivo real
   amount_credit: number;    // Cuenta por cobrar (incluye saldo de parciales)
   amount_void: number;      // Importe anulado
-  amount_credit_note: number; // Importe de la NC
+  amount_credit_note: number; // Importe total de la NC
+  subtotal_credit_note?: number; // Subtotal exacto (sumatoria items)
+  igv_credit_note?: number;      // IGV exacto (sumatoria items)
 
   // Metadata for security/audit
   reason?: string; // Motivo anulación/NC
   credit_note_series?: string; // e.g. FC01-000023
+  sunat_motivo?: string; // Motivo SUNAT (01, 07, etc)
   balance_payment_method?: 'CONTADO' | 'CREDITO'; // Logic for Partial Return Remainder
 
   returned_items: {
