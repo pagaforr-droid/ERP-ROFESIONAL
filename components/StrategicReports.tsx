@@ -267,11 +267,18 @@ export const StrategicReports: React.FC = () => {
   const sellerAdvanceData = useMemo(() => {
      if (activeTab !== 'SELLER_ADVANCE') return [];
 
-     // FIXED: Calculate total working days in the month, not just the selected range
-     const endOfMonth = new Date(new Date(dateFrom).getFullYear(), new Date(dateFrom).getMonth() + 1, 0).toISOString().split('T')[0];
-     const totalDaysInMonth = getWorkingDaysInRange(dateFrom, endOfMonth);
+     // FIXED: Calculate total working days in the month, safely parsing dates without UTC offsets
+     const [yearStr, monthStr] = dateFrom.split('-');
+     const year = parseInt(yearStr, 10);
+     const month = parseInt(monthStr, 10);
      
-     let daysPassed = getWorkingDaysPassed(dateFrom, dateTo);
+     const firstDayOfMonth = `${yearStr}-${monthStr}-01`;
+     const lastDay = new Date(year, month, 0).getDate();
+     const endOfMonth = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+     
+     const totalDaysInMonth = getWorkingDaysInRange(firstDayOfMonth, endOfMonth);
+     
+     let daysPassed = getWorkingDaysPassed(firstDayOfMonth, dateTo);
      if (daysPassed === 0) daysPassed = 1;
 
      let remainingDays = totalDaysInMonth - daysPassed;
