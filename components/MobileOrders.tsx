@@ -815,7 +815,7 @@ export const MobileOrders: React.FC = () => {
 
    if (viewMode === 'CLIENT_LIST') {
       return (
-         <div className="fixed inset-0 flex flex-col bg-slate-50 relative pb-safe">
+         <div className="fixed inset-0 flex flex-col bg-slate-50 overflow-hidden">
             {isLoadingData && <div className="absolute inset-0 bg-white/80 z-50 flex items-center justify-center"><Loader2 className="w-10 h-10 text-blue-600 animate-spin" /></div>}
 
             {isExitModalOpen && (
@@ -848,31 +848,31 @@ export const MobileOrders: React.FC = () => {
                </div>
             )}
 
-            <div className="bg-slate-900 text-white p-5 shadow-lg rounded-b-2xl z-10">
-               <div className="flex justify-between items-center mb-4">
+            <div className="bg-slate-900 text-white p-4 shadow-lg rounded-b-[1.5rem] shrink-0 z-10">
+               <div className="flex justify-between items-center mb-3">
                   <div>
-                     <h2 className="text-xl font-black">Ruta Móvil</h2>
-                     <p className="text-sm text-blue-300 font-medium">Vendedor: {dbSellers.find(s => s.id === currentSellerId)?.name || 'Desconocido'}</p>
+                     <h2 className="text-lg font-black leading-tight">Ruta Móvil</h2>
+                     <p className="text-[11px] text-blue-300 font-medium">Vendedor: {dbSellers.find(s => s.id === currentSellerId)?.name || 'Desconocido'}</p>
                   </div>
-                  <button onClick={() => setIsExitModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full transition-colors">
-                     <LogOut className="w-5 h-5 text-slate-300" />
+                  <button onClick={() => setIsExitModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full transition-colors shrink-0">
+                     <LogOut className="w-4 h-4 text-slate-300" />
                   </button>
                </div>
 
                <div className="flex bg-slate-800 rounded-xl p-1 gap-1">
-                  <button onClick={() => setListTab('CLIENTS')} className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center transition-all ${listTab === 'CLIENTS' ? 'bg-blue-600 text-white shadow' : 'text-slate-400'}`}>
+                  <button onClick={() => setListTab('CLIENTS')} className={`flex-1 py-2 rounded-lg text-sm font-bold flex items-center justify-center transition-all ${listTab === 'CLIENTS' ? 'bg-blue-600 text-white shadow' : 'text-slate-400'}`}>
                      <User className="w-4 h-4 mr-2" /> Clientes
                   </button>
-                  <button onClick={() => setShowOrdersModal(true)} className="flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center transition-all text-slate-400 active:bg-slate-700">
+                  <button onClick={() => setShowOrdersModal(true)} className="flex-1 py-2 rounded-lg text-sm font-bold flex items-center justify-center transition-all text-slate-400 active:bg-slate-700">
                      <Clock className="w-4 h-4 mr-2" /> Mis Pedidos
                   </button>
                </div>
 
                {listTab === 'CLIENTS' && (
-                  <div className="relative mt-4">
-                     <Search className="absolute left-3 top-3.5 text-slate-400 w-5 h-5" />
+                  <div className="relative mt-3">
+                     <Search className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
                      <input
-                        className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-white placeholder-slate-400 font-medium outline-none focus:border-blue-500 transition-colors"
+                        className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-white text-sm placeholder-slate-400 font-medium outline-none focus:border-blue-500 transition-colors"
                         placeholder="Buscar cliente (RUC o Nombre)..."
                         value={clientSearchTerm}
                         onChange={e => setClientSearchTerm(e.target.value)}
@@ -881,28 +881,33 @@ export const MobileOrders: React.FC = () => {
                )}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 pb-[200px] space-y-3">
+            <div className="flex-1 overflow-y-auto p-3 pb-24 space-y-2 custom-scrollbar">
                {listTab === 'CLIENTS' && filteredClientsList.map(c => {
                   const debt = dbSales.filter(s => {
                      const balance = s.balance ?? s.total ?? 0;
                      return s.client_id === c.id && balance > 0;
                   }).reduce((sum, s) => sum + Number(s.balance ?? s.total ?? 0), 0);
+                  
+                  const initials = (c.name || 'C').substring(0, 2).toUpperCase();
+                  
                   return (
-                     <div key={c.id} onClick={() => handleClientSelect(c)} className="bg-white p-4 rounded-2xl shadow-sm active:scale-95 transition-transform cursor-pointer border border-slate-100">
-                        <div className="flex justify-between items-start mb-2">
-                           <h3 className="font-bold text-slate-800 text-base leading-tight pr-4">{c.name}</h3>
-                           <ArrowRight className="text-slate-300 w-5 h-5 shrink-0" />
+                     <div key={c.id} onClick={() => handleClientSelect(c)} className="bg-white p-3 rounded-2xl shadow-sm active:scale-95 transition-transform cursor-pointer border border-slate-100 flex items-center gap-3 relative overflow-hidden group">
+                        {debt > 0 && <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-500"></div>}
+                        <div className="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center shrink-0 border border-slate-100">
+                           <span className="font-black text-slate-400 text-xs">{initials}</span>
                         </div>
-                        <div className="flex justify-between items-end">
-                           <div className="text-xs text-slate-500 font-mono bg-slate-100 px-2 py-1 rounded inline-block">{c.doc_number || '-'}</div>
-                           {debt > 0 && <span className="bg-red-50 text-red-600 border border-red-100 text-xs px-2 py-1 rounded-lg font-black shadow-sm">Deuda: S/ {debt.toFixed(2)}</span>}
+                        <div className="flex-1 min-w-0">
+                           <h3 className="font-black text-slate-800 text-[13px] leading-tight truncate">{c.name}</h3>
+                           <div className="flex items-center gap-2 mt-1">
+                              <span className="text-[10px] text-slate-500 font-mono bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">{c.doc_number || '-'}</span>
+                              {debt > 0 && <span className="text-[10px] text-red-600 font-black bg-red-50 px-1.5 py-0.5 rounded border border-red-100 shrink-0">Deuda: S/ {debt.toFixed(2)}</span>}
+                           </div>
                         </div>
+                        <ArrowRight className="text-slate-300 w-4 h-4 shrink-0 group-hover:text-blue-500 transition-colors" />
                      </div>
                   );
                })}
-               {listTab === 'CLIENTS' && filteredClientsList.length === 0 && <div className="text-center p-8 text-slate-400">Sin resultados en la ruta.</div>}
-
-
+               {listTab === 'CLIENTS' && filteredClientsList.length === 0 && <div className="text-center p-8 text-slate-400 font-bold text-sm">Sin resultados en la ruta.</div>}
             </div>
          </div>
       );
