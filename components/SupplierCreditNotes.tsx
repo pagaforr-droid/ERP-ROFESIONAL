@@ -121,7 +121,10 @@ export const SupplierCreditNotes: React.FC = () => {
 
         const initialReturns: Record<string, { qty: number, unit: string }> = {};
         (purchase.items || []).forEach((item) => {
-            initialReturns[item.id] = { qty: 0, unit: item.unit_type };
+            const p = products.find(prod => prod.id === item.product_id);
+            const baseName = p?.unit_type || 'UND';
+            const pkgName = p?.package_type || 'CAJ';
+            initialReturns[item.id] = { qty: 0, unit: item.factor > 1 ? pkgName : baseName };
         });
         setReturnQuantities(initialReturns);
     };
@@ -140,8 +143,11 @@ export const SupplierCreditNotes: React.FC = () => {
             const retState = returnQuantities[item.id];
             if (!retState || retState.qty <= 0) return;
 
+            const prod = products.find(p => p.id === item.product_id);
+            const baseName = prod?.unit_type || 'UND';
+
             const hasPkg = item.factor > 1;
-            const returnUnitIsPkg = hasPkg && retState.unit !== 'UND';
+            const returnUnitIsPkg = hasPkg && retState.unit !== baseName;
             
             const totalReturnedBase = returnUnitIsPkg ? (retState.qty * item.factor) : retState.qty;
             if (totalReturnedBase <= 0) return;
@@ -538,7 +544,7 @@ export const SupplierCreditNotes: React.FC = () => {
                                             const baseName = prod?.unit_type || 'UND';
                                             const hasPkg = item.factor > 1;
 
-                                            const returnUnitIsPkg = hasPkg && retState.unit !== 'UND';
+                                            const returnUnitIsPkg = hasPkg && retState.unit !== baseName;
                                             const totalReturnedBase = returnUnitIsPkg ? (retState.qty * item.factor) : retState.qty;
                                             
                                             const ratio = item.quantity_base > 0 ? (totalReturnedBase / item.quantity_base) : 0;
@@ -569,7 +575,7 @@ export const SupplierCreditNotes: React.FC = () => {
                                                                 let q = Number(e.target.value);
                                                                 if (q < 0) q = 0;
                                                                 
-                                                                const isRetPkg = retState.unit !== 'UND';
+                                                                const isRetPkg = retState.unit !== baseName;
                                                                 const maxBase = item.quantity_base;
                                                                 
                                                                 if (isRetPkg && q * item.factor > maxBase) q = Math.floor(maxBase / item.factor);
@@ -580,13 +586,13 @@ export const SupplierCreditNotes: React.FC = () => {
                                                         />
                                                         <select
                                                             className="w-28 border border-indigo-200 rounded p-1.5 text-[10px] font-bold text-indigo-700 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-center cursor-pointer"
-                                                            value={retState.unit === 'UND' ? 'UND' : item.unit_type}
+                                                            value={returnUnitIsPkg ? pkgName : baseName}
                                                             onChange={e => {
                                                                 setReturnQuantities(prev => ({ ...prev, [item.id]: { qty: 0, unit: e.target.value } }));
                                                             }}
                                                         >
-                                                            {hasPkg && <option value={item.unit_type}>{pkgName} / {item.factor}</option>}
-                                                            <option value="UND">{baseName} / 1</option>
+                                                            {hasPkg && <option value={pkgName}>{pkgName} / {item.factor}</option>}
+                                                            <option value={baseName}>{baseName} / 1</option>
                                                         </select>
                                                     </div>
                                                     <div className="w-24 text-right font-black text-slate-800 text-sm">

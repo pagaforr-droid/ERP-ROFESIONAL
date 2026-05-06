@@ -339,7 +339,7 @@ export const Purchases: React.FC = () => {
     const newItem: PurchaseItem = {
       product_id: selectedProduct,
       quantity_presentation: Number(quantity),
-      unit_type: unitType,
+      unit_type: unitType === 'PKG' ? (p.package_type || 'CAJ') : (p.unit_type || 'UND'),
       factor: factor,
       quantity_base: Number(baseQty),
       unit_price: unitPrice,
@@ -1191,7 +1191,7 @@ export const Purchases: React.FC = () => {
                              <input type="number" min="0" step="any" className="w-16 border border-slate-300 rounded p-1 text-right bg-blue-50 focus:ring-1 focus:ring-blue-500 font-bold" value={item.quantity_presentation || ''} onChange={e => handleInlineUpdate(idx, 'quantity', e.target.value)} title="Modificar Cantidad" />
                           ) : item.quantity_presentation.toFixed(2)}
                         </td>
-                        <td className="p-2 text-center font-bold text-slate-700">{item.unit_type === 'PKG' ? (p?.package_type || 'PKG') : (p?.unit_type || 'UND')}</td>
+                        <td className="p-2 text-center font-bold text-slate-700">{item.unit_type}</td>
                         <td className="p-2 text-center text-slate-500">{item.factor}</td>
                         <td className="p-2 text-right text-blue-700 font-mono w-24">
                           {editingId && pricesIncludeIgv && !item.is_bonus ? (
