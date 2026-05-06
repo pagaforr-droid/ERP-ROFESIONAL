@@ -275,7 +275,7 @@ export const Purchases: React.FC = () => {
     if (!p) return;
     const factor = unitType === 'PKG' ? (p.package_content || 1) : 1;
     let baseCost = p.last_cost * factor; 
-    if (pricesIncludeIgv) baseCost = baseCost * 1.18;
+    if (!pricesIncludeIgv) baseCost = baseCost / 1.18;
     handleUnitCostChange(parseFloat(baseCost.toFixed(4)));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedProduct, unitType, products, pricesIncludeIgv]);

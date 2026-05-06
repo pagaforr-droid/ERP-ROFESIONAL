@@ -1083,7 +1083,7 @@ export const PriceManager: React.FC = () => {
                                   <div className="font-black text-slate-600">{p.unit_type}</div>
                                   <div className="text-[10px] font-bold text-slate-400 mt-0.5">Factor: {p.package_content}</div>
                                </td>
-                               <td className="p-4 text-right font-bold text-slate-500">S/ {(p.last_cost * 1.18).toFixed(3)}</td>
+                               <td className="p-4 text-right font-bold text-slate-500">S/ {p.last_cost.toFixed(3)}</td>
                                <td className="p-4 text-right font-black text-emerald-700 bg-emerald-50/30">S/ {p.price_unit.toFixed(2)}</td>
                                {priceLists.map(l => (
                                   <td key={l.id} className="p-4 text-right font-black text-blue-700 bg-blue-50/10 border-l border-slate-50">
