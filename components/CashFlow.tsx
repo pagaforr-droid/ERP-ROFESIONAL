@@ -866,6 +866,8 @@ export const CashFlow: React.FC = () => {
 
       const [openingAmount, setOpeningAmount] = useState(0);
       const [isProcessingSession, setIsProcessingSession] = useState(false);
+      const [showCountModal, setShowCountModal] = useState(false);
+      const [manualCash, setManualCash] = useState<number | ''>('');
 
       // Denominations State for Closing
       const [b200, setB200] = useState(0); const [b100, setB100] = useState(0); const [b50, setB50] = useState(0); const [b20, setB20] = useState(0); const [b10, setB10] = useState(0);
@@ -874,6 +876,8 @@ export const CashFlow: React.FC = () => {
 
       // Live Calculation inside shift
       let liveIncome = 0; let liveExpense = 0;
+      let shiftTransactions: any[] = [];
+      
       if (activeSession) {
          // Gather movements strictly within this session's time bound
          const mVs = store.cashMovements.filter(m => new Date(m.date) >= new Date(activeSession.open_time) && m.reference_id !== activeSession.id);
@@ -882,12 +886,19 @@ export const CashFlow: React.FC = () => {
          // Gather Sales
          const saleVs = store.sales.filter(s => s.payment_method === 'CONTADO' && !s.document_type.includes('NOTA') && new Date(s.created_at) >= new Date(activeSession.open_time));
          liveIncome += saleVs.reduce((a, b) => a + b.total, 0);
+
+         shiftTransactions = [
+            ...mVs.map(m => ({ id: m.id, date: m.date, type: m.type, category: m.category_name, desc: m.description, amount: m.amount })),
+            ...saleVs.map(s => ({ id: `SALE-${s.id}`, date: s.created_at, type: 'INCOME', category: 'VENTA DIRECTA', desc: `Comprobante Contado: ${s.series}-${s.number}`, amount: s.total }))
+         ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       }
 
       const expectedCurrentBalance = activeSession ? activeSession.system_opening_amount + liveIncome - liveExpense : 0;
 
-      const totalCashDeclared = (b200 * 200) + (b100 * 100) + (b50 * 50) + (b20 * 20) + (b10 * 10) +
+      const breakdownCashDeclared = (b200 * 200) + (b100 * 100) + (b50 * 50) + (b20 * 20) + (b10 * 10) +
          (m5 * 5) + (m2 * 2) + (m1 * 1) + (m05 * 0.5) + (m02 * 0.2) + (m01 * 0.1);
+      
+      const totalCashDeclared = breakdownCashDeclared > 0 ? breakdownCashDeclared : (Number(manualCash) || 0);
       const totalDeclared = totalCashDeclared + vouchers + transfers;
 
       const handleOpen = async () => {
@@ -1027,20 +1038,34 @@ export const CashFlow: React.FC = () => {
 
                {/* Resumen Declaración Card */}
                <div className="bg-white p-7 rounded-3xl shadow-sm border border-slate-200 flex-1 flex flex-col relative overflow-hidden">
-                  <h3 className="font-black text-slate-800 text-xl flex items-center mb-6"><BarChart3 className="w-6 h-6 mr-3 text-indigo-500" /> Declaración</h3>
+                  <div className="flex justify-between items-center mb-6">
+                     <h3 className="font-black text-slate-800 text-xl flex items-center"><BarChart3 className="w-6 h-6 mr-3 text-indigo-500" /> Declaración</h3>
+                     <button onClick={() => setShowCountModal(true)} className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold text-xs flex items-center transition-colors">
+                        <Coins className="w-4 h-4 mr-2" /> Herramienta de Arqueo
+                     </button>
+                  </div>
 
                   <div className="space-y-4 flex-1">
-                     <div className="flex justify-between items-center p-4 bg-slate-50/80 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
+                     <div className="flex justify-between items-center p-3 bg-slate-50/80 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
                         <span className="text-slate-500 font-bold text-sm">Físico / Efectivo</span>
-                        <span className="text-slate-800 font-black text-lg">S/ {totalCashDeclared.toFixed(2)}</span>
+                        <div className="relative w-40">
+                           <span className="absolute left-3 top-2.5 text-slate-400 font-black">S/</span>
+                           <input type="number" min="0" step="0.01" className={`w-full border-2 ${breakdownCashDeclared > 0 ? 'bg-slate-100 border-slate-200 text-slate-500' : 'bg-white border-slate-200 focus:border-indigo-400'} p-2.5 pl-9 rounded-xl font-black text-lg text-slate-800 outline-none transition-colors shadow-inner`} value={breakdownCashDeclared > 0 ? breakdownCashDeclared : manualCash} onChange={e => { if(breakdownCashDeclared === 0) setManualCash(e.target.value ? parseFloat(e.target.value) : '') }} readOnly={breakdownCashDeclared > 0} placeholder="0.00" />
+                        </div>
                      </div>
-                     <div className="flex justify-between items-center p-4 bg-slate-50/80 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
+                     <div className="flex justify-between items-center p-3 bg-slate-50/80 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
                         <span className="text-slate-500 font-bold text-sm">Tarjetas / POS</span>
-                        <span className="text-slate-800 font-black text-lg">S/ {vouchers.toFixed(2)}</span>
+                        <div className="relative w-40">
+                           <span className="absolute left-3 top-2.5 text-slate-400 font-black">S/</span>
+                           <input type="number" min="0" step="0.01" className="w-full border-2 border-slate-200 bg-white p-2.5 pl-9 rounded-xl font-black text-lg text-indigo-700 outline-none focus:border-indigo-400 transition-colors shadow-inner" value={vouchers} onChange={e => setVouchers(Math.max(0, parseFloat(e.target.value) || 0))} />
+                        </div>
                      </div>
-                     <div className="flex justify-between items-center p-4 bg-slate-50/80 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
-                        <span className="text-slate-500 font-bold text-sm">Transferencias (Yape/Plin)</span>
-                        <span className="text-slate-800 font-black text-lg">S/ {transfers.toFixed(2)}</span>
+                     <div className="flex justify-between items-center p-3 bg-slate-50/80 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
+                        <span className="text-slate-500 font-bold text-sm">Transf. (Yape/Plin)</span>
+                        <div className="relative w-40">
+                           <span className="absolute left-3 top-2.5 text-slate-400 font-black">S/</span>
+                           <input type="number" min="0" step="0.01" className="w-full border-2 border-slate-200 bg-white p-2.5 pl-9 rounded-xl font-black text-lg text-indigo-700 outline-none focus:border-indigo-400 transition-colors shadow-inner" value={transfers} onChange={e => setTransfers(Math.max(0, parseFloat(e.target.value) || 0))} />
+                        </div>
                      </div>
                   </div>
 
@@ -1050,15 +1075,15 @@ export const CashFlow: React.FC = () => {
                         <span className="text-indigo-600 font-black text-3xl">S/ {totalDeclared.toFixed(2)}</span>
                      </div>
 
-                     <div className={`p-5 rounded-2xl text-center mb-6 animate-fade-in transition-all duration-300 ${totalDeclared === 0 ? 'bg-slate-50 text-slate-400 border-2 border-slate-100'
+                     <div className={`p-4 rounded-2xl text-center mb-6 animate-fade-in transition-all duration-300 ${totalDeclared === 0 ? 'bg-slate-50 text-slate-400 border-2 border-slate-100'
                            : (totalDeclared - expectedCurrentBalance) === 0 ? 'bg-emerald-50 border-2 border-emerald-200 text-emerald-700 shadow-sm shadow-emerald-100/50'
                               : 'bg-red-50 border-2 border-red-200 text-red-700 shadow-sm shadow-red-100/50'
                         }`}>
-                        <p className="text-[10px] font-black uppercase tracking-widest mb-1.5 opacity-80">Diferencia (Sobrante/Faltante)</p>
+                        <p className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Diferencia (Sobrante/Faltante)</p>
                         {totalDeclared === 0 ? (
-                           <span className="font-bold">Ingresa los montos conteados</span>
+                           <span className="font-bold text-xs">Ingresa los montos conteados</span>
                         ) : (
-                           <span className="font-black text-4xl">
+                           <span className="font-black text-3xl">
                               {(totalDeclared - expectedCurrentBalance) > 0 ? '+' : ''}{(totalDeclared - expectedCurrentBalance).toFixed(2)}
                            </span>
                         )}
@@ -1071,85 +1096,128 @@ export const CashFlow: React.FC = () => {
                </div>
             </div>
 
-            {/* Detailed Count Interface */}
-            <div className="flex-1 bg-white p-8 rounded-3xl shadow-sm border border-slate-200 overflow-y-auto">
-               <h3 className="font-black text-2xl text-slate-800 mb-8 flex items-center pb-5 border-b-2 border-slate-50">
-                  Desglose de Conteo <span className="ml-3 px-3 py-1 bg-slate-100 text-slate-500 text-xs rounded-full uppercase tracking-widest font-bold">Herramienta</span>
+            {/* List of Shift Transactions */}
+            <div className="flex-1 bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+               <h3 className="font-black text-xl text-slate-800 mb-6 flex items-center pb-4 border-b-2 border-slate-50">
+                  Transacciones del Turno <span className="ml-3 px-3 py-1 bg-slate-100 text-slate-500 text-xs rounded-full uppercase tracking-widest font-bold">{shiftTransactions.length} regs</span>
                </h3>
 
-               <div className="grid grid-cols-2 gap-10">
-                  {/* Billetes */}
-                  <div>
-                     <h4 className="font-black text-emerald-600 mb-5 text-sm uppercase tracking-widest flex items-center bg-emerald-50 w-max px-3 py-1.5 rounded-lg border border-emerald-100">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></div> Billetes
-                     </h4>
-                     <div className="space-y-4">
-                        {[
-                           { val: 200, label: 'S/ 200.00', state: b200, setter: setB200 },
-                           { val: 100, label: 'S/ 100.00', state: b100, setter: setB100 },
-                           { val: 50, label: 'S/ 50.00', state: b50, setter: setB50 },
-                           { val: 20, label: 'S/ 20.00', state: b20, setter: setB20 },
-                           { val: 10, label: 'S/ 10.00', state: b10, setter: setB10 },
-                        ].map(item => (
-                           <div key={item.val} className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm shadow-slate-100/50 hover:border-emerald-200 hover:shadow-emerald-100/30 transition-all group">
-                              <span className="w-24 text-right font-black text-slate-400 group-hover:text-emerald-600 transition-colors">{item.label}</span>
-                              <span className="text-slate-300 font-bold text-lg">x</span>
-                              <input type="number" min="0" className="w-24 border-2 border-slate-100 p-3 rounded-xl text-center font-black text-xl text-emerald-700 bg-emerald-50/50 focus:bg-emerald-50 outline-none focus:border-emerald-400 transition-all" value={item.state} onChange={e => item.setter(Math.max(0, parseInt(e.target.value) || 0))} />
-                              <span className="w-28 font-black text-slate-800 text-right text-lg">= S/ {(item.val * item.state).toFixed(2)}</span>
+               <div className="flex-1 overflow-auto pr-2 custom-scrollbar">
+                  {shiftTransactions.length === 0 ? (
+                     <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                        <Clock className="w-12 h-12 mb-4 opacity-50" />
+                        <p className="font-bold">Aún no hay transacciones en este turno</p>
+                     </div>
+                  ) : (
+                     <div className="space-y-3">
+                        {shiftTransactions.map((tx, idx) => (
+                           <div key={idx} className="p-4 rounded-xl border border-slate-100 bg-slate-50/50 flex justify-between items-center hover:bg-slate-50 transition-colors">
+                              <div>
+                                 <div className="flex items-center gap-2 mb-1">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-widest ${tx.type === 'INCOME' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                       {tx.type === 'INCOME' ? 'INGRESO' : 'EGRESO'}
+                                    </span>
+                                    <span className="font-black text-sm text-slate-700">{tx.category}</span>
+                                 </div>
+                                 <p className="text-xs text-slate-500 line-clamp-1">{tx.desc}</p>
+                                 <p className="text-[10px] text-slate-400 mt-1">{new Date(tx.date).toLocaleTimeString()}</p>
+                              </div>
+                              <div className={`font-black text-lg ${tx.type === 'INCOME' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                 {tx.type === 'INCOME' ? '+' : '-'}S/ {tx.amount.toFixed(2)}
+                              </div>
                            </div>
                         ))}
                      </div>
-                  </div>
-
-                  {/* Monedas */}
-                  <div>
-                     <h4 className="font-black text-amber-600 mb-5 text-sm uppercase tracking-widest flex items-center bg-amber-50 w-max px-3 py-1.5 rounded-lg border border-amber-100">
-                        <div className="w-2 h-2 rounded-full bg-amber-500 mr-2"></div> Monedas
-                     </h4>
-                     <div className="space-y-4">
-                        {[
-                           { val: 5, label: 'S/ 5.00', state: m5, setter: setM5 },
-                           { val: 2, label: 'S/ 2.00', state: m2, setter: setM2 },
-                           { val: 1, label: 'S/ 1.00', state: m1, setter: setM1 },
-                           { val: 0.5, label: 'S/ 0.50', state: m05, setter: setM05 },
-                           { val: 0.2, label: 'S/ 0.20', state: m02, setter: setM02 },
-                           { val: 0.1, label: 'S/ 0.10', state: m01, setter: setM01 },
-                        ].map(item => (
-                           <div key={item.val} className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm shadow-slate-100/50 hover:border-amber-200 hover:shadow-amber-100/30 transition-all group">
-                              <span className="w-24 text-right font-black text-slate-400 group-hover:text-amber-600 transition-colors">{item.label}</span>
-                              <span className="text-slate-300 font-bold text-lg">x</span>
-                              <input type="number" min="0" className="w-24 border-2 border-slate-100 p-3 rounded-xl text-center font-black text-xl text-amber-700 bg-amber-50/50 focus:bg-amber-50 outline-none focus:border-amber-400 transition-all" value={item.state} onChange={e => item.setter(Math.max(0, parseInt(e.target.value) || 0))} />
-                              <span className="w-28 font-black text-slate-800 text-right text-lg">= S/ {(item.val * item.state).toFixed(2)}</span>
-                           </div>
-                        ))}
-                     </div>
-                  </div>
+                  )}
                </div>
-
-               {/* Digital / Other */}
-               <div className="mt-12 bg-slate-50/80 p-6 rounded-3xl border border-slate-100">
-                  <h4 className="font-black text-indigo-600 mb-6 text-sm uppercase tracking-widest flex items-center">
-                     <div className="w-2 h-2 rounded-full bg-indigo-500 mr-2"></div> Digitales / Bancos
-                  </h4>
-                  <div className="grid grid-cols-2 gap-8">
-                     <div>
-                        <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Tarjetas / POS</label>
-                        <div className="relative">
-                           <span className="absolute left-4 top-3.5 text-slate-400 font-black">S/</span>
-                           <input type="number" min="0" step="0.01" className="w-full border-2 border-slate-200 bg-white p-4 pl-12 rounded-2xl font-black text-2xl text-indigo-700 outline-none focus:border-indigo-400 transition-colors shadow-inner" value={vouchers} onChange={e => setVouchers(Math.max(0, parseFloat(e.target.value) || 0))} />
-                        </div>
-                     </div>
-                     <div>
-                        <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2 ml-1">Yape / Plin / Transf.</label>
-                        <div className="relative">
-                           <span className="absolute left-4 top-3.5 text-slate-400 font-black">S/</span>
-                           <input type="number" min="0" step="0.01" className="w-full border-2 border-slate-200 bg-white p-4 pl-12 rounded-2xl font-black text-2xl text-indigo-700 outline-none focus:border-indigo-400 transition-colors shadow-inner" value={transfers} onChange={e => setTransfers(Math.max(0, parseFloat(e.target.value) || 0))} />
-                        </div>
-                     </div>
-                  </div>
-               </div>
-
             </div>
+
+            {/* Modal: Herramienta de Arqueo (Desglose de Conteo) */}
+            {showCountModal && (
+               <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
+                  <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-scale-up max-h-[90vh]">
+                     <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                        <h3 className="font-black text-2xl text-slate-800 flex items-center">
+                           <Coins className="w-6 h-6 mr-3 text-indigo-500" /> Desglose de Conteo de Efectivo
+                        </h3>
+                        <button onClick={() => setShowCountModal(false)} className="p-2 text-slate-400 hover:text-slate-600 bg-white rounded-full shadow-sm transition-colors">
+                           <XCircle className="w-6 h-6" />
+                        </button>
+                     </div>
+
+                     <div className="p-8 overflow-y-auto custom-scrollbar bg-white flex-1">
+                        <div className="grid grid-cols-2 gap-10">
+                           {/* Billetes */}
+                           <div>
+                              <h4 className="font-black text-emerald-600 mb-5 text-sm uppercase tracking-widest flex items-center bg-emerald-50 w-max px-3 py-1.5 rounded-lg border border-emerald-100">
+                                 <div className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></div> Billetes
+                              </h4>
+                              <div className="space-y-4">
+                                 {[
+                                    { val: 200, label: 'S/ 200.00', state: b200, setter: setB200 },
+                                    { val: 100, label: 'S/ 100.00', state: b100, setter: setB100 },
+                                    { val: 50, label: 'S/ 50.00', state: b50, setter: setB50 },
+                                    { val: 20, label: 'S/ 20.00', state: b20, setter: setB20 },
+                                    { val: 10, label: 'S/ 10.00', state: b10, setter: setB10 },
+                                 ].map(item => (
+                                    <div key={item.val} className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm shadow-slate-100/50 hover:border-emerald-200 hover:shadow-emerald-100/30 transition-all group">
+                                       <span className="w-24 text-right font-black text-slate-400 group-hover:text-emerald-600 transition-colors">{item.label}</span>
+                                       <span className="text-slate-300 font-bold text-lg">x</span>
+                                       <input type="number" min="0" className="w-24 border-2 border-slate-100 p-3 rounded-xl text-center font-black text-xl text-emerald-700 bg-emerald-50/50 focus:bg-emerald-50 outline-none focus:border-emerald-400 transition-all" value={item.state} onChange={e => item.setter(Math.max(0, parseInt(e.target.value) || 0))} />
+                                       <span className="w-28 font-black text-slate-800 text-right text-lg">= S/ {(item.val * item.state).toFixed(2)}</span>
+                                    </div>
+                                 ))}
+                              </div>
+                           </div>
+
+                           {/* Monedas */}
+                           <div>
+                              <h4 className="font-black text-amber-600 mb-5 text-sm uppercase tracking-widest flex items-center bg-amber-50 w-max px-3 py-1.5 rounded-lg border border-amber-100">
+                                 <div className="w-2 h-2 rounded-full bg-amber-500 mr-2"></div> Monedas
+                              </h4>
+                              <div className="space-y-4">
+                                 {[
+                                    { val: 5, label: 'S/ 5.00', state: m5, setter: setM5 },
+                                    { val: 2, label: 'S/ 2.00', state: m2, setter: setM2 },
+                                    { val: 1, label: 'S/ 1.00', state: m1, setter: setM1 },
+                                    { val: 0.5, label: 'S/ 0.50', state: m05, setter: setM05 },
+                                    { val: 0.2, label: 'S/ 0.20', state: m02, setter: setM02 },
+                                    { val: 0.1, label: 'S/ 0.10', state: m01, setter: setM01 },
+                                 ].map(item => (
+                                    <div key={item.val} className="flex items-center gap-4 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm shadow-slate-100/50 hover:border-amber-200 hover:shadow-amber-100/30 transition-all group">
+                                       <span className="w-24 text-right font-black text-slate-400 group-hover:text-amber-600 transition-colors">{item.label}</span>
+                                       <span className="text-slate-300 font-bold text-lg">x</span>
+                                       <input type="number" min="0" className="w-24 border-2 border-slate-100 p-3 rounded-xl text-center font-black text-xl text-amber-700 bg-amber-50/50 focus:bg-amber-50 outline-none focus:border-amber-400 transition-all" value={item.state} onChange={e => item.setter(Math.max(0, parseInt(e.target.value) || 0))} />
+                                       <span className="w-28 font-black text-slate-800 text-right text-lg">= S/ {(item.val * item.state).toFixed(2)}</span>
+                                    </div>
+                                 ))}
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+
+                     <div className="p-6 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
+                        <div className="flex gap-4">
+                           <button onClick={() => {
+                              setB200(0); setB100(0); setB50(0); setB20(0); setB10(0);
+                              setM5(0); setM2(0); setM1(0); setM05(0); setM02(0); setM01(0);
+                           }} className="px-5 py-3 rounded-xl font-bold text-red-600 bg-red-50 hover:bg-red-100 transition-colors">
+                              Limpiar Conteo
+                           </button>
+                        </div>
+                        <div className="flex items-center gap-6">
+                           <div className="text-right">
+                              <p className="text-xs font-black text-slate-500 uppercase tracking-widest">Total Efectivo Calculado</p>
+                              <p className="text-3xl font-black text-emerald-600">S/ {breakdownCashDeclared.toFixed(2)}</p>
+                           </div>
+                           <button onClick={() => setShowCountModal(false)} className="px-8 py-3 rounded-xl font-bold text-white bg-slate-900 hover:bg-slate-800 transition-colors shadow-lg">
+                              Aceptar y Usar Monto
+                           </button>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            )}
          </div>
       );
    };
