@@ -31,6 +31,7 @@ import { CollectionConsolidation } from './components/CollectionConsolidation';
 import { AccountsReceivable } from './components/AccountsReceivable'; // NUEVO MÓDULO
 import { SunatManager } from './components/SunatManager';
 import { CreditNotes } from './components/CreditNotes';
+import { SupplierCreditNotes } from './components/SupplierCreditNotes';
 import { QuotaManager } from './components/QuotaManager';
 import { AccountingReports } from './components/AccountingReports';
 import { Login } from './components/Login';
@@ -89,7 +90,7 @@ type ThemeKey = keyof typeof COLOR_THEMES;
 
 export default function App() {
   // AÑADIDO 'edit-sale' A LOS TIPOS DE VISTA POSIBLES
-  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'system-maintenance'>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'supplier-credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'system-maintenance'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
   const { company, currentUser, logout, updateCompany } = useStore();
@@ -144,6 +145,7 @@ export default function App() {
       case 'accounts-receivable': return <AccountsReceivable />; // RENDER DEL NUEVO MÓDULO
       case 'sunat-manager': return <SunatManager />;
       case 'credit-notes': return <CreditNotes />;
+      case 'supplier-credit-notes': return <SupplierCreditNotes />;
       case 'products': return <ProductManagement />;
       case 'clients': return <ClientManagement />;
       case 'suppliers': return <MasterData type="suppliers" />;
@@ -315,6 +317,7 @@ export default function App() {
 
           <Section title="Maestros" theme="rose">
             <NavItem view="purchases" icon={ShoppingBag} label="Compras" />
+            <NavItem view="supplier-credit-notes" icon={ArrowLeftRight} label="Devoluciones (Compras)" />
             <NavItem view="products" icon={ClipboardList} label="Productos" />
             <NavItem view="clients" icon={Users} label="Clientes" />
             <NavItem view="territory" icon={Map} label="Territorio" />

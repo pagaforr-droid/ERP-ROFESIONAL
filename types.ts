@@ -627,6 +627,9 @@ export interface Purchase {
   balance?: number;     
   payments?: PurchasePayment[];
 
+  origin_purchase_id?: string; // Para NC de proveedores
+  nc_type?: 'DEVOLUCION' | 'DESCUENTO';
+
   items: PurchaseItem[];
 }
 
@@ -754,5 +757,6 @@ export type ViewState =
   | 'advanced-orders'
   | 'mobile-delivery'
   | 'accounts-receivable' // NEW: Cuentas por Cobrar
+  | 'supplier-credit-notes' // NEW: NC Proveedores
   | 'personnel-management'
   | 'seller-tracking';

@@ -173,7 +173,10 @@ export const AccountingReports: React.FC = () => {
         }
 
         const exportData = purchasesData.map(purchase => {
-            const total = purchase.total || 0;
+            const isNC = purchase.document_type === 'NOTA_CREDITO';
+            const multiplier = isNC ? -1 : 1;
+
+            const total = (purchase.total || 0) * multiplier;
             const baseImponible = total / 1.18;
             const igv = total - baseImponible;
 
@@ -184,8 +187,29 @@ export const AccountingReports: React.FC = () => {
             if (purchase.document_type === 'BOLETA') docTypeCode = '03';
             if (purchase.document_type === 'NOTA_CREDITO') docTypeCode = '07';
             
-            let serie = purchase.document_number?.split('-')[0] || '';
+            let serie = purchase.document_series || purchase.document_number?.split('-')[0] || '';
             let numero = purchase.document_number?.split('-')[1] || purchase.document_number || '';
+
+            // Extract modified document from observation if it's a Credit Note
+            let modDate = '';
+            let modType = '';
+            let modSerie = '';
+            let modNumber = '';
+
+            if (isNC && purchase.observation) {
+                // Example: Referencia a FACTURA F001-00101
+                const match = purchase.observation.match(/(FACTURA|BOLETA)\s+([F|B|E][A-Z0-9]{3})-([0-9]+)/i) || purchase.observation.match(/(FACTURA|BOLETA)\s+([0-9A-Z]+)-([0-9]+)/i);
+                if (match) {
+                    modType = match[1].toUpperCase() === 'FACTURA' ? '01' : '03';
+                    modSerie = match[2].toUpperCase();
+                    modNumber = match[3];
+                    // Attempt to find original date in memory
+                    const origPur = purchases.find(p => (p.document_series === modSerie || p.document_number?.startsWith(modSerie)) && p.document_number?.endsWith(modNumber) && p.document_type === match[1].toUpperCase());
+                    if (origPur) {
+                        modDate = new Date(origPur.issue_date).toLocaleDateString('es-PE');
+                    }
+                }
+            }
 
             return {
                 'Periodo': dateFrom.substring(0, 7).replace('-', '') + '00',
@@ -214,11 +238,11 @@ export const AccountingReports: React.FC = () => {
                 'Importe Total': total.toFixed(2),
                 'Moneda': purchase.currency || 'PEN',
                 'Tipo de Cambio': (purchase.exchange_rate || 1.000).toFixed(3),
-                'Fecha Emisión Doc Modificado': '',
-                'Tipo Doc Modificado': '',
-                'Serie Doc Modificado': '',
+                'Fecha Emisión Doc Modificado': modDate,
+                'Tipo Doc Modificado': modType,
+                'Serie Doc Modificado': modSerie,
                 'Cod DUA Referencia': '',
-                'Nro Doc Modificado': '',
+                'Nro Doc Modificado': modNumber,
                 'Fecha Constancia Depósito': '',
                 'Nro Constancia Depósito': '',
                 'Marca Retención': '',
@@ -409,14 +433,17 @@ export const AccountingReports: React.FC = () => {
                             <tbody className="divide-y divide-slate-100">
                                 {purchasesData.map(p => {
                                     const supplier = suppliers.find(s => s.id === p.supplier_id);
-                                    const total = p.total || 0;
+                                    const isNC = p.document_type === 'NOTA_CREDITO';
+                                    const multiplier = isNC ? -1 : 1;
+                                    
+                                    const total = (p.total || 0) * multiplier;
                                     const base = total / 1.18;
                                     const igv = total - base;
 
                                     return (
                                         <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                                             <td className="p-3 font-mono text-slate-500">{new Date(p.issue_date).toLocaleDateString('es-PE')}</td>
-                                            <td className="p-3 font-bold text-slate-800">{p.document_type} {p.document_number}</td>
+                                            <td className="p-3 font-bold text-slate-800">{p.document_type} {p.document_series ? p.document_series + '-' : ''}{p.document_number}</td>
                                             <td className="p-3 text-slate-700">
                                                 <span className="font-mono text-slate-500 mr-2">{supplier?.ruc}</span>
                                                 <span className="font-bold">{supplier?.name}</span>
