@@ -231,7 +231,7 @@ BEGIN
     INSERT INTO sales (
         id, document_type, series, number, payment_method, payment_status, balance,
         client_name, client_ruc, client_address, seller_id, client_id, subtotal, igv, total,
-        status, dispatch_status, sunat_status
+        status, dispatch_status, sunat_status, origin_order_id
     ) VALUES (
         COALESCE(NULLIF(p_sale_data->>'id', ''), uuid_generate_v4()::text)::uuid,
         p_sale_data->>'document_type',
@@ -250,8 +250,17 @@ BEGIN
         (p_sale_data->>'total')::numeric,
         COALESCE(NULLIF(p_sale_data->>'status', ''), 'completed')::general_status,
         COALESCE(NULLIF(p_sale_data->>'dispatch_status', ''), 'pending')::dispatch_status,
-        COALESCE(NULLIF(p_sale_data->>'sunat_status', ''), 'PENDING')::sunat_status
+        COALESCE(NULLIF(p_sale_data->>'sunat_status', ''), 'PENDING')::sunat_status,
+        NULLIF(p_sale_data->>'origin_order_id', '')::uuid
     ) RETURNING id INTO v_sale_id;
+
+    -- Liberar la reserva del pedido original para evitar descuento doble en el Kardex
+    IF p_sale_data->>'origin_order_id' IS NOT NULL AND p_sale_data->>'origin_order_id' != '' THEN
+        UPDATE orders SET status = 'processed' WHERE id = (p_sale_data->>'origin_order_id')::uuid;
+        DELETE FROM batch_allocations WHERE order_item_id IN (
+            SELECT id FROM order_items WHERE order_id = (p_sale_data->>'origin_order_id')::uuid
+        );
+    END IF;
 
     -- Detalles e Inventario
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_sale_data->'items')
