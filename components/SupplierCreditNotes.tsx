@@ -21,6 +21,17 @@ const SUNAT_MOTIVOS_NC_COMPRAS = [
 export const SupplierCreditNotes: React.FC = () => {
     const { products, company } = useStore();
 
+    // Cargar productos si no están en el store global
+    useEffect(() => {
+        if (products.length === 0) {
+            const fetchProducts = async () => {
+                const { data } = await supabase.from('products').select('*');
+                if (data) useStore.setState({ products: data });
+            };
+            fetchProducts();
+        }
+    }, [products.length]);
+
     // UI State
     const [activeTab, setActiveTab] = useState<'EMITIR' | 'APLICAR'>('EMITIR');
     
