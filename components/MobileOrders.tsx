@@ -97,6 +97,7 @@ export const MobileOrders: React.FC = () => {
 
    const [pinPrompt, setPinPrompt] = useState<{ show: boolean, sellerId: string, expectedPin: string }>({ show: false, sellerId: '', expectedPin: '' });
    const [pinInput, setPinInput] = useState('');
+   const [pinError, setPinError] = useState(false);
 
    const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
    const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
@@ -1371,36 +1372,47 @@ export const MobileOrders: React.FC = () => {
                          onChange={(e) => {
                              const val = e.target.value;
                              setPinInput(val);
+                             if (pinError) setPinError(false);
                              if (val.length === 4) {
                                  if (val === pinPrompt.expectedPin) {
                                      completeSellerSelect(pinPrompt.sellerId);
                                      setPinPrompt({ show: false, sellerId: '', expectedPin: '' });
+                                     setPinError(false);
                                  } else {
-                                     setSystemAlert({ show: true, message: "Contraseña incorrecta", type: "error" });
+                                     setPinError(true);
                                      setPinInput('');
                                  }
                              }
                          }}
-                         className="w-full text-center text-4xl font-black text-slate-800 p-4 rounded-xl bg-slate-50 border-2 border-slate-200 focus:border-blue-500 focus:bg-white outline-none mb-6 tracking-widest transition-colors"
+                         className={`w-full text-center text-4xl font-black p-4 rounded-xl outline-none mb-2 tracking-widest transition-colors ${pinError ? 'bg-red-50 text-red-600 border-2 border-red-500 animate-shake' : 'bg-slate-50 text-slate-800 border-2 border-slate-200 focus:border-blue-500 focus:bg-white'}`}
                          onKeyDown={(e) => {
                              if (e.key === 'Enter') {
                                  if (pinInput === pinPrompt.expectedPin) {
                                      completeSellerSelect(pinPrompt.sellerId);
                                      setPinPrompt({ show: false, sellerId: '', expectedPin: '' });
+                                     setPinError(false);
                                  } else {
-                                     setSystemAlert({ show: true, message: "Contraseña incorrecta", type: "error" });
+                                     setPinError(true);
+                                     setPinInput('');
                                  }
                              }
                          }}
                      />
+                     {pinError ? (
+                         <div className="text-red-500 text-sm font-black mb-4 animate-fade-in uppercase">PIN Incorrecto</div>
+                     ) : (
+                         <div className="h-6 mb-4"></div>
+                     )}
                      <div className="flex gap-2">
-                         <button onClick={() => setPinPrompt({ show: false, sellerId: '', expectedPin: '' })} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold active:scale-95 transition-transform">Cancelar</button>
+                         <button onClick={() => { setPinPrompt({ show: false, sellerId: '', expectedPin: '' }); setPinError(false); }} className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-bold active:scale-95 transition-transform">Cancelar</button>
                          <button onClick={() => {
                              if (pinInput === pinPrompt.expectedPin) {
                                  completeSellerSelect(pinPrompt.sellerId);
                                  setPinPrompt({ show: false, sellerId: '', expectedPin: '' });
+                                 setPinError(false);
                              } else {
-                                 setSystemAlert({ show: true, message: "Contraseña incorrecta", type: "error" });
+                                 setPinError(true);
+                                 setPinInput('');
                              }
                          }} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold active:scale-95 transition-transform">Entrar</button>
                      </div>
