@@ -1038,7 +1038,7 @@ export const MobileOrders: React.FC = () => {
                         <p className="text-slate-500 text-sm font-bold mb-6">
                            Tienes <span className="text-blue-600">{cart.length}</span> productos agregados por un total de <span className="text-blue-600">S/ {cartTotal.toFixed(2)}</span>
                         </p>
-                        <button onClick={() => setShowReviewModal(true)} disabled={cart.length === 0} className={`w-full mb-3 py-3 ${paymentMethod === 'CREDITO' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/30' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/30'} text-white rounded-xl font-black shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none`}>
+                        <button onClick={() => setShowReviewModal(true)} disabled={cart.length === 0} className={`w-full mb-3 py-3 ${(paymentMethod === 'CREDITO' || deliveryMode === 'EXPRESS_MISMO_DIA') ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/30' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/30'} text-white rounded-xl font-black shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-50 disabled:shadow-none`}>
                            <Eye className="w-5 h-5" /> REVISAR Y EDITAR CARRITO
                         </button>
                         <button onClick={() => setViewMode('PRODUCT_SELECT')} className="w-full py-3 bg-slate-900 text-white rounded-xl font-black flex items-center justify-center gap-2 active:bg-black transition-colors text-sm shadow-md">
@@ -1368,7 +1368,19 @@ export const MobileOrders: React.FC = () => {
                          autoFocus 
                          maxLength={4} 
                          value={pinInput}
-                         onChange={(e) => setPinInput(e.target.value)}
+                         onChange={(e) => {
+                             const val = e.target.value;
+                             setPinInput(val);
+                             if (val.length === 4) {
+                                 if (val === pinPrompt.expectedPin) {
+                                     completeSellerSelect(pinPrompt.sellerId);
+                                     setPinPrompt({ show: false, sellerId: '', expectedPin: '' });
+                                 } else {
+                                     setSystemAlert({ show: true, message: "Contraseña incorrecta", type: "error" });
+                                     setPinInput('');
+                                 }
+                             }
+                         }}
                          className="w-full text-center text-4xl font-black text-slate-800 p-4 rounded-xl bg-slate-50 border-2 border-slate-200 focus:border-blue-500 focus:bg-white outline-none mb-6 tracking-widest transition-colors"
                          onKeyDown={(e) => {
                              if (e.key === 'Enter') {
