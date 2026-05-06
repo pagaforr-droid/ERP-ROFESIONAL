@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Pencil, Trash2, DollarSign, Calendar, FileText, CheckCircle, AlertTriangle, Printer, Banknote, History, Save, X, Loader2, RefreshCw } from 'lucide-react';
+import { Users, Plus, Pencil, Trash2, DollarSign, Calendar, FileText, CheckCircle, AlertTriangle, Printer, Banknote, History, Save, X, Loader2, RefreshCw, XCircle } from 'lucide-react';
 import { useStore } from '../services/store';
 import { Employee, SalaryAdvance, PayrollRecord, CashMovement } from '../types';
 import { PdfEngine } from './PdfEngine';
@@ -8,6 +8,10 @@ import { supabase } from '../services/supabase';
 export function PersonnelManagement() {
   const { currentCashSession, addCashMovement, updateCashMovement, deleteCashMovement, currentUser, company } = useStore();
   
+  const [systemModal, setSystemModal] = useState<{isOpen: boolean, type: 'info'|'warning'|'error'|'confirm', message: string, onConfirm?: () => void}>({ isOpen: false, type: 'info', message: '' });
+  const showAlert = (message: string, type: 'info'|'warning'|'error' = 'info') => setSystemModal({ isOpen: true, type, message });
+  const showConfirm = (message: string, onConfirm: () => void) => setSystemModal({ isOpen: true, type: 'confirm', message, onConfirm });
+
   // Local Supabase State
   const [employees, setEmployees] = useState<any[]>([]);
   const [salaryAdvances, setSalaryAdvances] = useState<any[]>([]);
@@ -111,13 +115,13 @@ export function PersonnelManagement() {
        setIsEmployeeModalOpen(false);
        fetchData();
     } catch (err: any) {
-       alert('Error al guardar empleado: ' + err.message);
+       showAlert('Error al guardar empleado: ' + err.message, 'error');
     }
   };
 
   const handleOpenAdvanceModal = (emp: any) => {
     if (!currentCashSession || currentCashSession.status !== 'OPEN') {
-      alert("ATENCIÓN: Debe abrir su caja para poder entregar un Válido/Adelanto de dinero.");
+      showAlert("ATENCIÓN: Debe abrir su caja para poder entregar un Vale/Adelanto de dinero.", 'warning');
       return;
     }
     setSelectedEmployee(emp);
@@ -131,7 +135,7 @@ export function PersonnelManagement() {
     if (!selectedEmployee || !currentUser) return;
 
     if (advAmount <= 0) {
-      alert("El monto debe ser mayor a 0.");
+      showAlert("El monto debe ser mayor a 0.", 'error');
       return;
     }
 
@@ -140,44 +144,35 @@ export function PersonnelManagement() {
       .filter(a => a.employee_id === selectedEmployee.id && a.status === 'PENDING')
       .reduce((sum, a) => sum + Number(a.amount), 0);
 
+    const processAdvance = async () => {
+      try {
+         const { data: newMovementJson, error } = await supabase.rpc('process_salary_advance', {
+            p_employee_id: selectedEmployee.id,
+            p_amount: advAmount,
+            p_reason: advReason,
+            p_user_id: currentUser.id,
+            p_employee_name: selectedEmployee.name
+         });
+         
+         if (error) throw error;
+
+         // Actualizar el estado global con la respuesta del RPC
+         if (newMovementJson) addCashMovement(newMovementJson);
+
+         setIsAdvanceModalOpen(false);
+         fetchData();
+         showAlert(`Se entregó S/ ${advAmount.toFixed(2)} a ${selectedEmployee.name} correctamente con retiro de Caja.`, 'info');
+      } catch (err: any) {
+         showAlert('Error al procesar adelanto: ' + err.message, 'error');
+      }
+    };
+
     if (pendingSum + advAmount > maxAdvance) {
-      const confirmWarning = window.confirm(`ALERTA: El empleado ya tiene S/${pendingSum} prestados. Sumando S/${advAmount} superará el 40% (S/${maxAdvance.toFixed(2)}) de límite preventivo. ¿Desea continuar de todas formas?`);
-      if (!confirmWarning) return;
+      showConfirm(`ALERTA: El empleado ya tiene S/${pendingSum} prestados. Sumando S/${advAmount} superará el 40% (S/${maxAdvance.toFixed(2)}) de límite preventivo. ¿Desea continuar de todas formas?`, processAdvance);
+      return;
     }
 
-    try {
-       // Insert Advance
-       const { data: newAdv, error: advErr } = await supabase.from('erp_salary_advances').insert([{
-          employee_id: selectedEmployee.id,
-          amount: advAmount,
-          reason: advReason,
-          status: 'PENDING'
-       }]).select().single();
-       if (advErr) throw advErr;
-
-       // Create Cash Movement record
-       const cmPayload = {
-          type: 'EXPENSE',
-          category_name: 'ADELANTO_PERSONAL',
-          description: `Vale/Adelanto: ${selectedEmployee.name} - ${advReason}`,
-          amount: advAmount,
-          date: new Date().toISOString(),
-          reference_id: newAdv.id,
-          user_id: currentUser.id
-       };
-
-       const { data: newCm, error: cmErr } = await supabase.from('cash_movements').insert([cmPayload]).select().single();
-       if (cmErr) throw cmErr;
-
-       // Also update local store for immediate UI feedback in other modules
-       addCashMovement(newCm);
-
-       setIsAdvanceModalOpen(false);
-       fetchData();
-       alert(`Se entregó S/ ${advAmount.toFixed(2)} a ${selectedEmployee.name} correctamente con retiro de Caja.`);
-    } catch (err: any) {
-       alert('Error al procesar adelanto: ' + err.message);
-    }
+    processAdvance();
   };
 
   const handleOpenHistoryModal = (emp: any) => {
@@ -195,57 +190,55 @@ export function PersonnelManagement() {
 
   const handleSaveEditAdvance = async (adv: any) => {
     if (editAdvAmount <= 0) {
-      alert("El monto debe ser mayor a 0.");
+      showAlert("El monto debe ser mayor a 0.", 'error');
       return;
     }
 
-    if (!window.confirm(`¿Confirmar edición de este adelanto a S/ ${editAdvAmount.toFixed(2)}?\n\nLa Caja Chica se actualizará automáticamente.`)) return;
+    showConfirm(`¿Confirmar edición de este adelanto a S/ ${editAdvAmount.toFixed(2)}?\n\nLa Caja Chica se actualizará automáticamente.`, async () => {
+      try {
+         const { error: advErr } = await supabase.from('erp_salary_advances').update({
+            date: new Date(editAdvDate).toISOString(),
+            amount: editAdvAmount,
+            reason: editAdvReason
+         }).eq('id', adv.id);
+         if (advErr) throw advErr;
 
-    try {
-       const { error: advErr } = await supabase.from('erp_salary_advances').update({
-          date: new Date(editAdvDate).toISOString(),
-          amount: editAdvAmount,
-          reason: editAdvReason
-       }).eq('id', adv.id);
-       if (advErr) throw advErr;
+         // Como el Trigger de DB se encarga de actualizar cash_movements, 
+         // solo lo consultamos para mantener el estado de Zustand sincronizado en tiempo real.
+         const { data: cmMatch } = await supabase.from('cash_movements').select('*').eq('reference_id', adv.id).single();
+         if (cmMatch) updateCashMovement(cmMatch);
 
-       // Attempt to update cash movement in DB and Store
-       const { data: cmMatch } = await supabase.from('cash_movements').select('*').eq('reference_id', adv.id).single();
-       if (cmMatch) {
-          const updatedCm = { ...cmMatch, amount: editAdvAmount, date: new Date(editAdvDate).toISOString(), description: `Vale/Adelanto (Editado): ${selectedEmployee?.name} - ${editAdvReason}` };
-          await supabase.from('cash_movements').update(updatedCm).eq('id', cmMatch.id);
-          updateCashMovement(updatedCm);
-       }
-
-       setEditingAdvanceId(null);
-       fetchData();
-    } catch (err: any) {
-       alert("Error al editar adelanto: " + err.message);
-    }
+         setEditingAdvanceId(null);
+         fetchData();
+         showAlert("Adelanto editado correctamente.", 'info');
+      } catch (err: any) {
+         showAlert("Error al editar adelanto: " + err.message, 'error');
+      }
+    });
   };
 
   const handleDeleteAdvance = async (adv: any) => {
-    if(!window.confirm(`ATENCIÓN: ¿Está seguro de eliminar el adelanto por S/ ${adv.amount.toFixed(2)}?\n\nEste vale se anulará y el dinero DEBERÁ ser devuelto físicamente a la Caja Chica.`)) return;
+    showConfirm(`ATENCIÓN: ¿Está seguro de eliminar el adelanto por S/ ${adv.amount.toFixed(2)}?\n\nEste vale se anulará y el dinero DEBERÁ ser devuelto físicamente a la Caja Chica.`, async () => {
+      try {
+         // Obtener ID del movimiento ANTES de borrar el adelanto, ya que el Trigger lo eliminará en cascada.
+         const { data: cmMatch } = await supabase.from('cash_movements').select('id').eq('reference_id', adv.id).single();
+         
+         const { error } = await supabase.from('erp_salary_advances').delete().eq('id', adv.id);
+         if (error) throw error;
 
-    try {
-       const { error } = await supabase.from('erp_salary_advances').delete().eq('id', adv.id);
-       if (error) throw error;
+         if (cmMatch) deleteCashMovement(cmMatch.id);
 
-       const { data: cmMatch } = await supabase.from('cash_movements').select('*').eq('reference_id', adv.id).single();
-       if (cmMatch) {
-          await supabase.from('cash_movements').delete().eq('id', cmMatch.id);
-          deleteCashMovement(cmMatch.id);
-       }
-
-       fetchData();
-    } catch (err: any) {
-       alert("Error al eliminar: " + err.message);
-    }
+         fetchData();
+         showAlert("Adelanto eliminado correctamente.", 'info');
+      } catch (err: any) {
+         showAlert("Error al eliminar: " + err.message, 'error');
+      }
+    });
   };
 
   const handleProcessPayroll = async (emp: any) => {
     if (!currentCashSession || currentCashSession.status !== 'OPEN') {
-      alert("Debe tener una Caja Abierta para poder realizar la liquidación de fin de mes y el pago en efectivo.");
+      showAlert("Debe tener una Caja Abierta para poder realizar la liquidación de fin de mes y el pago en efectivo.", 'warning');
       return;
     }
 
@@ -258,49 +251,36 @@ export function PersonnelManagement() {
     const net = base - descLey - pendingSum;
 
     if (net < 0) {
-      alert(`Error crítico: El Neto a liquidar es negativo (S/ ${net.toFixed(2)}). Revisa los adelantos.`);
+      showAlert(`Error crítico: El Neto a liquidar es negativo (S/ ${net.toFixed(2)}). Revisa los adelantos.`, 'error');
       return;
     }
 
-    if (window.confirm(`¿Confirmar Liquidación para ${emp.name}?\nSueldo Base: S/${base}\nDescuentos Ley: -S/${descLey.toFixed(2)}\nAdelantos a cuenta: -S/${pendingSum.toFixed(2)}\nLíquido a Pagar en Caja: S/${net.toFixed(2)}`)) {
+    showConfirm(`¿Confirmar Liquidación para ${emp.name}?\nSueldo Base: S/${base}\nDescuentos Ley: -S/${descLey.toFixed(2)}\nAdelantos a cuenta: -S/${pendingSum.toFixed(2)}\nLíquido a Pagar en Caja: S/${net.toFixed(2)}`, async () => {
       if(currentUser) {
          try {
-            // 1. Insert Payroll Record
-            const period = new Date().toISOString().slice(0, 7);
-            const prPayload = {
-               employee_id: emp.id,
-               period: period,
-               base_amount: base,
-               legal_deductions: descLey,
-               advances_amount: pendingSum,
-               net_paid: net
-            };
-            const { data: newPr, error: prErr } = await supabase.from('erp_payroll_records').insert([prPayload]).select().single();
-            if (prErr) throw prErr;
+            // Delega el cálculo y las inserciones 100% al RPC para integridad atómica
+            const { data: resultJson, error } = await supabase.rpc('process_payroll', {
+               p_employee_id: emp.id,
+               p_employee_name: emp.name,
+               p_base_amount: base,
+               p_legal_deductions: descLey,
+               p_period: new Date().toISOString().slice(0, 7),
+               p_user_id: currentUser.id
+            });
+            
+            if (error) throw error;
 
-            // 2. Mark advances as PAID
-            await supabase.from('erp_salary_advances').update({ status: 'PAID' }).eq('employee_id', emp.id).eq('status', 'PENDING');
+            if (resultJson && resultJson.cash_movement) {
+                addCashMovement(resultJson.cash_movement);
+            }
 
-            // 3. Cash Movement
-            const cmPayload = {
-               type: 'EXPENSE',
-               category_name: 'PAGO_PLANILLA',
-               description: `Pago Planilla: ${emp.name} (${period})`,
-               amount: net,
-               date: new Date().toISOString(),
-               reference_id: newPr.id,
-               user_id: currentUser.id
-            };
-            const { data: newCm, error: cmErr } = await supabase.from('cash_movements').insert([cmPayload]).select().single();
-            if (!cmErr) addCashMovement(newCm);
-
-            alert("La Nómina ha sido procesada correctamente y el vale contable expedido!");
+            showAlert("La Nómina ha sido procesada correctamente y el vale contable expedido!", 'info');
             fetchData();
          } catch (err: any) {
-            alert("Error al procesar nómina: " + err.message);
+            showAlert("Error al procesar nómina: " + err.message, 'error');
          }
       }
-    }
+    });
   };
 
   const handlePrintBoleta = (rec: any) => {
@@ -622,6 +602,44 @@ export function PersonnelManagement() {
             </div>
           </div>
         </div>
+      )}
+      {/* System Modal */}
+      {systemModal.isOpen && (
+         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[100] animate-fade-in p-4">
+            <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full mx-4 animate-scale-in border border-slate-100">
+               <div className="flex items-center mb-4">
+                  {systemModal.type === 'confirm' && <AlertTriangle className="w-8 h-8 text-amber-500 mr-3" />}
+                  {systemModal.type === 'info' && <CheckCircle className="w-8 h-8 text-emerald-500 mr-3" />}
+                  {systemModal.type === 'error' && <XCircle className="w-8 h-8 text-red-500 mr-3" />}
+                  {systemModal.type === 'warning' && <AlertTriangle className="w-8 h-8 text-amber-500 mr-3" />}
+                  <h3 className="font-black text-xl text-slate-800">
+                     {systemModal.type === 'error' ? 'Error' : systemModal.type === 'confirm' ? 'Confirmar Acción' : systemModal.type === 'warning' ? 'Advertencia' : 'Información'}
+                  </h3>
+               </div>
+               <p className="text-slate-600 mb-6 font-medium whitespace-pre-wrap leading-relaxed">{systemModal.message}</p>
+               
+               <div className="flex justify-end gap-3 pt-2 border-t border-slate-100 mt-2">
+                  {systemModal.type === 'confirm' && (
+                     <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-5 py-2.5 font-bold text-slate-500 hover:bg-slate-100 rounded-xl transition-colors">
+                        Cancelar
+                     </button>
+                  )}
+                  <button 
+                     onClick={() => {
+                        if (systemModal.onConfirm) systemModal.onConfirm();
+                        setSystemModal({...systemModal, isOpen: false});
+                     }} 
+                     className={`px-6 py-2.5 font-bold rounded-xl text-white shadow-md transition-all active:scale-95 ${
+                        systemModal.type === 'error' ? 'bg-red-600 hover:bg-red-700 shadow-red-500/30' :
+                        systemModal.type === 'confirm' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/30' :
+                        'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'
+                     }`}
+                  >
+                     Aceptar
+                  </button>
+               </div>
+            </div>
+         </div>
       )}
     </div>
   );
