@@ -243,22 +243,41 @@ export const StrategicReports: React.FC = () => {
      if (activeTab !== 'PROJECTION') return null;
 
      const currentMonthSales = processedData.kpis.totalSales; 
-     const totalDaysInRange = getWorkingDaysInRange(dateFrom, dateTo);
-     const daysPassed = getWorkingDaysPassed(dateFrom, dateTo);
+     
+     const [yearStr, monthStr] = dateFrom.split('-');
+     const year = parseInt(yearStr, 10);
+     const month = parseInt(monthStr, 10);
+     
+     const firstDayOfMonth = `${yearStr}-${monthStr}-01`;
+     const lastDay = new Date(year, month, 0).getDate();
+     const endOfMonth = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+     
+     const totalDaysInMonth = getWorkingDaysInRange(firstDayOfMonth, endOfMonth);
+     
+     let daysPassed = getWorkingDaysPassed(firstDayOfMonth, dateTo);
+     if (daysPassed === 0) daysPassed = 1;
+
+     let remainingDays = totalDaysInMonth - daysPassed;
+     if (remainingDays <= 0) remainingDays = 1;
      
      const dailyRunRate = daysPassed > 0 ? currentMonthSales / daysPassed : 0;
-     const projectedSales = dailyRunRate * totalDaysInRange;
-     const percentageOfGoal = (projectedSales / dynamicProjectionGoal) * 100;
+     const projectedSales = currentMonthSales + (dailyRunRate * remainingDays);
+     const percentageOfGoal = dynamicProjectionGoal > 0 ? (projectedSales / dynamicProjectionGoal) * 100 : 0;
+     
+     const missingForGoal = dynamicProjectionGoal - currentMonthSales;
+     const dailyRequired = missingForGoal > 0 ? missingForGoal / remainingDays : 0;
 
      return {
         currentSales: currentMonthSales,
         daysPassed,
-        totalDays: totalDaysInRange,
+        totalDays: totalDaysInMonth,
+        remainingDays,
         dailyAverage: dailyRunRate,
         projectedTotal: projectedSales,
         gap: dynamicProjectionGoal - projectedSales,
         percentage: percentageOfGoal,
-        goalUsed: dynamicProjectionGoal
+        goalUsed: dynamicProjectionGoal,
+        dailyRequired
      };
 
   }, [processedData, dateFrom, dateTo, dynamicProjectionGoal, activeTab]);
@@ -893,17 +912,27 @@ export const StrategicReports: React.FC = () => {
                            <div className="absolute top-0 bottom-0 left-[100%] w-1 bg-slate-800 z-10" style={{ left: '100%' }}></div>
                            <div className={`h-full transition-all duration-1000 ${projectionData.percentage >= 100 ? 'bg-emerald-500' : 'bg-blue-500'}`} style={{ width: `${Math.min(projectionData.percentage, 100)}%` }}></div>
                         </div>
-                        {projectionData.gap > 0 ? (
-                           <div className="text-sm font-bold text-amber-600 bg-amber-50 p-3 rounded-lg border border-amber-100 flex items-center">
-                              <AlertCircle className="w-5 h-5 mr-2" />
-                              Faltarían S/ {projectionData.gap.toLocaleString('es-PE', { minimumFractionDigits: 0 })} para llegar a la meta proyectada.
-                           </div>
-                        ) : (
-                           <div className="text-sm font-bold text-emerald-600 bg-emerald-50 p-3 rounded-lg border border-emerald-100 flex items-center">
-                              <Target className="w-5 h-5 mr-2" />
-                              ¡Proyección supera la meta por S/ {Math.abs(projectionData.gap).toLocaleString('es-PE', { minimumFractionDigits: 0 })}!
-                           </div>
-                        )}
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                           {projectionData.gap > 0 ? (
+                              <div className="text-sm font-bold text-amber-600 bg-amber-50 p-4 rounded-xl border border-amber-100 flex items-center">
+                                 <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                                 <div>A este ritmo faltarán S/ {projectionData.gap.toLocaleString('es-PE', { minimumFractionDigits: 0 })} al cierre de mes.</div>
+                              </div>
+                           ) : (
+                              <div className="text-sm font-bold text-emerald-600 bg-emerald-50 p-4 rounded-xl border border-emerald-100 flex items-center">
+                                 <Target className="w-5 h-5 mr-3 flex-shrink-0" />
+                                 <div>¡Proyección supera la meta por S/ {Math.abs(projectionData.gap).toLocaleString('es-PE', { minimumFractionDigits: 0 })}!</div>
+                              </div>
+                           )}
+                           
+                           {projectionData.dailyRequired > 0 && (
+                              <div className="text-sm font-bold text-blue-600 bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-center">
+                                 <TrendingUp className="w-5 h-5 mr-3 flex-shrink-0" />
+                                 <div>Se requiere vender <span className="font-black text-lg">S/ {projectionData.dailyRequired.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</span> diarios (por {projectionData.remainingDays} días) para llegar a la meta.</div>
+                              </div>
+                           )}
+                        </div>
                      </div>
                   </div>
                </div>
