@@ -2,13 +2,13 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { supabase, USE_MOCK_DB } from '../services/supabase';
 import { Product, Batch, Purchase, Sale, DispatchLiquidation } from '../types';
 import { useStore } from '../services/store';
-import { Package, ArrowUpRight, ArrowDownLeft, Search, Filter, Calendar, BarChart3, FileText, Layers, RefreshCw, Printer, AlertTriangle, ArrowUpDown, FileDown, Plus, DollarSign, Hash, Briefcase, CheckCircle, Eye, Settings } from 'lucide-react';
+import { Package, ArrowUpRight, ArrowDownLeft, Search, Filter, Calendar, BarChart3, FileText, Layers, RefreshCw, Printer, AlertTriangle, ArrowUpDown, FileDown, Plus, DollarSign, Hash, Briefcase, CheckCircle, Eye, Settings, Trash2, X, AlertCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-type ViewTab = 'INVENTORY' | 'MOVEMENTS' | 'BATCHES' | 'ANALYTICS';
+type ViewTab = 'INVENTORY' | 'MOVEMENTS' | 'BATCHES' | 'ANALYTICS' | 'RESERVATIONS';
 
 interface Movement {
   id: string;
@@ -37,7 +37,16 @@ export const Kardex: React.FC = () => {
   const [dbPurchases, setDbPurchases] = useState<Purchase[]>([]);
   const [dbSales, setDbSales] = useState<Sale[]>([]);
   const [dbLiquidations, setDbLiquidations] = useState<DispatchLiquidation[]>([]);
+  const [dbPendingOrders, setDbPendingOrders] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // --- NATIVE MODALS ---
+  const [modalConfig, setModalConfig] = useState<{isOpen: boolean, type: 'info'|'warning'|'error', message: string}>({ isOpen: false, type: 'info', message: '' });
+  const showAlert = (message: string, type: 'info'|'warning'|'error' = 'info') => setModalConfig({ isOpen: true, type, message });
+
+  const [confirmConfig, setConfirmConfig] = useState<{isOpen: boolean, message: string, onConfirm: () => void}>({ isOpen: false, message: '', onConfirm: () => {} });
+  const requestConfirm = (message: string, onConfirm: () => void) => setConfirmConfig({ isOpen: true, message, onConfirm });
 
   useEffect(() => {
      fetchMasterData();
@@ -47,13 +56,14 @@ export const Kardex: React.FC = () => {
      if (!USE_MOCK_DB) {
         setIsLoading(true);
         try {
-           const [pRes, bRes, sRes, purRes, salRes, liqRes] = await Promise.all([
+           const [pRes, bRes, sRes, purRes, salRes, liqRes, ordersRes] = await Promise.all([
               supabase.from('products').select('*').eq('is_active', true),
               supabase.from('batches').select('*').gt('quantity_current', 0),
               supabase.from('suppliers').select('*'),
               supabase.from('purchases').select('*, items:purchase_items(*)'),
               supabase.from('sales').select('*, items:sale_items(*)'),
-              supabase.from('dispatch_liquidations').select('*, documents:liquidation_documents(*)')
+              supabase.from('dispatch_liquidations').select('*, documents:liquidation_documents(*)'),
+              supabase.from('orders').select('*, items:order_items(*)').eq('status', 'pending')
            ]);
            if (pRes.data) setDbProducts(pRes.data as Product[]);
            if (bRes.data) setDbBatches(bRes.data as Batch[]);
@@ -61,6 +71,7 @@ export const Kardex: React.FC = () => {
            if (purRes.data) setDbPurchases(purRes.data as any[]);
            if (salRes.data) setDbSales(salRes.data as any[]);
            if (liqRes.data) setDbLiquidations(liqRes.data as any[]);
+           if (ordersRes.data) setDbPendingOrders(ordersRes.data as any[]);
         } catch (error) {
            console.error("Error sincronizando Kardex:", error);
         } finally {
@@ -71,27 +82,44 @@ export const Kardex: React.FC = () => {
 
   const handleRecalculateKardex = async () => {
      if (currentUser?.role !== 'ADMIN') {
-        alert("Acceso denegado: Solo el Administrador puede recalcular el Kardex.");
+        showAlert("Acceso denegado: Solo el Administrador puede recalcular el Kardex.", "error");
         return;
      }
      
-     if (!window.confirm("⚠️ ADVERTENCIA: Esta es una operación de base de datos intensiva.\n\nRecalculará el Stock Físico de TODOS los productos basándose estrictamente en su historial de entradas y salidas.\n\n¿Estás seguro de continuar?")) {
-        return;
-     }
+     requestConfirm("⚠️ ADVERTENCIA: Esta es una operación de base de datos intensiva.\n\nRecalculará el Stock Físico de TODOS los productos basándose estrictamente en su historial de entradas y salidas.\n\n¿Estás seguro de continuar?", async () => {
+         setIsRecalculating(true);
+         try {
+            const { error } = await supabase.rpc('admin_recalculate_kardex');
+            if (error) throw error;
+            
+            showAlert("¡Éxito! El Kardex ha sido recalculado matemáticamente.", "info");
+            await fetchMasterData(); // Recargar datos frescos
+         } catch (err: any) {
+            console.error("Error al recalcular Kardex:", err);
+            showAlert("Error al recalcular Kardex: " + err.message, "error");
+         } finally {
+            setIsRecalculating(false);
+         }
+     });
+  };
 
-     setIsRecalculating(true);
-     try {
-        const { error } = await supabase.rpc('admin_recalculate_kardex');
-        if (error) throw error;
-        
-        alert("¡Éxito! El Kardex ha sido recalculado matemáticamente.");
-        await fetchMasterData(); // Recargar datos frescos
-     } catch (err: any) {
-        console.error("Error al recalcular Kardex:", err);
-        alert("Error al recalcular Kardex: " + err.message);
-     } finally {
-        setIsRecalculating(false);
-     }
+  const handleAnnulOrder = async (orderId: string) => {
+      requestConfirm("¿Estás seguro que deseas anular este pedido pendiente? Las reservas de stock se liberarán inmediatamente.", async () => {
+          setIsProcessing(true);
+          try {
+             const { data, error } = await supabase.rpc('annul_order_transaction', {
+                p_order_id: orderId,
+                p_user_id: currentUser?.id || 'SELLER'
+             });
+             if (error) throw error;
+             showAlert("Pedido anulado exitosamente. Stock liberado.", "info");
+             await fetchMasterData();
+          } catch (e: any) {
+             showAlert("Error anulando pedido: " + e.message, "error");
+          } finally {
+             setIsProcessing(false);
+          }
+      });
   };
 
   // --- FILTERS ---
@@ -303,7 +331,35 @@ export const Kardex: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col h-full space-y-4 font-sans text-slate-800">
+    <div className="flex flex-col h-full space-y-4 font-sans text-slate-800 relative">
+       {/* --- CUSTOM ALERT MODAL --- */}
+       {modalConfig.isOpen && (
+          <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+             <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                {modalConfig.type === 'error' && <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />}
+                {modalConfig.type === 'warning' && <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />}
+                {modalConfig.type === 'info' && <CheckCircle className="w-12 h-12 text-blue-500 mx-auto mb-4" />}
+                <h3 className="text-lg font-black text-slate-800 mb-2">{modalConfig.type === 'error' ? 'Error' : modalConfig.type === 'warning' ? 'Aviso' : 'Información'}</h3>
+                <p className="text-sm text-slate-600 mb-6 whitespace-pre-wrap">{modalConfig.message}</p>
+                <button onClick={() => setModalConfig({...modalConfig, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
+             </div>
+          </div>
+       )}
+
+       {/* --- CUSTOM CONFIRM MODAL --- */}
+       {confirmConfig.isOpen && (
+          <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+             <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                <AlertTriangle className="w-12 h-12 text-amber-500 mx-auto mb-4" />
+                <h3 className="text-lg font-black text-slate-800 mb-2">Confirmar Acción</h3>
+                <p className="text-sm text-slate-600 mb-6 whitespace-pre-wrap">{confirmConfig.message}</p>
+                <div className="flex gap-3">
+                   <button onClick={() => setConfirmConfig({...confirmConfig, isOpen: false})} className="flex-1 py-2 bg-slate-100 rounded-lg font-bold text-slate-600 hover:bg-slate-200">Cancelar</button>
+                   <button onClick={() => { setConfirmConfig({...confirmConfig, isOpen: false}); confirmConfig.onConfirm(); }} className="flex-1 py-2 bg-amber-600 text-white rounded-lg font-bold shadow-lg hover:bg-amber-700">Sí, continuar</button>
+                </div>
+             </div>
+          </div>
+       )}
        {/* ENCABEZADO */}
        <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
           <div className="flex items-center gap-3">
@@ -346,6 +402,9 @@ export const Kardex: React.FC = () => {
           </button>
           <button onClick={() => {setActiveTab('ANALYTICS'); setIsDataVisible(true);}} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'ANALYTICS' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
              <BarChart3 className="w-4 h-4 mr-2" /> 4. Reportes y Capital
+          </button>
+          <button onClick={() => {setActiveTab('RESERVATIONS'); setIsDataVisible(true);}} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'RESERVATIONS' ? 'bg-red-50 text-red-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <Trash2 className="w-4 h-4 mr-2" /> 5. Reservas (Pedidos)
           </button>
        </div>
 
@@ -674,6 +733,64 @@ export const Kardex: React.FC = () => {
                             </BarChart>
                          </ResponsiveContainer>
                       </div>
+                   </div>
+                </div>
+             </div>
+          {/* TAB: RESERVATIONS (PEDIDOS PENDIENTES) */}
+          {activeTab === 'RESERVATIONS' && (
+             <div className="flex-1 overflow-auto p-6 bg-slate-50 animate-fade-in-up">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 max-w-4xl mx-auto">
+                   <div className="flex items-center justify-between mb-6">
+                      <div>
+                         <h3 className="text-lg font-black text-slate-800 flex items-center"><Briefcase className="w-5 h-5 mr-2 text-red-500" /> Pedidos Pendientes (Guardando Stock)</h3>
+                         <p className="text-slate-500 text-xs mt-1">Estos pedidos tienen el stock reservado en el Kardex físico. Anúlalos para liberar la mercadería.</p>
+                      </div>
+                      <div className="bg-red-50 text-red-600 px-3 py-1 rounded-lg font-black text-sm">{dbPendingOrders.length} Pedidos</div>
+                   </div>
+                   
+                   <div className="space-y-4">
+                      {dbPendingOrders.length === 0 ? (
+                         <div className="text-center p-8 text-slate-400 font-bold bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                            No hay pedidos pendientes reteniendo stock.
+                         </div>
+                      ) : dbPendingOrders.map(order => (
+                         <div key={order.id} className="border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all">
+                            <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
+                               <div>
+                                  <div className="font-black text-slate-800">{order.code} - {order.client_name}</div>
+                                  <div className="text-xs text-slate-500 mt-0.5">Creado: {new Date(order.created_at).toLocaleString()}</div>
+                               </div>
+                               <button 
+                                  onClick={() => handleAnnulOrder(order.id)}
+                                  disabled={isProcessing}
+                                  className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg font-bold text-xs transition-colors flex items-center disabled:opacity-50"
+                               >
+                                  {isProcessing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                                  Anular y Liberar Stock
+                               </button>
+                            </div>
+                            <div className="p-4 bg-white">
+                               <table className="w-full text-xs text-left">
+                                  <thead>
+                                     <tr className="text-slate-400 border-b border-slate-100">
+                                        <th className="pb-2">Producto</th>
+                                        <th className="pb-2">SKU</th>
+                                        <th className="pb-2 text-right">Cant. Total</th>
+                                     </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-50">
+                                     {(order.items || []).map((item: any, idx: number) => (
+                                        <tr key={idx}>
+                                           <td className="py-2 font-bold text-slate-700">{item.product_name}</td>
+                                           <td className="py-2 text-slate-500 font-mono">{item.product_sku || 'N/A'}</td>
+                                           <td className="py-2 text-right font-black text-red-600">{item.quantity_base || item.quantity} UND</td>
+                                        </tr>
+                                     ))}
+                                  </tbody>
+                               </table>
+                            </div>
+                         </div>
+                      ))}
                    </div>
                 </div>
              </div>
