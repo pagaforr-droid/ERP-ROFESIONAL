@@ -256,7 +256,7 @@ BEGIN
 
     -- Liberar la reserva del pedido original para evitar descuento doble en el Kardex
     IF p_sale_data->>'origin_order_id' IS NOT NULL AND p_sale_data->>'origin_order_id' != '' THEN
-        UPDATE orders SET status = 'processed' WHERE id = (p_sale_data->>'origin_order_id')::uuid;
+        UPDATE orders SET status = 'completed' WHERE id = (p_sale_data->>'origin_order_id')::uuid;
         DELETE FROM batch_allocations WHERE order_item_id IN (
             SELECT id FROM order_items WHERE order_id = (p_sale_data->>'origin_order_id')::uuid
         );

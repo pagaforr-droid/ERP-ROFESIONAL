@@ -104,7 +104,7 @@ BEGIN
     );
 
     UPDATE orders o
-    SET status = 'processed'
+    SET status = 'completed'
     WHERE o.status = 'pending'
       AND EXISTS (
           SELECT 1 FROM sales s 
