@@ -995,9 +995,9 @@ export const CashFlow: React.FC = () => {
       return (
          <div className="flex gap-8 h-full animate-fade-in">
             {/* Control Panel / Summary */}
-            <div className="w-[420px] flex flex-col gap-6">
+            <div className="w-[420px] flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-2 pb-6">
                {/* Premium Gradient Card */}
-               <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-7 rounded-3xl shadow-xl shadow-indigo-900/20 relative overflow-hidden border border-white/10">
+               <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-7 rounded-3xl shadow-xl shadow-indigo-900/20 relative overflow-hidden border border-white/10 shrink-0">
                   {/* Decorative Elements */}
                   <div className="absolute top-[-20px] right-[-20px] w-40 h-40 bg-indigo-500/20 rounded-full blur-3xl"></div>
                   <div className="absolute bottom-[-20px] left-[-20px] w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl"></div>
@@ -1037,7 +1037,7 @@ export const CashFlow: React.FC = () => {
                </div>
 
                {/* Resumen Declaración Card */}
-               <div className="bg-white p-7 rounded-3xl shadow-sm border border-slate-200 flex-1 flex flex-col relative overflow-hidden">
+               <div className="bg-white p-7 rounded-3xl shadow-sm border border-slate-200 shrink-0 flex flex-col relative">
                   <div className="flex justify-between items-center mb-6">
                      <h3 className="font-black text-slate-800 text-xl flex items-center"><BarChart3 className="w-6 h-6 mr-3 text-indigo-500" /> Declaración</h3>
                      <button onClick={() => setShowCountModal(true)} className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold text-xs flex items-center transition-colors">
