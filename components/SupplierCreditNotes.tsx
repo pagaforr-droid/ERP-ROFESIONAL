@@ -140,9 +140,8 @@ export const SupplierCreditNotes: React.FC = () => {
             const retState = returnQuantities[item.id];
             if (!retState || retState.qty <= 0) return;
 
-            const prod = products.find(p => p.id === item.product_id);
-            const baseName = prod?.unit_type || 'UND';
-            const returnUnitIsPkg = retState.unit !== 'UND' && retState.unit !== baseName;
+            const hasPkg = item.factor > 1;
+            const returnUnitIsPkg = hasPkg && retState.unit !== 'UND';
             
             const totalReturnedBase = returnUnitIsPkg ? (retState.qty * item.factor) : retState.qty;
             if (totalReturnedBase <= 0) return;
@@ -537,14 +536,15 @@ export const SupplierCreditNotes: React.FC = () => {
 
                                             const pkgName = prod?.package_type || 'CAJ';
                                             const baseName = prod?.unit_type || 'UND';
+                                            const hasPkg = item.factor > 1;
 
-                                            const returnUnitIsPkg = retState.unit !== 'UND' && retState.unit !== baseName;
+                                            const returnUnitIsPkg = hasPkg && retState.unit !== 'UND';
                                             const totalReturnedBase = returnUnitIsPkg ? (retState.qty * item.factor) : retState.qty;
                                             
                                             const ratio = item.quantity_base > 0 ? (totalReturnedBase / item.quantity_base) : 0;
                                             const itemReturnTotal = item.total_cost * ratio;
                                             
-                                            const hasPkg = item.factor > 1;
+                                            const originalDisplayUnit = hasPkg ? pkgName : baseName;
 
                                             return (
                                                 <div key={item.id} className={`flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors ${totalReturnedBase > 0 ? 'bg-indigo-50/30' : ''}`}>
@@ -555,7 +555,7 @@ export const SupplierCreditNotes: React.FC = () => {
                                                         </div>
                                                     </div>
                                                     <div className="w-24 flex flex-col items-center justify-center font-mono text-xs text-slate-500 bg-slate-100 py-1 rounded">
-                                                        <div className="font-bold whitespace-nowrap text-[10px] text-slate-600">{originalQty} {item.unit_type} / {item.factor > 0 ? item.factor : 1}</div>
+                                                        <div className="font-bold whitespace-nowrap text-[10px] text-slate-600">{originalQty} {originalDisplayUnit} / {item.factor > 0 ? item.factor : 1}</div>
                                                     </div>
                                                     <div className="w-24 text-right text-xs font-mono text-slate-600">
                                                         S/ {(item.unit_price || 0).toFixed(2)}
@@ -569,7 +569,7 @@ export const SupplierCreditNotes: React.FC = () => {
                                                                 let q = Number(e.target.value);
                                                                 if (q < 0) q = 0;
                                                                 
-                                                                const isRetPkg = retState.unit !== 'UND' && retState.unit !== baseName;
+                                                                const isRetPkg = retState.unit !== 'UND';
                                                                 const maxBase = item.quantity_base;
                                                                 
                                                                 if (isRetPkg && q * item.factor > maxBase) q = Math.floor(maxBase / item.factor);
@@ -580,13 +580,13 @@ export const SupplierCreditNotes: React.FC = () => {
                                                         />
                                                         <select
                                                             className="w-28 border border-indigo-200 rounded p-1.5 text-[10px] font-bold text-indigo-700 focus:ring-2 focus:ring-indigo-500 outline-none bg-white text-center cursor-pointer"
-                                                            value={retState.unit}
+                                                            value={retState.unit === 'UND' ? 'UND' : item.unit_type}
                                                             onChange={e => {
                                                                 setReturnQuantities(prev => ({ ...prev, [item.id]: { qty: 0, unit: e.target.value } }));
                                                             }}
                                                         >
-                                                            {hasPkg && <option value={item.unit_type === baseName ? pkgName : item.unit_type}>{item.unit_type === baseName ? pkgName : item.unit_type} / {item.factor}</option>}
-                                                            <option value={baseName}>{baseName} / 1</option>
+                                                            {hasPkg && <option value={item.unit_type}>{pkgName} / {item.factor}</option>}
+                                                            <option value="UND">{baseName} / 1</option>
                                                         </select>
                                                     </div>
                                                     <div className="w-24 text-right font-black text-slate-800 text-sm">
