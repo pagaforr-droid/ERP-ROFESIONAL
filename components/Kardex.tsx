@@ -736,6 +736,8 @@ export const Kardex: React.FC = () => {
                    </div>
                 </div>
              </div>
+          )}
+
           {/* TAB: RESERVATIONS (PEDIDOS PENDIENTES) */}
           {activeTab === 'RESERVATIONS' && (
              <div className="flex-1 overflow-auto p-6 bg-slate-50 animate-fade-in-up">
