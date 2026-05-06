@@ -60,7 +60,7 @@ export const AccountingReports: React.FC = () => {
         return purchases.sort((a, b) => new Date(a.issue_date).getTime() - new Date(b.issue_date).getTime());
     }, [purchases]);
 
-    // --- EXPORT LOGIC: REGISTRO DE VENTAS ---
+    // --- EXPORT LOGIC: REGISTRO DE VENTAS (FORMATO 14.1 SIRE) ---
     const exportSalesToExcel = () => {
         if (salesData.length === 0) {
             alert("No hay datos para exportar en este rango de fechas.");
@@ -81,58 +81,91 @@ export const AccountingReports: React.FC = () => {
             if (sale.client_ruc && sale.client_ruc.length === 11) clientIdType = '6'; // RUC
             if (sale.document_type === 'BOLETA' && sale.client_name.toUpperCase() === 'CLIENTE VARIOS') clientIdType = '0';
 
-            const total = (sale.total || 0) * multiplier;
-            const baseImponible = total / 1.18;
-            const igv = total - baseImponible;
+            const total = isCanceled ? 0 : ((sale.total || 0) * multiplier);
+            const baseImponible = isCanceled ? 0 : (total / 1.18);
+            const igv = isCanceled ? 0 : (total - baseImponible);
+
+            // Extract modified document from observation if it's a Credit Note
+            let modDate = '';
+            let modType = '';
+            let modSerie = '';
+            let modNumber = '';
+
+            if (isNC && sale.observation) {
+                // Example: Referencia a FACTURA F001-00101
+                const match = sale.observation.match(/(FACTURA|BOLETA)\s+([F|B][A-Z0-9]{3})-([0-9]+)/i);
+                if (match) {
+                    modType = match[1].toUpperCase() === 'FACTURA' ? '01' : '03';
+                    modSerie = match[2].toUpperCase();
+                    modNumber = match[3];
+                    // Attempt to find original date in memory
+                    const origSale = sales.find(s => s.series === modSerie && s.number === modNumber && s.document_type === match[1].toUpperCase());
+                    if (origSale) {
+                        modDate = new Date(origSale.created_at).toLocaleDateString('es-PE');
+                    }
+                }
+            }
+
+            const estadoSire = isCanceled ? '2' : '1';
 
             return {
-                'Periodo': dateFrom.substring(0, 7).replace('-', ''),
-                'Fecha de Emisión': new Date(sale.created_at).toLocaleDateString('es-PE'),
+                'Periodo': dateFrom.substring(0, 7).replace('-', '') + '00',
+                'CUO': sale.id,
+                'Correlativo': 'M0001',
+                'Fecha Emisión': new Date(sale.created_at).toLocaleDateString('es-PE'),
                 'Fecha Vencimiento': '',
                 'Tipo Comprobante': docTypeCode,
                 'Serie': sale.series || '',
                 'Número': sale.number || '',
-                'Tipo Doc. Identidad': clientIdType,
-                'Número Doc. Identidad': isCanceled ? '0' : (sale.client_ruc || ''),
-                'Razón Social / Nombres': isCanceled ? 'ANULADO' : sale.client_name,
-                'Valor Facturado Exportación': 0.00,
-                'Base Imponible Operación Gravada': baseImponible.toFixed(2),
-                'Descuento Base Imponible': 0.00,
+                'Nro Final Ticket': '',
+                'Tipo Doc Cliente': clientIdType,
+                'RUC/DNI Cliente': isCanceled ? '0' : (sale.client_ruc || ''),
+                'Razón Social Cliente': isCanceled ? 'ANULADO' : sale.client_name,
+                'Valor Facturado Exportación': '0.00',
+                'Base Imp. Operación Gravada': baseImponible.toFixed(2),
+                'Descuento Base Imponible': '0.00',
                 'IGV / IPM': igv.toFixed(2),
-                'Descuento IGV / IPM': 0.00,
-                'Monto Exonerado': 0.00,
-                'Monto Inafecto': 0.00,
-                'ISC': 0.00,
-                'ICBPER': 0.00,
-                'Otros Tributos': 0.00,
+                'Descuento IGV / IPM': '0.00',
+                'Monto Exonerado': '0.00',
+                'Monto Inafecto': '0.00',
+                'ISC': '0.00',
+                'Base Imponible IVAP': '0.00',
+                'IVAP': '0.00',
+                'ICBPER': '0.00',
+                'Otros Tributos': '0.00',
                 'Importe Total': total.toFixed(2),
                 'Moneda': 'PEN',
-                'Tipo Cambio': 1.000,
-                'Fecha Emisión Doc Modificado': '',
-                'Tipo Doc Modificado': '',
-                'Serie Doc Modificado': '',
-                'Número Doc Modificado': '',
-                'Estado Venta': isCanceled ? 'ANULADO' : 'ACTIVO'
+                'Tipo Cambio': '1.000',
+                'Fecha Emisión Doc Modificado': modDate,
+                'Tipo Doc Modificado': modType,
+                'Serie Doc Modificado': modSerie,
+                'Nro Doc Modificado': modNumber,
+                'ID Contrato Socios': '',
+                'Error Tipo 1': '',
+                'Ind. Comprobante Cancelado': '1',
+                'Estado SIRE': estadoSire
             };
         });
 
         const ws = XLSX.utils.json_to_sheet(exportData);
         
         const colWidths = [
-            { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, 
-            { wch: 18 }, { wch: 18 }, { wch: 40 }, { wch: 22 }, { wch: 28 }, 
-            { wch: 22 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, 
-            { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, { wch: 8 }
+            { wch: 10 }, { wch: 38 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, 
+            { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 40 }, 
+            { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 12 }, { wch: 20 }, { wch: 16 }, 
+            { wch: 16 }, { wch: 8 }, { wch: 20 }, { wch: 8 }, { wch: 12 }, { wch: 14 }, 
+            { wch: 14 }, { wch: 8 }, { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 22 }, 
+            { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 25 }, { wch: 12 }
         ];
         ws['!cols'] = colWidths;
 
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Registro Ventas");
+        XLSX.utils.book_append_sheet(wb, ws, "Registro Ventas 14.1");
         
-        XLSX.writeFile(wb, `Registro_Ventas_${dateFrom}_al_${dateTo}.xlsx`);
+        XLSX.writeFile(wb, `Registro_Ventas_14_1_${dateFrom}_al_${dateTo}.xlsx`);
     };
 
-    // --- EXPORT LOGIC: REGISTRO DE COMPRAS ---
+    // --- EXPORT LOGIC: REGISTRO DE COMPRAS (FORMATO 8.1 SIRE) ---
     const exportPurchasesToExcel = () => {
         if (purchasesData.length === 0) {
             alert("No hay datos para exportar en este rango de fechas.");
@@ -145,52 +178,70 @@ export const AccountingReports: React.FC = () => {
             const igv = total - baseImponible;
 
             const supplier = suppliers.find(s => s.id === purchase.supplier_id);
+            
+            let docTypeCode = '00';
+            if (purchase.document_type === 'FACTURA') docTypeCode = '01';
+            if (purchase.document_type === 'BOLETA') docTypeCode = '03';
+            if (purchase.document_type === 'NOTA_CREDITO') docTypeCode = '07';
+            
+            let serie = purchase.document_number?.split('-')[0] || '';
+            let numero = purchase.document_number?.split('-')[1] || purchase.document_number || '';
 
             return {
-                'Periodo': dateFrom.substring(0, 7).replace('-', ''),
-                'Fecha de Emisión': new Date(purchase.issue_date).toLocaleDateString('es-PE'),
-                'Fecha Vencimiento': new Date(purchase.due_date).toLocaleDateString('es-PE'),
-                'Tipo Comprobante': purchase.document_type === 'FACTURA' ? '01' : (purchase.document_type === 'BOLETA' ? '03' : '00'),
-                'Serie': purchase.document_number?.split('-')[0] || '',
-                'Número': purchase.document_number?.split('-')[1] || purchase.document_number || '',
-                'Tipo Doc. Proveedor': '6',
-                'Número Doc. Proveedor': supplier?.ruc || '',
+                'Periodo': dateFrom.substring(0, 7).replace('-', '') + '00',
+                'CUO': purchase.id,
+                'Correlativo': 'M0001',
+                'Fecha Emisión': new Date(purchase.issue_date).toLocaleDateString('es-PE'),
+                'Fecha Vencimiento': purchase.due_date ? new Date(purchase.due_date).toLocaleDateString('es-PE') : '',
+                'Tipo Comprobante': docTypeCode,
+                'Serie': serie,
+                'Año Emisión DUA': '',
+                'Número': numero,
+                'Nro Final Ticket': '',
+                'Tipo Doc Proveedor': '6',
+                'Nro Doc Proveedor': supplier?.ruc || '',
                 'Razón Social Proveedor': supplier?.name || 'PROVEEDOR DESCONOCIDO',
-                'Base Imponible Destino Ventas Gravadas': baseImponible.toFixed(2),
-                'IGV / IPM Destino Ventas Gravadas': igv.toFixed(2),
-                'Base Imponible Destino Ventas Gravadas y No Gravadas': 0.00,
-                'IGV / IPM Destino Ventas Gravadas y No Gravadas': 0.00,
-                'Base Imponible Destino Ventas No Gravadas': 0.00,
-                'IGV / IPM Destino Ventas No Gravadas': 0.00,
-                'Valor Adquisiciones No Gravadas': 0.00,
-                'ISC': 0.00,
-                'ICBPER': 0.00,
-                'Otros Tributos': 0.00,
-                'Importe Total Adquisiciones': total.toFixed(2),
+                'Base Imp. Gravadas': baseImponible.toFixed(2),
+                'IGV Gravadas': igv.toFixed(2),
+                'Base Imp. Mixtas': '0.00',
+                'IGV Mixtas': '0.00',
+                'Base Imp. No Gravadas': '0.00',
+                'IGV No Gravadas': '0.00',
+                'Adquisiciones No Gravadas': '0.00',
+                'ISC': '0.00',
+                'ICBPER': '0.00',
+                'Otros Tributos': '0.00',
+                'Importe Total': total.toFixed(2),
                 'Moneda': purchase.currency || 'PEN',
-                'Tipo de Cambio': purchase.exchange_rate || 1.000,
+                'Tipo de Cambio': (purchase.exchange_rate || 1.000).toFixed(3),
                 'Fecha Emisión Doc Modificado': '',
                 'Tipo Doc Modificado': '',
                 'Serie Doc Modificado': '',
-                'Número Doc Modificado': '',
-                'Estado Compra': 'ACTIVO'
+                'Cod DUA Referencia': '',
+                'Nro Doc Modificado': '',
+                'Fecha Constancia Depósito': '',
+                'Nro Constancia Depósito': '',
+                'Marca Retención': '',
+                'Estado SIRE': '1'
             };
         });
 
         const ws = XLSX.utils.json_to_sheet(exportData);
         
         const colWidths = [
-            { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 8 }, { wch: 10 }, 
-            { wch: 18 }, { wch: 18 }, { wch: 40 }, { wch: 35 }, { wch: 30 }, 
-            { wch: 42 }, { wch: 38 }, { wch: 35 }, { wch: 30 }, { wch: 30 }, 
-            { wch: 8 }, { wch: 8 }, { wch: 12 }, { wch: 22 }, { wch: 8 }, { wch: 12 }
+            { wch: 10 }, { wch: 38 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, 
+            { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 16 }, { wch: 16 }, 
+            { wch: 40 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 20 }, 
+            { wch: 15 }, { wch: 25 }, { wch: 8 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, 
+            { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 16 }, { wch: 20 }, { wch: 20 }, 
+            { wch: 20 }, { wch: 25 }, { wch: 20 }, { wch: 15 }, { wch: 12 }
         ];
         ws['!cols'] = colWidths;
 
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Registro Compras");
+        XLSX.utils.book_append_sheet(wb, ws, "Registro Compras 8.1");
         
-        XLSX.writeFile(wb, `Registro_Compras_${dateFrom}_al_${dateTo}.xlsx`);
+        XLSX.writeFile(wb, `Registro_Compras_8_1_${dateFrom}_al_${dateTo}.xlsx`);
     };
 
     return (
