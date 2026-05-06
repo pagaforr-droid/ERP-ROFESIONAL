@@ -37,7 +37,7 @@ const getWorkingDaysPassed = (startDateStr: string, endDateStr: string): number 
 };
 
 type Dimension = 'SELLER' | 'CLIENT' | 'SUPPLIER' | 'CATEGORY' | 'BRAND' | 'ZONE' | 'MONTH';
-type Tab = 'HISTORICAL' | 'PROJECTION' | 'SELLER_ADVANCE';
+type Tab = 'HISTORICAL' | 'PROJECTION' | 'SELLER_ADVANCE' | 'COMPANY_ADVANCE';
 
 interface AggregatedRow {
   id: string;
@@ -356,6 +356,126 @@ export const StrategicReports: React.FC = () => {
      }).sort((a, b) => b.globalSales - a.globalSales);
   }, [sales, activeTab, dateFrom, dateTo, sellers, zones, clients, quotas, suppliers, products]);
 
+   // --- COMPANY ADVANCE ENGINE ---
+   const companyAdvanceData = useMemo(() => {
+      if (activeTab !== 'COMPANY_ADVANCE') return null;
+ 
+      const [yearStr, monthStr] = dateFrom.split('-');
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10);
+      
+      const firstDayOfMonth = `${yearStr}-${monthStr}-01`;
+      const lastDay = new Date(year, month, 0).getDate();
+      const endOfMonth = `${yearStr}-${monthStr}-${String(lastDay).padStart(2, '0')}`;
+      
+      const totalDaysInMonth = getWorkingDaysInRange(firstDayOfMonth, endOfMonth);
+      
+      let daysPassed = getWorkingDaysPassed(firstDayOfMonth, dateTo);
+      if (daysPassed === 0) daysPassed = 1;
+ 
+      let remainingDays = totalDaysInMonth - daysPassed;
+      if (remainingDays <= 0) remainingDays = 1;
+ 
+      const validSales = sales.filter(s => s.status !== 'canceled');
+ 
+      let globalSales = 0;
+      const supplierSalesMap: Record<string, number> = {};
+      const categorySalesMap: Record<string, number> = {};
+      const sellerContributionMap: Record<string, number> = {};
+ 
+      validSales.forEach(s => {
+          const c = clients.find(cl => cl.id === s.client_id || cl.doc_number === s.client_ruc);
+          const z = zones.find(zn => zn.id === c?.zone_id);
+          const sId = z?.assigned_seller_id || 'UNKNOWN';
+          
+          if (s.items && Array.isArray(s.items)) {
+             s.items.forEach((item: any) => {
+                const product = products.find(p => p.id === item.product_id);
+                const itemTotal = item.total_price || 0;
+                
+                if (product) {
+                   if (product.supplier_id) {
+                      supplierSalesMap[product.supplier_id] = (supplierSalesMap[product.supplier_id] || 0) + itemTotal;
+                   }
+                   if (product.category) {
+                      categorySalesMap[product.category] = (categorySalesMap[product.category] || 0) + itemTotal;
+                   }
+                }
+                globalSales += itemTotal;
+                sellerContributionMap[sId] = (sellerContributionMap[sId] || 0) + itemTotal;
+             });
+          }
+      });
+ 
+      const periodStr = dateFrom.substring(0, 7);
+      
+      const globalQuotaRow = quotas.find(q => !q.seller_id && q.period === periodStr && q.target_type === 'GLOBAL');
+      const globalQuota = globalQuotaRow?.amount || 0;
+ 
+      const globalProjected = (globalSales / daysPassed) * totalDaysInMonth;
+      const globalProjPct = globalQuota > 0 ? (globalProjected / globalQuota) * 100 : 0;
+      const globalPct = globalQuota > 0 ? (globalSales / globalQuota) * 100 : 0;
+      const globalDailyRequired = globalQuota > globalSales ? (globalQuota - globalSales) / remainingDays : 0;
+ 
+      const supplierRows: any[] = [];
+      suppliers.forEach(supplier => {
+         const quotaRow = quotas.find(q => !q.seller_id && q.period === periodStr && q.target_type === 'SUPPLIER' && q.target_id === supplier.id);
+         const assignedQuota = quotaRow?.amount || 0;
+         const currentSales = supplierSalesMap[supplier.id] || 0;
+         
+         if (assignedQuota > 0 || currentSales > 0) {
+            const projected = (currentSales / daysPassed) * totalDaysInMonth;
+            const projPct = assignedQuota > 0 ? (projected / assignedQuota) * 100 : 0;
+            const currentPct = assignedQuota > 0 ? (currentSales / assignedQuota) * 100 : 0;
+            const dailyRequired = assignedQuota > currentSales ? (assignedQuota - currentSales) / remainingDays : 0;
+            
+            supplierRows.push({
+               id: supplier.id, name: supplier.name, type: 'Proveedor',
+               assignedQuota, currentSales, currentPct, projected, projPct,
+               gap: assignedQuota - projected, dailyRequired
+            });
+         }
+      });
+      
+      const categoryRows: any[] = [];
+      categories.forEach(cat => {
+         const quotaRow = quotas.find(q => !q.seller_id && q.period === periodStr && q.target_type === 'CATEGORY' && q.target_id === cat);
+         const assignedQuota = quotaRow?.amount || 0;
+         const currentSales = categorySalesMap[cat] || 0;
+         
+         if (assignedQuota > 0 || currentSales > 0) {
+            const projected = (currentSales / daysPassed) * totalDaysInMonth;
+            const projPct = assignedQuota > 0 ? (projected / assignedQuota) * 100 : 0;
+            const currentPct = assignedQuota > 0 ? (currentSales / assignedQuota) * 100 : 0;
+            const dailyRequired = assignedQuota > currentSales ? (assignedQuota - currentSales) / remainingDays : 0;
+            
+            categoryRows.push({
+               id: cat, name: cat, type: 'Categoría',
+               assignedQuota, currentSales, currentPct, projected, projPct,
+               gap: assignedQuota - projected, dailyRequired
+            });
+         }
+      });
+ 
+      const topContributors = Object.entries(sellerContributionMap)
+         .map(([sId, amount]) => {
+            const seller = sellers.find(s => s.id === sId);
+            return {
+               sellerName: seller?.name || 'Venta Directa',
+               amount,
+               percentageOfGlobal: globalSales > 0 ? (amount / globalSales) * 100 : 0
+            };
+         })
+         .sort((a, b) => b.amount - a.amount);
+ 
+      return {
+         globalQuota, globalSales, globalPct, globalProjected, globalProjPct,
+         globalGap: globalQuota - globalProjected, globalDailyRequired,
+         detailedRows: [...supplierRows, ...categoryRows].sort((a,b) => b.currentSales - a.currentSales),
+         topContributors
+      };
+   }, [sales, activeTab, dateFrom, dateTo, quotas, suppliers, categories, products, sellers, clients, zones]);
+
   // --- EXPORT LOGIC ---
   const handleExportExcel = () => {
     if (activeTab === 'SELLER_ADVANCE') {
@@ -388,6 +508,42 @@ export const StrategicReports: React.FC = () => {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, "Avance Vendedores");
         XLSX.writeFile(wb, `Avance_Vendedores_${dateFrom}_al_${dateTo}.xlsx`);
+    } else if (activeTab === 'COMPANY_ADVANCE' && companyAdvanceData) {
+        const flatData: any[] = [];
+        flatData.push({
+            'Segmento': 'META GLOBAL EMPRESA',
+            'Tipo': 'Global',
+            'Cuota Mes (S/)': companyAdvanceData.globalQuota.toFixed(2),
+            'Venta Actual (S/)': companyAdvanceData.globalSales.toFixed(2),
+            'Avance %': companyAdvanceData.globalPct.toFixed(2),
+            'Proy. Cierre (S/)': companyAdvanceData.globalProjected.toFixed(2),
+            'Proj. %': companyAdvanceData.globalProjPct.toFixed(2),
+            'Req. Diario (S/)': companyAdvanceData.globalDailyRequired.toFixed(2)
+        });
+        companyAdvanceData.detailedRows.forEach((row: any) => {
+            flatData.push({
+                'Segmento': row.name,
+                'Tipo': row.type,
+                'Cuota Mes (S/)': row.assignedQuota.toFixed(2),
+                'Venta Actual (S/)': row.currentSales.toFixed(2),
+                'Avance %': row.currentPct.toFixed(2),
+                'Proy. Cierre (S/)': row.projected.toFixed(2),
+                'Proj. %': row.projPct.toFixed(2),
+                'Req. Diario (S/)': row.dailyRequired.toFixed(2)
+            });
+        });
+        const ws = XLSX.utils.json_to_sheet(flatData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Empresa");
+        
+        const wsContrib = XLSX.utils.json_to_sheet(companyAdvanceData.topContributors.map((c: any) => ({
+            'Vendedor': c.sellerName,
+            'Aporte (S/)': c.amount.toFixed(2),
+            'Participación (%)': c.percentageOfGlobal.toFixed(2)
+        })));
+        XLSX.utils.book_append_sheet(wb, wsContrib, "Aportantes");
+
+        XLSX.writeFile(wb, `Resumen_Empresa_${dateFrom}_al_${dateTo}.xlsx`);
     } else {
         const ws = XLSX.utils.json_to_sheet(processedData.rows.map(r => ({
           'Segmento': r.label,
@@ -460,6 +616,43 @@ export const StrategicReports: React.FC = () => {
         
         doc.save(`Avance_Vendedores_${dateFrom}_al_${dateTo}.pdf`);
 
+    } else if (activeTab === 'COMPANY_ADVANCE' && companyAdvanceData) {
+        doc.text(`Módulo: Resumen de Ventas Empresa`, 14, 28);
+        doc.setFontSize(9);
+        doc.text(`Periodo evaluado: ${dateFrom} al ${dateTo}`, 14, 34);
+
+        const body: any[] = [];
+        body.push([
+            { content: 'META GLOBAL EMPRESA', colSpan: 2, styles: { fontStyle: 'bold', fillColor: [30, 58, 138], textColor: 255 } },
+            `S/ ${companyAdvanceData.globalQuota.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`,
+            `S/ ${companyAdvanceData.globalSales.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`,
+            `${companyAdvanceData.globalPct.toFixed(1)}%`,
+            `S/ ${companyAdvanceData.globalProjected.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`,
+            `S/ ${companyAdvanceData.globalDailyRequired.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`
+        ]);
+
+        companyAdvanceData.detailedRows.forEach((row: any) => {
+            body.push([
+                row.name,
+                row.type,
+                row.assignedQuota > 0 ? `S/ ${row.assignedQuota.toLocaleString('es-PE', { maximumFractionDigits: 0 })}` : '-',
+                `S/ ${row.currentSales.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`,
+                `${row.currentPct.toFixed(1)}%`,
+                `S/ ${row.projected.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`,
+                `S/ ${row.dailyRequired.toLocaleString('es-PE', { maximumFractionDigits: 0 })}`
+            ]);
+        });
+
+        autoTable(doc, {
+            startY: 40,
+            head: [['Segmento', 'Tipo', 'Cuota (S/)', 'Venta (S/)', 'Avance %', 'Proy. Cierre', 'Req. Diario']],
+            body: body,
+            theme: 'grid',
+            headStyles: { fillColor: [30, 58, 138], textColor: 255 }, 
+            styles: { fontSize: 7, cellPadding: 1 }
+        });
+        
+        doc.save(`Resumen_Empresa_${dateFrom}_al_${dateTo}.pdf`);
     } else {
         doc.text(`Módulo: Análisis Histórico por ${groupBy}`, 14, 28);
         doc.setFontSize(9);
@@ -602,6 +795,9 @@ export const StrategicReports: React.FC = () => {
             </button>
             <button onClick={() => setActiveTab('SELLER_ADVANCE')} className={`flex-1 py-4 font-bold text-sm transition-colors ${activeTab === 'SELLER_ADVANCE' ? 'bg-white text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-800'}`}>
                Avance por Vendedor
+            </button>
+            <button onClick={() => setActiveTab('COMPANY_ADVANCE')} className={`flex-1 py-4 font-bold text-sm transition-colors ${activeTab === 'COMPANY_ADVANCE' ? 'bg-white text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:text-slate-800'}`}>
+               Resumen Ventas Empresa
             </button>
          </div>
 
@@ -777,6 +973,94 @@ export const StrategicReports: React.FC = () => {
                         )}
                      </tbody>
                   </table>
+               </div>
+            ) : activeTab === 'COMPANY_ADVANCE' && companyAdvanceData ? (
+               <div className="space-y-6 max-w-6xl mx-auto">
+                  <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-6 items-center">
+                     <div className="flex-1">
+                        <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Meta Global de Empresa</div>
+                        <div className="text-4xl font-black text-slate-800">S/ {companyAdvanceData.globalQuota > 0 ? companyAdvanceData.globalQuota.toLocaleString('es-PE', { minimumFractionDigits: 0 }) : 'Sin Meta'}</div>
+                        <div className="mt-4 flex items-center gap-4 text-sm font-bold">
+                           <div className="text-slate-500">Venta Actual: <span className="text-blue-600">S/ {companyAdvanceData.globalSales.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</span></div>
+                           <div className="text-slate-500">Proyección: <span className="text-indigo-600">S/ {companyAdvanceData.globalProjected.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</span></div>
+                           <div className="text-slate-500">Req. Diario: <span className="text-amber-600">S/ {companyAdvanceData.globalDailyRequired.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</span></div>
+                        </div>
+                     </div>
+                     <div className="w-48 text-right">
+                        <div className="text-sm font-bold text-slate-500 mb-1">Avance Actual</div>
+                        <div className="text-3xl font-black text-blue-600">{companyAdvanceData.globalPct.toFixed(1)}%</div>
+                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                     <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                        <div className="p-4 bg-slate-50 border-b border-slate-100">
+                           <h3 className="font-bold text-slate-800">Desglose de Metas (Proveedores y Categorías)</h3>
+                        </div>
+                        <div className="overflow-auto max-h-[400px]">
+                           <table className="w-full text-left text-sm">
+                              <thead className="bg-white text-slate-500 font-bold sticky top-0 shadow-sm">
+                                 <tr>
+                                    <th className="p-3 border-b border-slate-200">Segmento</th>
+                                    <th className="p-3 border-b border-slate-200 text-right">Cuota (S/)</th>
+                                    <th className="p-3 border-b border-slate-200 text-right">Venta (S/)</th>
+                                    <th className="p-3 border-b border-slate-200 text-right">Avance %</th>
+                                    <th className="p-3 border-b border-slate-200 text-right">Proy. Cierre</th>
+                                    <th className="p-3 border-b border-slate-200 text-right text-amber-600">Req. Diario</th>
+                                 </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                 {companyAdvanceData.detailedRows.map((row: any, idx: number) => (
+                                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                       <td className="p-3">
+                                          <div className="font-bold text-slate-700">{row.name}</div>
+                                          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">{row.type}</div>
+                                       </td>
+                                       <td className="p-3 text-right font-mono text-slate-500">{row.assignedQuota > 0 ? row.assignedQuota.toLocaleString('es-PE', { minimumFractionDigits: 0 }) : '-'}</td>
+                                       <td className="p-3 text-right font-mono font-bold text-blue-700">{row.currentSales.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</td>
+                                       <td className="p-3 text-right font-bold text-slate-600">{row.currentPct.toFixed(1)}%</td>
+                                       <td className="p-3 text-right font-mono text-indigo-600">{row.projected.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</td>
+                                       <td className="p-3 text-right font-mono font-bold text-amber-600">{row.dailyRequired.toLocaleString('es-PE', { minimumFractionDigits: 0 })}</td>
+                                    </tr>
+                                 ))}
+                                 {companyAdvanceData.detailedRows.length === 0 && (
+                                    <tr><td colSpan={6} className="p-8 text-center text-slate-400 font-medium">No hay metas específicas asignadas ni ventas generadas.</td></tr>
+                                 )}
+                              </tbody>
+                           </table>
+                        </div>
+                     </div>
+
+                     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                        <div className="p-4 bg-slate-50 border-b border-slate-100">
+                           <h3 className="font-bold text-slate-800">Top Aportantes (Vendedores)</h3>
+                        </div>
+                        <div className="overflow-auto max-h-[400px]">
+                           <table className="w-full text-left text-sm">
+                              <tbody className="divide-y divide-slate-100">
+                                 {companyAdvanceData.topContributors.map((c: any, idx: number) => (
+                                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                       <td className="p-3">
+                                          <div className="font-bold text-slate-700 flex items-center">
+                                             <span className="w-5 text-slate-400 text-xs">{idx + 1}.</span> {c.sellerName}
+                                          </div>
+                                       </td>
+                                       <td className="p-3 text-right font-mono font-bold text-blue-700">
+                                          {c.amount.toLocaleString('es-PE', { minimumFractionDigits: 0 })}
+                                       </td>
+                                       <td className="p-3 text-right font-bold text-emerald-600 text-xs">
+                                          {c.percentageOfGlobal.toFixed(1)}%
+                                       </td>
+                                    </tr>
+                                 ))}
+                                 {companyAdvanceData.topContributors.length === 0 && (
+                                    <tr><td colSpan={3} className="p-8 text-center text-slate-400 font-medium">Sin datos de aportantes.</td></tr>
+                                 )}
+                              </tbody>
+                           </table>
+                        </div>
+                     </div>
+                  </div>
                </div>
             ) : null}
          </div>

@@ -128,7 +128,7 @@ export interface AutoPromotion {
 export interface Quota {
   id: string;
   period: string; // e.g. '2026-03'
-  seller_id: string;
+  seller_id?: string | null;
   target_type: 'GLOBAL' | 'SUPPLIER' | 'CATEGORY' | 'LINE';
   target_id?: string; // ID of supplier or name of category/line. Null if GLOBAL
   amount: number;

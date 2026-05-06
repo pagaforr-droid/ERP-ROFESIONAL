@@ -68,7 +68,7 @@ export const QuotaManager: React.FC = () => {
       const newLocal: Record<string, number> = {};
       filtered.forEach(q => {
          const targetId = q.target_id || 'GLOBAL';
-         const key = `${q.seller_id}_${targetId}`;
+         const key = `${q.seller_id || 'COMPANY'}_${targetId}`;
          newLocal[key] = q.amount;
       });
       setLocalQuotas(newLocal);
@@ -79,10 +79,10 @@ export const QuotaManager: React.FC = () => {
 
    // Ensure a seller is selected by default
    useMemo(() => {
-      if (!selectedSellerId && sellers.length > 0) {
-         setSelectedSellerId(sellers[0].id);
+      if (!selectedSellerId) {
+         setSelectedSellerId('COMPANY');
       }
-   }, [sellers, selectedSellerId]);
+   }, [selectedSellerId]);
 
    // Compute targets based on TargetType
    const targets = useMemo(() => {
@@ -119,8 +119,9 @@ export const QuotaManager: React.FC = () => {
    const saveChanges = async () => {
       setIsSaving(true);
       const newQuotas: Quota[] = [];
+      const displaySellers = [{ id: 'COMPANY', name: '⭐ EMPRESA (Global)', dni: 'MACRO' } as Seller, ...sellers];
       
-      sellers.forEach(seller => {
+      displaySellers.forEach(seller => {
          targets.forEach(col => {
             const key = `${seller.id}_${col.id}`;
             const amount = localQuotas[key] || 0;
@@ -129,14 +130,14 @@ export const QuotaManager: React.FC = () => {
                const existing = quotas.find(q => 
                   q.period === selectedPeriod && 
                   q.target_type === targetType && 
-                  q.seller_id === seller.id && 
+                  (q.seller_id === seller.id || (seller.id === 'COMPANY' && !q.seller_id)) && 
                   (q.target_id || 'GLOBAL') === col.id
                );
                
                newQuotas.push({
                   id: existing ? existing.id : crypto.randomUUID(),
                   period: selectedPeriod,
-                  seller_id: seller.id,
+                  seller_id: seller.id === 'COMPANY' ? null : seller.id,
                   target_type: targetType,
                   target_id: col.id === 'GLOBAL' ? undefined : col.id,
                   amount: amount
@@ -184,7 +185,7 @@ export const QuotaManager: React.FC = () => {
             const newLocal: Record<string, number> = {};
             prevQuotas.forEach(q => {
                const targetId = q.target_id || 'GLOBAL';
-               const key = `${q.seller_id}_${targetId}`;
+               const key = `${q.seller_id || 'COMPANY'}_${targetId}`;
                newLocal[key] = q.amount;
             });
             setLocalQuotas(newLocal);
@@ -302,7 +303,7 @@ export const QuotaManager: React.FC = () => {
                <div className="flex-1 overflow-auto">
                   {isLoading ? (
                      <div className="flex justify-center py-10"><Loader2 className="w-8 h-8 text-blue-500 animate-spin" /></div>
-                  ) : sellers.map(seller => (
+                  ) : [{ id: 'COMPANY', name: '⭐ EMPRESA (Global)', dni: 'MACRO' } as Seller, ...sellers].map(seller => (
                      <button
                         key={seller.id}
                         onClick={() => setSelectedSellerId(seller.id)}
@@ -328,7 +329,7 @@ export const QuotaManager: React.FC = () => {
                <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center">
                   <LayoutGrid className="w-5 h-5 text-slate-400 mr-2" />
                   <h3 className="font-bold text-slate-700 flex-1">
-                     {sellers.find(s => s.id === selectedSellerId)?.name || 'Seleccione un Vendedor'} 
+                     {[{ id: 'COMPANY', name: '⭐ EMPRESA (Global)', dni: 'MACRO' } as Seller, ...sellers].find(s => s.id === selectedSellerId)?.name || 'Seleccione un Vendedor'} 
                      <span className="text-slate-400 font-normal ml-2 text-sm">/ {targetType}</span>
                   </h3>
                   
