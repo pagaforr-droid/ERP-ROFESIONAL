@@ -45,7 +45,7 @@ export const SupplierCreditNotes: React.FC = () => {
     // Creation State
     const [originalPurchase, setOriginalPurchase] = useState<Purchase | null>(null);
     const [ncType, setNcType] = useState<'DEVOLUCION' | 'DESCUENTO'>('DEVOLUCION');
-    const [returnQuantities, setReturnQuantities] = useState<Record<string, { qty: number }>>({});
+    const [returnQuantities, setReturnQuantities] = useState<Record<string, { qty_pkg: number, qty_base: number }>>({});
     const [discountAmount, setDiscountAmount] = useState<number>(0);
     const [glosa, setGlosa] = useState('');
     const [sunatMotivo, setSunatMotivo] = useState('07');
@@ -119,9 +119,9 @@ export const SupplierCreditNotes: React.FC = () => {
         setNcNumber('');
         setNcIssueDate(new Date().toISOString().split('T')[0]);
 
-        const initialReturns: Record<string, { qty: number }> = {};
+        const initialReturns: Record<string, { qty_pkg: number, qty_base: number }> = {};
         (purchase.items || []).forEach((item) => {
-            initialReturns[item.id] = { qty: 0 };
+            initialReturns[item.id] = { qty_pkg: 0, qty_base: 0 };
         });
         setReturnQuantities(initialReturns);
     };
@@ -138,15 +138,19 @@ export const SupplierCreditNotes: React.FC = () => {
         const list: PurchaseItem[] = [];
         (originalPurchase.items || []).forEach((item) => {
             const retState = returnQuantities[item.id];
-            if (!retState || retState.qty <= 0) return;
+            if (!retState) return;
 
-            const ratio = item.quantity_presentation > 0 ? (retState.qty / item.quantity_presentation) : 0;
-            const newBaseQty = Math.floor(item.quantity_base * ratio); // Approximate
+            const totalReturnedBase = (retState.qty_pkg * item.factor) + retState.qty_base;
+            if (totalReturnedBase <= 0) return;
+
+            const ratio = item.quantity_base > 0 ? (totalReturnedBase / item.quantity_base) : 0;
 
             list.push({
                 ...item,
-                quantity_presentation: retState.qty,
-                quantity_base: newBaseQty,
+                unit_type: 'UND',
+                factor: 1,
+                quantity_presentation: totalReturnedBase,
+                quantity_base: totalReturnedBase,
                 total_value: item.total_value * ratio,
                 total_cost: item.total_cost * ratio
             });
@@ -517,21 +521,24 @@ export const SupplierCreditNotes: React.FC = () => {
                                         <div className="flex-1">Producto Comprado</div>
                                         <div className="w-20 text-center">Cant. Ing.</div>
                                         <div className="w-20 text-right">Costo U.</div>
-                                        <div className="w-32 text-center text-rose-700 bg-rose-100 px-2 py-1 rounded">Cant. a Devolver</div>
+                                        <div className="w-48 text-center text-rose-700 bg-rose-100 px-2 py-1 rounded">Cant. a Devolver</div>
                                         <div className="w-24 text-right">Monto NC</div>
                                     </div>
 
                                     <div className="flex-1 overflow-auto divide-y divide-slate-100">
                                         {(originalPurchase.items || []).map((item) => {
                                             const prod = products.find(p => p.id === item.product_id);
-                                            const returnQty = returnQuantities[item.id]?.qty || 0;
+                                            const retState = returnQuantities[item.id] || { qty_pkg: 0, qty_base: 0 };
                                             const originalQty = item.quantity_presentation;
 
-                                            const ratio = originalQty > 0 ? (returnQty / originalQty) : 0;
+                                            const totalReturnedBase = (retState.qty_pkg * item.factor) + retState.qty_base;
+                                            const ratio = item.quantity_base > 0 ? (totalReturnedBase / item.quantity_base) : 0;
                                             const itemReturnTotal = item.total_cost * ratio;
+                                            
+                                            const hasPkg = item.factor > 1;
 
                                             return (
-                                                <div key={item.id} className={`flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors ${returnQty > 0 ? 'bg-rose-50/30' : ''}`}>
+                                                <div key={item.id} className={`flex items-center gap-4 px-4 py-3 hover:bg-slate-50 transition-colors ${totalReturnedBase > 0 ? 'bg-rose-50/30' : ''}`}>
                                                     <div className="flex-1">
                                                         <div className="font-bold text-slate-800 text-sm">{prod?.name || 'Desconocido'}</div>
                                                         <div className="text-[10px] text-slate-500">
@@ -544,18 +551,43 @@ export const SupplierCreditNotes: React.FC = () => {
                                                     <div className="w-20 text-right text-xs font-mono text-slate-600">
                                                         S/ {(item.unit_price || 0).toFixed(4)}
                                                     </div>
-                                                    <div className="w-32 flex justify-center">
-                                                        <input
-                                                            type="number" min="0" max={originalQty}
-                                                            className="w-20 border border-rose-200 rounded p-1.5 text-center font-bold text-rose-700 focus:ring-2 focus:ring-rose-500 outline-none text-sm bg-white"
-                                                            value={returnQty === 0 ? '' : returnQty}
-                                                            onChange={e => {
-                                                                let q = Number(e.target.value);
-                                                                if (q > originalQty) q = originalQty;
-                                                                if (q < 0) q = 0;
-                                                                setReturnQuantities(prev => ({ ...prev, [item.id]: { qty: q } }));
-                                                            }}
-                                                        />
+                                                    <div className="w-48 flex justify-center gap-2">
+                                                        {hasPkg && (
+                                                            <div className="flex flex-col items-center">
+                                                                <input
+                                                                    type="number" min="0" 
+                                                                    className="w-16 border border-rose-200 rounded p-1 text-center font-bold text-rose-700 focus:ring-2 focus:ring-rose-500 outline-none text-sm bg-white"
+                                                                    value={retState.qty_pkg === 0 ? '' : retState.qty_pkg}
+                                                                    onChange={e => {
+                                                                        let q = Number(e.target.value);
+                                                                        if (q < 0) q = 0;
+                                                                        if ((q * item.factor) + retState.qty_base > item.quantity_base) {
+                                                                            q = Math.floor((item.quantity_base - retState.qty_base) / item.factor);
+                                                                        }
+                                                                        setReturnQuantities(prev => ({ ...prev, [item.id]: { ...prev[item.id], qty_pkg: q } }));
+                                                                    }}
+                                                                    placeholder={prod?.package_type || 'CAJ'}
+                                                                />
+                                                                <span className="text-[9px] font-bold text-slate-400 mt-0.5">{prod?.package_type || 'CAJ'}</span>
+                                                            </div>
+                                                        )}
+                                                        <div className="flex flex-col items-center">
+                                                            <input
+                                                                type="number" min="0" 
+                                                                className="w-16 border border-rose-200 rounded p-1 text-center font-bold text-rose-700 focus:ring-2 focus:ring-rose-500 outline-none text-sm bg-white"
+                                                                value={retState.qty_base === 0 ? '' : retState.qty_base}
+                                                                onChange={e => {
+                                                                    let q = Number(e.target.value);
+                                                                    if (q < 0) q = 0;
+                                                                    if ((retState.qty_pkg * item.factor) + q > item.quantity_base) {
+                                                                        q = item.quantity_base - (retState.qty_pkg * item.factor);
+                                                                    }
+                                                                    setReturnQuantities(prev => ({ ...prev, [item.id]: { ...prev[item.id], qty_base: q } }));
+                                                                }}
+                                                                placeholder="UND"
+                                                            />
+                                                            <span className="text-[9px] font-bold text-slate-400 mt-0.5">UND</span>
+                                                        </div>
                                                     </div>
                                                     <div className="w-24 text-right font-black text-slate-800 text-sm">
                                                         S/ {itemReturnTotal.toFixed(2)}
