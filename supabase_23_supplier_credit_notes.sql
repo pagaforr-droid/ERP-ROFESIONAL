@@ -124,12 +124,16 @@ BEGIN
                     RAISE EXCEPTION 'Stock insuficiente en el Kardex para el producto % (Lote %). Se requiere % pero solo hay % disponibles sin vender.', (v_item->>'product_id'), v_batch.code, v_remaining_to_return, v_batch.quantity_current;
                 END IF;
 
-                -- Deduct from batch
-                UPDATE batches 
-                SET quantity_current = quantity_current - v_remaining_to_return,
-                    quantity_initial = quantity_initial - v_remaining_to_return,
-                    updated_at = NOW()
-                WHERE id = v_batch.id;
+                -- Deduct from batch via batch_allocations (triggers reduce_batch_stock and registers movement)
+                INSERT INTO batch_allocations (
+                    batch_id,
+                    batch_code,
+                    quantity
+                ) VALUES (
+                    v_batch.id,
+                    v_batch.code,
+                    v_remaining_to_return
+                );
             ELSE
                  -- Si no encuentra el lote exacto por código, busca cualquier lote de esa compra para ese producto
                  SELECT * INTO v_batch FROM batches 
@@ -142,11 +146,16 @@ BEGIN
                         RAISE EXCEPTION 'Stock insuficiente en el Kardex para el producto %.', (v_item->>'product_id');
                      END IF;
 
-                     UPDATE batches 
-                     SET quantity_current = quantity_current - v_remaining_to_return,
-                         quantity_initial = quantity_initial - v_remaining_to_return,
-                         updated_at = NOW()
-                     WHERE id = v_batch.id;
+                     -- Deduct from fallback batch via batch_allocations
+                     INSERT INTO batch_allocations (
+                         batch_id,
+                         batch_code,
+                         quantity
+                     ) VALUES (
+                         v_batch.id,
+                         v_batch.code,
+                         v_remaining_to_return
+                     );
                  ELSE
                      RAISE EXCEPTION 'No se encontró lote asociado a la compra original para el producto %.', (v_item->>'product_id');
                  END IF;

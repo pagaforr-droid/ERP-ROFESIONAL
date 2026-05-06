@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Purchase, PurchaseItem, Product } from '../types';
-import { Search, FileText, ArrowLeftRight, CheckCircle2, ShieldAlert, FilePlus, Calendar, Building2, Hash, X } from 'lucide-react';
+import { Search, FileText, ArrowLeftRight, CheckCircle2, ShieldAlert, FilePlus, Calendar, Building2, Hash, X, Download } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 // MOTIVOS SUNAT NC COMPRAS (Referencial)
 const SUNAT_MOTIVOS_NC_COMPRAS = [
@@ -41,6 +43,7 @@ export const SupplierCreditNotes: React.FC = () => {
     const [dateFrom, setDateFrom] = useState(() => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; });
     const [dateTo, setDateTo] = useState(() => new Date().toISOString().split('T')[0]);
     const [searchResults, setSearchResults] = useState<Purchase[]>([]);
+    const [historyResults, setHistoryResults] = useState<Purchase[]>([]);
 
     // Creation State
     const [originalPurchase, setOriginalPurchase] = useState<Purchase | null>(null);
@@ -106,9 +109,131 @@ export const SupplierCreditNotes: React.FC = () => {
         }
     }, [dateFrom, dateTo, searchTerm, searchType]);
 
+    const handleSearchHistory = React.useCallback(async () => {
+        try {
+            let query = supabase.from('purchases').select('*, items:purchase_items(*)').eq('document_type', 'NOTA_CREDITO');
+
+            if (dateFrom) query = query.gte('issue_date', dateFrom);
+            if (dateTo) query = query.lte('issue_date', dateTo);
+
+            const { data, error } = await query.order('issue_date', { ascending: false }).limit(50);
+            
+            if (error) throw error;
+            
+            let results = data || [];
+
+            if (searchTerm.trim()) {
+                const term = searchTerm.trim().toUpperCase();
+                if (searchType === 'NUMBER') {
+                    results = results.filter((p: any) => {
+                        const num = p.document_number || '';
+                        const ser = p.document_series || '';
+                        return num.includes(term) || `${ser}-${num}` === term;
+                    });
+                } else {
+                    results = results.filter((p: any) => {
+                        const sName = (p.supplier_name || '').toUpperCase();
+                        return sName.includes(term);
+                    });
+                }
+            }
+
+            setHistoryResults(results as Purchase[]);
+        } catch (e) {
+            console.error("Search history error:", e);
+        }
+    }, [dateFrom, dateTo, searchTerm, searchType]);
+
     useEffect(() => {
-        handleSearch();
-    }, [handleSearch]);
+        if (activeTab === 'EMITIR') handleSearch();
+        else handleSearchHistory();
+    }, [activeTab, handleSearch, handleSearchHistory]);
+
+    const handleExportNCPdf = (p: Purchase) => {
+        const doc = new jsPDF('portrait');
+        
+        // Cabecera Documento
+        doc.setFontSize(18);
+        doc.setTextColor(15, 23, 42); // slate-900
+        doc.text('Nota de Crédito Proveedor', 14, 20);
+        
+        doc.setFontSize(10);
+        doc.setTextColor(100);
+        doc.text(`Fecha Impresión: ${new Date().toLocaleDateString()}`, 14, 26);
+
+        // Info de la NC
+        doc.setFontSize(12);
+        doc.setTextColor(0);
+        doc.text(`Proveedor:`, 14, 40);
+        doc.setFont(undefined, 'normal');
+        doc.text(p.supplier_name || 'Proveedor Desconocido', 40, 40);
+
+        doc.setFont(undefined, 'bold');
+        doc.text(`NC Número:`, 14, 46);
+        doc.setFont(undefined, 'normal');
+        doc.text(`${p.document_series ? p.document_series + '-' : ''}${p.document_number}`, 40, 46);
+
+        doc.setFont(undefined, 'bold');
+        doc.text(`F. Emisión:`, 130, 40);
+        doc.setFont(undefined, 'normal');
+        doc.text(p.issue_date, 155, 40);
+
+        doc.setFont(undefined, 'bold');
+        doc.text(`Tipo NC:`, 130, 46);
+        doc.setFont(undefined, 'normal');
+        doc.text(p.nc_type || 'DEVOLUCION', 155, 46);
+
+        // Tabla de Productos
+        const tableColumn = ["SKU", "Producto", "Cant", "U.M", "Costo", "Total"];
+        const tableRows = (p.items || []).map((item: any) => {
+            const prod = products.find(x => x.id === item.product_id);
+            const displayUm = item.unit_type;
+
+            return [
+               prod?.sku || '-',
+               prod?.name || 'Producto Desconocido',
+               item.quantity_presentation.toString(),
+               displayUm,
+               `${p.currency === 'USD' ? '$' : 'S/'} ${(item.unit_price || 0).toFixed(2)}`,
+               `${p.currency === 'USD' ? '$' : 'S/'} ${(item.total_cost || 0).toFixed(2)}`
+            ];
+        });
+
+        autoTable(doc, {
+           head: [tableColumn],
+           body: tableRows,
+           startY: 55,
+           styles: { fontSize: 8, cellPadding: 2 },
+           headStyles: { fillColor: [15, 23, 42] as [number, number, number], textColor: 255 },
+           columnStyles: {
+               2: { halign: 'right' },
+               4: { halign: 'right' },
+               5: { halign: 'right', fontStyle: 'bold' }
+           }
+        });
+
+        // Totales Footer
+        const finalY = (doc as any).lastAutoTable.finalY || 100;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'bold');
+        
+        if (p.igv > 0) {
+           doc.text(`Subtotal: ${p.currency === 'USD' ? '$' : 'S/'} ${p.subtotal.toFixed(2)}`, 140, finalY + 10);
+           doc.text(`IGV (18%): ${p.currency === 'USD' ? '$' : 'S/'} ${p.igv.toFixed(2)}`, 140, finalY + 16);
+           doc.text(`Total: ${p.currency === 'USD' ? '$' : 'S/'} ${p.total.toFixed(2)}`, 140, finalY + 22);
+        } else {
+           doc.text(`Total: ${p.currency === 'USD' ? '$' : 'S/'} ${p.total.toFixed(2)}`, 140, finalY + 10);
+        }
+
+        if (p.observation) {
+           doc.setFontSize(9);
+           doc.setTextColor(100);
+           const splitText = doc.splitTextToSize(`Glosa/Motivo: ${p.observation}`, 180);
+           doc.text(splitText, 14, finalY + 10);
+        }
+
+        doc.save(`NC_PROVEEDOR_${p.document_series}_${p.document_number}.pdf`);
+    };
 
     const handleSelectPurchase = (purchase: Purchase) => {
         setOriginalPurchase(purchase);
@@ -315,15 +440,107 @@ export const SupplierCreditNotes: React.FC = () => {
             </div>
 
             {activeTab === 'APLICAR' ? (
-                 <div className="flex-1 bg-white border border-slate-200 rounded p-8 flex flex-col items-center justify-center text-center shadow-sm">
-                     <div className="w-20 h-20 bg-rose-50 text-rose-300 rounded-full flex items-center justify-center mb-6">
-                         <FileText className="w-10 h-10" />
-                     </div>
-                     <h2 className="text-2xl font-black text-slate-800 mb-2">Historial de NC de Proveedores</h2>
-                     <p className="text-slate-500 max-w-md">
-                         Módulo en desarrollo para visualización y descarga directa de NC de proveedores. Actualmente se reflejan automáticamente en el Registro de Compras SIRE y en el Kardex.
-                     </p>
-                 </div>
+                <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-140px)]">
+                    <div className="p-4 border-b border-slate-100 bg-slate-50 flex flex-wrap gap-4 items-end">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Buscar NC Por</label>
+                            <div className="flex bg-white rounded border border-slate-300 overflow-hidden">
+                                <button 
+                                    className={`px-3 py-2 text-xs font-bold flex items-center ${searchType === 'NUMBER' ? 'bg-rose-50 text-rose-700' : 'text-slate-500 hover:bg-slate-50'}`}
+                                    onClick={() => setSearchType('NUMBER')}
+                                ><Hash className="w-4 h-4 mr-1"/> Documento</button>
+                                <div className="w-px bg-slate-300"></div>
+                                <button 
+                                    className={`px-3 py-2 text-xs font-bold flex items-center ${searchType === 'SUPPLIER' ? 'bg-rose-50 text-rose-700' : 'text-slate-500 hover:bg-slate-50'}`}
+                                    onClick={() => setSearchType('SUPPLIER')}
+                                ><Building2 className="w-4 h-4 mr-1"/> Proveedor</button>
+                            </div>
+                        </div>
+
+                        <div className="flex-1 min-w-[200px]">
+                            <label className="block text-xs font-bold text-slate-500 mb-1">
+                                {searchType === 'NUMBER' ? 'Nro NC (Ej. F001-00101)' : 'Nombre del Proveedor'}
+                            </label>
+                            <div className="relative">
+                                <Search className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
+                                <input
+                                    className="w-full pl-9 pr-4 py-2 border border-slate-300 rounded focus:ring-2 focus:ring-rose-500 outline-none uppercase text-sm"
+                                    placeholder={searchType === 'NUMBER' ? "F001-000101" : "Corporación..."}
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleSearchHistory()}
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Desde</label>
+                            <div className="relative">
+                                <Calendar className="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" />
+                                <input type="date" className="pl-8 pr-3 py-2 border border-slate-300 rounded outline-none text-sm" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 mb-1">Hasta</label>
+                            <div className="relative">
+                                <Calendar className="absolute left-2.5 top-2.5 w-4 h-4 text-slate-400" />
+                                <input type="date" className="pl-8 pr-3 py-2 border border-slate-300 rounded outline-none text-sm" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+                            </div>
+                        </div>
+
+                        <button onClick={handleSearchHistory} className="bg-rose-600 text-white px-6 py-2 rounded font-bold shadow hover:bg-rose-700 transition">
+                            Buscar NC
+                        </button>
+                    </div>
+
+                    <div className="flex-1 overflow-auto bg-white">
+                        {historyResults.length > 0 ? (
+                            <table className="w-full text-left border-collapse">
+                                <thead className="bg-slate-50 sticky top-0 text-xs text-slate-500 uppercase border-b border-slate-200">
+                                    <tr>
+                                        <th className="p-3">F. Emisión</th>
+                                        <th className="p-3">Documento NC</th>
+                                        <th className="p-3">Tipo NC</th>
+                                        <th className="p-3">Proveedor</th>
+                                        <th className="p-3 text-right">Total</th>
+                                        <th className="p-3 text-center">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {historyResults.map(p => (
+                                        <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                                            <td className="p-3">{new Date(p.issue_date).toLocaleDateString()}</td>
+                                            <td className="p-3 font-bold text-slate-700">{p.document_type} {p.document_series}-{p.document_number}</td>
+                                            <td className="p-3">
+                                                <span className={`px-2 py-1 rounded text-[10px] font-bold ${p.nc_type === 'DESCUENTO' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'}`}>
+                                                    {p.nc_type || 'DEVOLUCION'}
+                                                </span>
+                                            </td>
+                                            <td className="p-3">
+                                                <div className="font-bold text-slate-800">{p.supplier_name}</div>
+                                            </td>
+                                            <td className="p-3 text-right font-bold text-slate-800">S/ {p.total.toFixed(2)}</td>
+                                            <td className="p-3 text-center">
+                                                <button 
+                                                    onClick={() => handleExportNCPdf(p)}
+                                                    className="bg-rose-100 text-rose-700 px-3 py-1.5 rounded text-xs font-bold hover:bg-rose-200 transition-colors flex items-center justify-center mx-auto"
+                                                >
+                                                    <Download className="w-4 h-4 mr-1" /> PDF
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                                <Search className="w-12 h-12 mb-4 opacity-20" />
+                                <p className="font-bold">No hay notas de crédito encontradas</p>
+                                <p className="text-xs mt-1">Utilice los filtros superiores.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
             ) : (
                 <>
                 {!originalPurchase ? (
