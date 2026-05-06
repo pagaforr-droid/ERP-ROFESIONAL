@@ -216,6 +216,15 @@ export const Purchases: React.FC = () => {
     }
   }, [issueDate, paymentCondition]);
 
+  // Update pricesIncludeIgv default based on document type
+  useEffect(() => {
+    if (docType === 'FACTURA') {
+      setPricesIncludeIgv(false); // Facturas por normativa declaran precios base imponible
+    } else {
+      setPricesIncludeIgv(true); // Boletas, recibos, etc incluyen IGV en su valor venta
+    }
+  }, [docType]);
+
   // === CALCULATORS ===
   
   const handleUnitCostChange = (val: number) => {
