@@ -38,8 +38,11 @@ export const Kardex: React.FC = () => {
   const [dbSales, setDbSales] = useState<Sale[]>([]);
   const [dbLiquidations, setDbLiquidations] = useState<DispatchLiquidation[]>([]);
   const [dbPendingOrders, setDbPendingOrders] = useState<any[]>([]);
+  const [dbUsers, setDbUsers] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [filterSeller, setFilterSeller] = useState('ALL');
+  const [selectedOrders, setSelectedOrders] = useState<Set<string>>(new Set());
 
   // --- NATIVE MODALS ---
   const [modalConfig, setModalConfig] = useState<{isOpen: boolean, type: 'info'|'warning'|'error', message: string}>({ isOpen: false, type: 'info', message: '' });
@@ -56,14 +59,15 @@ export const Kardex: React.FC = () => {
      if (!USE_MOCK_DB) {
         setIsLoading(true);
         try {
-           const [pRes, bRes, sRes, purRes, salRes, liqRes, ordersRes] = await Promise.all([
+           const [pRes, bRes, sRes, purRes, salRes, liqRes, ordersRes, usersRes] = await Promise.all([
               supabase.from('products').select('*').eq('is_active', true),
               supabase.from('batches').select('*').gt('quantity_current', 0),
               supabase.from('suppliers').select('*'),
               supabase.from('purchases').select('*, items:purchase_items(*)'),
               supabase.from('sales').select('*, items:sale_items(*)'),
               supabase.from('dispatch_liquidations').select('*, documents:liquidation_documents(*)'),
-              supabase.from('orders').select('*, items:order_items(*)').eq('status', 'pending')
+              supabase.from('orders').select('*, items:order_items(*)').eq('status', 'pending'),
+              supabase.from('profiles').select('id, full_name, email')
            ]);
            if (pRes.data) setDbProducts(pRes.data as Product[]);
            if (bRes.data) setDbBatches(bRes.data as Batch[]);
@@ -72,6 +76,7 @@ export const Kardex: React.FC = () => {
            if (salRes.data) setDbSales(salRes.data as any[]);
            if (liqRes.data) setDbLiquidations(liqRes.data as any[]);
            if (ordersRes.data) setDbPendingOrders(ordersRes.data as any[]);
+           if (usersRes.data) setDbUsers(usersRes.data);
         } catch (error) {
            console.error("Error sincronizando Kardex:", error);
         } finally {
@@ -103,19 +108,49 @@ export const Kardex: React.FC = () => {
      });
   };
 
-  const handleAnnulOrder = async (orderId: string) => {
-      requestConfirm("¿Estás seguro que deseas anular este pedido pendiente? Las reservas de stock se liberarán inmediatamente.", async () => {
+  const filteredPendingOrders = useMemo(() => {
+      return dbPendingOrders.filter(order => filterSeller === 'ALL' || order.seller_id === filterSeller);
+  }, [dbPendingOrders, filterSeller]);
+
+  const toggleAllOrders = () => {
+      if (selectedOrders.size === filteredPendingOrders.length && filteredPendingOrders.length > 0) {
+          setSelectedOrders(new Set());
+      } else {
+          setSelectedOrders(new Set(filteredPendingOrders.map(o => o.id)));
+      }
+  };
+
+  const toggleOrderSelection = (id: string) => {
+      const newSet = new Set(selectedOrders);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      setSelectedOrders(newSet);
+  };
+
+  const handleAnnulOrder = async (orderId?: string) => {
+      const ordersToAnnul = orderId ? [orderId] : Array.from(selectedOrders);
+      if (ordersToAnnul.length === 0) {
+          showAlert("Por favor, selecciona al menos un pedido para anular.", "warning");
+          return;
+      }
+
+      requestConfirm(`¿Estás seguro que deseas anular ${ordersToAnnul.length === 1 ? 'este pedido pendiente' : `estos ${ordersToAnnul.length} pedidos pendientes`}? Las reservas de stock se liberarán inmediatamente.`, async () => {
           setIsProcessing(true);
+          let hasError = false;
           try {
-             const { data, error } = await supabase.rpc('annul_order_transaction', {
-                p_order_id: orderId,
-                p_user_id: currentUser?.id || 'SELLER'
-             });
-             if (error) throw error;
-             showAlert("Pedido anulado exitosamente. Stock liberado.", "info");
+             for (const id of ordersToAnnul) {
+                 const { error } = await supabase.rpc('annul_order_transaction', {
+                    p_order_id: id,
+                    p_user_id: currentUser?.id || 'SELLER'
+                 });
+                 if (error) { hasError = true; break; }
+             }
+             if (hasError) throw new Error("Algunos pedidos no pudieron anularse.");
+             showAlert("Pedido(s) anulado(s) exitosamente. Stock liberado.", "info");
+             setSelectedOrders(new Set());
              await fetchMasterData();
           } catch (e: any) {
-             showAlert("Error anulando pedido: " + e.message, "error");
+             showAlert("Error anulando pedido(s): " + e.message, "error");
           } finally {
              setIsProcessing(false);
           }
@@ -741,34 +776,73 @@ export const Kardex: React.FC = () => {
           {/* TAB: RESERVATIONS (PEDIDOS PENDIENTES) */}
           {activeTab === 'RESERVATIONS' && (
              <div className="flex-1 overflow-auto p-6 bg-slate-50 animate-fade-in-up">
-                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 max-w-4xl mx-auto">
+                <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 max-w-5xl mx-auto">
                    <div className="flex items-center justify-between mb-6">
                       <div>
                          <h3 className="text-lg font-black text-slate-800 flex items-center"><Briefcase className="w-5 h-5 mr-2 text-red-500" /> Pedidos Pendientes (Guardando Stock)</h3>
                          <p className="text-slate-500 text-xs mt-1">Estos pedidos tienen el stock reservado en el Kardex físico. Anúlalos para liberar la mercadería.</p>
                       </div>
-                      <div className="bg-red-50 text-red-600 px-3 py-1 rounded-lg font-black text-sm">{dbPendingOrders.length} Pedidos</div>
+                      <div className="flex gap-4 items-center">
+                         <div className="w-64">
+                            <select className="w-full border-2 border-slate-200 p-2.5 rounded-lg text-sm font-bold focus:border-red-500 outline-none text-slate-600 bg-slate-50" value={filterSeller} onChange={e => setFilterSeller(e.target.value)}>
+                               <option value="ALL">👤 Todos los Vendedores</option>
+                               {Array.from(new Set(dbPendingOrders.map(o => o.seller_id))).map(sid => {
+                                  const u = dbUsers.find(x => x.id === sid);
+                                  return <option key={sid} value={sid}>{u?.full_name || u?.email || sid}</option>
+                               })}
+                            </select>
+                         </div>
+                         <div className="bg-red-50 text-red-600 px-3 py-2 rounded-lg font-black text-sm border border-red-100">{filteredPendingOrders.length} Pedidos</div>
+                      </div>
                    </div>
+
+                   {filteredPendingOrders.length > 0 && (
+                      <div className="flex justify-between items-center mb-4 bg-slate-100 p-3 rounded-xl border border-slate-200">
+                         <label className="flex items-center space-x-3 cursor-pointer">
+                            <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                               checked={selectedOrders.size > 0 && selectedOrders.size === filteredPendingOrders.length}
+                               onChange={toggleAllOrders}
+                            />
+                            <span className="font-bold text-slate-700 text-sm">Seleccionar Todos ({filteredPendingOrders.length})</span>
+                         </label>
+                         {selectedOrders.size > 0 && (
+                            <button onClick={() => handleAnnulOrder()} disabled={isProcessing} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-bold text-xs transition-colors flex items-center shadow-sm disabled:opacity-50">
+                               {isProcessing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                               Anular {selectedOrders.size} Selección
+                            </button>
+                         )}
+                      </div>
+                   )}
                    
                    <div className="space-y-4">
-                      {dbPendingOrders.length === 0 ? (
+                      {filteredPendingOrders.length === 0 ? (
                          <div className="text-center p-8 text-slate-400 font-bold bg-slate-50 rounded-xl border border-dashed border-slate-300">
-                            No hay pedidos pendientes reteniendo stock.
+                            No hay pedidos pendientes reteniendo stock para este filtro.
                          </div>
-                      ) : dbPendingOrders.map(order => (
-                         <div key={order.id} className="border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all">
-                            <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-center">
-                               <div>
-                                  <div className="font-black text-slate-800">{order.code} - {order.client_name}</div>
-                                  <div className="text-xs text-slate-500 mt-0.5">Creado: {new Date(order.created_at).toLocaleString()}</div>
+                      ) : filteredPendingOrders.map(order => {
+                         const seller = dbUsers.find(u => u.id === order.seller_id);
+                         const sellerName = seller?.full_name || seller?.email || 'Vendedor Desconocido';
+                         
+                         return (
+                         <div key={order.id} className={`border-2 rounded-xl overflow-hidden shadow-sm transition-all ${selectedOrders.has(order.id) ? 'border-red-400 bg-red-50/10' : 'border-slate-200 hover:shadow-md'}`}>
+                            <div className={`p-4 border-b flex justify-between items-center cursor-pointer transition-colors ${selectedOrders.has(order.id) ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-200'}`} onClick={() => toggleOrderSelection(order.id)}>
+                               <div className="flex items-center gap-4">
+                                  <input type="checkbox" className="w-5 h-5 rounded border-slate-300 text-red-600 focus:ring-red-500 cursor-pointer" checked={selectedOrders.has(order.id)} readOnly />
+                                  <div>
+                                     <div className="font-black text-slate-800">{order.code} - {order.client_name}</div>
+                                     <div className="text-xs text-slate-500 mt-1 flex items-center gap-4">
+                                        <span><Calendar className="w-3 h-3 inline mr-1"/>{new Date(order.created_at).toLocaleString()}</span>
+                                        <span className="font-bold text-slate-600"><Briefcase className="w-3 h-3 inline mr-1 text-blue-500"/>{sellerName}</span>
+                                     </div>
+                                  </div>
                                </div>
                                <button 
-                                  onClick={() => handleAnnulOrder(order.id)}
+                                  onClick={(e) => { e.stopPropagation(); handleAnnulOrder(order.id); }}
                                   disabled={isProcessing}
-                                  className="bg-red-100 text-red-700 hover:bg-red-600 hover:text-white px-4 py-2 rounded-lg font-bold text-xs transition-colors flex items-center disabled:opacity-50"
+                                  className="bg-white text-red-600 hover:bg-red-600 hover:text-white border border-red-200 px-4 py-2 rounded-lg font-bold text-xs transition-colors flex items-center disabled:opacity-50 shadow-sm"
                                >
                                   {isProcessing ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                                  Anular y Liberar Stock
+                                  Anular Individual
                                </button>
                             </div>
                             <div className="p-4 bg-white">
@@ -776,23 +850,27 @@ export const Kardex: React.FC = () => {
                                   <thead>
                                      <tr className="text-slate-400 border-b border-slate-100">
                                         <th className="pb-2">Producto</th>
-                                        <th className="pb-2">SKU</th>
+                                        <th className="pb-2">SKU Original</th>
                                         <th className="pb-2 text-right">Cant. Total</th>
                                      </tr>
                                   </thead>
                                   <tbody className="divide-y divide-slate-50">
-                                     {(order.items || []).map((item: any, idx: number) => (
+                                     {(order.items || []).map((item: any, idx: number) => {
+                                        const prodDef = dbProducts.find(p => p.id === item.product_id);
+                                        const skuStr = prodDef?.sku || item.product_sku || 'N/A';
+                                        
+                                        return (
                                         <tr key={idx}>
                                            <td className="py-2 font-bold text-slate-700">{item.product_name}</td>
-                                           <td className="py-2 text-slate-500 font-mono">{item.product_sku || 'N/A'}</td>
+                                           <td className="py-2 text-slate-500 font-mono bg-slate-50 px-2 rounded">{skuStr}</td>
                                            <td className="py-2 text-right font-black text-red-600">{item.quantity_base || item.quantity} UND</td>
                                         </tr>
-                                     ))}
+                                     )})}
                                   </tbody>
                                </table>
                             </div>
                          </div>
-                      ))}
+                      )})}
                    </div>
                 </div>
              </div>
