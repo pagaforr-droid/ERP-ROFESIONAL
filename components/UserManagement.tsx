@@ -59,7 +59,8 @@ const ROLE_PRESETS: Record<string, string[]> = {
    'ADMIN': PERMISSION_GROUPS.flatMap(g => g.permissions.map(p => p.key)),
    'SELLER': ['sales', 'advanced-orders', 'mobile-orders', 'clients', 'products', 'inventory'],
    'WAREHOUSE': ['inventory', 'kardex', 'products', 'dispatch', 'warehouses'],
-   'LOGISTICS': ['dispatch', 'dispatch-liquidation', 'logistics', 'territory']
+   'LOGISTICS': ['dispatch', 'dispatch-liquidation', 'logistics', 'territory'],
+   'CASHIER': ['cash-flow', 'collection-consolidation', 'credit-notes', 'purchases', 'clients', 'suppliers']
 };
 
 export const UserManagement: React.FC = () => {
@@ -203,6 +204,7 @@ export const UserManagement: React.FC = () => {
          case 'SELLER': return <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded font-bold border border-blue-200">VENDEDOR</span>;
          case 'WAREHOUSE': return <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded font-bold border border-orange-200">ALMACÉN</span>;
          case 'LOGISTICS': return <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded font-bold border border-gray-200">LOGÍSTICA</span>;
+         case 'CASHIER': return <span className="bg-emerald-100 text-emerald-800 text-xs px-2 py-1 rounded font-bold border border-emerald-200">CAJA / FINANZAS</span>;
          default: return <span className="bg-slate-100 text-slate-800 text-xs px-2 py-1 rounded font-bold border border-slate-200">{role}</span>;
       }
    };
@@ -358,6 +360,7 @@ export const UserManagement: React.FC = () => {
                                     <option value="SELLER">VENDEDOR</option>
                                     <option value="WAREHOUSE">ALMACÉN</option>
                                     <option value="LOGISTICS">LOGÍSTICA</option>
+                                    <option value="CASHIER">CAJA / FINANZAS</option>
                                  </select>
                                  <p className="text-[10px] text-slate-400 mt-1">Al cambiar el rol, se restablecerán los permisos predeterminados.</p>
                               </div>

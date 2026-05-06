@@ -1005,16 +1005,21 @@ export const CashFlow: React.FC = () => {
                      <Coins className="w-16 h-16 text-white" />
                   </div>
 
-                  <div className="relative z-10 flex flex-col mb-8">
-                     <span className="bg-emerald-500/20 text-emerald-400 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-full w-max mb-4 flex items-center border border-emerald-500/30">
-                        <CheckCircle className="w-3 h-3 mr-1.5" /> Turno Activo
-                     </span>
-                     <p className="text-slate-400 text-sm font-medium">Cajero / Responsable</p>
-                     <p className="text-white font-black text-xl tracking-tight">{activeSession.opened_by}</p>
-                     <p className="text-indigo-300/80 text-xs mt-1 font-medium flex items-center">
-                        <Clock className="w-3 h-3 mr-1" /> Apertura: {new Date(activeSession.open_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                     </p>
-                  </div>
+                     <div className="relative z-10 flex flex-col mb-8">
+                        <span className="bg-emerald-500/20 text-emerald-400 font-bold text-[10px] uppercase tracking-widest px-3 py-1.5 rounded-full w-max mb-4 flex items-center border border-emerald-500/30">
+                           <CheckCircle className="w-3 h-3 mr-1.5" /> Turno Activo
+                        </span>
+                        <p className="text-slate-400 text-sm font-medium">Cajero / Responsable</p>
+                        <p className="text-white font-black text-xl tracking-tight">
+                           {(() => {
+                              const user = localUsers.find(u => u.id === activeSession.opened_by);
+                              return user ? (user.name === 'Nuevo Usuario' ? user.username : user.name) : activeSession.opened_by;
+                           })()}
+                        </p>
+                        <p className="text-indigo-300/80 text-xs mt-1 font-medium flex items-center">
+                           <Clock className="w-3 h-3 mr-1" /> Apertura: {new Date(activeSession.open_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </p>
+                     </div>
 
                   <div className="space-y-4 relative z-10 bg-white/5 p-5 rounded-2xl backdrop-blur-sm border border-white/10">
                      <div className="flex justify-between items-center text-sm border-b border-white/5 pb-3">
