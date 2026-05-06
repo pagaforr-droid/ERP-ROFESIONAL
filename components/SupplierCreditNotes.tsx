@@ -584,9 +584,9 @@ export const SupplierCreditNotes: React.FC = () => {
                                                                     }
                                                                     setReturnQuantities(prev => ({ ...prev, [item.id]: { ...prev[item.id], qty_base: q } }));
                                                                 }}
-                                                                placeholder="UND"
+                                                                placeholder={prod?.unit_type || 'UND'}
                                                             />
-                                                            <span className="text-[9px] font-bold text-slate-400 mt-0.5">UND</span>
+                                                            <span className="text-[9px] font-bold text-slate-400 mt-0.5">{prod?.unit_type || 'UND'}</span>
                                                         </div>
                                                     </div>
                                                     <div className="w-24 text-right font-black text-slate-800 text-sm">
