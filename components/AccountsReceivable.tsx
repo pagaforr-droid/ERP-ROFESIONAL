@@ -14,15 +14,36 @@ import { supabase } from '../services/supabase';
 export const AccountsReceivable: React.FC = () => {
   const { sales, clients, sellers, collectionRecords, collectionPlanillas } = useStore();
 
+  const [localSales, setLocalSales] = useState<Sale[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
   React.useEffect(() => {
      const initData = async () => {
-        const { data: salesData } = await supabase.from('sales').select('*');
-        const { data: clientsData } = await supabase.from('clients').select('*');
-        const { data: sellersData } = await supabase.from('sellers').select('*');
+        setIsLoading(true);
+        // OPTIMIZACIÓN: Traer de la base de datos SOLO las ventas que tienen saldo deudor
+        const { data: salesData } = await supabase
+           .from('sales')
+           .select('*')
+           .gt('balance', 0)
+           .neq('status', 'canceled')
+           .neq('document_type', 'NOTA_CREDITO');
         
-        if (salesData) useStore.setState({ sales: salesData as any[] });
-        if (clientsData) useStore.setState({ clients: clientsData as any[] });
-        if (sellersData) useStore.setState({ sellers: sellersData as any[] });
+        if (salesData) {
+           setLocalSales(salesData as any[]);
+        }
+
+        // Cargar catálogos solo si no existen en el store global para no duplicar llamadas
+        const state = useStore.getState();
+        if (state.clients.length === 0) {
+           const { data: clientsData } = await supabase.from('clients').select('*');
+           if (clientsData) useStore.setState({ clients: clientsData as any[] });
+        }
+        if (state.sellers.length === 0) {
+           const { data: sellersData } = await supabase.from('sellers').select('*');
+           if (sellersData) useStore.setState({ sellers: sellersData as any[] });
+        }
+        
+        setIsLoading(false);
      };
      initData();
   }, []);
@@ -58,11 +79,7 @@ export const AccountsReceivable: React.FC = () => {
 
   // Memoized Data Preparation
   const receivables = useMemo(() => {
-    return sales
-      .filter(s => {
-        const balance = s.balance ?? s.total;
-        return balance > 0 && s.status !== 'canceled' && s.document_type !== 'NOTA_CREDITO';
-      })
+    return localSales
       .map(sale => {
         const aging = calculateAging(sale);
         const seller = sellers.find(sll => sll.id === sale.seller_id);
@@ -75,7 +92,7 @@ export const AccountsReceivable: React.FC = () => {
         };
       })
       .sort((a, b) => b.diffDays - a.diffDays); // Most overdue first
-  }, [sales, clients, sellers]);
+  }, [localSales, clients, sellers]);
 
   // Apply Filters
   const filteredReceivables = useMemo(() => {
@@ -390,7 +407,17 @@ export const AccountsReceivable: React.FC = () => {
                   </tr>
                 );
               })}
-              {filteredReceivables.length === 0 && (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="p-16">
+                    <div className="flex flex-col items-center justify-center text-slate-400">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                      <p className="text-lg font-bold text-slate-600">Cargando Cartera...</p>
+                      <p className="text-sm mt-1">Sincronizando deudas con la base de datos.</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredReceivables.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="p-16">
                     <div className="flex flex-col items-center justify-center text-slate-400">
@@ -402,7 +429,7 @@ export const AccountsReceivable: React.FC = () => {
                     </div>
                   </td>
                 </tr>
-              )}
+              ) : null}
             </tbody>
             {filteredReceivables.length > 0 && (
               <tfoot className="bg-slate-50 sticky bottom-0 border-t border-slate-200">
@@ -425,7 +452,7 @@ export const AccountsReceivable: React.FC = () => {
 
       {/* HISTORY MODAL (Reused logic from CollectionConsolidation) */}
       {showHistoryModalTarget && (() => {
-        const sale = sales.find(s => s.id === showHistoryModalTarget);
+        const sale = localSales.find(s => s.id === showHistoryModalTarget);
         if (!sale) return null;
         const historyRecords = collectionRecords.filter(r => r.sale_id === sale.id);
         const currentBalance = sale.balance !== undefined ? sale.balance : sale.total;
