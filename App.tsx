@@ -42,6 +42,7 @@ import SellerTrackingReport from './components/SellerTrackingReport';
 import { LayoutDashboard, ShoppingCart, Truck, Menu, X, Box, Users, Briefcase, Home, ShoppingBag, ClipboardList, Settings, Container, Map, Smartphone, FileCheck, Printer, DollarSign, FileInput, FileText, PieChart, PackageSearch, Shield, Clock, LogOut, User as UserIcon, Gift, Store, Tag, Wallet, ArrowLeftRight, FileSpreadsheet, ChevronLeft, ChevronRight, Edit3, HardDrive } from 'lucide-react';
 import { ViewState } from './types';
 import { useStore } from './services/store';
+import { GodModePanel } from './components/GodModePanel';
 
 const COLOR_THEMES = {
   blue: {
@@ -160,10 +161,10 @@ const SIDEBAR_SECTIONS = [
 ];
 
 export default function App() {
-  // AÑADIDO 'edit-sale' A LOS TIPOS DE VISTA POSIBLES
   const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'supplier-credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'pos' | 'system-maintenance'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
+  const [showGodMode, setShowGodMode] = useState(false);
   const { company, currentUser, logout, updateCompany } = useStore();
 
   useEffect(() => {
@@ -178,9 +179,24 @@ export default function App() {
         console.error("Error cargando configuración global:", error);
       }
     };
-    if (currentUser && company.ruc === '') {
+      if (currentUser && company.ruc === '') {
       fetchCompanyData();
     }
+  }, [currentUser]);
+
+  // --- GOD MODE HOTKEY ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl + Shift + 7
+      if (e.ctrlKey && e.shiftKey && e.key === '7') {
+        if (currentUser && (currentUser.role === 'ADMIN' || currentUser.role === 'SUPER_ADMIN')) {
+          e.preventDefault();
+          setShowGodMode(prev => !prev);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentUser]);
 
   // --- AUTH CHECK ---
@@ -195,6 +211,12 @@ export default function App() {
 
   // --- PERMISSION CHECK ---
   const canAccess = (view: string) => {
+    // 1. Validar Feature Flags a nivel Empresa
+    if (company?.feature_flags && company.feature_flags[view] === false) {
+      return false; // El módulo está "apagado" globalmente
+    }
+    
+    // 2. Validar Permisos de Usuario
     return currentUser.permissions?.includes(view) || view === 'edit-sale' || view === 'pos' || view === 'accounts-receivable' || view === 'seller-tracking' || view === 'supplier-credit-notes'; 
   };
 
@@ -299,6 +321,9 @@ export default function App() {
 
   return (
     <div className="flex h-screen print:h-auto bg-slate-100 overflow-hidden print:overflow-visible">
+      
+      {showGodMode && <GodModePanel onClose={() => setShowGodMode(false)} />}
+      
       {isSidebarOpen && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"

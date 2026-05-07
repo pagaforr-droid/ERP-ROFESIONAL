@@ -166,6 +166,24 @@ export interface CompanyConfig {
   // Impresion Masiva
   max_items_factura?: number;
   max_items_boleta?: number;
+  
+  // Feature Flags
+  feature_flags?: FeatureFlags;
+}
+
+export interface FeatureFlags {
+  [moduleName: string]: boolean;
+}
+
+export interface AuditLog {
+  id: string;
+  table_name: string;
+  action: 'INSERT' | 'UPDATE' | 'DELETE';
+  record_id: string;
+  old_data?: any;
+  new_data?: any;
+  user_id?: string;
+  created_at: string;
 }
 
 // === CASH FLOW & EXPENSES ===

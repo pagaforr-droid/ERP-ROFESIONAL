@@ -677,11 +677,19 @@ export const NewSale: React.FC = () => {
 
       if (paymentMethod === 'CREDITO') {
           if (clientCreditInfo.overdue) {
-              showDialog('error', 'Bloqueo de Crédito', "❌ BLOQUEO DE CRÉDITO ❌\n\nEl cliente mantiene comprobantes vencidos (más de 7 días sin pago). No se le puede emitir más crédito hasta que regularice su deuda.");
+              showDialog('error', 'Bloqueo de Crédito', "❌ BLOQUEO DE CRÉDITO ❌\n\nEl cliente mantiene comprobantes vencidos (más de 7 días sin pago).", () => {
+                  requestAdminAuth(executeSaveSale, 'Autorizar Venta (Morosidad)');
+              });
               return;
           }
           if ((clientCreditInfo.debt + grandTotal) > clientCreditInfo.limit) {
-              showDialog('warning', 'Límite Excedido', `❌ LÍMITE DE CRÉDITO EXCEDIDO ❌\n\nLímite Aprobado: S/ ${Number(clientCreditInfo.limit || 0).toFixed(2)}\nDeuda Vigente: S/ ${Number(clientCreditInfo.debt || 0).toFixed(2)}\nDisponible Actual: S/ ${Math.max(0, Number(clientCreditInfo.limit) - Number(clientCreditInfo.debt)).toFixed(2)}\n\nEl monto de este pedido (S/ ${grandTotal.toFixed(2)}) supera el saldo disponible. Requiere autorización o pago al contado.`);
+              const limiteAprobado = Number(clientCreditInfo.limit || 0).toFixed(2);
+              const deudaActual = Number(clientCreditInfo.debt || 0).toFixed(2);
+              const totalVenta = grandTotal.toFixed(2);
+              
+              showDialog('warning', 'Límite Excedido', `❌ LÍMITE DE CRÉDITO EXCEDIDO ❌\n\nLímite Aprobado: S/ ${limiteAprobado}\nDeuda Vigente: S/ ${deudaActual}\n\nEl monto de este pedido (S/ ${totalVenta}) supera el saldo disponible. Requiere autorización de administrador.`, () => {
+                  requestAdminAuth(executeSaveSale, 'Autorizar Exceso de Límite Crédito');
+              });
               return;
           }
       }
