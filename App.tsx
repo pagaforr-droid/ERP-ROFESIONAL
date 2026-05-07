@@ -28,6 +28,7 @@ import { Attendance } from './components/Attendance';
 import { PromoManager } from './components/PromoManager';
 import { PriceManager } from './components/PriceManager';
 import { VirtualStore } from './components/VirtualStore';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { CollectionConsolidation } from './components/CollectionConsolidation';
 import { AccountsReceivable } from './components/AccountsReceivable'; // NUEVO MÓDULO
 import { SunatManager } from './components/SunatManager';
@@ -434,15 +435,17 @@ export default function App() {
         </header>
 
         <main className="flex-1 overflow-y-auto print:overflow-visible p-6 lg:p-8 bg-slate-100">
-          {currentView === 'mobile-orders' || currentView === 'mobile-delivery' ? (
-            <div className="h-full mx-auto max-w-md bg-white shadow-2xl overflow-hidden rounded-xl border border-slate-200">
-              {renderContent()}
-            </div>
-          ) : (
-            <div className="max-w-7xl mx-auto h-full">
-              {renderContent()}
-            </div>
-          )}
+          <ErrorBoundary>
+            {currentView === 'mobile-orders' || currentView === 'mobile-delivery' ? (
+              <div className="h-full mx-auto max-w-md bg-white shadow-2xl overflow-hidden rounded-xl border border-slate-200">
+                {renderContent()}
+              </div>
+            ) : (
+              <div className="max-w-7xl mx-auto h-full">
+                {renderContent()}
+              </div>
+            )}
+          </ErrorBoundary>
         </main>
       </div>
     </div>
