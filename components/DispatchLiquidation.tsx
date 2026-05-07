@@ -44,7 +44,7 @@ export const DispatchLiquidationComp: React.FC = () => {
          const [dsRes, dlRes, salesRes, prodRes, dsSalesRes, sellersRes, ldRes] = await Promise.all([
             supabase.from('dispatch_sheets').select('*'),
             supabase.from('dispatch_liquidations').select('*'),
-            supabase.from('sales').select('*, items:sale_items(*)'),
+            supabase.from('sales').select('*, items:sale_items(*)').neq('dispatch_status', 'liquidated'),
             supabase.from('products').select('*'),
             supabase.from('dispatch_sales').select('*'),
             supabase.from('sellers').select('*'),
@@ -646,14 +646,38 @@ export const DispatchLiquidationComp: React.FC = () => {
       window.open(pdfBlob, '_blank');
    };
 
-   const generateHistoricalLiquidationPDF = (liqId: string) => {
+   const generateHistoricalLiquidationPDF = async (liqId: string) => {
       const liq = liquidatedDispatches.find(l => l.id === liqId);
       if (!liq) return;
       const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
       if (!ds) return;
       
       const docs = liquidationDocuments.filter(d => d.dispatch_liquidation_id === liq.id);
-      const liqSales = sales.filter(s => docs.some(d => d.sale_id === s.id));
+      
+      // LAZY LOADING DE VENTAS HISTÓRICAS
+      const requiredSaleIds = docs.map(d => d.sale_id);
+      let liqSales = sales.filter(s => requiredSaleIds.includes(s.id));
+      const missingIds = requiredSaleIds.filter(id => !liqSales.some(s => s.id === id));
+      
+      if (missingIds.length > 0) {
+         try {
+            showSystemAlert("Cargando", "Obteniendo datos históricos desde el servidor...", "info");
+            const { data } = await supabase.from('sales').select('*, items:sale_items(*)').in('id', missingIds);
+            if (data && data.length > 0) {
+               liqSales = [...liqSales, ...data];
+               setSales(prev => {
+                  const newSales = [...prev];
+                  data.forEach(s => { if (!newSales.some(ns => ns.id === s.id)) newSales.push(s); });
+                  return newSales;
+               });
+            }
+            setActiveModal('NONE');
+         } catch (e) {
+            console.error('Error fetching historical sales:', e);
+            showSystemAlert("Error", "No se pudieron cargar los datos históricos.", "error");
+            return;
+         }
+      }
 
       const docPdf = new jsPDF({ format: 'A4', unit: 'mm' });
       const pageWidth = docPdf.internal.pageSize.width;
