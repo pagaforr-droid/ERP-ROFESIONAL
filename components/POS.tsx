@@ -27,6 +27,7 @@ export const POS: React.FC = () => {
    // --- MASTER DATA ---
    const [dbCompany, setDbCompany] = useState<any>(null); 
    const [dbSeries, setDbSeries] = useState<any[]>([]);
+   const [dbSellers, setDbSellers] = useState<any[]>([]);
    
    const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('BOLETA');
    const [series, setSeries] = useState('');
@@ -35,12 +36,14 @@ export const POS: React.FC = () => {
    useEffect(() => {
        const fetchMasters = async () => {
            try {
-               const [compRes, serRes] = await Promise.all([
+               const [compRes, serRes, sellRes] = await Promise.all([
                    supabase.from('company_config').select('*').limit(1).maybeSingle(),
-                   supabase.from('document_series').select('*').eq('is_active', true).order('series')
+                   supabase.from('document_series').select('*').eq('is_active', true).order('series'),
+                   supabase.from('sellers').select('*').eq('is_active', true)
                ]);
                
                if (compRes.data) setDbCompany(compRes.data);
+               if (sellRes.data) setDbSellers(sellRes.data);
                if (serRes.data) {
                    setDbSeries(serRes.data);
                    const initialBoleta = serRes.data.find((s: any) => s.type === 'BOLETA');
@@ -426,6 +429,12 @@ export const POS: React.FC = () => {
        if (cart.length === 0) return;
        if (!series || !docNumber) { showDialog('error', 'Error', "No hay serie asignada."); return; }
 
+       const posSeller = dbSellers.find(s => 
+           s.name.toUpperCase().includes('POS') || 
+           s.name.toUpperCase().includes('CAJA') || 
+           s.name.toUpperCase().includes('MOSTRADOR')
+       );
+
        // Fix Foreign Key Constraint: We leave seller_id undefined if we don't have a specific seller assigned
        const newSaleData: any = {
           id: crypto.randomUUID(), 
@@ -438,7 +447,7 @@ export const POS: React.FC = () => {
           client_name: clientData.name || 'CLIENTE VARIOS',
           client_ruc: clientData.doc_number || '00000000',
           client_address: clientData.address || '',
-          seller_id: undefined, // Fixes foreign key constraint violation if currentUser is not a Seller
+          seller_id: posSeller ? posSeller.id : undefined, // Fixes foreign key constraint violation if currentUser is not a Seller
           subtotal,
           igv,
           total: grandTotal,
