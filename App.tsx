@@ -86,7 +86,77 @@ const COLOR_THEMES = {
     iconIdle: 'text-slate-400 group-hover:text-white'
   }
 };
+};
 type ThemeKey = keyof typeof COLOR_THEMES;
+
+const SIDEBAR_SECTIONS = [
+  {
+    title: 'Comercial',
+    theme: 'blue' as ThemeKey,
+    items: [
+      { view: 'sales', icon: ShoppingCart, label: 'Venta Directa' },
+      { view: 'edit-sale', icon: Edit3, label: 'Editar/Auditar Venta' },
+      { view: 'advanced-orders', icon: ClipboardList, label: 'Pedido Avanzado' },
+      { view: 'credit-notes', icon: ArrowLeftRight, label: 'Devoluciones y NC' },
+      { view: 'order-processing', icon: FileCheck, label: 'Procesar Pedidos' },
+      { view: 'price-manager', icon: DollarSign, label: 'Gestión de Precios' },
+      { view: 'promo-manager', icon: Gift, label: 'Ofertas & Combos' },
+      { view: 'virtual-store', icon: Store, label: 'Tienda Virtual (Web)' },
+      { view: 'mobile-orders', icon: Smartphone, label: 'App Vendedores' },
+      { view: 'sunat-manager', icon: FileCheck, label: 'Facturación SUNAT' },
+      { view: 'document-manager', icon: FileText, label: 'Historial Documentos' },
+      { view: 'print-batch', icon: Printer, label: 'Impresión por Lotes' },
+    ]
+  },
+  {
+    title: 'Finanzas',
+    theme: 'emerald' as ThemeKey,
+    items: [
+      { view: 'cash-flow', icon: DollarSign, label: 'Flujo de Caja' },
+      { view: 'collection-consolidation', icon: Wallet, label: 'Consolidar Cobranzas' },
+      { view: 'accounts-receivable', icon: PieChart, label: 'Cuentas por Cobrar' },
+    ]
+  },
+  {
+    title: 'Logística',
+    theme: 'amber' as ThemeKey,
+    items: [
+      { view: 'dispatch', icon: Truck, label: 'Despacho y Rutas' },
+      { view: 'dispatch-liquidation', icon: FileInput, label: 'Liquidación Rutas' },
+      { view: 'mobile-delivery', icon: Smartphone, label: 'App Reparto' },
+      { view: 'kardex', icon: PackageSearch, label: 'Kardex Detalles' },
+      { view: 'inventory', icon: Home, label: 'Almacenes & Stock' },
+    ]
+  },
+  {
+    title: 'Gestión',
+    theme: 'purple' as ThemeKey,
+    items: [
+      { view: 'reports', icon: PieChart, label: 'Reportes & BI' },
+      { view: 'accounting-reports', icon: FileSpreadsheet, label: 'Reportes Contables' },
+      { view: 'seller-tracking', icon: Map, label: 'Tracking de Vendedores' },
+      { view: 'quota-manager', icon: ClipboardList, label: 'Gestión de Cuotas' },
+      { view: 'users', icon: Shield, label: 'Usuarios & Permisos' },
+      { view: 'system-maintenance', icon: HardDrive, label: 'Mantenimiento DB' },
+      { view: 'personnel-management', icon: Users, label: 'RRHH y Planilla' },
+      { view: 'attendance', icon: Clock, label: 'Control Asistencia' },
+    ]
+  },
+  {
+    title: 'Maestros',
+    theme: 'rose' as ThemeKey,
+    items: [
+      { view: 'purchases', icon: ShoppingBag, label: 'Compras' },
+      { view: 'supplier-credit-notes', icon: ArrowLeftRight, label: 'Devoluciones (Compras)' },
+      { view: 'products', icon: ClipboardList, label: 'Productos' },
+      { view: 'clients', icon: Users, label: 'Clientes' },
+      { view: 'territory', icon: Map, label: 'Territorio' },
+      { view: 'suppliers', icon: Briefcase, label: 'Proveedores' },
+      { view: 'warehouses', icon: Box, label: 'Rst. Locales/Depósitos' },
+      { view: 'logistics', icon: Container, label: 'Flota' },
+    ]
+  }
+];
 
 export default function App() {
   // AÑADIDO 'edit-sale' A LOS TIPOS DE VISTA POSIBLES
@@ -175,13 +245,14 @@ export default function App() {
     }
   };
 
-  const NavItem = ({ view, icon: Icon, label, theme = 'slate' }: { view: string, icon: any, label: string, theme?: ThemeKey }) => {
+  const renderNavItem = (view: string, Icon: any, label: string, theme: ThemeKey = 'slate') => {
     if (!canAccess(view)) return null;
     const isActive = currentView === view;
     const themeClasses = COLOR_THEMES[theme];
 
     return (
       <button
+        key={view}
         onClick={() => {
           setCurrentView(view as any);
           setIsSidebarOpen(false);
@@ -200,13 +271,14 @@ export default function App() {
     );
   };
 
-  const Section = ({ title, theme = 'slate', children }: { title: string, theme?: ThemeKey, children?: React.ReactNode }) => {
-    const validChildren = React.Children.toArray(children).filter(child => child);
-    if (validChildren.length === 0) return null;
+  const renderSection = (title: string, theme: ThemeKey, items: any[]) => {
+    const renderedItems = items.map(item => renderNavItem(item.view, item.icon, item.label, theme)).filter(Boolean);
+    if (renderedItems.length === 0) return null;
+    
     const themeClasses = COLOR_THEMES[theme];
 
     return (
-      <div className="mb-2">
+      <div key={title} className="mb-2">
         {isDesktopSidebarCollapsed ? (
           <div className="h-px w-8 mx-auto my-4 bg-slate-700 opacity-50 relative group cursor-help">
             <div className="absolute hidden group-hover:block left-full ml-4 top-1/2 -translate-y-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded whitespace-nowrap z-50 shadow-xl border border-slate-700">{title}</div>
@@ -217,12 +289,7 @@ export default function App() {
           </div>
         )}
         <div className="space-y-1">
-          {React.Children.map(validChildren, child => {
-            if (React.isValidElement(child)) {
-              return React.cloneElement(child as React.ReactElement<any>, { theme });
-            }
-            return child;
-          })}
+          {renderedItems}
         </div>
       </div>
     );
@@ -270,65 +337,16 @@ export default function App() {
           </button>
         </div>
 
-        <nav className={`flex-1 overflow-y-auto py-4 overflow-x-hidden ${isDesktopSidebarCollapsed ? 'px-2' : 'px-4'}`}>
+        <nav className={`flex-1 overflow-y-auto py-4 overflow-x-hidden ${isDesktopSidebarCollapsed ? 'px-2' : 'px-4'} custom-scrollbar`}>
           <div className="space-y-1">
-            <NavItem view="dashboard" icon={LayoutDashboard} label="Panel Principal" theme="blue" />
+            {renderNavItem('dashboard', LayoutDashboard, 'Panel Principal', 'blue')}
           </div>
 
-          <Section title="Comercial" theme="blue">
-            <NavItem view="sales" icon={ShoppingCart} label="Venta Directa" />
-            <NavItem view="edit-sale" icon={Edit3} label="Editar/Auditar Venta" /> {/* NUEVO BOTÓN */}
-            <NavItem view="advanced-orders" icon={ClipboardList} label="Pedido Avanzado" />
-            <NavItem view="credit-notes" icon={ArrowLeftRight} label="Devoluciones y NC" />
-            <NavItem view="order-processing" icon={FileCheck} label="Procesar Pedidos" />
-            <NavItem view="price-manager" icon={DollarSign} label="Gestión de Precios" />
-            <NavItem view="promo-manager" icon={Gift} label="Ofertas & Combos" />
-            <NavItem view="virtual-store" icon={Store} label="Tienda Virtual (Web)" />
-            <NavItem view="mobile-orders" icon={Smartphone} label="App Vendedores" />
-            <NavItem view="sunat-manager" icon={FileCheck} label="Facturación SUNAT" />
-            <NavItem view="document-manager" icon={FileText} label="Historial Documentos" />
-            <NavItem view="print-batch" icon={Printer} label="Impresión por Lotes" />
-          </Section>
-
-          <Section title="Finanzas" theme="emerald">
-            <NavItem view="cash-flow" icon={DollarSign} label="Flujo de Caja" />
-            <NavItem view="collection-consolidation" icon={Wallet} label="Consolidar Cobranzas" />
-            <NavItem view="accounts-receivable" icon={PieChart} label="Cuentas por Cobrar" />
-          </Section>
-
-          <Section title="Logística" theme="amber">
-            <NavItem view="dispatch" icon={Truck} label="Despacho y Rutas" />
-            <NavItem view="dispatch-liquidation" icon={FileInput} label="Liquidación Rutas" />
-            <NavItem view="mobile-delivery" icon={Smartphone} label="App Reparto" />
-            <NavItem view="kardex" icon={PackageSearch} label="Kardex Detalles" />
-            <NavItem view="inventory" icon={Home} label="Almacenes & Stock" />
-          </Section>
-
-          <Section title="Gestión" theme="purple">
-            <NavItem view="reports" icon={PieChart} label="Reportes & BI" />
-            <NavItem view="accounting-reports" icon={FileSpreadsheet} label="Reportes Contables" />
-            <NavItem view="seller-tracking" icon={Map} label="Tracking de Vendedores" />
-            <NavItem view="quota-manager" icon={ClipboardList} label="Gestión de Cuotas" />
-            <NavItem view="users" icon={Shield} label="Usuarios & Permisos" />
-            <NavItem view="system-maintenance" icon={HardDrive} label="Mantenimiento DB" />
-            <NavItem view="personnel-management" icon={Users} label="RRHH y Planilla" />
-            <NavItem view="attendance" icon={Clock} label="Control Asistencia" />
-          </Section>
-
-          <Section title="Maestros" theme="rose">
-            <NavItem view="purchases" icon={ShoppingBag} label="Compras" />
-            <NavItem view="supplier-credit-notes" icon={ArrowLeftRight} label="Devoluciones (Compras)" />
-            <NavItem view="products" icon={ClipboardList} label="Productos" />
-            <NavItem view="clients" icon={Users} label="Clientes" />
-            <NavItem view="territory" icon={Map} label="Territorio" />
-            <NavItem view="suppliers" icon={Briefcase} label="Proveedores" />
-            <NavItem view="warehouses" icon={Box} label="Rst. Locales/Depósitos" />
-            <NavItem view="logistics" icon={Container} label="Flota" />
-          </Section>
+          {SIDEBAR_SECTIONS.map(section => renderSection(section.title, section.theme, section.items))}
         </nav>
 
         <div className={`border-t border-slate-800 bg-slate-900 shrink-0 ${isDesktopSidebarCollapsed ? 'p-3 space-y-3' : 'p-4'}`}>
-          <NavItem view="company-settings" icon={Settings} label="Configuración" theme="slate" />
+          {renderNavItem('company-settings', Settings, 'Configuración', 'slate')}
 
           {!isDesktopSidebarCollapsed ? (
             <div className="mt-4 pt-4 border-t border-slate-800">
