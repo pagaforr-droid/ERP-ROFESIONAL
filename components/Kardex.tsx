@@ -52,38 +52,55 @@ export const Kardex: React.FC = () => {
   const requestConfirm = (message: string, onConfirm: () => void) => setConfirmConfig({ isOpen: true, message, onConfirm });
 
   useEffect(() => {
-     fetchMasterData();
+     fetchInventoryData();
   }, []);
 
-  const fetchMasterData = async () => {
+  const fetchInventoryData = async () => {
      if (!USE_MOCK_DB) {
         setIsLoading(true);
         try {
-           const [pRes, bRes, sRes, purRes, salRes, liqRes, ordersRes, usersRes] = await Promise.all([
+           const [pRes, bRes, sRes, ordersRes, usersRes] = await Promise.all([
               supabase.from('products').select('*').eq('is_active', true),
               supabase.from('batches').select('*').gt('quantity_current', 0),
               supabase.from('suppliers').select('*'),
-              supabase.from('purchases').select('*, items:purchase_items(*)'),
-              supabase.from('sales').select('*, items:sale_items(*)'),
-              supabase.from('dispatch_liquidations').select('*, documents:liquidation_documents(*)'),
               supabase.from('orders').select('*, items:order_items(*)').eq('status', 'pending'),
               supabase.from('profiles').select('id, full_name, email')
            ]);
            if (pRes.data) setDbProducts(pRes.data as Product[]);
            if (bRes.data) setDbBatches(bRes.data as Batch[]);
            if (sRes.data) setDbSuppliers(sRes.data);
-           if (purRes.data) setDbPurchases(purRes.data as any[]);
-           if (salRes.data) setDbSales(salRes.data as any[]);
-           if (liqRes.data) setDbLiquidations(liqRes.data as any[]);
            if (ordersRes.data) setDbPendingOrders(ordersRes.data as any[]);
            if (usersRes.data) setDbUsers(usersRes.data);
         } catch (error) {
-           console.error("Error sincronizando Kardex:", error);
+           console.error("Error sincronizando Kardex Físico:", error);
         } finally {
            setIsLoading(false);
         }
      }
   };
+
+  const fetchMovementsData = async () => {
+     if (!USE_MOCK_DB) {
+        setIsLoading(true);
+        try {
+           const [purRes, salRes, liqRes] = await Promise.all([
+              supabase.from('purchases').select('*, items:purchase_items(*)').gte('issue_date', dateFrom).lte('issue_date', dateTo),
+              supabase.from('sales').select('*, items:sale_items(*)').gte('created_at', `${dateFrom}T00:00:00.000Z`).lte('created_at', `${dateTo}T23:59:59.999Z`),
+              supabase.from('dispatch_liquidations').select('*, documents:liquidation_documents(*)').gte('date', `${dateFrom}T00:00:00.000Z`).lte('date', `${dateTo}T23:59:59.999Z`)
+           ]);
+           if (purRes.data) setDbPurchases(purRes.data as any[]);
+           if (salRes.data) setDbSales(salRes.data as any[]);
+           if (liqRes.data) setDbLiquidations(liqRes.data as any[]);
+        } catch (error) {
+           console.error("Error sincronizando Movimientos:", error);
+        } finally {
+           setIsLoading(false);
+        }
+     }
+  };
+
+  // Keep an alias to not break existing buttons immediately
+  const fetchMasterData = fetchInventoryData;
 
   const handleRecalculateKardex = async () => {
      if (currentUser?.role !== 'ADMIN') {
@@ -412,7 +429,16 @@ export const Kardex: React.FC = () => {
                    <Settings className={`w-4 h-4 mr-2 ${isRecalculating ? 'animate-spin' : ''}`} /> {isRecalculating ? 'Recalculando...' : 'Recalcular Kardex'}
                 </button>
              )}
-             <button onClick={fetchMasterData} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg flex items-center transition-colors shadow-sm border border-slate-200 font-bold text-sm">
+             <button 
+                onClick={() => {
+                   if (activeTab === 'MOVEMENTS') {
+                      fetchInventoryData().then(() => fetchMovementsData());
+                   } else {
+                      fetchInventoryData();
+                   }
+                }} 
+                className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-2 rounded-lg flex items-center transition-colors shadow-sm border border-slate-200 font-bold text-sm"
+             >
                 <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin text-orange-600' : ''}`} /> Sincronizar
              </button>
              <button onClick={exportExcel} className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold shadow-md flex items-center transition-colors text-sm">
@@ -492,7 +518,13 @@ export const Kardex: React.FC = () => {
 
             {/* BOTÓN MOSTRAR (GATILLO DE DATOS) */}
             <button 
-               onClick={() => setIsDataVisible(true)} 
+               onClick={() => {
+                  if (activeTab === 'MOVEMENTS') {
+                     fetchMovementsData().then(() => setIsDataVisible(true));
+                  } else {
+                     setIsDataVisible(true);
+                  }
+               }} 
                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 rounded-lg font-black shadow-md flex items-center transition-all active:scale-95 text-sm h-[44px] ml-4"
             >
                <Eye className="w-4 h-4 mr-2" /> MOSTRAR DATOS
