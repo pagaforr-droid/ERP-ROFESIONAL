@@ -2,9 +2,37 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { Seller, Client } from '../types';
 import { supabase } from '../services/supabase'; // <-- ADIÓS MOCK_DB
-import { Map, Users, User, Search, Save, Plus, ArrowRight, Filter, MapPin, RefreshCw, Briefcase, Map as MapIcon, Edit, Trash2 } from 'lucide-react';
+import { Map, Users, User, Search, Save, Plus, ArrowRight, Filter, MapPin, RefreshCw, Briefcase, Map as MapIcon, Edit, Trash2, X, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 type Tab = 'ZONES' | 'SELLERS' | 'ZONING';
+
+interface ToastProps {
+  message: string;
+  type: 'error' | 'success' | 'warning' | 'info';
+  onClose: () => void;
+}
+
+const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
+  const getStyle = () => {
+    if (type === 'error') return { border: 'border-red-500', icon: <X className="w-6 h-6 text-red-500 mr-3" />, text: 'text-red-800', bg: 'bg-red-50' };
+    if (type === 'warning') return { border: 'border-amber-500', icon: <AlertCircle className="w-6 h-6 text-amber-500 mr-3" />, text: 'text-amber-800', bg: 'bg-amber-50' };
+    if (type === 'success') return { border: 'border-green-500', icon: <CheckCircle2 className="w-6 h-6 text-green-500 mr-3" />, text: 'text-green-800', bg: 'bg-green-50' };
+    return { border: 'border-blue-500', icon: <AlertCircle className="w-6 h-6 text-blue-500 mr-3" />, text: 'text-blue-800', bg: 'bg-blue-50' };
+  };
+  const s = getStyle();
+
+  return (
+    <div style={{ animation: 'slideDown 0.3s ease-out' }} className={`fixed top-10 left-1/2 transform -translate-x-1/2 z-[100] flex items-center p-4 rounded-xl shadow-2xl border-l-4 min-w-[350px] ${s.bg} ${s.border}`}>
+      {s.icon}
+      <div className="flex-1">
+        <p className={`text-sm font-bold ${s.text}`}>{message}</p>
+      </div>
+      <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600 transition-colors">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
 
 export const TerritoryManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<Tab>('ZONES');
@@ -19,8 +47,13 @@ export const TerritoryManagement: React.FC = () => {
   const [isAssigning, setIsAssigning] = useState(false);
   const isSavingRef = React.useRef(false);
 
-  // --- CUSTOM MODALS ---
-  const [systemModal, setSystemModal] = useState<{ isOpen: boolean, type: 'error' | 'warning' | 'info' | 'success', message: string }>({ isOpen: false, type: 'info', message: '' });
+  // --- CUSTOM MODALS & TOASTS ---
+  const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: 'error' | 'success' | 'warning' | 'info' }>>([]);
+  const showToast = (message: string, type: 'error' | 'success' | 'warning' | 'info') => {
+      const id = Date.now();
+      setToasts(prev => [...prev, { id, message, type }]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+  };
   const [confirmModal, setConfirmModal] = useState<{ isOpen: boolean, title: string, message: string, onConfirm: () => void }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
   useEffect(() => {
@@ -81,8 +114,9 @@ export const TerritoryManagement: React.FC = () => {
             if (data && data.length > 0) setZones(prev => [...prev, data[0]]);
         }
         setEditingZone(null);
+        showToast("Zona guardada correctamente", "success");
     } catch (error: any) {
-        setSystemModal({ isOpen: true, type: 'error', message: "Error guardando Zona: " + error.message });
+        showToast("Error guardando Zona: " + error.message, "error");
     } finally {
         isSavingRef.current = false;
         setIsSaving(false);
@@ -99,8 +133,9 @@ export const TerritoryManagement: React.FC = () => {
               const { error } = await supabase.from('zones').delete().eq('id', id);
               if (error) throw error;
               setZones(prev => prev.filter(z => z.id !== id));
+              showToast("Zona eliminada correctamente", "success");
            } catch(e: any) {
-              setSystemModal({ isOpen: true, type: 'error', message: "No se puede eliminar la zona. Probablemente aún hay clientes asignados a ella." });
+              showToast("No se puede eliminar la zona. Probablemente aún hay clientes asignados a ella.", "error");
            }
         }
      });
@@ -222,8 +257,9 @@ export const TerritoryManagement: React.FC = () => {
             if (data && data.length > 0) setSellers(prev => [...prev, data[0] as Seller]);
         }
         setEditingSeller(null);
+        showToast("Vendedor guardado correctamente", "success");
     } catch (error: any) {
-      window.alert("Error guardando vendedor: " + error.message);
+      showToast("Error guardando vendedor: " + error.message, "error");
     } finally {
       isSavingRef.current = false;
       setIsSaving(false);
@@ -231,16 +267,21 @@ export const TerritoryManagement: React.FC = () => {
   };
 
   const handleDeleteSeller = async (id: string) => {
-    if (window.confirm("¿Estás seguro de eliminar permanentemente a este vendedor? Esta acción no se puede deshacer y puede afectar si ya tiene historial.")) {
-        try {
-            const { error } = await supabase.from('sellers').delete().eq('id', id);
-            if (error) throw error;
-            setSellers(prev => prev.filter(s => s.id !== id));
-            window.alert("Vendedor eliminado correctamente del sistema.");
-        } catch(e: any) {
-            window.alert("No se puede eliminar el vendedor porque ya tiene registros o historial asociados. Te recomendamos simplemente cambiar su estado a INACTIVO.");
+     setConfirmModal({
+        isOpen: true,
+        title: 'Eliminar Vendedor',
+        message: '¿Estás seguro de eliminar permanentemente a este vendedor? Esta acción no se puede deshacer y puede afectar si ya tiene historial.',
+        onConfirm: async () => {
+           try {
+               const { error } = await supabase.from('sellers').delete().eq('id', id);
+               if (error) throw error;
+               setSellers(prev => prev.filter(s => s.id !== id));
+               showToast("Vendedor eliminado correctamente del sistema.", "success");
+           } catch(e: any) {
+               showToast("No se puede eliminar el vendedor porque ya tiene registros o historial asociados. Te recomendamos cambiar su estado a INACTIVO.", "error");
+           }
         }
-    }
+     });
   };
 
   const renderSellersTab = () => (
@@ -374,13 +415,24 @@ export const TerritoryManagement: React.FC = () => {
         if (error) throw error;
         if (data) setClients(prev => prev.map(c => selectedClients.includes(c.id) ? { ...c, zone_id: targetZone } : c));
         
-        setSystemModal({ isOpen: true, type: 'success', message: `✅ Operación Exitosa.\nSe asignaron ${selectedClients.length} clientes a su nueva ruta comercial.` });
+        showToast(`Operación Exitosa. Se asignaron ${selectedClients.length} clientes a su nueva ruta comercial.`, 'success');
         setSelectedClients([]);
     } catch (e: any) {
-        setSystemModal({ isOpen: true, type: 'error', message: 'Error asignando zonas en BD: ' + e.message });
+        showToast('Error asignando zonas en BD: ' + e.message, 'error');
     } finally {
         isSavingRef.current = false;
         setIsAssigning(false);
+    }
+  };
+
+  const handleSingleAssign = async (clientId: string, newZoneId: string) => {
+    try {
+        const { error } = await supabase.from('clients').update({ zone_id: newZoneId }).eq('id', clientId);
+        if (error) throw error;
+        setClients(prev => prev.map(c => c.id === clientId ? { ...c, zone_id: newZoneId } : c));
+        showToast("Ruta actualizada individualmente", "success");
+    } catch (e: any) {
+        showToast("Error al reasignar ruta: " + e.message, "error");
     }
   };
 
@@ -446,12 +498,22 @@ export const TerritoryManagement: React.FC = () => {
                         </td>
                         <td className="p-4 text-slate-700 font-medium">{c.address}</td>
                         <td className="p-4">
-                           {zone ? (
-                              <div className="bg-slate-100 border border-slate-200 rounded-lg p-2 inline-block">
-                                 <div className="font-black text-slate-800">Ruta: {zone.code}</div>
-                                 <div className="text-[10px] text-blue-700 font-bold mt-0.5">{getSellerNameForZone(zone.id)}</div>
-                              </div>
-                           ) : <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-black border border-red-200 shadow-sm animate-pulse">¡ALERTA! SIN RUTA</span>}
+                           <div className="flex flex-col gap-1 w-full max-w-[200px]">
+                              <select 
+                                className={`w-full border-2 rounded-lg p-1.5 text-xs font-bold outline-none transition-colors cursor-pointer ${!c.zone_id ? 'border-red-300 bg-red-50 text-red-700 animate-pulse' : 'border-slate-200 bg-slate-50 text-slate-800 hover:border-blue-300'}`}
+                                value={c.zone_id || ''} 
+                                onChange={(e) => handleSingleAssign(c.id, e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <option value="">-- SIN ASIGNAR --</option>
+                                {zones.map(z => <option key={z.id} value={z.id}>Ruta {z.code} - {z.name}</option>)}
+                              </select>
+                              {c.zone_id && (
+                                 <div className="text-[9px] text-slate-500 font-bold text-right pr-1">
+                                    Vendedor: <span className="text-blue-600">{getSellerNameForZone(c.zone_id)}</span>
+                                 </div>
+                              )}
+                           </div>
                         </td>
                       </tr>
                     );
@@ -499,21 +561,15 @@ export const TerritoryManagement: React.FC = () => {
 
   return (
     <div className="h-full flex flex-col space-y-4 relative">
-      {/* --- CUSTOM SYSTEM MODALS --- */}
-      {systemModal.isOpen && (
-         <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
-               {systemModal.type === 'error' && <div className="w-12 h-12 text-red-500 mx-auto mb-4 bg-red-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">X</span></div>}
-               {systemModal.type === 'success' && <div className="w-12 h-12 text-green-500 mx-auto mb-4 bg-green-50 p-2 rounded-full flex items-center justify-center"><span className="text-2xl font-black">✓</span></div>}
-               {systemModal.type === 'info' && <div className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full flex items-center justify-center"><RefreshCw className="w-8 h-8" /></div>}
-               <h3 className="text-lg font-black text-slate-800 mb-2">
-                  {systemModal.type === 'error' ? 'Error' : systemModal.type === 'success' ? 'Éxito' : 'Información'}
-               </h3>
-               <p className="text-sm text-slate-600 mb-6 whitespace-pre-line">{systemModal.message}</p>
-               <button onClick={() => setSystemModal({...systemModal, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
-            </div>
-         </div>
-      )}
+         <style>{`
+           @keyframes slideDown {
+             from { transform: translate(-50%, -100%); opacity: 0; }
+             to { transform: translate(-50%, 0); opacity: 1; }
+           }
+         `}</style>
+         {toasts.map(t => (
+            <Toast key={t.id} message={t.message} type={t.type} onClose={() => setToasts(prev => prev.filter(x => x.id !== t.id))} />
+         ))}
 
       {confirmModal.isOpen && (
          <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
