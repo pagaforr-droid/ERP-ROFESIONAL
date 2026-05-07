@@ -1,21 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
-import { User, Lock, LogIn, AlertCircle, Box, Truck, CheckCircle2 } from 'lucide-react';
+import { User, Lock, LogIn, AlertCircle, Box, CheckCircle2 } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 export const Login: React.FC = () => {
-  const { setCurrentUser, company, setDeliveryMode } = useStore();
+  const { setCurrentUser, company } = useStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-
-  // New feature: Delivery Mode Selection
-  const [selectedMode, setSelectedMode] = useState<'REGULAR' | 'EXPRESS_MISMO_DIA'>('REGULAR');
-
-  // Cutoff rule: 4:00 PM (16:00)
-  const currentHour = new Date().getHours();
-  const isExpressDisabled = currentHour >= 16;
+  const [rememberMe, setRememberMe] = useState(true);
 
   // Fetch company info on mount so we can display the logo
   useEffect(() => {
@@ -64,8 +58,6 @@ export const Login: React.FC = () => {
         setIsLoading(false);
         return;
       }
-
-      setDeliveryMode(selectedMode);
       
       const storeUser = { ...profile, permissions: profile.permissions || [] };
       useStore.getState().setSupabaseSessionUser(storeUser);
@@ -88,24 +80,38 @@ export const Login: React.FC = () => {
         
         {/* Header - Brand Presentation */}
         <div className="pt-10 pb-6 px-8 text-center flex flex-col items-center">
-          {company.logo_url ? (
-            <img 
-              src={company.logo_url} 
-              alt={company.name || "Logo"} 
-              className="h-20 w-auto object-contain drop-shadow-md mb-4"
-            />
-          ) : (
-            <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 w-20 h-20 rounded-2xl flex items-center justify-center mb-5 shadow-lg shadow-blue-600/30">
-              <Box className="w-10 h-10 text-white" />
-            </div>
-          )}
+          
+          {/* Logo del Sistema (Tandao ERP) */}
+          <div className="relative w-full flex justify-center mb-6">
+             <img 
+               src="/tandao-logo.png" 
+               alt="Tandao ERP Logo" 
+               className="h-16 w-auto object-contain drop-shadow-md z-10 relative"
+               onError={(e) => {
+                 // Fallback si la imagen no existe en public/
+                 e.currentTarget.style.display = 'none';
+                 e.currentTarget.nextElementSibling?.classList.remove('hidden');
+               }}
+             />
+             {/* Fallback Icon */}
+             <div className="hidden bg-gradient-to-tr from-blue-600 to-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-600/30 z-0">
+               <Box className="w-8 h-8 text-white" />
+             </div>
+          </div>
           
           <h1 className="text-2xl font-black text-slate-800 tracking-tight">
-            {company.name ? `Portal de Acceso` : 'Tandao ERP'}
+            Tandao ERP
           </h1>
-          <p className="text-sm font-bold text-slate-500 mt-1">
-            {company.name ? company.name : 'Sistema de Gestión Integrada'}
-          </p>
+          
+          {/* Nombre de la Empresa (Cliente) */}
+          <div className="mt-4 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl inline-flex items-center shadow-inner">
+            {company.logo_url && (
+              <img src={company.logo_url} alt="Empresa" className="h-5 w-auto mr-2 rounded-sm" />
+            )}
+            <p className="text-[11px] font-black text-slate-500 uppercase tracking-widest">
+              {company.name ? `INGRESAR A ${company.name}` : 'SISTEMA DE GESTIÓN'}
+            </p>
+          </div>
         </div>
 
         {/* Form */}
@@ -147,52 +153,18 @@ export const Login: React.FC = () => {
             </div>
           </div>
 
-          <div className="bg-slate-50 p-5 rounded-2xl border-2 border-slate-100">
-            <label className="text-xs font-black text-slate-700 mb-3 uppercase flex items-center tracking-wide">
-              <Truck className="w-4 h-4 mr-2 text-indigo-500" />
-              Modalidad Operativa
-            </label>
-            <div className="space-y-2.5">
-              <label className={`flex items-start p-3 border-2 rounded-xl cursor-pointer transition-all ${selectedMode === 'REGULAR' ? 'border-indigo-500 bg-indigo-50/50 shadow-sm' : 'border-slate-200 bg-white hover:border-indigo-300'}`}>
-                <div className="mt-0.5">
-                   {selectedMode === 'REGULAR' ? <CheckCircle2 className="w-5 h-5 text-indigo-600" /> : <div className="w-5 h-5 rounded-full border-2 border-slate-300" />}
+          {/* Opciones de Acceso (Remember Me & Forgot Password) */}
+          <div className="flex items-center justify-between pt-1">
+             <label className="flex items-center cursor-pointer group">
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${rememberMe ? 'bg-blue-600 border-blue-600' : 'border-slate-300 group-hover:border-blue-400'}`}>
+                   {rememberMe && <CheckCircle2 className="w-3.5 h-3.5 text-white" />}
                 </div>
-                <input
-                  type="radio"
-                  name="deliveryMode"
-                  value="REGULAR"
-                  checked={selectedMode === 'REGULAR'}
-                  onChange={() => setSelectedMode('REGULAR')}
-                  className="hidden"
-                />
-                <span className="ml-3 text-sm font-black text-slate-800 flex-1">
-                  Pedidos Regulares
-                  <span className="block text-[11px] font-bold text-slate-500 mt-0.5">Despacho para el día siguiente</span>
-                </span>
-              </label>
-
-              <label className={`flex items-start p-3 border-2 rounded-xl transition-all ${isExpressDisabled ? 'border-slate-100 bg-slate-50 opacity-60 cursor-not-allowed' : selectedMode === 'EXPRESS_MISMO_DIA' ? 'border-emerald-500 bg-emerald-50/50 shadow-sm cursor-pointer' : 'border-slate-200 bg-white hover:border-emerald-300 cursor-pointer'}`}>
-                <div className="mt-0.5">
-                   {selectedMode === 'EXPRESS_MISMO_DIA' ? <CheckCircle2 className="w-5 h-5 text-emerald-600" /> : <div className="w-5 h-5 rounded-full border-2 border-slate-300" />}
-                </div>
-                <input
-                  type="radio"
-                  name="deliveryMode"
-                  value="EXPRESS_MISMO_DIA"
-                  checked={selectedMode === 'EXPRESS_MISMO_DIA'}
-                  onChange={() => !isExpressDisabled && setSelectedMode('EXPRESS_MISMO_DIA')}
-                  disabled={isExpressDisabled}
-                  className="hidden"
-                />
-                <span className="ml-3 text-sm font-black text-slate-800 flex-1">
-                  Pedidos Fuera de Ruta
-                  <span className="block text-[11px] font-bold text-slate-500 mt-0.5">
-                    Despacho para hoy mismo
-                    {isExpressDisabled && <span className="text-red-500 block mt-1 font-black">(Cierre de ventana: 4:00 PM)</span>}
-                  </span>
-                </span>
-              </label>
-            </div>
+                <input type="checkbox" className="hidden" checked={rememberMe} onChange={() => setRememberMe(!rememberMe)} />
+                <span className="ml-2 text-xs font-bold text-slate-600 group-hover:text-slate-800 transition-colors">Recordarme</span>
+             </label>
+             <button type="button" className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">
+               ¿Olvidaste tu contraseña?
+             </button>
           </div>
 
           {error && (
