@@ -8,7 +8,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export const CollectionConsolidation: React.FC = () => {
-   const { collectionRecords, collectionPlanillas, sellers, currentUser, sales, users, clients } = useStore();
+   const { collectionRecords, collectionPlanillas, sellers, currentUser, users, clients } = useStore();
 
    // --- EXTENDED STATE (Moved to top to prevent ReferenceError) ---
    const isSavingRef = React.useRef(false);
@@ -179,7 +179,7 @@ export const CollectionConsolidation: React.FC = () => {
       
       // Si no hay búsqueda, sugerir clientes que TIENEN deudas pendientes.
       if (!q) {
-         const clientsWithDebt = new Set(sales.filter(s => (s.balance ?? s.total) > 0 && s.status !== 'canceled').map(s => s.client_id));
+         const clientsWithDebt = new Set(localSales.filter(s => (s.balance ?? s.total) > 0 && s.status !== 'canceled').map(s => s.client_id));
          return clients.filter(c => clientsWithDebt.has(c.id)).slice(0, 10);
       }
 
@@ -187,7 +187,7 @@ export const CollectionConsolidation: React.FC = () => {
          c.name.toLowerCase().includes(q) ||
          (c.doc_number && c.doc_number.toLowerCase().includes(q))
       ).slice(0, 10);
-   }, [clients, manualClientSearch, sales]);
+   }, [clients, manualClientSearch, localSales]);
 
    // Filter sales ONLY for selected client
    const manualPendingSales = useMemo(() => {
@@ -195,7 +195,7 @@ export const CollectionConsolidation: React.FC = () => {
 
       if (!manualSelectedClient) {
          if (!searchLower || searchLower.length < 3) return []; // Global search needs at least 3 chars
-         return sales
+         return localSales
             .filter(s => {
                const currentBalance = s.balance ?? s.total;
                return currentBalance > 0 && s.status !== 'canceled';
@@ -205,7 +205,7 @@ export const CollectionConsolidation: React.FC = () => {
             .slice(0, 50); // Limit to 50 results
       }
 
-      return sales
+      return localSales
          .filter(s => s.client_id === manualSelectedClient.id || s.client_ruc === manualSelectedClient.doc_number)
          .filter(s => {
             const currentBalance = s.balance ?? s.total;
@@ -216,7 +216,7 @@ export const CollectionConsolidation: React.FC = () => {
             return `${s.series}-${s.number}`.toLowerCase().includes(searchLower);
          })
          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-   }, [sales, manualSearch, manualSelectedClient]);
+   }, [localSales, manualSearch, manualSelectedClient]);
 
    const manualTotals = useMemo(() => {
       return manualCart.reduce((sum, item) => sum + item.amountToPay, 0);
@@ -224,10 +224,12 @@ export const CollectionConsolidation: React.FC = () => {
 
    const manualSelectedSales = useMemo(() => {
       // This is for the modal now
-      return sales.filter(s => manualSelectedIds.has(s.id));
-   }, [sales, manualSelectedIds]);
+      return localSales.filter(s => manualSelectedIds.has(s.id));
+   }, [localSales, manualSelectedIds]);
 
    // --- HANDLERS (PENDING) ---
+
+   const [localSales, setLocalSales] = useState<any[]>([]);
 
    useEffect(() => {
      const initSupabase = async () => {
@@ -243,15 +245,29 @@ export const CollectionConsolidation: React.FC = () => {
 
          const { data: recData } = await supabase.from('collection_records').select('*');
          const { data: planData } = await supabase.from('collection_planillas').select('*');
-         const { data: salesData } = await supabase.from('sales').select('*');
-         const { data: clientsData } = await supabase.from('clients').select('*');
-         const { data: sellersData } = await supabase.from('sellers').select('*');
          
+         // OPTIMIZACIÓN EXTREMA: Solo descargar ventas con saldo pendiente
+         const { data: salesData } = await supabase
+            .from('sales')
+            .select('*')
+            .gt('balance', 0)
+            .neq('status', 'canceled')
+            .neq('document_type', 'NOTA_CREDITO');
+            
          if (recData) useStore.setState({ collectionRecords: recData as any[] });
          if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
-         if (salesData) useStore.setState({ sales: salesData as any[] });
-         if (clientsData) useStore.setState({ clients: clientsData as any[] });
-         if (sellersData) useStore.setState({ sellers: sellersData as any[] });
+         if (salesData) setLocalSales(salesData as any[]);
+
+         // Fetch catalogs only if missing
+         const state = useStore.getState();
+         if (state.clients.length === 0) {
+            const { data: clientsData } = await supabase.from('clients').select('*');
+            if (clientsData) useStore.setState({ clients: clientsData as any[] });
+         }
+         if (state.sellers.length === 0) {
+            const { data: sellersData } = await supabase.from('sellers').select('*');
+            if (sellersData) useStore.setState({ sellers: sellersData as any[] });
+         }
 
          const { data: usersData } = await supabase.from('erp_users').select('id, name, role, pin_code');
          if (usersData) setAllUsers(usersData);
@@ -305,10 +321,22 @@ export const CollectionConsolidation: React.FC = () => {
    const syncSupabaseData = async () => {
       const { data: recData } = await supabase.from('collection_records').select('*');
       const { data: planData } = await supabase.from('collection_planillas').select('*');
-      const { data: salesData } = await supabase.from('sales').select('*');
+      
+      // OPTIMIZACIÓN EXTREMA: Solo descargar ventas con saldo pendiente
+      const { data: salesData } = await supabase
+         .from('sales')
+         .select('*')
+         .gt('balance', 0)
+         .neq('status', 'canceled')
+         .neq('document_type', 'NOTA_CREDITO');
+         
       if (recData) useStore.setState({ collectionRecords: recData as any[] });
       if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
-      if (salesData) useStore.setState({ sales: salesData as any[] });
+      if (salesData) {
+         setLocalSales(salesData as any[]);
+         return salesData;
+      }
+      return [];
    };
 
    const handleConfirmProcess = async () => {
@@ -414,7 +442,7 @@ export const CollectionConsolidation: React.FC = () => {
 
       manualSelectedIds.forEach(id => {
          if (!currentCartIds.has(id)) {
-            const sale = sales.find(s => s.id === id);
+            const sale = localSales.find(s => s.id === id);
             if (sale) {
                newCartItems.push({
                   saleId: sale.id,
@@ -611,7 +639,7 @@ export const CollectionConsolidation: React.FC = () => {
          let sellerName = sellers.find(s => s.id === r.seller_id)?.name;
          
          if (!sellerName && r.sale_id) {
-            const sale = sales.find(s => s.id === r.sale_id);
+            const sale = localSales.find(s => s.id === r.sale_id);
             if (sale && sale.seller_id) {
                sellerName = sellers.find(s => s.id === sale.seller_id)?.name;
             }
@@ -723,13 +751,13 @@ export const CollectionConsolidation: React.FC = () => {
 
             if (error) throw error;
 
-            await syncSupabaseData();
+            const newSalesData = await syncSupabaseData();
             
             setEditingPlanillaData({ id: p.id, code: p.code, type: wasManual ? 'MANUAL' : 'PENDING' });
 
             if (wasManual && planillaRecords.length > 0) {
                const restoredCartItems: ManualCartItem[] = [];
-               const freshSales = useStore.getState().sales;
+               const freshSales = newSalesData && newSalesData.length > 0 ? newSalesData : localSales;
 
                planillaRecords.forEach(r => {
                   const sale = freshSales.find(s => s.id === r.sale_id);
@@ -897,7 +925,7 @@ export const CollectionConsolidation: React.FC = () => {
          {renderPrintablePlanilla()}
 
          {showHistoryModalTarget && (() => {
-            const sale = sales.find(s => s.id === showHistoryModalTarget);
+            const sale = localSales.find(s => s.id === showHistoryModalTarget);
             if (!sale) return null;
             // Removed r.seller_id !== 'MANUAL' to show ALL payments regardless of origin
             const historyRecords = collectionRecords.filter(r => r.sale_id === sale.id);
@@ -1764,7 +1792,7 @@ export const CollectionConsolidation: React.FC = () => {
                                           {(() => {
                                              let sName = sellers.find(s => s.id === r.seller_id)?.name;
                                              if (!sName && (r as any).sale_id) {
-                                                const sale = sales.find(s => s.id === (r as any).sale_id);
+                                                const sale = localSales.find(s => s.id === (r as any).sale_id);
                                                 if (sale && sale.seller_id) {
                                                    sName = sellers.find(s => s.id === sale.seller_id)?.name;
                                                 }
