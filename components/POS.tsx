@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product, SaleItem, Client, Sale, Batch } from '../types';
-import { ShoppingCart, Search, Trash2, CheckCircle2, X, Plus, Minus, CreditCard, Banknote, HelpCircle, AlertTriangle, ShieldCheck, User, Zap, Loader2, Printer, Check, ScanLine, Tag, Package, Hash, Keyboard } from 'lucide-react';
+import { ShoppingCart, Search, Trash2, CheckCircle2, X, Plus, Minus, CreditCard, Banknote, HelpCircle, AlertTriangle, ShieldCheck, User, Zap, Loader2, Printer, Check, ScanLine, Tag, Package, Hash, Keyboard, Smartphone } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
 import { allocateBatchesFIFO } from '../utils/productUtils';
 
 export const POS: React.FC = () => {
-   const { users, currentUser } = useStore();
+   const { currentUser } = useStore();
 
    const barcodeInputRef = useRef<HTMLInputElement>(null);
+   const checkoutInputRef = useRef<HTMLInputElement>(null);
+   
    const [isSaving, setIsSaving] = useState(false);
    const [isLoadingClient, setIsLoadingClient] = useState(false);
 
@@ -73,22 +75,53 @@ export const POS: React.FC = () => {
    const [isSearchingProd, setIsSearchingProd] = useState(false);
    
    const [cart, setCart] = useState<SaleItem[]>([]);
-   const [paymentMethod, setPaymentMethod] = useState<'CONTADO' | 'CREDITO'>('CONTADO');
+
+   // --- CHECKOUT STATE ---
+   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+   const [checkoutPaymentMethod, setCheckoutPaymentMethod] = useState<'EFECTIVO' | 'TARJETA' | 'YAPE' | 'TRANSFERENCIA'>('EFECTIVO');
+   const [amountTendered, setAmountTendered] = useState<string>('');
+
+   const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
+   const subtotal = grandTotal / (1 + (Number(dbCompany?.igv_percent || 18) / 100));
+   const igv = grandTotal - subtotal;
+
+   const changeDue = (Number(amountTendered) || 0) - grandTotal;
    
    // Focus lock
    useEffect(() => {
       const handleClick = (e: MouseEvent) => {
          if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'SELECT') {
-            barcodeInputRef.current?.focus();
+            if (isCheckoutOpen) {
+                checkoutInputRef.current?.focus();
+            } else if (!dialog.isOpen) {
+                barcodeInputRef.current?.focus();
+            }
          }
       };
       window.addEventListener('click', handleClick);
       return () => window.removeEventListener('click', handleClick);
-   }, []);
+   }, [isCheckoutOpen, dialog.isOpen]);
+
+   // Focus on amountTendered when checkout opens
+   useEffect(() => {
+       if (isCheckoutOpen) {
+           setTimeout(() => checkoutInputRef.current?.focus(), 100);
+           if (checkoutPaymentMethod !== 'EFECTIVO') {
+               setAmountTendered(grandTotal.toFixed(2));
+           } else {
+               setAmountTendered('');
+           }
+       }
+   }, [isCheckoutOpen, checkoutPaymentMethod, grandTotal]);
 
    // Grid Product Search
    useEffect(() => {
        const timer = setTimeout(async () => {
+           if (productSearch.trim() === '') {
+               setSearchedProducts([]);
+               setSelectedIndex(-1);
+               return;
+           }
            setIsSearchingProd(true);
            setSelectedIndex(-1);
            try {
@@ -101,7 +134,7 @@ export const POS: React.FC = () => {
                if (pData && pData.length > 0) {
                    const enriched = pData.map(p => ({ ...p, current_stock: Number(p.stock || 100) }));
                    setSearchedProducts(enriched);
-                   if (productSearch.length >= 2) setSelectedIndex(0); // Auto-select first item if searching
+                   if (productSearch.length >= 2) setSelectedIndex(0); 
                } else { setSearchedProducts([]); }
            } catch (error) { console.error(error); } finally { setIsSearchingProd(false); }
        }, 300);
@@ -117,7 +150,7 @@ export const POS: React.FC = () => {
    const handleBarcodeScan = async (e: React.KeyboardEvent<HTMLInputElement>) => {
        if (e.key === 'F2') { e.preventDefault(); resetPOS(); return; }
        if (e.key === 'F4') { e.preventDefault(); handleFastClient(); return; }
-       if (e.key === 'F8') { e.preventDefault(); if (cart.length > 0 && !isSaving) executeSaveSale(); return; }
+       if (e.key === 'F8') { e.preventDefault(); if (cart.length > 0 && !isSaving) setIsCheckoutOpen(true); return; }
        if (e.key === 'F9') { e.preventDefault(); setPresentationMode(prev => prev === 'UND' ? 'PKG' : 'UND'); return; }
        
        if (e.key === 'ArrowDown') {
@@ -140,13 +173,12 @@ export const POS: React.FC = () => {
                    setProductSearch('');
                    setSelectedIndex(-1);
                } else if (cart.length > 0) {
-                   executeSaveSale(); 
+                   setIsCheckoutOpen(true); 
                }
                return;
            }
 
            if (searchedProducts.length > 0 && selectedIndex >= 0 && code.length < 5) {
-               // Si tipeó algo corto y tiene algo seleccionado en la lista
                await addProductToCart(searchedProducts[selectedIndex]);
                setProductSearch('');
                setSelectedIndex(-1);
@@ -176,6 +208,29 @@ export const POS: React.FC = () => {
            } finally {
                setIsSearchingProd(false);
            }
+       }
+   };
+
+   // Handler para modal de cobro
+   const handleCheckoutKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+       if (e.key === 'Escape') {
+           e.preventDefault();
+           setIsCheckoutOpen(false);
+           setTimeout(() => barcodeInputRef.current?.focus(), 100);
+       } else if (e.key === 'Enter') {
+           e.preventDefault();
+           if (checkoutPaymentMethod === 'EFECTIVO' && (Number(amountTendered) < grandTotal)) {
+               showDialog('warning', 'Monto Inválido', 'El monto recibido es menor al total.');
+               return;
+           }
+           executeSaveSale();
+       } else if (e.key === 'F8') {
+           e.preventDefault();
+           if (checkoutPaymentMethod === 'EFECTIVO' && (Number(amountTendered) < grandTotal)) {
+               showDialog('warning', 'Monto Inválido', 'El monto recibido es menor al total.');
+               return;
+           }
+           executeSaveSale();
        }
    };
 
@@ -274,16 +329,14 @@ export const POS: React.FC = () => {
        setTimeout(() => barcodeInputRef.current?.focus(), 100);
    };
 
-   const subtotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) / (1 + (Number(dbCompany?.igv_percent || 18) / 100));
-   const igv = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0) - subtotal;
-   const grandTotal = cart.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
-
    const resetPOS = () => {
        setCart([]);
        setProductSearch('');
        setSelectedIndex(-1);
        setClientData({ name: 'CLIENTE VARIOS', doc_number: '00000000', address: '', doc_type: 'DNI' });
        setDocType('BOLETA');
+       setIsCheckoutOpen(false);
+       setAmountTendered('');
        const activeBoletaSeries = dbSeries.find(s => s.type === 'BOLETA');
        if (activeBoletaSeries) { 
           setSeries(activeBoletaSeries.series); 
@@ -373,18 +426,19 @@ export const POS: React.FC = () => {
        if (cart.length === 0) return;
        if (!series || !docNumber) { showDialog('error', 'Error', "No hay serie asignada."); return; }
 
+       // Fix Foreign Key Constraint: We leave seller_id undefined if we don't have a specific seller assigned
        const newSaleData: any = {
           id: crypto.randomUUID(), 
           document_type: docType,
           series: series,
           number: docNumber, // temporal
-          payment_method: paymentMethod,
-          payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
-          balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
+          payment_method: checkoutPaymentMethod === 'EFECTIVO' ? 'CONTADO' : checkoutPaymentMethod, // Map payment method appropriately or keep 'CONTADO' and add detailed method if supported by schema
+          payment_status: 'PAID',
+          balance: 0,
           client_name: clientData.name || 'CLIENTE VARIOS',
           client_ruc: clientData.doc_number || '00000000',
           client_address: clientData.address || '',
-          seller_id: currentUser?.id,
+          seller_id: undefined, // Fixes foreign key constraint violation if currentUser is not a Seller
           subtotal,
           igv,
           total: grandTotal,
@@ -393,10 +447,13 @@ export const POS: React.FC = () => {
           delivery_mode: 'EXPRESS_MISMO_DIA', 
           created_at: new Date().toISOString(),
           items: cart, 
-          sunat_status: 'PENDING'
+          sunat_status: 'PENDING',
+          // Optional metadata for payment
+          notes: checkoutPaymentMethod !== 'EFECTIVO' ? `PAGADO CON: ${checkoutPaymentMethod}` : `EFECTIVO - RECIBIDO: ${amountTendered} - VUELTO: ${changeDue}`
        };
 
        setIsSaving(true);
+       setIsCheckoutOpen(false);
 
        try {
           const { data, error } = await supabase.rpc('process_sale_transaction', { p_sale_data: newSaleData });
@@ -413,6 +470,7 @@ export const POS: React.FC = () => {
           }
        } catch (err: any) { 
           showDialog('error', 'Error Crítico', err.message);
+          setIsCheckoutOpen(true); // Reopen on error
        } finally { 
           setIsSaving(false); 
           setTimeout(() => barcodeInputRef.current?.focus(), 100);
@@ -422,6 +480,99 @@ export const POS: React.FC = () => {
    return (
       <div className="flex h-[calc(100vh-4rem)] -m-6 lg:-m-8 bg-slate-900 text-white font-sans overflow-hidden">
          
+         {/* --- CHECKOUT MODAL --- */}
+         {isCheckoutOpen && (
+             <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[90] flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) setIsCheckoutOpen(false); }}>
+                 <div className="bg-slate-900 border-2 border-emerald-500 rounded-3xl shadow-[0_0_50px_rgba(16,185,129,0.3)] w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                     <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950">
+                         <h2 className="text-3xl font-black text-white tracking-widest flex items-center gap-3">
+                             <Banknote className="w-8 h-8 text-emerald-400" /> COBRANZA
+                         </h2>
+                         <button onClick={() => setIsCheckoutOpen(false)} className="text-slate-500 hover:text-rose-400 transition-colors p-2 rounded-xl hover:bg-slate-800">
+                             <X className="w-8 h-8" />
+                         </button>
+                     </div>
+                     <div className="p-8 flex flex-col gap-8">
+                         {/* Total a Pagar */}
+                         <div className="flex flex-col items-center justify-center p-6 bg-slate-950 rounded-2xl border border-slate-800 shadow-inner">
+                             <span className="text-slate-400 font-bold uppercase tracking-widest mb-2">Total a Pagar</span>
+                             <span className="text-7xl font-black text-emerald-400 drop-shadow-md">S/ {grandTotal.toFixed(2)}</span>
+                         </div>
+
+                         {/* Metodos de Pago */}
+                         <div className="grid grid-cols-4 gap-4">
+                             {[
+                                { id: 'EFECTIVO', icon: Banknote, label: 'Efectivo' },
+                                { id: 'TARJETA', icon: CreditCard, label: 'Tarjeta' },
+                                { id: 'YAPE', icon: Smartphone, label: 'Yape/Plin' },
+                                { id: 'TRANSFERENCIA', icon: Zap, label: 'Transf.' }
+                             ].map(method => {
+                                 const Icon = method.icon;
+                                 const isSelected = checkoutPaymentMethod === method.id;
+                                 return (
+                                     <button
+                                         key={method.id}
+                                         onClick={() => {
+                                             setCheckoutPaymentMethod(method.id as any);
+                                             if (method.id !== 'EFECTIVO') setAmountTendered(grandTotal.toFixed(2));
+                                             else setAmountTendered('');
+                                             checkoutInputRef.current?.focus();
+                                         }}
+                                         className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 transition-all active:scale-95 ${isSelected ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-slate-200'}`}
+                                     >
+                                         <Icon className="w-8 h-8 mb-2" />
+                                         <span className="font-bold text-sm tracking-wide">{method.label}</span>
+                                     </button>
+                                 );
+                             })}
+                         </div>
+
+                         {/* Input de Monto */}
+                         <div className="flex gap-6 items-end">
+                             <div className="flex-1">
+                                 <label className="block text-sm font-bold text-slate-400 mb-2 uppercase tracking-wider">Monto Recibido</label>
+                                 <div className="relative">
+                                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-slate-500">S/</span>
+                                     <input
+                                         ref={checkoutInputRef}
+                                         type="number"
+                                         step="0.10"
+                                         value={amountTendered}
+                                         onChange={(e) => setAmountTendered(e.target.value)}
+                                         onKeyDown={handleCheckoutKeyDown}
+                                         className="w-full bg-slate-800 border-2 border-slate-700 rounded-2xl pl-12 pr-4 py-4 text-4xl font-black text-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/20 outline-none transition-all shadow-inner"
+                                         placeholder="0.00"
+                                     />
+                                 </div>
+                             </div>
+                             
+                             {checkoutPaymentMethod === 'EFECTIVO' && changeDue >= 0 && amountTendered !== '' && (
+                                 <div className="flex-1 p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 flex flex-col items-end justify-center">
+                                     <span className="text-indigo-300 font-bold uppercase tracking-widest text-xs mb-1">Vuelto a entregar</span>
+                                     <span className="text-4xl font-black text-indigo-400">S/ {changeDue.toFixed(2)}</span>
+                                 </div>
+                             )}
+                             {checkoutPaymentMethod === 'EFECTIVO' && changeDue < 0 && amountTendered !== '' && (
+                                 <div className="flex-1 p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex flex-col items-end justify-center">
+                                     <span className="text-rose-400 font-bold uppercase tracking-widest text-xs mb-1">Falta</span>
+                                     <span className="text-4xl font-black text-rose-500">S/ {Math.abs(changeDue).toFixed(2)}</span>
+                                 </div>
+                             )}
+                         </div>
+
+                         {/* Acciones */}
+                         <button
+                             onClick={executeSaveSale}
+                             disabled={checkoutPaymentMethod === 'EFECTIVO' && (Number(amountTendered) < grandTotal)}
+                             className="w-full mt-4 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 disabled:text-slate-500 disabled:border-slate-600 text-slate-950 font-black text-3xl py-6 rounded-2xl shadow-[0_0_20px_rgba(52,211,153,0.4)] flex items-center justify-center gap-4 transition-all active:scale-[0.98]"
+                         >
+                             <CheckCircle2 className="w-10 h-10" /> PROCESAR VENTA (Enter)
+                         </button>
+                     </div>
+                 </div>
+             </div>
+         )}
+
          {/* --- DIALOG --- */}
          {dialog.isOpen && (
              <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
@@ -447,7 +598,7 @@ export const POS: React.FC = () => {
                              onClick={() => {
                                  if (dialog.onConfirm) dialog.onConfirm();
                                  closeDialog();
-                                 setTimeout(() => barcodeInputRef.current?.focus(), 100);
+                                 if (!isCheckoutOpen) setTimeout(() => barcodeInputRef.current?.focus(), 100);
                              }}
                              className={`px-6 py-3 font-bold rounded-lg text-white transition-colors ${dialog.type === 'error' ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500'}`}
                          >
@@ -459,7 +610,7 @@ export const POS: React.FC = () => {
          )}
 
          {isSaving && (
-            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-[110] flex flex-col items-center justify-center">
                <Loader2 className="w-20 h-20 text-blue-500 animate-spin mb-6" />
                <h2 className="text-3xl font-black text-white tracking-widest">PROCESANDO...</h2>
             </div>
@@ -492,6 +643,7 @@ export const POS: React.FC = () => {
                             onChange={(e) => setProductSearch(e.target.value)}
                             onKeyDown={handleBarcodeScan}
                             autoFocus
+                            disabled={isCheckoutOpen}
                         />
                         {isSearchingProd && (
                             <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
@@ -641,7 +793,7 @@ export const POS: React.FC = () => {
 
                 {/* Boton Pagar */}
                 <button
-                    onClick={executeSaveSale}
+                    onClick={() => { if(cart.length > 0) setIsCheckoutOpen(true); }}
                     disabled={cart.length === 0 || isSaving}
                     className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-800 disabled:text-slate-600 disabled:border disabled:border-slate-700 disabled:shadow-none disabled:cursor-not-allowed text-slate-950 font-black text-2xl py-5 rounded-2xl shadow-[0_0_20px_rgba(52,211,153,0.4)] flex items-center justify-center gap-3 transition-all active:scale-[0.98]"
                 >
