@@ -20,7 +20,7 @@ BEGIN
     -- 1. Verificar permisos (Solo ADMIN puede ejecutar esto)
     IF NOT EXISTS (
         SELECT 1 FROM public.erp_users 
-        WHERE id = auth.uid() AND role IN ('ADMIN', 'SUPER_ADMIN')
+        WHERE auth_id = auth.uid() AND role = 'ADMIN'
     ) THEN
         RAISE EXCEPTION 'Acceso denegado. Solo los administradores pueden crear nuevos usuarios.';
     END IF;
@@ -54,25 +54,28 @@ BEGIN
 
     -- 4. Insertar en auth.identities (Necesario para el inicio de sesión de GoTrue)
     INSERT INTO auth.identities (
-        id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at
+        id, user_id, identity_data, provider, provider_id, last_sign_in_at, created_at, updated_at
     ) VALUES (
         gen_random_uuid(),
         v_user_id,
         format('{"sub":"%s","email":"%s"}', v_user_id::text, p_email)::jsonb,
         'email',
+        v_user_id::text,
         now(),
         now(),
         now()
     );
 
-    -- 5. Insertar en public.erp_users (Mundo Público / ERP)
-    INSERT INTO public.erp_users (
-        id, username, name, role, permissions, is_active, 
-        requires_attendance, avatar_url, created_at
-    ) VALUES (
-        v_user_id, p_email, p_name, p_role, p_permissions, true, 
-        p_requires_attendance, p_avatar_url, now()
-    );
+    -- 5. Actualizar public.erp_users (El trigger de Supabase ya creó la fila base en el paso 3)
+    UPDATE public.erp_users SET 
+        username = p_email, 
+        name = p_name, 
+        role = p_role::user_role, 
+        permissions = to_jsonb(p_permissions), 
+        is_active = true, 
+        requires_attendance = p_requires_attendance, 
+        avatar_url = p_avatar_url
+    WHERE auth_id = v_user_id;
 
     RETURN jsonb_build_object('success', true, 'user_id', v_user_id, 'message', 'Usuario creado y autenticado correctamente');
 EXCEPTION WHEN OTHERS THEN
