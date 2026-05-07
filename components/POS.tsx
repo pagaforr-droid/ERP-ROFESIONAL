@@ -8,7 +8,7 @@ import { allocateBatchesFIFO } from '../utils/productUtils';
 
 export const POS: React.FC = () => {
    const store = useStore();
-   const { currentUser, currentCashSession } = store;
+   const { currentUser, currentPosSession } = store;
 
    const barcodeInputRef = useRef<HTMLInputElement>(null);
    const checkoutInputRef = useRef<HTMLInputElement>(null);
@@ -40,7 +40,7 @@ export const POS: React.FC = () => {
        }
        setIsOpeningSession(true);
        try {
-           await store.openCashSession(amt, currentUser?.id || '00000000-0000-0000-0000-000000000000');
+           await store.openPosSession(amt, currentUser?.id || '00000000-0000-0000-0000-000000000000');
            setOpeningAmount('');
            setTimeout(() => barcodeInputRef.current?.focus(), 100);
        } catch (err: any) {
@@ -52,9 +52,9 @@ export const POS: React.FC = () => {
 
    // Shift Calculations
    const calculateShiftData = () => {
-       if (!currentCashSession) return { cash: 0, card: 0, yape: 0, transfer: 0, credit: 0, totalIncome: 0, expected: 0 };
+       if (!currentPosSession) return { cash: 0, card: 0, yape: 0, transfer: 0, credit: 0, totalIncome: 0, expected: 0 };
        const sales = store.sales.filter(s => 
-           new Date(s.created_at) >= new Date(currentCashSession.open_time) && 
+           new Date(s.created_at) >= new Date(currentPosSession.open_time) && 
            s.seller_id === currentUser?.id
        );
        
@@ -70,7 +70,7 @@ export const POS: React.FC = () => {
        });
 
        const totalIncome = cash + card + yape + transfer;
-       const expected = currentCashSession.system_opening_amount + cash;
+       const expected = currentPosSession.system_opening_amount + cash;
 
        return { cash, card, yape, transfer, credit, totalIncome, expected };
    };
@@ -78,11 +78,11 @@ export const POS: React.FC = () => {
    const shiftData = calculateShiftData();
 
    const handleCloseSession = () => {
-        if (!currentCashSession) return;
-        showDialog('confirm', 'Cerrar Turno', '¿Está seguro que desea cerrar su turno actual? Se bloqueará el terminal.', async () => {
+        if (!currentPosSession) return;
+        showDialog('confirm', 'Cerrar Turno', '¿Está seguro que desea cerrar su turno actual? Se bloqueará el terminal y se inyectará el monto en el Flujo de Caja Global.', async () => {
             setIsSaving(true);
             try {
-                await store.closeCashSession(currentCashSession.id, {
+                await store.closePosSession(currentPosSession.id, {
                     declared_cash: shiftData.expected,
                     declared_vouchers: shiftData.card,
                     declared_transfers: shiftData.yape + shiftData.transfer,
@@ -172,7 +172,7 @@ export const POS: React.FC = () => {
    // Focus lock
    useEffect(() => {
       const handleClick = (e: MouseEvent) => {
-         if (!currentCashSession) return;
+         if (!currentPosSession) return;
          if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'SELECT') {
             if (isCheckoutOpen) {
                 checkoutInputRef.current?.focus();
@@ -183,7 +183,7 @@ export const POS: React.FC = () => {
       };
       window.addEventListener('click', handleClick);
       return () => window.removeEventListener('click', handleClick);
-   }, [isCheckoutOpen, dialog.isOpen, currentCashSession, showShiftModal]);
+   }, [isCheckoutOpen, dialog.isOpen, currentPosSession, showShiftModal]);
 
    useEffect(() => {
        if (isCheckoutOpen) {
@@ -589,7 +589,7 @@ export const POS: React.FC = () => {
    };
 
    // --- RENDER ENFORCER ---
-   if (!currentCashSession) {
+   if (!currentPosSession) {
        return (
            <div className="fixed inset-0 bg-slate-900 z-[100] flex flex-col items-center justify-center p-4">
                {renderDialog()}
@@ -936,11 +936,11 @@ export const POS: React.FC = () => {
                          <div className="space-y-3 mb-6">
                              <div className="flex justify-between text-sm">
                                  <span className="font-bold text-slate-500">Apertura:</span>
-                                 <span className="font-bold text-slate-800">{new Date(currentCashSession.open_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                 <span className="font-bold text-slate-800">{new Date(currentPosSession.open_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                              </div>
                              <div className="flex justify-between text-sm">
                                  <span className="font-bold text-slate-500">Fondo Inicial:</span>
-                                 <span className="font-bold text-slate-800">S/ {currentCashSession.system_opening_amount.toFixed(2)}</span>
+                                 <span className="font-bold text-slate-800">S/ {currentPosSession.system_opening_amount.toFixed(2)}</span>
                              </div>
                              <div className="border-t border-slate-100 my-2 pt-2"></div>
                              <div className="flex justify-between text-sm">

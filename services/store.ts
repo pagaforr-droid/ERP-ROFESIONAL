@@ -79,6 +79,8 @@ interface AppState {
    collectionPlanillas: CollectionPlanilla[];
    cashSessions: import('../types').CashRegisterSession[];
    currentCashSession: import('../types').CashRegisterSession | null;
+   posSessions: import('../types').PosSession[];
+   currentPosSession: import('../types').PosSession | null;
 
    // Actions
    updateCompany: (config: Partial<CompanyConfig>) => void;
@@ -167,6 +169,9 @@ interface AppState {
    openCashSession: (amount: number, userId: string) => void;
    closeCashSession: (sessionId: string, details: Omit<import('../types').CashRegisterSession, 'id' | 'open_time' | 'opened_by' | 'status' | 'system_opening_amount' | 'system_income' | 'system_expense' | 'system_expected_close' | 'difference'>, userId: string) => void;
 
+   openPosSession: (amount: number, userId: string) => void;
+   closePosSession: (sessionId: string, details: any, userId: string) => void;
+
    // User Actions
    addUser: (User: User) => void;
    updateUser: (User: User) => void;
@@ -250,6 +255,8 @@ export const useStore = create<AppState>((set, get) => ({
    collectionPlanillas: [],
    cashSessions: [],
    currentCashSession: null,
+   posSessions: [],
+   currentPosSession: null,
 
    updateCompany: (config) => set((s) => ({ company: { ...s.company, ...config } })),
 
@@ -1075,6 +1082,87 @@ export const useStore = create<AppState>((set, get) => ({
       });
       return { batches: currentBatches };
    }),
+
+   openPosSession: async (amount: number, userId: string) => {
+      const { data: newSessionId, error } = await supabase.rpc('open_pos_session', {
+         p_amount: amount,
+         p_user_id: userId === '00000000-0000-0000-0000-000000000000' ? null : userId
+      });
+
+      if (error) {
+         console.error('Supabase Error:', error);
+         throw error;
+      }
+
+      set(s => {
+         if (s.currentPosSession) return s; 
+         const newSession: import('../types').PosSession = {
+            id: newSessionId || crypto.randomUUID(),
+            open_time: new Date().toISOString(),
+            opened_by: userId,
+            status: 'OPEN',
+            system_opening_amount: amount
+         };
+         return {
+            posSessions: [newSession, ...s.posSessions],
+            currentPosSession: newSession
+         };
+      });
+   },
+
+   closePosSession: async (sessionId: string, details: any, userId: string) => {
+      const { error } = await supabase.rpc('close_pos_session', {
+         p_session_id: sessionId,
+         p_user_id: userId === '00000000-0000-0000-0000-000000000000' ? null : userId,
+         p_declared_cash: details.declared_cash,
+         p_declared_card: details.declared_card,
+         p_declared_yape: details.declared_yape,
+         p_declared_total: details.declared_total
+      });
+
+      if (error) {
+         console.error('Supabase Error:', error);
+         throw error;
+      }
+
+      set(s => {
+         const session = s.posSessions.find(x => x.id === sessionId);
+         if (!session || session.status === 'CLOSED') return s;
+
+         const closedSession: import('../types').PosSession = {
+            ...session,
+            status: 'CLOSED',
+            close_time: new Date().toISOString(),
+            closed_by: userId,
+            system_expected_close: details.declared_total,
+            declared_cash: details.declared_cash,
+            declared_card: details.declared_card,
+            declared_yape: details.declared_yape,
+            declared_total: details.declared_total,
+            difference: 0
+         };
+
+         // Creamos el movimiento virtual para el front-end
+         // Supabase ya lo insertó por detrás, pero para que no haya que refrescar CashFlow,
+         // lo inyectamos al store de movimientos si es posible.
+         const m: import('../types').CashMovement = {
+            id: crypto.randomUUID(),
+            type: 'INCOME',
+            category_name: 'LIQUIDACION POS',
+            description: 'Liquidación Turno POS - Cajero: ' + userId,
+            amount: details.declared_cash,
+            date: new Date().toISOString(),
+            user_id: userId,
+            reference_id: s.currentCashSession?.id || 'NO_GLOBAL_SESSION'
+         };
+
+         return {
+            posSessions: s.posSessions.map(c => c.id === sessionId ? closedSession : c),
+            currentPosSession: null,
+            cashMovements: [m, ...s.cashMovements]
+         };
+      });
+   },
 
    annulSale: async (saleId, userId) => {
       const { data, error } = await supabase.rpc('annul_sale_transaction', {

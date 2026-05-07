@@ -779,3 +779,21 @@ export type ViewState =
   | 'personnel-management'
   | 'pos' // NEW: Punto de Venta
   | 'seller-tracking';
+
+ e x p o r t   i n t e r f a c e   P o s S e s s i o n   { 
+         i d :   s t r i n g ; 
+         o p e n _ t i m e :   s t r i n g ; 
+         c l o s e _ t i m e ? :   s t r i n g ; 
+         o p e n e d _ b y :   s t r i n g ; 
+         c l o s e d _ b y ? :   s t r i n g ; 
+         s t a t u s :   ' O P E N '   |   ' C L O S E D ' ; 
+         s y s t e m _ o p e n i n g _ a m o u n t :   n u m b e r ; 
+         s y s t e m _ e x p e c t e d _ c l o s e ? :   n u m b e r ; 
+         d e c l a r e d _ c a s h ? :   n u m b e r ; 
+         d e c l a r e d _ c a r d ? :   n u m b e r ; 
+         d e c l a r e d _ y a p e ? :   n u m b e r ; 
+         d e c l a r e d _ t o t a l ? :   n u m b e r ; 
+         d i f f e r e n c e ? :   n u m b e r ; 
+ } 
+  
+ 
