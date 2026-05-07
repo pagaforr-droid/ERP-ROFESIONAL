@@ -112,21 +112,23 @@ export const CollectionConsolidation: React.FC = () => {
          if (draftStr) {
             try {
                const draft = JSON.parse(draftStr);
-               const cart = draft.cart || [];
-               if (cart.length > 0) {
-                  const total = cart.reduce((acc: number, curr: any) => acc + curr.amountToPay, 0);
-                  unified.push({
-                     type: 'COLLECTION_DRAFT',
-                     id: 'DRAFT_MANUAL',
-                     code: 'BORRADOR MANUAL',
-                     date: draft.date || new Date().toISOString(),
-                     total_amount: total,
-                     record_count: cart.length,
-                     status: 'DRAFT',
-                     user_id: currentUser?.id,
-                     glosa: draft.glosa || 'Planilla en edición (no procesada)',
-                     original: draft
-                  });
+               if (draft) {
+                  const cart = draft.cart || [];
+                  if (cart.length > 0) {
+                     const total = cart.reduce((acc: number, curr: any) => acc + curr.amountToPay, 0);
+                     unified.push({
+                        type: 'COLLECTION_DRAFT',
+                        id: 'DRAFT_MANUAL',
+                        code: 'BORRADOR MANUAL',
+                        date: draft.date || new Date().toISOString(),
+                        total_amount: total,
+                        record_count: cart.length,
+                        status: 'DRAFT',
+                        user_id: currentUser?.id,
+                        glosa: draft.glosa || 'Planilla en edición (no procesada)',
+                        original: draft
+                     });
+                  }
                }
             } catch (e) {
                console.error(e);
@@ -184,8 +186,8 @@ export const CollectionConsolidation: React.FC = () => {
       }
 
       return clients.filter(c =>
-         c.name.toLowerCase().includes(q) ||
-         (c.doc_number && c.doc_number.toLowerCase().includes(q))
+         (c.name || '').toLowerCase().includes(q) ||
+         (c.doc_number && String(c.doc_number).toLowerCase().includes(q))
       ).slice(0, 10);
    }, [clients, manualClientSearch, localSales]);
 
@@ -276,7 +278,7 @@ export const CollectionConsolidation: React.FC = () => {
         const { data: catData } = await supabase.from('expense_categories').select('*');
         if (catData) {
            setExpenseCategories(catData);
-           const def = catData.find(c => c.name.toUpperCase().includes('COBRANZA VENDEDORES'));
+           const def = catData.find(c => (c.name || '').toUpperCase().includes('COBRANZA VENDEDORES'));
            if (def) setSelectedCategoryId(def.id);
            else if (catData.length > 0) setSelectedCategoryId(catData[0].id);
         }
