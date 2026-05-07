@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { NewSale } from './components/NewSale';
 import { supabase } from './services/supabase';
-import { EditSale } from './components/EditSale'; // NUEVO MÓDULO IMPORTADO
+import { EditSale } from './components/EditSale';
+import { POS } from './components/POS';
 import { AdvancedOrderEntry } from './components/AdvancedOrderEntry';
 import { Purchases } from './components/Purchases';
 import { Dispatch } from './components/Dispatch';
@@ -93,6 +94,7 @@ const SIDEBAR_SECTIONS = [
     title: 'Comercial',
     theme: 'blue' as ThemeKey,
     items: [
+      { view: 'pos', icon: ShoppingBag, label: 'Punto de Venta (POS)' },
       { view: 'sales', icon: ShoppingCart, label: 'Venta Directa' },
       { view: 'edit-sale', icon: Edit3, label: 'Editar/Auditar Venta' },
       { view: 'advanced-orders', icon: ClipboardList, label: 'Pedido Avanzado' },
@@ -159,7 +161,7 @@ const SIDEBAR_SECTIONS = [
 
 export default function App() {
   // AÑADIDO 'edit-sale' A LOS TIPOS DE VISTA POSIBLES
-  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'supplier-credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'system-maintenance'>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'supplier-credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'pos' | 'system-maintenance'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
   const { company, currentUser, logout, updateCompany } = useStore();
@@ -193,7 +195,7 @@ export default function App() {
 
   // --- PERMISSION CHECK ---
   const canAccess = (view: string) => {
-    return currentUser.permissions?.includes(view) || view === 'edit-sale' || view === 'accounts-receivable' || view === 'seller-tracking' || view === 'supplier-credit-notes'; 
+    return currentUser.permissions?.includes(view) || view === 'edit-sale' || view === 'pos' || view === 'accounts-receivable' || view === 'seller-tracking' || view === 'supplier-credit-notes'; 
   };
 
   const renderContent = () => {
@@ -203,6 +205,7 @@ export default function App() {
 
     switch (currentView) {
       case 'dashboard': return <Dashboard />;
+      case 'pos': return <POS />;
       case 'sales': return <NewSale />;
       case 'edit-sale': return <EditSale />; // RENDER DEL NUEVO MÓDULO
       case 'advanced-orders': return <AdvancedOrderEntry />;

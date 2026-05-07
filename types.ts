@@ -759,4 +759,5 @@ export type ViewState =
   | 'accounts-receivable' // NEW: Cuentas por Cobrar
   | 'supplier-credit-notes' // NEW: NC Proveedores
   | 'personnel-management'
+  | 'pos' // NEW: Punto de Venta
   | 'seller-tracking';
