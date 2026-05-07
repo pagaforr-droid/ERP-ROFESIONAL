@@ -1,7 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { User } from '../types';
-import { Users, Shield, Edit, Save, Plus, Search, UserCheck, CheckSquare, Camera, RefreshCw } from 'lucide-react';
+import { Users, Shield, Edit, Save, Plus, Search, UserCheck, CheckSquare, Camera, RefreshCw, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+
+interface ToastProps {
+  message: string;
+  type: 'error' | 'success' | 'warning' | 'info';
+  onClose: () => void;
+}
+
+const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
+  const getStyle = () => {
+    if (type === 'error') return { border: 'border-red-500', icon: <X className="w-6 h-6 text-red-500 mr-3" />, text: 'text-red-800', bg: 'bg-red-50' };
+    if (type === 'warning') return { border: 'border-amber-500', icon: <AlertCircle className="w-6 h-6 text-amber-500 mr-3" />, text: 'text-amber-800', bg: 'bg-amber-50' };
+    if (type === 'success') return { border: 'border-green-500', icon: <CheckCircle2 className="w-6 h-6 text-green-500 mr-3" />, text: 'text-green-800', bg: 'bg-green-50' };
+    return { border: 'border-blue-500', icon: <AlertCircle className="w-6 h-6 text-blue-500 mr-3" />, text: 'text-blue-800', bg: 'bg-blue-50' };
+  };
+  const s = getStyle();
+
+  return (
+    <div style={{ animation: 'slideDown 0.3s ease-out' }} className={`fixed top-10 left-1/2 transform -translate-x-1/2 z-[100] flex items-center p-4 rounded-xl shadow-2xl border-l-4 min-w-[350px] ${s.bg} ${s.border}`}>
+      {s.icon}
+      <div className="flex-1">
+        <p className={`text-sm font-bold ${s.text}`}>{message}</p>
+      </div>
+      <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600 transition-colors">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
 
 // Configuration for permission groups
 const PERMISSION_GROUPS = [
@@ -64,6 +92,13 @@ const ROLE_PRESETS: Record<string, string[]> = {
 };
 
 export const UserManagement: React.FC = () => {
+   const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: 'error' | 'success' | 'warning' | 'info' }>>([]);
+   const showToast = (message: string, type: 'error' | 'success' | 'warning' | 'info') => {
+      const id = Date.now();
+      setToasts(prev => [...prev, { id, message, type }]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+   };
+
    const [dbUsers, setDbUsers] = useState<any[]>([]);
    const [isLoading, setIsLoading] = useState(false);
    const [isSaving, setIsSaving] = useState(false);
@@ -120,7 +155,7 @@ export const UserManagement: React.FC = () => {
    const handleSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       if (!formData.username || !formData.name) {
-         alert("Complete los campos obligatorios");
+         showToast("Complete los campos obligatorios", "warning");
          return;
       }
 
@@ -160,13 +195,13 @@ export const UserManagement: React.FC = () => {
             if (!data || data.length === 0) {
                 throw new Error("Supabase bloqueó la creación en silencio. Verifica las políticas RLS.");
             }
-            alert("Perfil creado en Supabase.\n\nIMPORTANTE: Para que este usuario pueda iniciar sesión, debes ir a Supabase -> Authentication, crearle una cuenta con este mismo correo y pegar su 'Auth ID' en la tabla erp_users.");
+            showToast("Perfil creado en Supabase. Configura la contraseña en Auth.", "success");
          }
 
          await fetchUsers(); // Recargar la tabla con los datos frescos
          setIsModalOpen(false);
       } catch (error: any) {
-         alert("Error al guardar: " + error.message);
+         showToast("Error al guardar: " + error.message, "error");
       } finally {
          setIsSaving(false);
       }
@@ -213,7 +248,7 @@ export const UserManagement: React.FC = () => {
       const file = e.target.files?.[0];
       if (file) {
          if (file.size > 1024 * 1024) { 
-            alert("La imagen es muy grande. Máximo 1MB.");
+            showToast("La imagen es muy grande. Máximo 1MB.", "warning");
             return;
          }
          const reader = new FileReader();
@@ -225,7 +260,17 @@ export const UserManagement: React.FC = () => {
    };
 
    return (
-      <div className="h-full flex flex-col space-y-4">
+      <div className="h-full flex flex-col space-y-4 relative">
+         <style>{`
+           @keyframes slideDown {
+             from { transform: translate(-50%, -100%); opacity: 0; }
+             to { transform: translate(-50%, 0); opacity: 1; }
+           }
+         `}</style>
+         {toasts.map(t => (
+            <Toast key={t.id} message={t.message} type={t.type} onClose={() => setToasts(prev => prev.filter(x => x.id !== t.id))} />
+         ))}
+
          <div className="flex justify-between items-center">
             <h2 className="text-xl font-bold text-slate-800 flex items-center">
                <Shield className="mr-2 h-6 w-6 text-slate-600" /> Gestión de Usuarios y Permisos

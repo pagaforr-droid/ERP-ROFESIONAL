@@ -1,10 +1,44 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../services/supabase';
-import { Clock, User as UserIcon, LogIn, LogOut, Calendar, BarChart2, Lock, UserCheck, AlertCircle, X, Edit, Save, Camera, MapPin, RefreshCw, FileSpreadsheet, Settings, Coffee, Upload } from 'lucide-react';
+import { Clock, User as UserIcon, LogIn, LogOut, Calendar, BarChart2, Lock, UserCheck, AlertCircle, X, Edit, Save, Camera, MapPin, RefreshCw, FileSpreadsheet, Settings, Coffee, Upload, CheckCircle2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Webcam from 'react-webcam';
 
+interface ToastProps {
+  message: string;
+  type: 'error' | 'success' | 'warning' | 'info';
+  onClose: () => void;
+}
+
+const Toast: React.FC<ToastProps> = ({ message, type, onClose }) => {
+  const getStyle = () => {
+    if (type === 'error') return { border: 'border-red-500', icon: <X className="w-6 h-6 text-red-500 mr-3" />, text: 'text-red-800', bg: 'bg-red-50' };
+    if (type === 'warning') return { border: 'border-amber-500', icon: <AlertCircle className="w-6 h-6 text-amber-500 mr-3" />, text: 'text-amber-800', bg: 'bg-amber-50' };
+    if (type === 'success') return { border: 'border-green-500', icon: <CheckCircle2 className="w-6 h-6 text-green-500 mr-3" />, text: 'text-green-800', bg: 'bg-green-50' };
+    return { border: 'border-blue-500', icon: <AlertCircle className="w-6 h-6 text-blue-500 mr-3" />, text: 'text-blue-800', bg: 'bg-blue-50' };
+  };
+  const s = getStyle();
+
+  return (
+    <div style={{ animation: 'slideDown 0.3s ease-out' }} className={`fixed top-10 left-1/2 transform -translate-x-1/2 z-[100] flex items-center p-4 rounded-xl shadow-2xl border-l-4 min-w-[350px] ${s.bg} ${s.border}`}>
+      {s.icon}
+      <div className="flex-1">
+        <p className={`text-sm font-bold ${s.text}`}>{message}</p>
+      </div>
+      <button onClick={onClose} className="ml-4 text-slate-400 hover:text-slate-600 transition-colors">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  );
+};
+
 export const Attendance: React.FC = () => {
+   const [toasts, setToasts] = useState<Array<{ id: number, message: string, type: 'error' | 'success' | 'warning' | 'info' }>>([]);
+   const showToast = (message: string, type: 'error' | 'success' | 'warning' | 'info') => {
+      const id = Date.now();
+      setToasts(prev => [...prev, { id, message, type }]);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+   };
    const [employees, setEmployees] = useState<any[]>([]);
    const [attendanceRecords, setAttendanceRecords] = useState<any[]>([]);
    const [isLoading, setIsLoading] = useState(false);
@@ -74,13 +108,13 @@ export const Attendance: React.FC = () => {
             const { error } = await supabase.from('erp_employees').update(payload).eq('id', configModal.employeeId);
             if (error) throw error;
             await fetchData();
-            alert('Configuración guardada exitosamente.');
+            showToast('Configuración guardada exitosamente.', 'success');
          }
          setConfigModal({ isOpen: false, employeeId: null });
          setConfigPin('');
          setConfigPhoto(null);
       } catch (err: any) {
-         alert('Error al guardar configuración: ' + err.message);
+         showToast('Error al guardar configuración: ' + err.message, 'error');
       }
    };
    const [reportUser, setReportUser] = useState('ALL');
@@ -94,9 +128,37 @@ export const Attendance: React.FC = () => {
          ]);
          
          if (employeesRes.data) setEmployees(employeesRes.data);
-         if (recordsRes.data) setAttendanceRecords(recordsRes.data);
+         
+         if (recordsRes.data) {
+            const records = recordsRes.data;
+            const today = new Date().toISOString().split('T')[0];
+            
+            // Lógica de Limpieza de "Turnos Huérfanos" (Opción B: Cierre Automático)
+            const orphanedRecords = records.filter(r => r.status === 'OPEN' && r.date !== today);
+            
+            if (orphanedRecords.length > 0) {
+               // Cerramos los turnos asincronamente con 0 horas para forzar revisión de RRHH
+               const updates = orphanedRecords.map(r => 
+                  supabase.from('attendance_records').update({ 
+                     status: 'CLOSED_ABANDONO',
+                     total_hours: 0
+                  }).eq('id', r.id)
+               );
+               await Promise.all(updates);
+               
+               // Recargar registros actualizados
+               const refreshedRecords = await supabase.from('attendance_records').select('*').order('check_in', { ascending: false });
+               if (refreshedRecords.data) {
+                  setAttendanceRecords(refreshedRecords.data);
+                  showToast(`${orphanedRecords.length} turno(s) de días anteriores cerrados por abandono.`, 'warning');
+               }
+            } else {
+               setAttendanceRecords(records);
+            }
+         }
       } catch (err) {
          console.error('Error fetching data', err);
+         showToast('Error sincronizando datos de asistencia', 'error');
       } finally {
          setIsLoading(false);
       }
@@ -281,7 +343,7 @@ export const Attendance: React.FC = () => {
    const handleSaveEdit = async () => {
       if (!editingRecord) return;
       if (adminPass !== '123456') {
-         alert('Clave de Administrador Incorrecta');
+         showToast('Clave de Administrador Incorrecta', 'error');
          return;
       }
 
@@ -289,7 +351,7 @@ export const Attendance: React.FC = () => {
       const newCheckOut = editCheckOut ? new Date(editCheckOut) : undefined;
 
       if (newCheckOut && newCheckOut <= newCheckIn) {
-         alert('La hora de salida debe ser posterior a la de entrada.');
+         showToast('La hora de salida debe ser posterior a la de entrada.', 'warning');
          return;
       }
 
@@ -309,16 +371,26 @@ export const Attendance: React.FC = () => {
       try {
          const { error } = await supabase.from('attendance_records').update(payload).eq('id', editingRecord.id);
          if (error) throw error;
-         alert('Registro actualizado correctamente.');
+         showToast('Registro actualizado correctamente.', 'success');
          setEditingRecord(null);
          fetchData();
       } catch (e: any) {
-         alert('Error al actualizar: ' + e.message);
+         showToast('Error al actualizar: ' + e.message, 'error');
       }
    };
 
    return (
       <div className="h-full flex flex-col space-y-4 font-sans text-slate-800 relative">
+         <style>{`
+           @keyframes slideDown {
+             from { transform: translate(-50%, -100%); opacity: 0; }
+             to { transform: translate(-50%, 0); opacity: 1; }
+           }
+         `}</style>
+         {toasts.map(t => (
+            <Toast key={t.id} message={t.message} type={t.type} onClose={() => setToasts(prev => prev.filter(x => x.id !== t.id))} />
+         ))}
+
          <div className="flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-slate-200">
             <h2 className="text-2xl font-black flex items-center text-slate-800 tracking-tight">
                <Clock className="mr-3 w-8 h-8 text-blue-600" /> Control de Asistencia
@@ -568,6 +640,8 @@ export const Attendance: React.FC = () => {
                                  <td className="p-4 text-center">
                                     {r.status === 'OPEN' ? (
                                        <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded font-bold animate-pulse">EN TURNO</span>
+                                    ) : r.status === 'CLOSED_ABANDONO' ? (
+                                       <span className="bg-rose-100 text-rose-700 text-xs px-2 py-1 rounded font-bold border border-rose-200" title="Sistema cerró el turno por olvido del trabajador">ABANDONO</span>
                                     ) : (
                                        <span className="bg-slate-200 text-slate-600 text-xs px-2 py-1 rounded font-bold">CERRADO</span>
                                     )}
