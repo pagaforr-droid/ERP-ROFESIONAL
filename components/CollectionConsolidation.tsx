@@ -950,11 +950,11 @@ export const CollectionConsolidation: React.FC = () => {
                            </div>
                            <div className="flex justify-between items-center mb-1">
                               <span className="font-bold text-slate-700">Total Inicial de Factura:</span>
-                              <span className="text-slate-600 font-bold">S/ {sale.total.toFixed(2)}</span>
+                              <span className="text-slate-600 font-bold">S/ {Number(sale.total || 0).toFixed(2)}</span>
                            </div>
                            <div className="flex justify-between items-center">
                               <span className="font-bold text-slate-700">Saldo Pendiente Actual:</span>
-                              <span className="text-red-600 font-bold">S/ {(sale.balance !== undefined ? sale.balance : sale.total).toFixed(2)}</span>
+                              <span className="text-red-600 font-bold">S/ {Number(sale.balance ?? sale.total || 0).toFixed(2)}</span>
                            </div>
                         </div>
                         {historyRecords.length > 0 ? (
@@ -1136,8 +1136,8 @@ export const CollectionConsolidation: React.FC = () => {
                                           <td className="p-2 font-mono font-medium text-slate-700">{sale.series}-{sale.number}</td>
                                           {!manualSelectedClient && <td className="p-2 truncate max-w-[150px]" title={sale.client_name}>{sale.client_name}</td>}
                                           <td className="p-2 text-slate-500 hidden sm:table-cell">{new Date(sale.created_at).toLocaleDateString()}</td>
-                                          <td className="p-2 text-right font-bold text-slate-500">S/ {sale.total.toFixed(2)}</td>
-                                          <td className="p-2 text-right font-bold text-red-600">S/ {currentBalance.toFixed(2)}</td>
+                                          <td className="p-2 text-right font-bold text-slate-500">S/ {Number(sale.total || 0).toFixed(2)}</td>
+                                          <td className="p-2 text-right font-bold text-red-600">S/ {Number(currentBalance || 0).toFixed(2)}</td>
                                           <td className="p-2 text-right">
                                              <input
                                                 id={`amountInput-${sale.id}`}
@@ -1576,8 +1576,8 @@ export const CollectionConsolidation: React.FC = () => {
                                        {item.docRef}<br />
                                        <span className="text-[10px] text-slate-400 font-sans">{new Date(item.date).toLocaleDateString()}</span>
                                     </td>
-                                    <td className="p-3 text-right font-bold text-slate-500">S/ {item.total?.toFixed(2) || (0).toFixed(2)}</td>
-                                    <td className="p-3 text-right font-bold text-red-600">S/ {item.balance.toFixed(2)}</td>
+                                    <td className="p-3 text-right font-bold text-slate-500">S/ {Number(item.total || 0).toFixed(2)}</td>
+                                    <td className="p-3 text-right font-bold text-red-600">S/ {Number(item.balance || 0).toFixed(2)}</td>
                                     <td className="p-3 text-right">
                                        <input
                                           type="number"
