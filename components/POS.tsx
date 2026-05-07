@@ -40,7 +40,7 @@ export const POS: React.FC = () => {
        }
        setIsOpeningSession(true);
        try {
-           await store.openCashSession(amt, currentUser?.id || 'SISTEMA');
+           await store.openCashSession(amt, currentUser?.id || '00000000-0000-0000-0000-000000000000');
            setOpeningAmount('');
            setTimeout(() => barcodeInputRef.current?.focus(), 100);
        } catch (err: any) {
@@ -89,7 +89,7 @@ export const POS: React.FC = () => {
                     declared_total: shiftData.expected + shiftData.card + shiftData.yape + shiftData.transfer,
                     declared_others: 0,
                     close_observation: 'Cierre desde terminal POS'
-                }, currentUser?.id || 'SISTEMA');
+                }, currentUser?.id || '00000000-0000-0000-0000-000000000000');
                 setShowShiftModal(false);
             } catch (err: any) {
                 showDialog('error', 'Error', `Fallo al cerrar turno: ${err.message}`);
