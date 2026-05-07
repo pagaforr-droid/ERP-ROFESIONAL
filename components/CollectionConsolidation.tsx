@@ -954,7 +954,7 @@ export const CollectionConsolidation: React.FC = () => {
                            </div>
                            <div className="flex justify-between items-center">
                               <span className="font-bold text-slate-700">Saldo Pendiente Actual:</span>
-                              <span className="text-red-600 font-bold">S/ {Number(sale.balance ?? sale.total || 0).toFixed(2)}</span>
+                              <span className="text-red-600 font-bold">S/ {Number((sale.balance ?? sale.total) || 0).toFixed(2)}</span>
                            </div>
                         </div>
                         {historyRecords.length > 0 ? (
