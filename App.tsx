@@ -86,7 +86,6 @@ const COLOR_THEMES = {
     iconIdle: 'text-slate-400 group-hover:text-white'
   }
 };
-};
 type ThemeKey = keyof typeof COLOR_THEMES;
 
 const SIDEBAR_SECTIONS = [
