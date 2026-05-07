@@ -20,6 +20,8 @@ export const CollectionConsolidation: React.FC = () => {
    const [expenseCategories, setExpenseCategories] = useState<any[]>([]);
    const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
    const [allUsers, setAllUsers] = useState<any[]>([]); // To resolve names for history
+   const [localSales, setLocalSales] = useState<any[]>([]);
+
 
 
    // Layout State
@@ -230,8 +232,6 @@ export const CollectionConsolidation: React.FC = () => {
    }, [localSales, manualSelectedIds]);
 
    // --- HANDLERS (PENDING) ---
-
-   const [localSales, setLocalSales] = useState<any[]>([]);
 
    useEffect(() => {
      const initSupabase = async () => {
