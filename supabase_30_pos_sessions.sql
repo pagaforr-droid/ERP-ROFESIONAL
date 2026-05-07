@@ -7,8 +7,8 @@ CREATE TABLE IF NOT EXISTS public.pos_sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     open_time TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     close_time TIMESTAMP WITH TIME ZONE,
-    opened_by UUID REFERENCES public.users(id),
-    closed_by UUID REFERENCES public.users(id),
+    opened_by UUID REFERENCES public.erp_users(id),
+    closed_by UUID REFERENCES public.erp_users(id),
     status TEXT NOT NULL CHECK (status IN ('OPEN', 'CLOSED')) DEFAULT 'OPEN',
     system_opening_amount DECIMAL(12, 2) NOT NULL DEFAULT 0,
     system_expected_close DECIMAL(12, 2) DEFAULT 0,
@@ -88,7 +88,7 @@ BEGIN
     END IF;
 
     -- Obtener nombre del cajero para la inyección contable
-    SELECT name INTO v_seller_name FROM users WHERE id = p_user_id;
+    SELECT name INTO v_seller_name FROM erp_users WHERE id = p_user_id;
 
     -- v_expected_close sería el fondo + lo reportado en ventas (esto lo maneja el frontend, 
     -- pero aquí cuadramos la diferencia contra lo que declara que tiene en físico total)
