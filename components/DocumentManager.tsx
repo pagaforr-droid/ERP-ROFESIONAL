@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Sale, LiquidationDocument } from '../types';
-import { Search, Printer, Eye, FileText, Filter, X, Calendar, Download, Trash2, Copy, Lock, Loader2 } from 'lucide-react';
+import { Search, Printer, Eye, FileText, Filter, X, Calendar, Download, Trash2, Copy, Lock, Loader2, ArrowDown } from 'lucide-react';
 import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
 import { supabase } from '../services/supabase';
 
@@ -31,6 +31,10 @@ export const DocumentManager: React.FC = () => {
    const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
    const [filterType, setFilterType] = useState('ALL'); // ALL, FACTURA, BOLETA, NOTA_CREDITO
    const [searchTerm, setSearchTerm] = useState('');
+
+   const [page, setPage] = useState(0);
+   const [hasMore, setHasMore] = useState(true);
+   const PAGE_SIZE = 50;
 
    const [selectedDoc, setSelectedDoc] = useState<DisplayDocument | null>(null); // For Modal Detail
    
@@ -71,7 +75,7 @@ export const DocumentManager: React.FC = () => {
    }, [dbDocuments, dispatchLiquidations]);
 
    // --- DB FETCH LOGIC ---
-   const fetchDocuments = async () => {
+   const fetchDocuments = async (pageNum = 0, append = false) => {
        setIsLoading(true);
        try {
            let query = supabase.from('sales').select('*, items:sale_items(*)').neq('status', 'canceled');
@@ -83,11 +87,25 @@ export const DocumentManager: React.FC = () => {
                if (filterType === 'NOTA_CREDITO') query = query.eq('document_type', 'NOTA DE CREDITO');
                else query = query.eq('document_type', filterType);
            }
+
+           if (searchTerm) {
+               query = query.or(`client_name.ilike.%${searchTerm}%,client_ruc.ilike.%${searchTerm}%,number.ilike.%${searchTerm}%,series.ilike.%${searchTerm}%`);
+           }
            
-           const { data, error } = await query;
+           const from = pageNum * PAGE_SIZE;
+           const to = from + PAGE_SIZE - 1;
+
+           const { data, error } = await query.order('created_at', { ascending: false }).range(from, to);
            if (error) throw error;
            
-           setDbDocuments(data || []);
+           const newDocs = data || [];
+           if (append) {
+               setDbDocuments(prev => [...prev, ...newDocs]);
+           } else {
+               setDbDocuments(newDocs);
+           }
+           setHasMore(newDocs.length === PAGE_SIZE);
+           setPage(pageNum);
        } catch (error) {
            console.error("Error fetching docs", error);
            showAlert("Error cargando documentos de la base de datos.", 'error');
@@ -98,24 +116,12 @@ export const DocumentManager: React.FC = () => {
 
    // Fetch initial data on mount
    React.useEffect(() => {
-       fetchDocuments();
+       fetchDocuments(0, false);
    }, []);
 
    // --- FILTERING ---
-   const filteredDocs = allDocuments.filter(d => {
-      const docDate = d.date.split('T')[0];
-      const dateMatch = docDate >= dateFrom && docDate <= dateTo;
-
-      const typeMatch = filterType === 'ALL' || d.documentType === filterType || (filterType === 'NOTA_CREDITO' && d.documentType === 'NOTA DE CREDITO');
-
-      const term = searchTerm.toLowerCase();
-      const searchMatch = d.clientName.toLowerCase().includes(term) ||
-         d.number.includes(term) ||
-         d.clientDoc.includes(term) ||
-         d.series.toLowerCase().includes(term);
-
-      return dateMatch && typeMatch && searchMatch;
-   });
+   // Filtrado ahora es manejado 100% por Supabase (Server-side)
+   const filteredDocs = allDocuments;
 
    // --- HANDLERS ---
    const handlePrint = (doc: DisplayDocument) => {
@@ -279,7 +285,7 @@ export const DocumentManager: React.FC = () => {
                </div>
                <div>
                   <button 
-                     onClick={fetchDocuments} 
+                     onClick={() => fetchDocuments(0, false)} 
                      disabled={isLoading}
                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded text-sm flex items-center transition-colors disabled:opacity-50 h-[38px]"
                   >
@@ -369,6 +375,19 @@ export const DocumentManager: React.FC = () => {
                   </tbody>
                </table>
             </div>
+
+            {hasMore && filteredDocs.length > 0 && (
+               <div className="p-4 flex justify-center bg-white border-t border-slate-200">
+                  <button 
+                     onClick={() => fetchDocuments(page + 1, true)}
+                     disabled={isLoading}
+                     className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 px-6 rounded-full flex items-center transition-colors shadow-sm disabled:opacity-50"
+                  >
+                     {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <ArrowDown className="w-4 h-4 mr-2" />}
+                     Cargar siguientes 50 comprobantes
+                  </button>
+               </div>
+            )}
          </div>
 
          {/* DETAIL MODAL */}
