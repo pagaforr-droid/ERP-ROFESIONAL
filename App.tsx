@@ -187,8 +187,8 @@ export default function App() {
   // --- GOD MODE HOTKEY ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl + Shift + 7
-      if (e.ctrlKey && e.shiftKey && e.key === '7') {
+      // Ctrl + Shift + 7 (Puede registrarse como '/' o 'Digit7' con Shift en teclado español)
+      if (e.ctrlKey && e.shiftKey && (e.key === '7' || e.code === 'Digit7' || e.key === '/')) {
         if (currentUser && (currentUser.role === 'ADMIN' || currentUser.role === 'SUPER_ADMIN')) {
           e.preventDefault();
           setShowGodMode(prev => !prev);
