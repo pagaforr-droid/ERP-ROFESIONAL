@@ -549,10 +549,50 @@ export const POS: React.FC = () => {
        }
    };
 
+   // --- DIALOG COMPONENT ---
+   const renderDialog = () => {
+       if (!dialog.isOpen) return null;
+       return (
+             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+                     <div className={`p-4 border-b flex items-center gap-3 ${dialog.type === 'error' ? 'bg-red-50 text-red-700' : dialog.type === 'success' ? 'bg-emerald-50 text-emerald-700' : dialog.type === 'confirm' ? 'bg-blue-50 text-blue-700' : 'bg-slate-50 text-slate-700'}`}>
+                         {dialog.type === 'error' && <AlertTriangle className="w-6 h-6" />}
+                         {dialog.type === 'success' && <ShieldCheck className="w-6 h-6" />}
+                         {dialog.type === 'confirm' && <HelpCircle className="w-6 h-6" />}
+                         {dialog.type === 'info' && <CheckCircle2 className="w-6 h-6" />}
+                         <h3 className="font-bold text-lg">{dialog.title}</h3>
+                     </div>
+                     <div className="p-6 text-slate-600 text-sm whitespace-pre-wrap leading-relaxed">
+                         {dialog.message}
+                     </div>
+                     <div className="p-4 bg-slate-50 border-t flex justify-end gap-3">
+                         {dialog.type === 'confirm' && (
+                             <button type="button" onClick={() => { closeDialog(); setTimeout(() => barcodeInputRef.current?.focus(), 100); }} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg transition-colors">
+                                 Cancelar
+                             </button>
+                         )}
+                         <button
+                             type="button"
+                             onClick={() => {
+                                 if (dialog.onConfirm) dialog.onConfirm();
+                                 closeDialog();
+                                 if (!isCheckoutOpen && !showShiftModal) setTimeout(() => barcodeInputRef.current?.focus(), 100);
+                             }}
+                             className={`px-5 py-2.5 font-bold rounded-lg text-white transition-colors ${dialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                         >
+                             {dialog.type === 'confirm' ? 'Confirmar' : 'Aceptar'}
+                         </button>
+                     </div>
+                 </div>
+             </div>
+       );
+   };
+
    // --- RENDER ENFORCER ---
    if (!currentCashSession) {
        return (
            <div className="fixed inset-0 bg-slate-900 z-[100] flex flex-col items-center justify-center p-4">
+               {renderDialog()}
                <div className="bg-white p-8 rounded-2xl shadow-2xl max-w-md w-full border border-slate-200 animate-in zoom-in duration-300">
                    <div className="flex justify-center mb-4"><Lock className="w-16 h-16 text-rose-500" /></div>
                    <h2 className="text-2xl font-black text-slate-800 text-center mb-2 uppercase tracking-wide">Terminal Bloqueado</h2>
@@ -939,40 +979,7 @@ export const POS: React.FC = () => {
          )}
 
          {/* --- DIALOG --- */}
-         {dialog.isOpen && (
-             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[110] flex items-center justify-center p-4">
-                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
-                     <div className={`p-4 border-b flex items-center gap-3 ${dialog.type === 'error' ? 'bg-red-50 text-red-700' : dialog.type === 'success' ? 'bg-emerald-50 text-emerald-700' : dialog.type === 'confirm' ? 'bg-blue-50 text-blue-700' : 'bg-slate-50 text-slate-700'}`}>
-                         {dialog.type === 'error' && <AlertTriangle className="w-6 h-6" />}
-                         {dialog.type === 'success' && <ShieldCheck className="w-6 h-6" />}
-                         {dialog.type === 'confirm' && <HelpCircle className="w-6 h-6" />}
-                         {dialog.type === 'info' && <CheckCircle2 className="w-6 h-6" />}
-                         <h3 className="font-bold text-lg">{dialog.title}</h3>
-                     </div>
-                     <div className="p-6 text-slate-600 text-sm whitespace-pre-wrap leading-relaxed">
-                         {dialog.message}
-                     </div>
-                     <div className="p-4 bg-slate-50 border-t flex justify-end gap-3">
-                         {dialog.type === 'confirm' && (
-                             <button type="button" onClick={() => { closeDialog(); setTimeout(() => barcodeInputRef.current?.focus(), 100); }} className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg transition-colors">
-                                 Cancelar
-                             </button>
-                         )}
-                         <button
-                             type="button"
-                             onClick={() => {
-                                 if (dialog.onConfirm) dialog.onConfirm();
-                                 closeDialog();
-                                 if (!isCheckoutOpen && !showShiftModal) setTimeout(() => barcodeInputRef.current?.focus(), 100);
-                             }}
-                             className={`px-5 py-2.5 font-bold rounded-lg text-white transition-colors ${dialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                         >
-                             {dialog.type === 'confirm' ? 'Confirmar' : 'Aceptar'}
-                         </button>
-                     </div>
-                 </div>
-             </div>
-         )}
+         {renderDialog()}
 
          {isSaving && !dialog.isOpen && !showShiftModal && (
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm z-[120] flex flex-col items-center justify-center">
