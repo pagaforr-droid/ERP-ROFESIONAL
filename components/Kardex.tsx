@@ -253,9 +253,10 @@ export const Kardex: React.FC = () => {
            if (filterCategory !== 'ALL' && prod.category !== filterCategory) return;
            if (filterSupplier !== 'ALL' && prod.supplier_id !== filterSupplier) return;
 
+           const isCreditNote = p.document_type === 'NOTA_CREDITO' || p.document_type === 'NOTA CREDITO';
            list.push({
               id: `PUR-${p.id}-${item.product_id}`,
-              date: p.issue_date, type: 'IN', docType: 'COMPRA', docNumber: p.document_number || 'S/N',
+              date: p.issue_date, type: isCreditNote ? 'OUT' : 'IN', docType: p.document_type || 'COMPRA', docNumber: p.document_number || 'S/N',
               productName: prod.name || 'Desconocido', sku: prod.sku || 'S/N', quantity: item.quantity_base || 0,
               unitPrice: (item.quantity_base || 0) > 0 ? (item.total_cost || 0) / item.quantity_base : 0, 
               total: item.total_cost || 0, reference: p.supplier_name || 'Desconocido'
