@@ -338,6 +338,11 @@ export const NewSale: React.FC = () => {
       
       if (c.payment_condition && c.payment_condition.toUpperCase().includes('CREDIT')) { setPaymentMethod('CREDITO'); } else { setPaymentMethod('CONTADO'); }
       checkClientCredit(c.id, c.credit_limit || 0);
+      
+      // Auto-update prices in cart using the newly selected client's context
+      if (cart.length > 0) {
+         handleUpdatePrices(true, c);
+      }
    };
 
    const handleProductKeyDown = (e: React.KeyboardEvent) => {
@@ -487,11 +492,19 @@ export const NewSale: React.FC = () => {
       applyAutoPromotions(updatedCart, true);
    };
 
-   const handleUpdatePrices = (silent = false) => {
+   const handleUpdatePrices = (silent = false, overrideClient?: Client) => {
       if (cart.length === 0) return;
-      if (!clientData.price_list_id && silent !== true) { showDialog('warning', 'Aviso', "Seleccione una lista de precios primero."); return; }
+      const effectiveListId = overrideClient ? (overrideClient.price_list_id || '') : clientData.price_list_id;
+      const effectiveCity = overrideClient ? (overrideClient.city || '') : clientData.city;
 
-      const multiplier = getMultiplier();
+      if (!effectiveListId && silent !== true) { showDialog('warning', 'Aviso', "Seleccione una lista de precios primero."); return; }
+
+      const multiplier = (() => {
+         if (!effectiveListId) return 1;
+         const list = dbPriceLists.find(pl => pl.id === effectiveListId);
+         const val = list ? (list.multiplier ?? list.factor_multiplier ?? list.factor ?? list.value ?? 1) : 1;
+         return Number(val) || 1;
+      })();
 
       const updatedCart = cart.map(item => {
          if (item.is_bonus) return item; 
@@ -505,8 +518,8 @@ export const NewSale: React.FC = () => {
          let newDisc = 0;
          const activePromo = dbPromos.find(promo => {
              if (!promo.product_ids.includes(product.id)) return false;
-             if (!isPromoValidForContext(promo, 'IN_STORE', clientData.city, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
-             if (promo.target_price_list_ids?.length > 0 && clientData.price_list_id && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(clientData.price_list_id)) return false;
+             if (!isPromoValidForContext(promo, 'IN_STORE', effectiveCity, selectedSellerId || currentUser?.id, currentUser?.role)) return false;
+             if (promo.target_price_list_ids?.length > 0 && effectiveListId && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(effectiveListId)) return false;
              return true;
          });
 
@@ -520,7 +533,7 @@ export const NewSale: React.FC = () => {
          
          return { ...item, unit_price: newPrice, total_price: newTotal, discount_percent: newDisc, discount_amount: newDiscountAmt, product: product };
       });
-      applyAutoPromotions(updatedCart, silent); 
+      applyAutoPromotionsWithContext(updatedCart, effectiveListId || '', effectiveCity || '', selectedSellerId || '', silent); 
    };
 
    const handleInputKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<any> | 'ADD' | 'BONUS_TOGGLE') => {

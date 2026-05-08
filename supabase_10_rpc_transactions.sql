@@ -51,7 +51,7 @@ BEGIN
     INSERT INTO orders (
         id, code, client_id, client_name, client_doc_type, client_doc_number,
         seller_id, suggested_document_type, payment_method, total, status, delivery_address, creation_location,
-        delivery_mode, delivery_date
+        delivery_mode, delivery_date, price_list_id
     ) VALUES (
         COALESCE(NULLIF(p_order_data->>'id', ''), uuid_generate_v4()::text)::uuid,
         v_code,
@@ -67,7 +67,8 @@ BEGIN
         p_order_data->>'delivery_address',
         p_order_data->'creation_location',
         NULLIF(p_order_data->>'delivery_mode', '')::delivery_mode,
-        (NULLIF(p_order_data->>'delivery_date', ''))::date
+        (NULLIF(p_order_data->>'delivery_date', ''))::date,
+        NULLIF(p_order_data->>'price_list_id', '')::uuid
     ) RETURNING id INTO v_order_id;
     
     -- 3. Procesar Items y Asignar Lotes (FIFO)
@@ -150,6 +151,7 @@ BEGIN
         creation_location = COALESCE(p_order_data->'creation_location', creation_location),
         delivery_mode = NULLIF(p_order_data->>'delivery_mode', '')::delivery_mode,
         delivery_date = (NULLIF(p_order_data->>'delivery_date', ''))::date,
+        price_list_id = NULLIF(p_order_data->>'price_list_id', '')::uuid,
         updated_at = NOW()
     WHERE id = v_order_id;
 

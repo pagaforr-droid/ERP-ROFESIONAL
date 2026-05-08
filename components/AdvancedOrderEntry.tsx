@@ -758,6 +758,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       status: 'pending', 
       delivery_address: clientAddress.trim() || null, 
       creation_location: creationLocation, // NUEVO: Tracking GPS
+      price_list_id: priceListId || null,
       items: cart.map(c => {
         const conversionFactor = Number((c.unit_type || '').split('/')[1]) || 1;
         const qtyBase = c.quantity * conversionFactor;

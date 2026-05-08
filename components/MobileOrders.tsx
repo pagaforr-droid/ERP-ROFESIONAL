@@ -636,6 +636,7 @@ export const MobileOrders: React.FC = () => {
                status: 'pending',
                delivery_address: clientAddress || null,
                creation_location: creationLocation, // NUEVO: Tracking GPS
+               price_list_id: priceListId || null,
                delivery_mode: deliveryMode,
                delivery_date: deliveryMode === 'EXPRESS_MISMO_DIA' ? new Date().toISOString().split('T')[0] : (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })(),
                items: cart.map(c => {

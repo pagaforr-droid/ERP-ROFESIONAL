@@ -416,6 +416,7 @@ export interface Order {
 
   observation?: string;
   delivery_address?: string;
+  price_list_id?: string;
   creation_location?: { lat: number; lng: number } | null;
 
   created_at: string;

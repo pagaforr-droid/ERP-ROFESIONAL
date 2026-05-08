@@ -40,7 +40,16 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
 
       if (orderRes.data) {
         setOrderData(orderRes.data);
-        setPriceListId(orderRes.data.price_list_id || '');
+        
+        let clientPriceListId = '';
+        if (orderRes.data.client_id) {
+            const { data: clientData } = await supabase.from('clients').select('price_list_id').eq('id', orderRes.data.client_id).single();
+            if (clientData && clientData.price_list_id) {
+                clientPriceListId = clientData.price_list_id;
+            }
+        }
+        
+        setPriceListId(orderRes.data.price_list_id || clientPriceListId || '');
       }
       
       if (itemsRes.data && prodsRes.data) {
@@ -185,6 +194,7 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
 
     const orderPayload = {
       ...orderData,
+      price_list_id: priceListId || null,
       total: cart.reduce((sum, i) => sum + i.total_price, 0),
       items: itemsPayload
     };
