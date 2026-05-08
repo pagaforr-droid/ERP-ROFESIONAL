@@ -619,6 +619,13 @@ export const POS: React.FC = () => {
                        {isOpeningSession ? <Loader2 className="w-6 h-6 animate-spin" /> : <Unlock className="w-6 h-6" />}
                        APERTURAR TURNO POS
                    </button>
+                   <button
+                       onClick={() => window.location.reload()}
+                       className="w-full mt-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-sm py-3 rounded-xl shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2"
+                   >
+                       <X className="w-5 h-5" />
+                       CERRAR Y VOLVER AL MENÚ
+                   </button>
                </div>
            </div>
        );
