@@ -521,7 +521,9 @@ export const MobileOrders: React.FC = () => {
          setSelectedClientId(order.client_id || '');
          if (client) {
             setSelectedClient(client);
-            setPriceListId(client.price_list_id || '');
+            setPriceListId(order.price_list_id || client.price_list_id || '');
+         } else {
+            setPriceListId(order.price_list_id || '');
          }
 
          setCart(loadedItems);
