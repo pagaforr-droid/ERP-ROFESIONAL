@@ -362,7 +362,7 @@ export const ClientManagement: React.FC = () => {
                               <div>
                                  <label className="block text-xs font-bold text-slate-700 mb-1">Condición de Pago</label>
                                  <select className="w-full border-2 border-slate-200 p-2 rounded-lg bg-yellow-50 text-slate-900 font-bold focus:border-blue-500 outline-none" value={formData.payment_condition} onChange={e => setFormData({ ...formData, payment_condition: e.target.value })}>
-                                    <option value="CONTADO">CONTADO</option><option value="CREDITO">CR�DITO (GENERAL)</option>
+                                    <option value="CONTADO">CONTADO</option>
                                     <option value="CREDITO 7 DIAS">CRÉDITO 7 DÍAS</option>
                                     <option value="CREDITO 15 DIAS">CRÉDITO 15 DÍAS</option>
                                     <option value="CREDITO 30 DIAS">CRÉDITO 30 DÍAS</option>
