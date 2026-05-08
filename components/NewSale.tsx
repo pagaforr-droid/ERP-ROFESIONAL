@@ -688,6 +688,14 @@ export const NewSale: React.FC = () => {
       if (!series) { showDialog('error', 'Falta Serie', "No hay una serie asignada en el sistema."); return; }
       if (selectedClientId && !isUUID(selectedClientId)) { showDialog('warning', 'Alerta', "Cliente inválido."); return; }
 
+      if (clientCreditInfo.debt > 0) {
+          const deudaActual = Number(clientCreditInfo.debt || 0).toFixed(2);
+          showDialog('warning', 'Cliente con Deuda', `⛔ CLIENTE CON SALDO PENDIENTE ⛔\n\nDeuda Vigente: S/ ${deudaActual}\n\nPor políticas de la empresa, no se puede emitir ningún comprobante (ni al contado) sin autorización de un administrador.`, () => {
+              requestAdminAuth(executeSaveSale, 'Autorizar Venta (Cliente con Deuda)');
+          });
+          return;
+      }
+
       if (paymentMethod === 'CREDITO') {
           if (clientCreditInfo.overdue) {
               showDialog('error', 'Bloqueo de Crédito', "❌ BLOQUEO DE CRÉDITO ❌\n\nEl cliente mantiene comprobantes vencidos (más de 7 días sin pago).", () => {

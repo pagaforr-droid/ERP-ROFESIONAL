@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { supabase } from '../services/supabase';
-import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText, Trash2, Settings, Save } from 'lucide-react';
+import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText, Trash2, Settings, Save, Shield } from 'lucide-react';
 import { calculateBaseQuantity } from '../utils/productUtils';
 import { Order, Sale, SaleItem } from '../types';
 
@@ -15,6 +15,8 @@ export const OrderProcessing: React.FC = () => {
    const [dbZones, setDbZones] = useState<any[]>([]);
    const [dbSeries, setDbSeries] = useState<any[]>([]);
    const [dbProducts, setDbProducts] = useState<any[]>([]);
+   const [dbUsers, setDbUsers] = useState<any[]>([]);
+   const [authorizedDebtOrders, setAuthorizedDebtOrders] = useState<Set<string>>(new Set());
    
    const [isLoading, setIsLoading] = useState(false);
    const [hasSearched, setHasSearched] = useState(false);
@@ -23,19 +25,21 @@ export const OrderProcessing: React.FC = () => {
    useEffect(() => {
       const loadMasterData = async () => {
          try {
-            const [resSellers, resClients, resZones, resSeries, resProducts, resConfig] = await Promise.all([
+            const [resSellers, resClients, resZones, resSeries, resProducts, resConfig, resUsers] = await Promise.all([
                supabase.from('sellers').select('*'),
                supabase.from('clients').select('*'),
                supabase.from('zones').select('*'),
                supabase.from('document_series').select('*'),
                supabase.from('products').select('*'),
-               supabase.from('company_config').select('id, max_items_factura, max_items_boleta').limit(1).maybeSingle()
+               supabase.from('company_config').select('id, max_items_factura, max_items_boleta').limit(1).maybeSingle(),
+               supabase.from('users').select('*')
             ]);
             if (resSellers.data) setDbSellers(resSellers.data);
             if (resClients.data) setDbClients(resClients.data);
             if (resZones.data) setDbZones(resZones.data);
             if (resSeries.data) setDbSeries(resSeries.data);
             if (resProducts.data) setDbProducts(resProducts.data);
+            if (resUsers.data) setDbUsers(resUsers.data);
             if (resConfig.data) {
                setCompanyConfigId(resConfig.data.id);
                if (resConfig.data.max_items_factura) setMaxItemsFactura(resConfig.data.max_items_factura);
@@ -150,10 +154,11 @@ export const OrderProcessing: React.FC = () => {
    };
 
    const handleSelectAll = () => {
-      if (selectedIds.size === orders.length && orders.length > 0) {
+      const processableOrders = orders.filter(o => !((o.previous_debt || 0) > 0 && !authorizedDebtOrders.has(o.id)));
+      if (selectedIds.size === processableOrders.length && processableOrders.length > 0) {
          setSelectedIds(new Set());
       } else {
-         setSelectedIds(new Set(orders.map(o => o.id)));
+         setSelectedIds(new Set(processableOrders.map(o => o.id)));
       }
    };
 
@@ -402,8 +407,53 @@ export const OrderProcessing: React.FC = () => {
       }
    };
 
+   const [adminAuthModal, setAdminAuthModal] = useState({ isOpen: false, targetOrderId: '' });
+   const [adminPasswordInput, setAdminPasswordInput] = useState('');
+
+   const requestAdminAuth = (orderId: string) => {
+      setAdminAuthModal({ isOpen: true, targetOrderId: orderId });
+      setTimeout(() => document.getElementById('order-admin-pwd')?.focus(), 100);
+   };
+
+   const verifyAdminAndAuthorize = () => {
+      const adminUser = adminPasswordInput === '123456' || dbUsers.find(u => u.role === 'ADMIN' && (u.password === adminPasswordInput || u.pin_code === adminPasswordInput));
+      if (adminUser) { 
+         setAuthorizedDebtOrders(prev => new Set(prev).add(adminAuthModal.targetOrderId));
+         setAdminAuthModal({ isOpen: false, targetOrderId: '' }); 
+         setAdminPasswordInput('');
+      } else { 
+         showAlert("Contraseña incorrecta o usuario no autorizado.", 'error'); 
+      }
+   };
+
    return (
       <div className="h-full flex flex-col space-y-4 font-sans text-sm relative">
+
+         {/* --- ADMIN AUTH MODAL --- */}
+         {adminAuthModal.isOpen && (
+            <div className="absolute inset-0 z-[300] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+               <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
+                  <Shield className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full" />
+                  <h3 className="text-lg font-black text-slate-800 mb-2">Autorización Requerida</h3>
+                  <p className="text-sm text-slate-500 mb-4">Ingrese la contraseña de administrador para autorizar el procesamiento de este pedido con saldo pendiente.</p>
+                  <input
+                     id="order-admin-pwd"
+                     type="password"
+                     className="w-full text-center text-xl tracking-widest p-3 bg-slate-100 border border-slate-300 rounded-lg mb-6 font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+                     value={adminPasswordInput}
+                     onChange={e => setAdminPasswordInput(e.target.value)}
+                     onKeyDown={e => {
+                        if (e.key === 'Enter') verifyAdminAndAuthorize();
+                        if (e.key === 'Escape') { setAdminAuthModal({ isOpen: false, targetOrderId: '' }); setAdminPasswordInput(''); }
+                     }}
+                  />
+                  <div className="flex gap-3">
+                     <button onClick={() => { setAdminAuthModal({ isOpen: false, targetOrderId: '' }); setAdminPasswordInput(''); }} className="flex-1 py-3 bg-slate-100 rounded-lg font-bold text-slate-600 hover:bg-slate-200">Cancelar</button>
+                     <button onClick={verifyAdminAndAuthorize} className="flex-1 py-3 bg-blue-600 text-white rounded-lg font-bold shadow-lg hover:bg-blue-700">Autorizar</button>
+                  </div>
+               </div>
+            </div>
+         )}
 
          {/* --- CUSTOM ALERT MODAL --- */}
          {modalConfig.isOpen && (
@@ -696,12 +746,16 @@ export const OrderProcessing: React.FC = () => {
          {/* TABLE */}
          <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col">
             <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center gap-4">
-               {filterStatus === 'pending' && (
-                  <button onClick={handleSelectAll} className="flex items-center text-sm font-bold text-slate-700 hover:text-blue-600">
-                     {selectedIds.size > 0 && selectedIds.size === orders.length ? <CheckSquare className="w-5 h-5 mr-1 text-blue-600" /> : <Square className="w-5 h-5 mr-1 text-slate-400" />}
-                     Seleccionar Todo
-                  </button>
-               )}
+               {filterStatus === 'pending' && (() => {
+                  const processableCount = orders.filter(o => !((o.previous_debt || 0) > 0 && !authorizedDebtOrders.has(o.id))).length;
+                  const isAllSelected = selectedIds.size > 0 && selectedIds.size === processableCount;
+                  return (
+                     <button onClick={handleSelectAll} className="flex items-center text-sm font-bold text-slate-700 hover:text-blue-600">
+                        {isAllSelected ? <CheckSquare className="w-5 h-5 mr-1 text-blue-600" /> : <Square className="w-5 h-5 mr-1 text-slate-400" />}
+                        Seleccionar Todo
+                     </button>
+                  );
+               })()}
                <span className="text-xs text-slate-500 font-medium">
                   {orders.length} pedidos encontrados
                </span>
@@ -729,26 +783,39 @@ export const OrderProcessing: React.FC = () => {
                         const seller = dbSellers.find(s => s.id === order.seller_id);
                         const client = dbClients.find(c => c.id === order.client_id || c.doc_number === order.client_doc_number);
                         const zone = dbZones.find(z => z.id === client?.zone_id);
+                        const hasDebt = (order.previous_debt || 0) > 0;
+                        const isAuthorized = authorizedDebtOrders.has(order.id);
+                        const requiresAuth = hasDebt && !isAuthorized;
                         const isSelected = selectedIds.has(order.id);
 
                         return (
                            <tr
                               key={order.id}
-                              className={`hover:bg-blue-50 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50' : ''}`}
-                              onClick={() => filterStatus === 'pending' && handleToggleSelect(order.id)}
+                              className={`hover:bg-blue-50 transition-colors ${requiresAuth ? 'bg-red-50/50' : isSelected ? 'bg-blue-50' : ''} ${!requiresAuth ? 'cursor-pointer' : ''}`}
+                              onClick={() => filterStatus === 'pending' && !requiresAuth && handleToggleSelect(order.id)}
                            >
                               {filterStatus === 'pending' && (
                                  <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
-                                    <input
-                                       type="checkbox"
-                                       checked={isSelected}
-                                       onChange={() => handleToggleSelect(order.id)}
-                                       className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                    />
+                                    {requiresAuth ? (
+                                       <button onClick={() => requestAdminAuth(order.id)} className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm flex items-center justify-center">
+                                          <Shield className="w-3 h-3 mr-1" />
+                                          Autorizar
+                                       </button>
+                                    ) : (
+                                       <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={() => handleToggleSelect(order.id)}
+                                          className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                       />
+                                    )}
                                  </td>
                               )}
                               <td className="p-3">
                                  <span className="font-mono text-slate-600 inline-block mr-2">{order.code}</span>
+                                 {requiresAuth && (
+                                    <span className="text-[10px] bg-red-600 text-white font-bold px-1.5 py-0.5 rounded uppercase align-middle mr-1 animate-pulse">Cliente con Saldo</span>
+                                 )}
                                  {order.delivery_mode === 'EXPRESS_MISMO_DIA' && (
                                     <span className="text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded uppercase align-middle">Fuera de ruta</span>
                                  )}

@@ -732,6 +732,15 @@ export const AdvancedOrderEntry: React.FC = () => {
     if (cart.length === 0) { showDialog('warning', 'Faltan Datos', "El pedido no puede estar vacío."); productInputRef.current?.focus(); return; }
     if (!pedidoSeries && !isEditMode) { showDialog('error', 'Error de Configuración', "Configure una serie para PEDIDO en ajustes."); return; }
 
+    if (clientCreditInfo.debt > 0) {
+        const deudaActual = Number(clientCreditInfo.debt || 0).toFixed(2);
+        showDialog('warning', 'Cliente con Deuda', `⛔ CLIENTE CON SALDO PENDIENTE ⛔\n\nDeuda Vigente: S/ ${deudaActual}\n\nPor políticas de la empresa, no se puede emitir ningún comprobante o pedido sin autorización de un administrador.`, () => {
+            setShowAdminAuthModal({ isOpen: true, action: handleSaveOrder, targetName: 'Autorizar Pedido (Cliente con Deuda)' });
+            setTimeout(() => document.getElementById('admin-password-input')?.focus(), 100);
+        });
+        return;
+    }
+
     isSavingRef.current = true;
     setIsSaving(true);
     
