@@ -276,6 +276,7 @@ export const OrderProcessing: React.FC = () => {
                   sunat_status: 'PENDING',
                   origin_order_id: order.id,
                   seller_id: order.seller_id,
+                  previous_debt: order.previous_debt,
                   items: chunk.map(item => {
                      const productRef = dbProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
                      let finalBaseQty = (item as any).quantity_base || item.quantity;
