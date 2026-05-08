@@ -682,9 +682,11 @@ export const AdvancedOrderEntry: React.FC = () => {
         if (order.client_id) {
            const { data: clientData } = await supabase.from('clients').select('*').eq('id', order.client_id).single();
            if (clientData) {
-               setPriceListId(clientData.price_list_id || '');
+               setPriceListId(order.price_list_id || clientData.price_list_id || '');
                setSelectedClient(clientData as Client);
            }
+        } else {
+           setPriceListId(order.price_list_id || '');
         }
 
         setCart(loadedItems); 
