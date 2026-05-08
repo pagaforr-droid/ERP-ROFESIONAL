@@ -240,6 +240,11 @@ export const AdvancedOrderEntry: React.FC = () => {
     await fetchLiveSeries();
     checkClientCredit(c.id, c.credit_limit || 0);
     setTimeout(() => productInputRef.current?.focus(), 100);
+
+    // Auto-update prices in cart using the newly selected client's context
+    if (cart.length > 0) {
+       handleUpdateCartPrices(c.price_list_id || '');
+    }
   };
 
   useEffect(() => {
@@ -497,12 +502,13 @@ export const AdvancedOrderEntry: React.FC = () => {
     setTimeout(() => productInputRef.current?.focus(), 50);
   };
 
-  const handleUpdateCartPrices = () => {
+  const handleUpdateCartPrices = (overrideListId?: string) => {
+    const effectiveListId = overrideListId !== undefined ? overrideListId : priceListId;
     let tempCart = cart.map(item => {
       if (item.is_bonus || item.auto_promo_id) return item;
       const pRef = item.product_ref;
       const pureUnit = (item.unit_type || '').split('/')[0].trim();
-      const { price, discount } = calculateCalculatedPrice(pRef, pureUnit, priceListId);
+      const { price, discount } = calculateCalculatedPrice(pRef, pureUnit, effectiveListId);
       const tGross = item.quantity * price;
       return {
         ...item,
@@ -511,7 +517,7 @@ export const AdvancedOrderEntry: React.FC = () => {
         total_price: tGross - (tGross * (discount / 100))
       };
     });
-    applyPromotions(tempCart, priceListId);
+    applyPromotions(tempCart, effectiveListId);
     showDialog('success', 'Precios Actualizados', "Precios del carrito actualizados según la lista oficial y unidades configuradas.");
   };
 
