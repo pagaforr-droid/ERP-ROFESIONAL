@@ -418,6 +418,7 @@ export interface Order {
   delivery_address?: string;
   price_list_id?: string;
   creation_location?: { lat: number; lng: number } | null;
+  previous_debt?: number; // Snapshot of debt at creation time
 
   created_at: string;
   items: OrderItem[];
@@ -481,6 +482,7 @@ export interface Sale {
   dispatch_status: 'pending' | 'assigned' | 'in_transit' | 'delivered' | 'liquidated' | 'failed' | 'partial';
   delivery_mode?: 'REGULAR' | 'EXPRESS_MISMO_DIA'; // Added for order type
   created_at: string;
+  previous_debt?: number; // Snapshot of debt at creation time
   
   // Transport Metadata (For Guides)
   guide_transporter_id?: string;

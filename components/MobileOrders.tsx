@@ -624,6 +624,8 @@ export const MobileOrders: React.FC = () => {
 
             setSavingMessage('Guardando Pedido...');
 
+            const currentClientDebt = pendingBills.reduce((sum, s) => sum + Number(s.balance ?? s.total ?? 0), 0);
+
             const orderPayload = {
                id: isEditMode && originalOrder ? originalOrder.id : generateUUID(),
                code: isEditMode && originalOrder ? originalOrder.code : pedidoSeries + '-' + pedidoNumber,
@@ -639,6 +641,7 @@ export const MobileOrders: React.FC = () => {
                delivery_address: clientAddress || null,
                creation_location: creationLocation, // NUEVO: Tracking GPS
                price_list_id: priceListId || null,
+               previous_debt: currentClientDebt,
                delivery_mode: deliveryMode,
                delivery_date: deliveryMode === 'EXPRESS_MISMO_DIA' ? new Date().toISOString().split('T')[0] : (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().split('T')[0]; })(),
                items: cart.map(c => {

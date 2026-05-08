@@ -51,7 +51,7 @@ BEGIN
     INSERT INTO orders (
         id, code, client_id, client_name, client_doc_type, client_doc_number,
         seller_id, suggested_document_type, payment_method, total, status, delivery_address, creation_location,
-        delivery_mode, delivery_date, price_list_id
+        delivery_mode, delivery_date, price_list_id, previous_debt
     ) VALUES (
         COALESCE(NULLIF(p_order_data->>'id', ''), uuid_generate_v4()::text)::uuid,
         v_code,
@@ -68,7 +68,8 @@ BEGIN
         p_order_data->'creation_location',
         NULLIF(p_order_data->>'delivery_mode', '')::delivery_mode,
         (NULLIF(p_order_data->>'delivery_date', ''))::date,
-        NULLIF(p_order_data->>'price_list_id', '')::uuid
+        NULLIF(p_order_data->>'price_list_id', '')::uuid,
+        COALESCE((p_order_data->>'previous_debt')::numeric, 0)
     ) RETURNING id INTO v_order_id;
     
     -- 3. Procesar Items y Asignar Lotes (FIFO)
@@ -152,6 +153,7 @@ BEGIN
         delivery_mode = NULLIF(p_order_data->>'delivery_mode', '')::delivery_mode,
         delivery_date = (NULLIF(p_order_data->>'delivery_date', ''))::date,
         price_list_id = NULLIF(p_order_data->>'price_list_id', '')::uuid,
+        previous_debt = COALESCE((p_order_data->>'previous_debt')::numeric, 0),
         updated_at = NOW()
     WHERE id = v_order_id;
 
@@ -238,7 +240,7 @@ BEGIN
     INSERT INTO sales (
         id, document_type, series, number, payment_method, payment_status, balance,
         client_name, client_ruc, client_address, seller_id, client_id, subtotal, igv, total,
-        status, dispatch_status, sunat_status, origin_order_id
+        status, dispatch_status, sunat_status, origin_order_id, previous_debt
     ) VALUES (
         COALESCE(NULLIF(p_sale_data->>'id', ''), uuid_generate_v4()::text)::uuid,
         p_sale_data->>'document_type',
@@ -258,7 +260,8 @@ BEGIN
         COALESCE(NULLIF(p_sale_data->>'status', ''), 'completed')::general_status,
         COALESCE(NULLIF(p_sale_data->>'dispatch_status', ''), 'pending')::dispatch_status,
         COALESCE(NULLIF(p_sale_data->>'sunat_status', ''), 'PENDING')::sunat_status,
-        NULLIF(p_sale_data->>'origin_order_id', '')::uuid
+        NULLIF(p_sale_data->>'origin_order_id', '')::uuid,
+        COALESCE((p_sale_data->>'previous_debt')::numeric, 0)
     ) RETURNING id INTO v_sale_id;
 
     -- Liberar la reserva del pedido original para evitar descuento doble en el Kardex
