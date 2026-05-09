@@ -468,12 +468,27 @@ export const Dispatch: React.FC = () => {
       doc.text(`RUC: ${company.ruc}`, 10, 18 + offset);
       doc.text(`ALMC. PRINCIPAL`, 10, 22 + offset);
 
-      // Title
+      let nextCode = 'NUEVA RUTA';
+      if (editMode && editingDispatchId) {
+         nextCode = dispatchSheets.find(d => d.id === editingDispatchId)?.code || 'NUEVA RUTA';
+      } else {
+         let maxCount = 0;
+         dispatchSheets.forEach(ds => {
+            const match = ds.code.match(/RUT-(\d+)/);
+            if (match && match[1]) {
+               const num = parseInt(match[1], 10);
+               if (num > maxCount) maxCount = num;
+            }
+         });
+         nextCode = `RUT-${String(maxCount + 1).padStart(4, '0')} (Borrador)`;
+      }
+      const userDisplay = currentUser?.user_metadata?.name || currentUser?.email?.split('@')[0].toUpperCase() || currentUser?.id?.slice(0, 4) || 'ADMIN';
+
       doc.setFontSize(13);
       doc.setFont('helvetica', 'bold');
       doc.text("CONSOLIDADO DE MERCADERÍA", pageWidth / 2, 18, { align: 'center' });
       doc.setFontSize(8);
-      doc.text(`NRO PLLA: ${editMode && editingDispatchId ? dispatchSheets.find(d => d.id === editingDispatchId)?.code : 'NUEVA RUTA'}`, pageWidth / 2, 22, { align: 'center' });
+      doc.text(`NRO PLLA: ${nextCode}`, pageWidth / 2, 22, { align: 'center' });
 
       // Vehicle Box
       doc.setDrawColor(150);
@@ -490,7 +505,7 @@ export const Dispatch: React.FC = () => {
       doc.text(`Fecha: ${new Date().toLocaleDateString('es-PE')}`, pageWidth - 10, 18, { align: 'right' });
       doc.text(`Hora: ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}`, pageWidth - 10, 22, { align: 'right' });
       doc.text(`Día: ${new Date().toLocaleDateString('es-PE', { weekday: 'long' }).toUpperCase()}`, pageWidth - 10, 26, { align: 'right' });
-      doc.text(`Usuario: U:${currentUser?.id.slice(0, 4) || '0011'}`, pageWidth - 10, 30, { align: 'right' });
+      doc.text(`Usuario: ${userDisplay}`, pageWidth - 10, 30, { align: 'right' });
 
       // Build Table Data
       const tableBody: any[] = [];
@@ -597,28 +612,80 @@ export const Dispatch: React.FC = () => {
       window.open(doc.output('bloburl'), '_blank');
    };
 
-   const generateSellerExtractPDF = () => {
-      const doc = new jsPDF('portrait', 'mm', 'a4');
-      const pageWidth = doc.internal.pageSize.getWidth();
+   const generateSellerExtractPDF = async () => {
+      setIsPrinting(true);
+      try {
+         const doc = new jsPDF('portrait', 'mm', 'a4');
+         const pageWidth = doc.internal.pageSize.getWidth();
 
-      // Header Info
-      doc.setFontSize(10);
-      doc.setFont('helvetica', 'bold');
-      const companyName = doc.splitTextToSize(company.name, 60);
-      doc.text(companyName, 10, 18);
+         // Fetch data for past debt calculation
+         const selectedActiveSales = sortedSales.filter(s => selectedSaleIds.includes(s.id));
+         const clientRucs = Array.from(new Set(selectedActiveSales.map(s => s.client_ruc)));
 
-      const offset = companyName.length * 4;
-      doc.setFontSize(8);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`RUC: ${company.ruc}`, 10, 18 + offset);
-      doc.text(`ALMC. PRINCIPAL`, 10, 22 + offset);
+         const { data: allClientSales } = await supabase
+            .from('sales')
+            .select('*')
+            .in('client_ruc', clientRucs)
+            .neq('status', 'canceled')
+            .neq('document_type', 'NOTA_CREDITO');
 
-      // Title
-      doc.setFontSize(13);
-      doc.setFont('helvetica', 'bold');
-      doc.text("ESTRACTO POR VENDEDOR", pageWidth / 2, 18, { align: 'center' });
-      doc.setFontSize(8);
-      doc.text(`NRO PLLA: ${editMode && editingDispatchId ? dispatchSheets.find(d => d.id === editingDispatchId)?.code : 'NUEVA RUTA'}`, pageWidth / 2, 22, { align: 'center' });
+         const { data: dbCols } = await supabase
+            .from('collection_records')
+            .select('*')
+            .in('sale_id', allClientSales?.map(s => s.id) || [])
+            .eq('status', 'VALIDATED');
+
+         const clientDebtMap = new Map<string, number>();
+         clientRucs.forEach(ruc => {
+            const salesForClient = allClientSales?.filter(s => s.client_ruc === ruc) || [];
+            let totalDebt = 0;
+            salesForClient.forEach(s => {
+               // Exclude the current sales in this dispatch from the "Past Debt"
+               if (selectedSaleIds.includes(s.id)) return;
+
+               const saleCols = dbCols?.filter(r => r.sale_id === s.id) || [];
+               const totalPaid = saleCols.reduce((sum, r) => sum + Number(r.amount_reported || 0), 0);
+               let balance = Number(s.total) - totalPaid;
+               balance = Math.max(0, Math.round(balance * 100) / 100);
+               totalDebt += balance;
+            });
+            clientDebtMap.set(ruc, totalDebt);
+         });
+
+         // Header Info
+         doc.setFontSize(10);
+         doc.setFont('helvetica', 'bold');
+         const companyName = doc.splitTextToSize(company.name, 60);
+         doc.text(companyName, 10, 18);
+
+         const offset = companyName.length * 4;
+         doc.setFontSize(8);
+         doc.setFont('helvetica', 'normal');
+         doc.text(`RUC: ${company.ruc}`, 10, 18 + offset);
+         doc.text(`ALMC. PRINCIPAL`, 10, 22 + offset);
+
+         let nextCode = 'NUEVA RUTA';
+         if (editMode && editingDispatchId) {
+            nextCode = dispatchSheets.find(d => d.id === editingDispatchId)?.code || 'NUEVA RUTA';
+         } else {
+            let maxCount = 0;
+            dispatchSheets.forEach(ds => {
+               const match = ds.code.match(/RUT-(\d+)/);
+               if (match && match[1]) {
+                  const num = parseInt(match[1], 10);
+                  if (num > maxCount) maxCount = num;
+               }
+            });
+            nextCode = `RUT-${String(maxCount + 1).padStart(4, '0')} (Borrador)`;
+         }
+         const userDisplay = currentUser?.user_metadata?.name || currentUser?.email?.split('@')[0].toUpperCase() || currentUser?.id?.slice(0, 4) || 'ADMIN';
+
+         // Title
+         doc.setFontSize(13);
+         doc.setFont('helvetica', 'bold');
+         doc.text("ESTRACTO POR VENDEDOR", pageWidth / 2, 18, { align: 'center' });
+         doc.setFontSize(8);
+         doc.text(`NRO PLLA: ${nextCode}`, pageWidth / 2, 22, { align: 'center' });
 
       // Vehicle Box
       doc.setDrawColor(150);
@@ -659,9 +726,18 @@ export const Dispatch: React.FC = () => {
             { content: 'CLIENTE / DIRECCIÓN', styles: { fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } },
             { content: 'F. PAGO', styles: { halign: 'center', fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } },
             { content: 'IMPORTE', styles: { halign: 'right', fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } },
-            { content: 'SALDO', styles: { halign: 'right', fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } },
+            { content: 'SALDO ANT.', styles: { halign: 'right', fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } },
             { content: 'ESTADO', styles: { halign: 'center', fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } }
          ]);
+
+         // Accumulated past debt for this seller to not double-count in footer
+         let totalSaldoAnt = 0;
+         const uniqueClientsInSeller = Array.from(new Set(sellerSales.map(s => s.client_ruc)));
+         uniqueClientsInSeller.forEach(ruc => {
+            totalSaldoAnt += (clientDebtMap.get(ruc) || 0);
+         });
+
+         const displayedClientDebts = new Set<string>();
 
          // Sales Rows
          sellerSales.forEach(sale => {
@@ -669,20 +745,21 @@ export const Dispatch: React.FC = () => {
             const fPago = sale.payment_method.slice(0, 3) === 'EFE' ? 'CON' : sale.payment_method.slice(0, 3);
             const docTypeStr = sale.document_type === 'FACTURA' ? 'FA' : 'BO';
 
-            // Calculate exact balance dynamically
-            const saleCollections = collectionRecords ? collectionRecords.filter(r => r.sale_id === sale.id && r.status === 'VALIDATED') : [];
-            const totalPaid = saleCollections.reduce((sum, r) => sum + Number(r.amount_reported || 0), 0);
-            let currentBalance = Number(sale.total) - totalPaid;
-            currentBalance = Math.max(0, Math.round(currentBalance * 100) / 100);
-            
-            totalSaldo += currentBalance;
+            let pastDebtStr = '-';
+            if (!displayedClientDebts.has(sale.client_ruc)) {
+               const debt = clientDebtMap.get(sale.client_ruc) || 0;
+               if (debt > 0) {
+                  pastDebtStr = debt.toFixed(2);
+               }
+               displayedClientDebts.add(sale.client_ruc);
+            }
 
             tableBody.push([
                { content: `${docTypeStr}/${sale.series}-${sale.number}`, styles: { fontStyle: 'bold' } },
                { content: clientDisplay, styles: { fontStyle: 'normal' } },
                { content: fPago.toUpperCase(), styles: { halign: 'center', fontStyle: 'bold', textColor: [80, 80, 80] } },
                { content: sale.total.toFixed(2), styles: { halign: 'right', fontStyle: 'bold', fontSize: 9 } },
-               { content: currentBalance > 0 ? currentBalance.toFixed(2) : '-', styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, textColor: currentBalance > 0 ? [200, 0, 0] : 0 } },
+               { content: pastDebtStr, styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, textColor: pastDebtStr !== '-' ? [200, 0, 0] : 0 } },
                '' // ESTADO Checkbox
             ]);
          });
@@ -693,7 +770,7 @@ export const Dispatch: React.FC = () => {
             { content: `${uniqueClients} CLIENTES | ${sellerSales.length} COMPROBANTES`, styles: { fontStyle: 'bold', fontSize: 8, textColor: 0, lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0, cellPadding: { top: 2, bottom: 2 } } },
             { content: 'TOTAL:', styles: { halign: 'center', fontStyle: 'bold', fontSize: 8, textColor: 0, lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0, cellPadding: { top: 2, bottom: 2 } } },
             { content: `S/ ${totalImporte.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, textColor: 0, lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0, cellPadding: { top: 2, bottom: 2 } } },
-            { content: `S/ ${totalSaldo.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, textColor: [200, 0, 0], lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0, cellPadding: { top: 2, bottom: 2 } } },
+            { content: `S/ ${totalSaldoAnt.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, textColor: [200, 0, 0], lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0, cellPadding: { top: 2, bottom: 2 } } },
             { content: '', styles: { lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0 } }
          ]);
       });
@@ -748,6 +825,12 @@ export const Dispatch: React.FC = () => {
       doc.text("Firma y Sello", 150, finalYSeller + 38, { align: 'center' });
 
       window.open(doc.output('bloburl'), '_blank');
+      } catch (error: any) {
+         console.error('Error generando extracto por vendedor:', error);
+         showAlert('Error al generar PDF: ' + error.message, 'error');
+      } finally {
+         setIsPrinting(false);
+      }
    };
 
    // --- NEW: MONITOR TAB LOGIC ---
