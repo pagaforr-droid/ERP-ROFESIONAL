@@ -988,6 +988,9 @@ export const Dispatch: React.FC = () => {
                               {pickingList.map((item, idx) => {
                                  const showSupplier = idx === 0 || pickingList[idx - 1].supplierName !== item.supplierName;
                                  const showCategory = idx === 0 || showSupplier || pickingList[idx - 1].category !== item.category;
+                                 
+                                 const pkgAbbr = (item.packageType || 'CAJA').toUpperCase() === 'CAJA' ? 'CJA' : (item.packageType || 'CAJA').toUpperCase().slice(0, 3);
+                                 const boxText = item.boxes > 0 ? `${item.boxes} ${pkgAbbr}x${item.packageContent}` : '-';
 
                                  return (
                                     <React.Fragment key={item.productId}>
@@ -1013,7 +1016,7 @@ export const Dispatch: React.FC = () => {
                                              </div>
                                           </td>
                                           <td className="py-1.5 text-center font-extrabold text-black text-[11px] whitespace-nowrap">
-                                             {item.boxes > 0 ? `${item.boxes} CJ` : '-'}
+                                             {boxText}
                                           </td>
                                           <td className="py-1.5 text-center font-extrabold text-black text-[11px] whitespace-nowrap">
                                              {item.units > 0 ? `${item.units} ${item.unitType === 'UND' || item.unitType === 'BOTELLA' ? 'BOT' : item.unitType.slice(0, 3)}` : '-'}
