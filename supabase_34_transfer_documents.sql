@@ -27,9 +27,11 @@ CREATE TABLE IF NOT EXISTS public.transfer_items (
 
 -- Permisos
 ALTER TABLE public.transfer_documents ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Enable ALL for authenticated users on transfer_documents" ON public.transfer_documents;
 CREATE POLICY "Enable ALL for authenticated users on transfer_documents" ON public.transfer_documents FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 ALTER TABLE public.transfer_items ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Enable ALL for authenticated users on transfer_items" ON public.transfer_items;
 CREATE POLICY "Enable ALL for authenticated users on transfer_items" ON public.transfer_items FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ========================================================================================
