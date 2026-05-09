@@ -687,38 +687,35 @@ export const Dispatch: React.FC = () => {
          doc.setFontSize(8);
          doc.text(`NRO PLLA: ${nextCode}`, pageWidth / 2, 22, { align: 'center' });
 
-      // Vehicle Box
-      doc.setDrawColor(150);
-      doc.roundedRect((pageWidth / 2) - 30, 25, 60, 14, 2, 2);
-      doc.setFontSize(7);
-      doc.setFont('helvetica', 'normal');
-      const drv = selectedVehicle?.driver_id ? drivers.find(d => d.id === selectedVehicle.driver_id)?.name : 'NO ASIGNADO';
-      doc.text(`CORREDOR: ${selectedVehicle ? 'ASIGNADO' : 'POR ASIGNAR'}`, (pageWidth / 2) - 27, 29);
-      doc.text(`CHOFER: ${drv}`, (pageWidth / 2) - 27, 33);
-      doc.text(`VEHÍCULO: ${selectedVehicle ? selectedVehicle.plate : 'NO ASIGNADO'}`, (pageWidth / 2) - 27, 37);
+         // Vehicle Box
+         doc.setDrawColor(150);
+         doc.roundedRect((pageWidth / 2) - 30, 25, 60, 14, 2, 2);
+         doc.setFontSize(7);
+         doc.setFont('helvetica', 'normal');
+         const drv = selectedVehicle?.driver_id ? drivers.find(d => d.id === selectedVehicle.driver_id)?.name : 'NO ASIGNADO';
+         doc.text(`CORREDOR: ${selectedVehicle ? 'ASIGNADO' : 'POR ASIGNAR'}`, (pageWidth / 2) - 27, 29);
+         doc.text(`CHOFER: ${drv}`, (pageWidth / 2) - 27, 33);
+         doc.text(`VEHÍCULO: ${selectedVehicle ? selectedVehicle.plate : 'NO ASIGNADO'}`, (pageWidth / 2) - 27, 37);
 
-      // Right Info
-      doc.setFontSize(8);
-      doc.text(`Fecha: ${new Date().toLocaleDateString('es-PE')}`, pageWidth - 10, 18, { align: 'right' });
-      doc.text(`Hora: ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}`, pageWidth - 10, 22, { align: 'right' });
-      doc.text(`Día: ${new Date().toLocaleDateString('es-PE', { weekday: 'long' }).toUpperCase()}`, pageWidth - 10, 26, { align: 'right' });
-      doc.text(`Usuario: U:${currentUser?.id.slice(0, 4) || '0011'}`, pageWidth - 10, 30, { align: 'right' });
+         // Right Info
+         doc.setFontSize(8);
+         doc.text(`Fecha: ${new Date().toLocaleDateString('es-PE')}`, pageWidth - 10, 18, { align: 'right' });
+         doc.text(`Hora: ${new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}`, pageWidth - 10, 22, { align: 'right' });
+         doc.text(`Día: ${new Date().toLocaleDateString('es-PE', { weekday: 'long' }).toUpperCase()}`, pageWidth - 10, 26, { align: 'right' });
+         doc.text(`Usuario: ${userDisplay}`, pageWidth - 10, 30, { align: 'right' });
 
-      const tableBody: any[] = [];
-      const selectedActiveSales = sortedSales.filter(s => selectedSaleIds.includes(s.id));
-      const uniqueSellersMap = Array.from(new Set(selectedActiveSales.map(s => s.sellerName)));
+         const tableBody: any[] = [];
+         const uniqueSellersMap = Array.from(new Set(selectedActiveSales.map(s => s.sellerName)));
 
-      uniqueSellersMap.forEach(seller => {
-         const sellerSales = selectedActiveSales.filter(s => s.sellerName === seller);
-         const totalImporte = sellerSales.reduce((sum, s) => sum + s.total, 0);
-         const uniqueClients = new Set(sellerSales.map(s => s.client_ruc)).size;
+         uniqueSellersMap.forEach(seller => {
+            const sellerSales = selectedActiveSales.filter(s => s.sellerName === seller);
+            const totalImporte = sellerSales.reduce((sum, s) => sum + s.total, 0);
+            const uniqueClients = new Set(sellerSales.map(s => s.client_ruc)).size;
 
-         let totalSaldo = 0;
-
-         // Seller Header Row
-         tableBody.push([
-            { content: seller, colSpan: 6, styles: { fontStyle: 'bold', fontSize: 10, textColor: 0, cellPadding: { top: 6, bottom: 2 } } }
-         ]);
+            // Seller Header Row
+            tableBody.push([
+               { content: seller, colSpan: 6, styles: { fontStyle: 'bold', fontSize: 10, textColor: 0, cellPadding: { top: 6, bottom: 2 } } }
+            ]);
 
          // Columns Header Row
          tableBody.push([
