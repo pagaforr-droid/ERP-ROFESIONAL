@@ -743,12 +743,9 @@ export const Dispatch: React.FC = () => {
             const docTypeStr = sale.document_type === 'FACTURA' ? 'FA' : 'BO';
 
             let pastDebtStr = '-';
-            if (!displayedClientDebts.has(sale.client_ruc)) {
-               const debt = clientDebtMap.get(sale.client_ruc) || 0;
-               if (debt > 0) {
-                  pastDebtStr = debt.toFixed(2);
-               }
-               displayedClientDebts.add(sale.client_ruc);
+            const debt = sale.previous_debt || 0;
+            if (debt > 0) {
+               pastDebtStr = debt.toFixed(2);
             }
 
             tableBody.push([
@@ -1224,6 +1221,12 @@ export const Dispatch: React.FC = () => {
                                  const sellerObj = sellers.find(s => s.name === seller);
                                  const sellerIdDisplay = sellerObj?.id.replace(/\D/g, '').padStart(4, '0') || '0001';
 
+                                 let totalSaldoAnt = 0;
+                                 const uniqueClientsInSeller = Array.from(new Set(sellerSales.map(s => s.client_ruc)));
+                                 uniqueClientsInSeller.forEach(ruc => {
+                                    totalSaldoAnt += (clientDebtMap.get(ruc) || 0);
+                                 });
+
                                  return (
                                     <div key={seller} className="mb-8 break-inside-avoid">
                                        {/* Seller Header */}
@@ -1234,9 +1237,10 @@ export const Dispatch: React.FC = () => {
                                        <table className="w-full text-left border-collapse text-[10px]" style={{ tableLayout: 'fixed' }}>
                                           <colgroup>
                                              <col style={{ width: '22%' }} />
-                                             <col style={{ width: '40%' }} />
+                                             <col style={{ width: '32%' }} />
+                                             <col style={{ width: '10%' }} />
                                              <col style={{ width: '12%' }} />
-                                             <col style={{ width: '14%' }} />
+                                             <col style={{ width: '12%' }} />
                                              <col style={{ width: '12%' }} />
                                           </colgroup>
                                           <thead>
@@ -1245,6 +1249,7 @@ export const Dispatch: React.FC = () => {
                                                 <th className="py-1.5">CLIENTE / DIRECCIÓN</th>
                                                 <th className="py-1.5 text-center">F. PAGO</th>
                                                 <th className="py-1.5 text-right">IMPORTE</th>
+                                                <th className="py-1.5 text-right">SALDO ANT.</th>
                                                 <th className="py-1.5 text-center pr-2">ESTADO</th>
                                              </tr>
                                           </thead>
@@ -1252,6 +1257,11 @@ export const Dispatch: React.FC = () => {
                                              {sellerSales.map(sale => {
                                                 const client = clients.find(c => c.doc_number === sale.client_ruc);
                                                 const clientCode = client?.id.replace(/\D/g, '').padStart(6, '0') || sale.client_ruc.slice(0, 6) || '000000';
+                                                
+                                                const debt = sale.previous_debt || 0;
+                                                let pastDebtStr = '-';
+                                                if (debt > 0) pastDebtStr = debt.toFixed(2);
+
                                                 return (
                                                    <tr key={sale.id} className="border-b-[1px] border-dashed border-gray-300">
                                                       <td className="py-1.5 font-bold text-black uppercase whitespace-nowrap pl-2 align-top">
@@ -1272,6 +1282,9 @@ export const Dispatch: React.FC = () => {
                                                       <td className="py-1.5 text-right font-extrabold text-black text-[11px] whitespace-nowrap">
                                                          {sale.total.toFixed(2)}
                                                       </td>
+                                                      <td className={`py-1.5 text-right font-extrabold text-[11px] whitespace-nowrap ${pastDebtStr !== '-' ? 'text-red-700' : 'text-black'}`}>
+                                                         {pastDebtStr}
+                                                      </td>
                                                       <td className="py-1.5 text-center align-middle pr-2">
                                                          <div className="w-4 h-4 border-[1.5px] border-black mx-auto mt-0.5"></div>
                                                       </td>
@@ -1284,9 +1297,10 @@ export const Dispatch: React.FC = () => {
                                        {/* Footer */}
                                        <div className="flex border-t-[3px] border-b-[2px] border-black mt-0 py-1.5 font-extrabold uppercase text-[10px] text-black items-center">
                                           <div className="w-[20%] tracking-widest pl-2 whitespace-nowrap">RESUMEN:</div>
-                                          <div className="w-[42%] text-left whitespace-nowrap">{uniqueClients} CLIENTES | {sellerSales.length} COMPROBANTES</div>
-                                          <div className="w-[12%] text-center text-black whitespace-nowrap">TOTAL:</div>
-                                          <div className="w-[14%] text-right text-[12px] tracking-wide pr-1 whitespace-nowrap">S/ {totalImporte.toFixed(2)}</div>
+                                          <div className="w-[34%] text-left whitespace-nowrap">{uniqueClients} CLIENTES | {sellerSales.length} COMPROBANTES</div>
+                                          <div className="w-[10%] text-center text-black whitespace-nowrap">TOTAL:</div>
+                                          <div className="w-[12%] text-right text-[12px] tracking-wide whitespace-nowrap">S/ {totalImporte.toFixed(2)}</div>
+                                          <div className="w-[12%] text-right text-[12px] tracking-wide text-red-700 whitespace-nowrap">S/ {totalSaldoAnt.toFixed(2)}</div>
                                           <div className="w-[12%] text-center"></div>
                                        </div>
                                     </div>
