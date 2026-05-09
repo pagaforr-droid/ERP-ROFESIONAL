@@ -4,6 +4,7 @@ import { Product, Order, AutoPromotion } from '../types';
 import { Save, X, RefreshCw, Trash2, Loader2, Edit } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { calculateBaseQuantity } from '../utils/productUtils';
+import { applyAutoPromotionsEngine } from '../utils/promoUtils';
 
 interface EditOrderProps {
   orderId: string;
@@ -107,61 +108,25 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
   };
 
   const applyElitePromotions = (currentCart: any[]) => {
-    let cleanCart = currentCart.filter(item => !item.auto_promo_id);
-    
-    const getBaseQuantity = (item: any) => {
-        const conversionFactor = Number((item.unit_type || '').split('/')[1]) || 1;
-        return item.quantity * conversionFactor;
+    const context = {
+         channel: 'IN_STORE' as const,
+         city: orderData?.client_city || '', 
+         sellerId: orderData?.seller_id || currentUser?.id,
+         userRole: currentUser?.role,
+         priceListId: priceListId,
+         clientId: orderData?.client_id
     };
-
-    const validPromos = dbAutoPromos.filter(ap => ap.is_active);
-
-    validPromos.forEach(ap => {
-      let applies = false;
-      let multiplier = 0;
-
-      if (ap.condition_type === 'BUY_X_PRODUCT') {
-        const qtyBought = cleanCart.filter(i => {
-            if (i.is_bonus) return false;
-            if (ap.condition_product_ids?.length > 0) return ap.condition_product_ids.includes(i.product_id);
-            if (ap.condition_product_id) return i.product_id === ap.condition_product_id;
-            return true;
-        }).reduce((sum, i) => sum + getBaseQuantity(i), 0); 
-        
-        if (qtyBought >= ap.condition_amount) {
-          applies = true;
-          multiplier = Math.floor(qtyBought / ap.condition_amount);
-        }
-      } 
-
-      if (applies && multiplier > 0) {
-        const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id);
-        if (rewardProduct) {
-          const rewardQty = ap.reward_quantity * multiplier;
-          const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
-          const conversionFactor = isPkgMode ? Number(rewardProduct.package_content || 1) : 1;
-          const realUnitName = isPkgMode ? `${(rewardProduct.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(rewardProduct.unit_type || 'UND').toUpperCase()} / 1`;
-
-          cleanCart.push({
-            id: crypto.randomUUID(),
-            product_id: rewardProduct.id,
-            product_sku: rewardProduct.sku,
-            product_name: rewardProduct.name,
-            quantity: rewardQty,
-            unit_type: realUnitName,
-            selected_unit: realUnitName,
-            unit_price: 0,
-            discount_percent: 100,
-            total_price: 0,
-            is_bonus: true,
-            auto_promo_id: ap.id,
-            product_ref: rewardProduct
-          });
-        }
-      }
-    });
-
-    setCart(cleanCart);
+    
+    const { newCart } = applyAutoPromotionsEngine(
+         currentCart, 
+         dbAutoPromos, 
+         dbProducts, 
+         [], // No batches needed right here since it's just edit
+         context, 
+         {}
+    );
+    
+    setCart(newCart);
   };
 
   const handleSaveEdit = async () => {

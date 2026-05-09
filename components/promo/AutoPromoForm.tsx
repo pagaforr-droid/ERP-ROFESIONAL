@@ -164,6 +164,58 @@ export const AutoPromoForm: React.FC<Props> = ({ initialData, onClose, onSave })
                             </div>
                         </div>
 
+                        {/* Topes y Horarios (NUEVO) */}
+                        <div className="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                            <h3 className="font-bold text-amber-800 mb-3 border-b border-amber-200 pb-2">Topes, Prioridad y Horarios</h3>
+                            
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-amber-900 mb-1">Tope por Ticket (Multiplicador)</label>
+                                        <input type="number" min="0" placeholder="0 = Ilimitado" className="w-full border border-amber-300 p-2 rounded text-sm bg-white" value={formData.max_reward_multiplier || ''} onChange={e => setFormData({ ...formData, max_reward_multiplier: Number(e.target.value) || 0 })} />
+                                        <p className="text-[10px] text-amber-600 mt-1">Máx. veces que se aplica la bonificación en 1 sola venta.</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-amber-900 mb-1">Tope por Cliente (Global)</label>
+                                        <input type="number" min="0" placeholder="0 = Ilimitado" className="w-full border border-amber-300 p-2 rounded text-sm bg-white" value={formData.max_uses_per_client || ''} onChange={e => setFormData({ ...formData, max_uses_per_client: Number(e.target.value) || 0 })} />
+                                        <p className="text-[10px] text-amber-600 mt-1">Límite histórico de usos para un mismo cliente.</p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-amber-900 mb-1">Stock Máximo Promocional</label>
+                                        <input type="number" min="0" placeholder="0 = Ilimitado" className="w-full border border-amber-300 p-2 rounded text-sm bg-white" value={formData.global_reward_limit || ''} onChange={e => setFormData({ ...formData, global_reward_limit: Number(e.target.value) || 0 })} />
+                                        <p className="text-[10px] text-amber-600 mt-1">Total de bonos que el sistema regalará.</p>
+                                    </div>
+                                    <div className="flex flex-col justify-center pt-4">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input type="checkbox" checked={formData.is_exclusive} onChange={e => setFormData({ ...formData, is_exclusive: e.target.checked })} className="w-4 h-4 text-amber-600 rounded" />
+                                            <span className="text-sm font-bold text-amber-900">Promoción Exclusiva</span>
+                                        </label>
+                                        <p className="text-[10px] text-amber-600 mt-1 ml-6">Anula otras bonificaciones si esta aplica.</p>
+                                    </div>
+                                </div>
+
+                                <div className="border-t border-amber-200 pt-3">
+                                    <label className="flex items-center gap-2 cursor-pointer mb-2">
+                                        <input type="checkbox" checked={formData.is_happy_hour} onChange={e => setFormData({ ...formData, is_happy_hour: e.target.checked })} className="w-4 h-4 text-amber-600 rounded" />
+                                        <span className="text-sm font-bold text-amber-900">Activar Happy Hour (Horario Restringido)</span>
+                                    </label>
+                                    
+                                    {formData.is_happy_hour && (
+                                        <div className="grid grid-cols-2 gap-4 pl-6">
+                                            <div>
+                                                <label className="block text-xs font-bold text-amber-900 mb-1">Hora Inicio</label>
+                                                <input type="time" className="w-full border border-amber-300 p-2 rounded text-sm bg-white" value={formData.start_time || ''} onChange={e => setFormData({ ...formData, start_time: e.target.value })} />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-amber-900 mb-1">Hora Fin</label>
+                                                <input type="time" className="w-full border border-amber-300 p-2 rounded text-sm bg-white" value={formData.end_time || ''} onChange={e => setFormData({ ...formData, end_time: e.target.value })} />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Restricciones */}
                         <div className="bg-purple-50 p-4 rounded-lg border border-purple-200">
                             <h3 className="font-bold text-purple-800 mb-3 border-b border-purple-200 pb-2">Segmentación (Opcional)</h3>

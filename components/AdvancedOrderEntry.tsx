@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Edit, Lock, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle } from 'lucide-react';
-import { isPromoValidForContext } from '../utils/promoUtils';
+import { isPromoValidForContext, applyAutoPromotionsEngine } from '../utils/promoUtils';
 import { calculateBaseQuantity } from '../utils/productUtils';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
@@ -345,91 +345,28 @@ export const AdvancedOrderEntry: React.FC = () => {
   }
 
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
-    let cleanCart = currentCart.filter(item => !item.auto_promo_id);
-
-    const getBaseQuantity = (item: CartItem) => {
-        const conversionFactor = Number((item.unit_type || '').split('/')[1]) || 1;
-        return item.quantity * conversionFactor;
-    };
-
-    const validPromos = dbAutoPromos.filter(ap => {
-      if (!isPromoValidForContext(ap, 'IN_STORE', selectedClient?.city || '', sellerId || currentUser?.id, currentUser?.role)) return false;
-      if (ap.target_price_list_ids && ap.target_price_list_ids.length > 0 && listId) {
-        if (!ap.target_price_list_ids.includes('ALL') && !ap.target_price_list_ids.includes(listId)) return false;
+      const context = {
+         channel: 'IN_STORE' as const,
+         city: selectedClient?.city || '',
+         sellerId: sellerId || currentUser?.id,
+         userRole: currentUser?.role,
+         priceListId: listId,
+         clientId: selectedClient?.id
+      };
+      
+      const { newCart, warnings } = applyAutoPromotionsEngine(
+         currentCart, 
+         dbAutoPromos, 
+         Object.values(cartProductsCache), 
+         [], // No full batches available here initially, we can leave empty or pass loadedBatches later
+         context, 
+         {}
+      );
+      
+      setCart(newCart);
+      if (warnings.length > 0) {
+         showDialog('warning', 'Aviso de Promociones', warnings.join('\n'));
       }
-      return true;
-    });
-
-    validPromos.forEach(ap => {
-      let applies = false;
-      let multiplier = 0;
-
-      if (ap.condition_type === 'BUY_X_PRODUCT') {
-        const qtyBought = cleanCart.filter(i => {
-            if (i.is_bonus) return false;
-            const hasList = ap.condition_product_ids && ap.condition_product_ids.length > 0;
-            const hasSingle = !!ap.condition_product_id;
-            if (hasList) return ap.condition_product_ids.includes(i.product_id);
-            if (hasSingle) return i.product_id === ap.condition_product_id;
-            return true;
-        }).reduce((sum, i) => sum + getBaseQuantity(i), 0); 
-        
-        if (qtyBought >= ap.condition_amount) {
-          applies = true;
-          multiplier = Math.floor(qtyBought / ap.condition_amount);
-        }
-      } 
-      else if (ap.condition_type === 'SPEND_Y_TOTAL') {
-        const conditionItemKeys = ap.condition_product_ids || [];
-        const totalSpent = cleanCart.reduce((sum, item) => {
-            if (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) return sum;
-            return sum + item.total_price;
-        }, 0);
-        if (totalSpent >= ap.condition_amount) {
-          applies = true;
-          multiplier = Math.floor(totalSpent / ap.condition_amount);
-        }
-      } 
-      else if (ap.condition_type === 'SPEND_Y_CATEGORY') {
-        const catSpent = cleanCart.reduce((sum, item) => {
-            const p = cartProductsCache[item.product_id] || item.product_ref;
-            if (p?.category === ap.condition_category) return sum + item.total_price;
-            return sum;
-        }, 0);
-        if (catSpent >= ap.condition_amount) {
-            applies = true;
-            multiplier = Math.floor(catSpent / ap.condition_amount);
-        }
-      }
-
-      if (applies && multiplier > 0) {
-        const rewardProduct = dbProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
-        if (rewardProduct) {
-          const rewardQty = ap.reward_quantity * multiplier;
-          const isPkgMode = ap.reward_unit_type === 'PKG' || ap.reward_unit_type === rewardProduct.package_type;
-          const conversionFactor = isPkgMode ? Number(rewardProduct.package_content || 1) : 1;
-          const realUnitName = isPkgMode ? `${(rewardProduct.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(rewardProduct.unit_type || 'UND').toUpperCase()} / 1`;
-
-          cleanCart.push({
-            id: crypto.randomUUID(),
-            product_id: rewardProduct.id,
-            sku: rewardProduct.sku,
-            name: rewardProduct.name,
-            quantity: rewardQty,
-            unit_type: realUnitName,
-            unit_price: 0,
-            discount_percent: 100,
-            total_price: 0,
-            is_bonus: true,
-            auto_promo_id: ap.id,
-            promo_name: ap.name,
-            product_ref: rewardProduct
-          });
-        }
-      }
-    });
-
-    setCart(cleanCart);
   };
 
   const executeAddToCart = () => {

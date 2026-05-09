@@ -122,6 +122,16 @@ export interface AutoPromotion {
   target_client_categories?: string[];
   target_price_list_ids?: string[];
   target_cities?: string[];
+
+  // LIMITS & EXCLUSIVITY (SCRIPT 35)
+  max_reward_multiplier?: number; // Tope por transacción/ticket
+  max_uses_per_client?: number; // Tope por cliente histórico
+  global_reward_limit?: number; // Stock reservado global
+  current_reward_uses?: number; // Consumo actual global
+  is_exclusive?: boolean; // Prioridad
+  is_happy_hour?: boolean;
+  start_time?: string; // "14:00"
+  end_time?: string; // "18:00"
 }
 
 // === QUOTAS ===

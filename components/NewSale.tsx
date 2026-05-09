@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
 import { Product, BatchAllocation, SaleItem, Client, Sale, AutoPromotion, Promotion, Batch } from '../types';
 import { Plus, Trash2, Search, Printer, Save, X, ChevronDown, RefreshCw, FilePlus, Eye, Zap, MapPin, Loader2, AlertTriangle, ShieldCheck, CheckCircle2, HelpCircle } from 'lucide-react';
-import { isPromoValidForContext } from '../utils/promoUtils';
+import { isPromoValidForContext, applyAutoPromotionsEngine } from '../utils/promoUtils';
 import { allocateBatchesFIFO } from '../utils/productUtils';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
@@ -560,58 +560,31 @@ export const NewSale: React.FC = () => {
    };
 
    const applyAutoPromotionsWithContext = (currentCart: SaleItem[], p_list_id: string, p_city: string, p_seller: string, silent = false) => {
-      let newCart = currentCart.filter(item => !item.auto_promo_id);
-      const validPromos = dbAutoPromos.filter(ap => {
-         if (!isPromoValidForContext(ap, 'IN_STORE', p_city, p_seller || currentUser?.id, currentUser?.role)) return false;
-         if (ap.target_price_list_ids?.length > 0 && p_list_id && !ap.target_price_list_ids.includes('ALL') && !ap.target_price_list_ids.includes(p_list_id)) return false;
-         return true;
-      });
-
-      validPromos.forEach(ap => {
-         let applies = false; let multiplyFactor = 0; 
-         if (ap.condition_type === 'BUY_X_PRODUCT') {
-            const qtyBought = newCart.filter(item => {
-                if (item.is_bonus) return false;
-                const hasList = ap.condition_product_ids && ap.condition_product_ids.length > 0;
-                const hasSingle = !!ap.condition_product_id;
-                if (hasList) return ap.condition_product_ids.includes(item.product_id);
-                if (hasSingle) return item.product_id === ap.condition_product_id;
-                return true; 
-            }).reduce((sum, item) => sum + Number(item.quantity_base || 0), 0);
-            
-            if (qtyBought >= ap.condition_amount) { applies = true; multiplyFactor = Math.floor(qtyBought / ap.condition_amount); }
-         } else if (ap.condition_type === 'SPEND_Y_TOTAL') {
-            const conditionItemKeys = ap.condition_product_ids || [];
-            const totalSpent = newCart.reduce((sum, item) => {
-               if (conditionItemKeys.length > 0 && !conditionItemKeys.includes(item.product_id)) return sum;
-               return sum + Number(item.total_price || 0);
-            }, 0);
-            if (totalSpent >= ap.condition_amount) { applies = true; multiplyFactor = Math.floor(totalSpent / ap.condition_amount); }
-         } else if (ap.condition_type === 'SPEND_Y_CATEGORY') {
-            const catSpent = newCart.reduce((sum, item) => {
-               const p = cartProductsCache[item.product_id];
-               if (p?.category === ap.condition_category) return sum + Number(item.total_price || 0);
-               return sum;
-            }, 0);
-            if (catSpent >= ap.condition_amount) { applies = true; multiplyFactor = Math.floor(catSpent / ap.condition_amount); }
-         }
-
-         if (applies && multiplyFactor > 0) {
-            const rewardProd = dbRewardProducts.find(p => p.id === ap.reward_product_id) || cartProductsCache[ap.reward_product_id];
-            if (rewardProd) {
-               const rewardQty = ap.reward_quantity * multiplyFactor;
-               const isPkgMode = ap.reward_unit_type === 'PKG';
-               const conversionFactor = isPkgMode ? Number(rewardProd.package_content || 1) : 1;
-               
-               const realUnitName = isPkgMode ? `${(rewardProd.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(rewardProd.unit_type || 'UND').toUpperCase()} / 1`;
-
-               newCart.push({ id: crypto.randomUUID(), sale_id: '', product_id: rewardProd.id, product_sku: rewardProd.sku, product_name: rewardProd.name, quantity_base: rewardQty * conversionFactor, batch_allocations: [], quantity: rewardQty, quantity_presentation: rewardQty, unit_price: 0, discount_percent: 100, discount_amount: 0, total_price: 0, selected_unit: realUnitName, is_bonus: true, auto_promo_id: ap.id, product: rewardProd } as any);
-            }
-         }
-      });
+      const context = {
+         channel: 'IN_STORE' as const,
+         city: p_city,
+         sellerId: p_seller || currentUser?.id,
+         userRole: currentUser?.role,
+         priceListId: p_list_id,
+         clientId: selectedClientId || undefined
+      };
+      
+      const { newCart, warnings } = applyAutoPromotionsEngine(
+         currentCart, 
+         dbAutoPromos, 
+         products, 
+         batches, 
+         context, 
+         {} // TODO: clientPromoUsage integration
+      );
       
       setCart(newCart);
-      if (silent !== true) showDialog('success', 'Precios Actualizados', "Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
+      
+      if (warnings.length > 0 && silent !== true) {
+         showDialog('warning', 'Alerta de Promociones', warnings.join('\n'));
+      } else if (silent !== true) {
+         showDialog('success', 'Precios Actualizados', "Precios y Promociones actualizadas según el cliente y la lista seleccionada.");
+      }
    };
 
    const applyAutoPromotions = (currentCart: SaleItem[], silent = false) => { applyAutoPromotionsWithContext(currentCart, clientData.price_list_id || '', clientData.city || '', selectedSellerId || '', silent); };
