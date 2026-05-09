@@ -890,6 +890,22 @@ export const Dispatch: React.FC = () => {
    // --- RENDER ---
 
    if (showPickingList) {
+      let nextCode = 'NUEVA RUTA';
+      if (editMode && editingDispatchId) {
+         nextCode = dispatchSheets.find(d => d.id === editingDispatchId)?.code || 'NUEVA RUTA';
+      } else {
+         let maxCount = 0;
+         dispatchSheets.forEach(ds => {
+            const match = ds.code.match(/RUT-(\d+)/);
+            if (match && match[1]) {
+               const num = parseInt(match[1], 10);
+               if (num > maxCount) maxCount = num;
+            }
+         });
+         nextCode = `RUT-${String(maxCount + 1).padStart(4, '0')} (Borrador)`;
+      }
+      const userDisplay = currentUser?.user_metadata?.name || currentUser?.email?.split('@')[0].toUpperCase() || currentUser?.id?.slice(0, 4) || 'ADMIN';
+
       // PREVIEW MODE / EDIT MODE SUMMARY
       return (
          <div className="fixed inset-0 bg-slate-100 z-50 flex flex-col p-4 overflow-hidden">
@@ -1028,7 +1044,7 @@ export const Dispatch: React.FC = () => {
                            {/* Center */}
                            <div className="text-center flex flex-col items-center">
                               <h2 className="font-black text-[14px] uppercase tracking-wide mb-1">CONSOLIDADO DE MERCADERÍA</h2>
-                              <p className="font-bold text-[10px] text-gray-900 uppercase mb-3">NRO PLLA: {editMode && editingDispatchId ? dispatchSheets.find(d => d.id === editingDispatchId)?.code : 'NUEVA RUTA'}</p>
+                              <p className="font-bold text-[10px] text-gray-900 uppercase mb-3">NRO PLLA: {nextCode}</p>
                               <div className="inline-block text-left px-4 py-1.5 rounded-xl border-[1.5px] border-gray-400">
                                  <p className="font-bold uppercase text-[9px] mb-1 text-gray-500 flex justify-between gap-4">
                                     <span>CORREDOR:</span> <span className="text-black font-extrabold">{selectedVehicle ? 'ASIGNADO' : 'POR ASIGNAR'}</span>
@@ -1047,7 +1063,7 @@ export const Dispatch: React.FC = () => {
                               <div className="flex justify-end gap-2"><span className="text-gray-500">Hora:</span> <span className="font-bold text-black">{new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span></div>
                               <div className="flex justify-end gap-2"><span className="text-gray-500">Día:</span> <span className="font-bold text-black uppercase">{new Date().toLocaleDateString('es-PE', { weekday: 'long' })}</span></div>
                               <div className="flex justify-end gap-2"><span className="text-gray-500">Página:</span> <span className="font-bold text-black">1</span></div>
-                              <div className="flex justify-end gap-2 pt-2"><span className="text-gray-500">Usuario:</span> <span className="font-bold text-black">U:{currentUser?.id.slice(0, 4) || '0011'}</span></div>
+                              <div className="flex justify-end gap-2 pt-2"><span className="text-gray-500">Usuario:</span> <span className="font-bold text-black">{userDisplay}</span></div>
                            </div>
                         </div>
 
@@ -1175,7 +1191,7 @@ export const Dispatch: React.FC = () => {
                               {/* Center */}
                               <div className="text-center flex flex-col items-center">
                                  <h2 className="font-black text-[13px] uppercase tracking-wide mb-1 px-4 leading-[1.15]">CONSOLIDADO DE DOCUMENTOS<br />PRE-LIQUIDACIÓN</h2>
-                                 <p className="font-bold text-[10px] text-gray-900 uppercase mb-2">NRO PLLA: {editMode && editingDispatchId ? dispatchSheets.find(d => d.id === editingDispatchId)?.code : 'NUEVA RUTA'}</p>
+                                 <p className="font-bold text-[10px] text-gray-900 uppercase mb-2">NRO PLLA: {nextCode}</p>
                                  <div className="inline-block text-left px-4 py-1.5 rounded-xl border-[1.5px] border-gray-400">
                                     <p className="font-bold uppercase text-[9px] mb-1 text-gray-500 flex justify-between gap-4">
                                        <span>CORREDOR:</span> <span className="text-black font-extrabold">{selectedVehicle ? 'ASIGNADO' : 'POR ASIGNAR'}</span>
@@ -1194,7 +1210,7 @@ export const Dispatch: React.FC = () => {
                                  <div className="flex justify-end gap-2"><span className="text-gray-500">Hora:</span> <span className="font-bold text-black">{new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' })}</span></div>
                                  <div className="flex justify-end gap-2"><span className="text-gray-500">Día:</span> <span className="font-bold text-black uppercase">{new Date().toLocaleDateString('es-PE', { weekday: 'long' })}</span></div>
                                  <div className="flex justify-end gap-2"><span className="text-gray-500">Página:</span> <span className="font-bold text-black">1</span></div>
-                                 <div className="flex justify-end gap-2 pt-2"><span className="text-gray-500">Usuario:</span> <span className="font-bold text-black">U:{currentUser?.id.slice(0, 4) || '0011'}</span></div>
+                                 <div className="flex justify-end gap-2 pt-2"><span className="text-gray-500">Usuario:</span> <span className="font-bold text-black">{userDisplay}</span></div>
                               </div>
                            </div>
 
