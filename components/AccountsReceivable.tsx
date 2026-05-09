@@ -20,11 +20,10 @@ export const AccountsReceivable: React.FC = () => {
   React.useEffect(() => {
      const initData = async () => {
         setIsLoading(true);
-        // OPTIMIZACIÓN: Traer de la base de datos SOLO las ventas que tienen saldo deudor
+        // Se traen todas las ventas válidas para calcular el saldo real ("liquidado") dinámicamente en base a los pagos (collection_records)
         const { data: salesData } = await supabase
            .from('sales')
            .select('*')
-           .gt('balance', 0)
            .neq('status', 'canceled')
            .neq('document_type', 'NOTA_CREDITO');
         
@@ -83,16 +82,25 @@ export const AccountsReceivable: React.FC = () => {
       .map(sale => {
         const aging = calculateAging(sale);
         const seller = sellers.find(sll => sll.id === sale.seller_id);
-        const balance = sale.balance ?? sale.total;
+        
+        // Calcular pagos validados para determinar el saldo real ("liquidado")
+        const saleCollections = collectionRecords.filter(r => r.sale_id === sale.id && r.status === 'VALIDATED');
+        const totalPaid = saleCollections.reduce((sum, r) => sum + Number(r.amount_reported || 0), 0);
+        
+        let currentBalance = Number(sale.total) - totalPaid;
+        // Evitar negativos o decimales infinitos
+        currentBalance = Math.max(0, Math.round(currentBalance * 100) / 100);
+
         return {
           ...sale,
           ...aging,
           sellerName: seller?.name || 'No Asignado',
-          currentBalance: balance
+          currentBalance
         };
       })
+      .filter(r => r.currentBalance > 0) // SOLO los que tienen saldo real (no liquidados)
       .sort((a, b) => b.diffDays - a.diffDays); // Most overdue first
-  }, [localSales, clients, sellers]);
+  }, [localSales, clients, sellers, collectionRecords]);
 
   // Apply Filters
   const filteredReceivables = useMemo(() => {
