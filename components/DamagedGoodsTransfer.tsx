@@ -1,335 +1,554 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { useStore } from '../services/store';
-import { AlertCircle, ArrowRightLeft, CheckCircle, Package, Search, Trash2, RefreshCw } from 'lucide-react';
-import { Product } from '../types';
+import { Product, BatchAllocation } from '../types';
+import { Search, Plus, Trash2, FileText, CheckCircle, AlertCircle, RefreshCw, Eye, X } from 'lucide-react';
+import { isPackageUnit, calculateBaseQuantity, allocateBatchesFIFO } from '../utils/productUtils';
+import { PdfEngine } from './PdfEngine';
+
+interface TransferCartItem {
+  id: string; // temp id
+  product: Product;
+  selected_unit: string;
+  quantity_presentation: number;
+  quantity_base: number;
+  batch_allocations: BatchAllocation[];
+}
 
 export const DamagedGoodsTransfer: React.FC = () => {
   const { currentUser } = useStore();
+  const [activeTab, setActiveTab] = useState<'NEW' | 'HISTORY'>('NEW');
+
+  // === NEW TRANSFER STATE ===
   const [originWarehouse, setOriginWarehouse] = useState('CENTRAL');
   const [destWarehouse, setDestWarehouse] = useState('MERMAS');
+  const [reason, setReason] = useState('TRASLADO A MERMAS');
   
   const [searchTerm, setSearchTerm] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  
-  const [batches, setBatches] = useState<any[]>([]);
-  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const [availableBatches, setAvailableBatches] = useState<any[]>([]);
   
   const [transferQty, setTransferQty] = useState<number | ''>('');
-  const [unitType, setUnitType] = useState<'BASE' | 'PACKAGE'>('BASE');
-  const [reason, setReason] = useState('DAÑADO_MERMA');
-  
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [modalConfig, setModalConfig] = useState<{isOpen: boolean, type: 'success' | 'error', message: string}>({ isOpen: false, type: 'success', message: '' });
+  const [unitType, setUnitType] = useState<string>('UND');
 
-  // Buscar productos
+  const [cart, setCart] = useState<TransferCartItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // === HISTORY STATE ===
+  const [history, setHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // 1. Fetch active products
   useEffect(() => {
     const fetchProducts = async () => {
-      if (searchTerm.length < 2) {
-        setProducts([]);
-        return;
-      }
-      
-      const { data, error } = await supabase
-        .from('products')
-        .select('*')
-        .eq('is_active', true)
-        .or(`name.ilike.%${searchTerm}%,sku.ilike.%${searchTerm}%`)
-        .limit(10);
-        
-      if (!error && data) {
-        setProducts(data as Product[]);
-      }
+      const { data } = await supabase.from('products').select('*').eq('is_active', true);
+      if (data) setProducts(data);
     };
-    
-    const timeoutId = setTimeout(() => fetchProducts(), 300);
-    return () => clearTimeout(timeoutId);
-  }, [searchTerm]);
+    fetchProducts();
+  }, []);
 
-  // Buscar lotes cuando se selecciona un producto y origen
+  // 2. Search products (auto-suggest)
+  useEffect(() => {
+    if (!searchTerm) {
+      setFilteredProducts([]);
+      return;
+    }
+    const lower = searchTerm.toLowerCase();
+    const matches = products.filter(p => 
+      p.name.toLowerCase().includes(lower) || 
+      p.sku.toLowerCase().includes(lower) || 
+      (p.barcode && p.barcode.toLowerCase().includes(lower))
+    ).slice(0, 10);
+    setFilteredProducts(matches);
+  }, [searchTerm, products]);
+
+  // 3. Fetch batches when product selected
   useEffect(() => {
     const fetchBatches = async () => {
       if (!selectedProduct) {
-        setBatches([]);
-        setSelectedBatchId(null);
+        setAvailableBatches([]);
         return;
       }
       
-      const { data, error } = await supabase
+      // Algorithm: FIFO Global (matching NewSale)
+      const { data } = await supabase
         .from('batches')
         .select('*')
         .eq('product_id', selectedProduct.id)
-        .eq('warehouse_id', originWarehouse)
         .gt('quantity_current', 0)
         .order('expiration_date', { ascending: true });
-        
-      if (!error && data) {
-        setBatches(data);
+
+      setAvailableBatches(data || []);
+      
+      // Default unit
+      if (selectedProduct.package_content > 1) {
+         setUnitType(`${selectedProduct.package_type || 'CJA'}/${selectedProduct.package_content}`);
+      } else {
+         setUnitType(selectedProduct.unit_type || 'UND');
       }
     };
-    
     fetchBatches();
-  }, [selectedProduct, originWarehouse]);
+  }, [selectedProduct]);
 
-  const selectedBatch = batches.find(b => b.id === selectedBatchId);
-  const packageContent = selectedProduct?.package_content || 1;
-  const isPackageAllowed = packageContent > 1;
+  // Total available stock calc
+  const totalAvailableStock = availableBatches.reduce((acc, b) => acc + (b.quantity_current || 0), 0);
 
-  const maxAllowedQty = selectedBatch ? (unitType === 'PACKAGE' ? Math.floor(selectedBatch.quantity_current / packageContent) : selectedBatch.quantity_current) : 0;
+  const handleSelectProduct = (p: Product) => {
+    setSelectedProduct(p);
+    setSearchTerm('');
+    setFilteredProducts([]);
+    setTransferQty('');
+    if (searchInputRef.current) searchInputRef.current.focus();
+  };
 
-  const handleTransfer = async () => {
-    if (!selectedBatch || !transferQty || transferQty <= 0) {
-      setModalConfig({ isOpen: true, type: 'error', message: 'Seleccione un lote y una cantidad válida mayor a 0.' });
+  const handleAddToCart = () => {
+    if (!selectedProduct) return;
+    const qty = Number(transferQty);
+    if (isNaN(qty) || qty <= 0) {
+      setMessage({ type: 'error', text: 'Ingrese una cantidad válida.' });
       return;
     }
+
+    const { quantityBase: baseQuantity } = calculateBaseQuantity(selectedProduct, unitType, qty);
     
-    if (transferQty > maxAllowedQty) {
-      setModalConfig({ isOpen: true, type: 'error', message: `No hay suficiente stock. El máximo permitido es ${maxAllowedQty} ${unitType === 'PACKAGE' ? 'Cajas' : 'Unidades'}.` });
+    if (baseQuantity > totalAvailableStock) {
+      setMessage({ type: 'error', text: `Stock insuficiente. Disponible: ${totalAvailableStock} UND base. Requiere: ${baseQuantity} UND base.` });
       return;
     }
 
-    if (originWarehouse === destWarehouse) {
-      setModalConfig({ isOpen: true, type: 'error', message: 'El almacén de origen y destino no pueden ser el mismo.' });
-      return;
-    }
+    const allocations = allocateBatchesFIFO(baseQuantity, availableBatches);
 
-    setIsProcessing(true);
+    const newItem: TransferCartItem = {
+      id: Math.random().toString(36).substr(2, 9),
+      product: selectedProduct,
+      selected_unit: unitType,
+      quantity_presentation: qty,
+      quantity_base: baseQuantity,
+      batch_allocations: allocations
+    };
+
+    setCart([...cart, newItem]);
     
-    // Convertir a unidades base para el backend
-    const qtyBase = unitType === 'PACKAGE' ? (transferQty as number) * packageContent : (transferQty as number);
+    // Reset form
+    setSelectedProduct(null);
+    setTransferQty('');
+    setSearchTerm('');
+    setMessage(null);
+  };
+
+  const handleRemoveFromCart = (id: string) => {
+    setCart(cart.filter(item => item.id !== id));
+  };
+
+  const handleConfirmTransfer = async () => {
+    if (cart.length === 0) return;
+    if (!currentUser) {
+      setMessage({ type: 'error', text: 'No hay usuario activo.' });
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
 
     try {
-      const { data, error } = await supabase.rpc('transfer_damaged_goods', {
-        p_batch_id: selectedBatch.id,
-        p_qty: qtyBase,
-        p_dest_warehouse: destWarehouse,
-        p_reason: reason,
-        p_user_id: currentUser?.id
-      });
+      const payload = {
+        origin_warehouse_id: originWarehouse,
+        dest_warehouse_id: destWarehouse,
+        reason: reason,
+        user_id: currentUser.id,
+        items: cart.map(item => ({
+          product_id: item.product.id,
+          quantity_base: item.quantity_base,
+          quantity_presentation: item.quantity_presentation,
+          selected_unit: item.selected_unit,
+          batch_allocations: item.batch_allocations
+        }))
+      };
+
+      const { data, error } = await supabase.rpc('process_transfer_document', { p_data: payload });
 
       if (error) throw error;
-      
-      setModalConfig({ isOpen: true, type: 'success', message: 'Traslado registrado exitosamente en el Kardex.' });
-      
-      // Limpiar formulario
-      setTransferQty('');
-      setSearchTerm('');
-      setSelectedProduct(null);
-      setSelectedBatchId(null);
-      
+
+      if (data && data.success) {
+        setMessage({ type: 'success', text: `Traslado ${data.document_number} procesado con éxito.` });
+        setCart([]);
+        
+        // Optionally auto-open PDF
+        const fullDoc = {
+           document_number: data.document_number,
+           origin_warehouse_id: originWarehouse,
+           dest_warehouse_id: destWarehouse,
+           reason: reason,
+           user_name: currentUser.name,
+           created_at: new Date().toISOString(),
+           status: 'COMPLETADO',
+           items: cart
+        };
+        PdfEngine.openDocument(fullDoc, 'TRASLADO', null); // Passing null for companyInfo, it will use defaults
+
+      } else {
+        throw new Error('Respuesta inválida del servidor.');
+      }
     } catch (err: any) {
-      console.error(err);
-      setModalConfig({ isOpen: true, type: 'error', message: 'Error en la transacción: ' + err.message });
+      console.error('Transfer error:', err);
+      setMessage({ type: 'error', text: err.message || 'Ocurrió un error al procesar el traslado.' });
     } finally {
-      setIsProcessing(false);
+      setLoading(false);
     }
   };
 
+  // --- HISTORY LOGIC ---
+  const fetchHistory = async () => {
+    setLoadingHistory(true);
+    try {
+      const { data, error } = await supabase
+        .from('transfer_documents')
+        .select(`
+          *,
+          transfer_items (
+            *,
+            product:products(*)
+          ),
+          user:user_id(name)
+        `)
+        .order('created_at', { ascending: false })
+        .limit(50);
+        
+      if (error) throw error;
+      setHistory(data || []);
+    } catch (err) {
+      console.error('Error fetching history', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'HISTORY') {
+      fetchHistory();
+    }
+  }, [activeTab]);
+
+  const handlePrintDocument = (doc: any) => {
+     const formattedDoc = {
+        ...doc,
+        user_name: doc.user?.name,
+     };
+     PdfEngine.openDocument(formattedDoc, 'TRASLADO', null);
+  };
+
+  const handleCancelDocument = async (docId: string) => {
+      if (!window.confirm('¿Está seguro de anular este traslado? El stock retornará a su estado original.')) return;
+      try {
+         const { data, error } = await supabase.rpc('cancel_transfer_document', { p_document_id: docId });
+         if (error) throw error;
+         alert('Traslado anulado exitosamente.');
+         fetchHistory();
+      } catch (err: any) {
+         alert(`Error al anular: ${err.message}`);
+      }
+  };
+
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-full animate-fade-in relative p-6">
+    <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[calc(100vh-16rem)]">
       
-      {/* MODAL */}
-      {modalConfig.isOpen && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
-            {modalConfig.type === 'error' ? (
-              <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-            ) : (
-              <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
-            )}
-            <h3 className="text-lg font-black text-slate-800 mb-2">
-              {modalConfig.type === 'error' ? 'Error' : 'Operación Exitosa'}
-            </h3>
-            <p className="text-sm text-slate-600 mb-6">{modalConfig.message}</p>
-            <button onClick={() => setModalConfig({...modalConfig, isOpen: false})} className={`px-8 py-2 rounded-lg font-bold text-white ${modalConfig.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}>
-              Aceptar
-            </button>
+      {/* Tabs */}
+      <div className="flex border-b border-slate-200 bg-slate-50">
+        <button 
+          onClick={() => setActiveTab('NEW')}
+          className={`flex-1 py-3 text-sm font-semibold border-b-2 ${activeTab === 'NEW' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+        >
+          Nuevo Traslado
+        </button>
+        <button 
+          onClick={() => setActiveTab('HISTORY')}
+          className={`flex-1 py-3 text-sm font-semibold border-b-2 ${activeTab === 'HISTORY' ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+        >
+          Historial de Traslados
+        </button>
+      </div>
+
+      {activeTab === 'NEW' && (
+      <div className="flex-1 flex flex-col p-4 overflow-hidden">
+        
+        {message && (
+          <div className={`p-3 rounded-lg mb-4 text-sm flex items-center gap-2 ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+            {message.type === 'success' ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
+            {message.text}
           </div>
+        )}
+
+        {/* Top Header Controls */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Almacén Origen</label>
+            <select 
+              value={originWarehouse} 
+              onChange={(e) => setOriginWarehouse(e.target.value)}
+              className="w-full p-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500 bg-slate-50"
+            >
+              <option value="CENTRAL">CENTRAL</option>
+              <option value="TIENDA1">TIENDA 1</option>
+            </select>
+          </div>
+          <div>
+             <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Almacén Destino</label>
+             <select 
+              value={destWarehouse} 
+              onChange={(e) => setDestWarehouse(e.target.value)}
+              className="w-full p-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="MERMAS">MERMAS (Cuarentena)</option>
+              <option value="VENCIDOS">VENCIDOS</option>
+            </select>
+          </div>
+          <div>
+             <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Motivo</label>
+             <select 
+              value={reason} 
+              onChange={(e) => setReason(e.target.value)}
+              className="w-full p-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="TRASLADO A MERMAS">TRASLADO A MERMAS</option>
+              <option value="VENCIMIENTO">VENCIMIENTO</option>
+              <option value="REUBICACION">REUBICACIÓN INTERNA</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Product Search & Add Row */}
+        <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 mb-4 flex gap-2 items-end relative">
+           <div className="flex-1 relative">
+             <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Buscar Producto</label>
+             <div className="relative">
+               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+               <input
+                 ref={searchInputRef}
+                 type="text"
+                 placeholder="Ej: Ron Cartavio..."
+                 value={selectedProduct ? selectedProduct.name : searchTerm}
+                 onChange={(e) => {
+                   setSearchTerm(e.target.value);
+                   if (selectedProduct) setSelectedProduct(null);
+                 }}
+                 className="w-full pl-9 pr-8 py-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+               />
+               {selectedProduct && (
+                 <button onClick={() => setSelectedProduct(null)} className="absolute right-2 top-2 text-slate-400 hover:text-slate-600">
+                   <X className="w-4 h-4" />
+                 </button>
+               )}
+             </div>
+             
+             {/* Auto-suggest dropdown */}
+             {!selectedProduct && filteredProducts.length > 0 && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                  {filteredProducts.map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => handleSelectProduct(p)}
+                      className="w-full text-left px-4 py-2 hover:bg-slate-50 border-b border-slate-100 last:border-0"
+                    >
+                      <div className="font-medium text-slate-800">{p.name}</div>
+                      <div className="text-xs text-slate-500 font-mono">{p.sku}</div>
+                    </button>
+                  ))}
+                </div>
+             )}
+           </div>
+
+           {selectedProduct && (
+             <>
+               <div className="w-24">
+                 <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Disp.</label>
+                 <input 
+                   type="text" 
+                   readOnly 
+                   value={totalAvailableStock} 
+                   className="w-full p-2 border border-slate-300 rounded text-sm bg-slate-100 text-center font-bold text-slate-600" 
+                 />
+               </div>
+               <div className="w-32">
+                 <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Unidad</label>
+                 <select
+                   value={unitType}
+                   onChange={(e) => setUnitType(e.target.value)}
+                   className="w-full p-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-blue-500"
+                 >
+                   {selectedProduct.package_content > 1 && (
+                     <option value={`${selectedProduct.package_type || 'CJA'}/${selectedProduct.package_content}`}>
+                       {selectedProduct.package_type || 'CJA'} x {selectedProduct.package_content}
+                     </option>
+                   )}
+                   <option value={selectedProduct.unit_type || 'UND'}>{selectedProduct.unit_type || 'UND'} x 1</option>
+                 </select>
+               </div>
+               <div className="w-24">
+                 <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">Cant.</label>
+                 <input 
+                   type="number" 
+                   min="1"
+                   value={transferQty}
+                   onChange={(e) => setTransferQty(Number(e.target.value) || '')}
+                   onKeyDown={(e) => e.key === 'Enter' && handleAddToCart()}
+                   className="w-full p-2 border border-blue-300 rounded text-sm focus:ring-2 focus:ring-blue-500" 
+                 />
+               </div>
+               <button 
+                 onClick={handleAddToCart}
+                 className="p-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors h-[38px] w-[38px] flex items-center justify-center"
+                 title="Agregar a lista"
+               >
+                 <Plus className="w-5 h-5" />
+               </button>
+             </>
+           )}
+        </div>
+
+        {/* Cart Table */}
+        <div className="flex-1 border border-slate-200 rounded-lg overflow-hidden bg-white flex flex-col">
+          <div className="overflow-x-auto flex-1">
+            <table className="w-full text-sm text-left">
+              <thead className="text-xs text-slate-600 uppercase bg-slate-100 border-b border-slate-200 sticky top-0">
+                <tr>
+                  <th className="px-4 py-3 w-16">#</th>
+                  <th className="px-4 py-3">Código</th>
+                  <th className="px-4 py-3">Descripción</th>
+                  <th className="px-4 py-3 text-center">Cant.</th>
+                  <th className="px-4 py-3 text-center">U.M.</th>
+                  <th className="px-4 py-3">Lotes Asignados</th>
+                  <th className="px-4 py-3 text-center w-20">Acción</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {cart.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                      <Search className="w-12 h-12 mx-auto mb-3 text-slate-300" />
+                      <p className="text-base font-medium">Lista de traslado vacía</p>
+                      <p className="text-sm">Busca un producto y agrégalo a la lista.</p>
+                    </td>
+                  </tr>
+                ) : (
+                  cart.map((item, idx) => {
+                    const isPkg = isPackageUnit(item.selected_unit, item.product);
+                    const umDisplay = isPkg ? `${item.product.package_type}x${item.product.package_content}` : 'UNDx1';
+                    
+                    return (
+                      <tr key={item.id} className="hover:bg-slate-50/50">
+                        <td className="px-4 py-3 font-medium text-slate-500">{idx + 1}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{item.product.sku}</td>
+                        <td className="px-4 py-3 font-medium text-slate-800">{item.product.name}</td>
+                        <td className="px-4 py-3 text-center font-bold text-blue-600">{item.quantity_presentation}</td>
+                        <td className="px-4 py-3 text-center text-xs font-semibold text-slate-500">{umDisplay}</td>
+                        <td className="px-4 py-3">
+                           <div className="flex flex-col gap-1">
+                             {item.batch_allocations.map(b => (
+                               <span key={b.batch_id} className="text-xs bg-amber-50 text-amber-700 px-2 py-0.5 rounded border border-amber-200 inline-block w-max">
+                                 {b.batch_code}: {b.quantity}u
+                               </span>
+                             ))}
+                           </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button onClick={() => handleRemoveFromCart(item.id)} className="text-red-500 hover:text-red-700 p-1">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          
+          {/* Footer Actions */}
+          <div className="bg-slate-50 border-t border-slate-200 p-4 flex justify-between items-center">
+             <div className="text-sm text-slate-600">
+                Total Productos: <span className="font-bold text-slate-800">{cart.length}</span>
+             </div>
+             <button
+               onClick={handleConfirmTransfer}
+               disabled={cart.length === 0 || loading}
+               className="flex items-center gap-2 bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+             >
+               {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <CheckCircle className="w-5 h-5" />}
+               Confirmar Traslado
+             </button>
+          </div>
+        </div>
+      </div>
+      )}
+
+      {/* HISTORY TAB */}
+      {activeTab === 'HISTORY' && (
+        <div className="flex-1 overflow-auto p-4 bg-slate-50/50">
+           {loadingHistory ? (
+             <div className="flex justify-center p-8"><RefreshCw className="w-8 h-8 animate-spin text-blue-500" /></div>
+           ) : history.length === 0 ? (
+             <div className="text-center p-12 text-slate-500">No hay traslados registrados.</div>
+           ) : (
+             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+               {history.map(doc => (
+                 <div key={doc.id} className={`bg-white rounded-xl border ${doc.status === 'CANCELED' ? 'border-red-200 opacity-75' : 'border-slate-200'} p-4 shadow-sm`}>
+                   <div className="flex justify-between items-start mb-3">
+                     <div>
+                       <span className={`text-xs font-bold px-2 py-1 rounded ${doc.status === 'CANCELED' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
+                         {doc.document_number}
+                       </span>
+                       <p className="text-xs text-slate-500 mt-1">{new Date(doc.created_at).toLocaleString()}</p>
+                     </div>
+                     <button onClick={() => handlePrintDocument(doc)} className="p-1.5 bg-slate-100 rounded text-slate-600 hover:bg-blue-50 hover:text-blue-600" title="Ver PDF">
+                       <FileText className="w-4 h-4" />
+                     </button>
+                   </div>
+                   
+                   <div className="mb-3 text-sm">
+                     <div className="flex justify-between border-b border-slate-100 py-1">
+                       <span className="text-slate-500 text-xs">Origen:</span>
+                       <span className="font-semibold text-slate-700 text-xs">{doc.origin_warehouse_id}</span>
+                     </div>
+                     <div className="flex justify-between border-b border-slate-100 py-1">
+                       <span className="text-slate-500 text-xs">Destino:</span>
+                       <span className="font-semibold text-slate-700 text-xs">{doc.dest_warehouse_id}</span>
+                     </div>
+                     <div className="flex justify-between py-1">
+                       <span className="text-slate-500 text-xs">Motivo:</span>
+                       <span className="font-medium text-slate-800 text-xs">{doc.reason}</span>
+                     </div>
+                   </div>
+
+                   <div className="mt-2">
+                     <p className="text-xs font-semibold text-slate-500 mb-1">Items ({doc.transfer_items?.length || 0}):</p>
+                     <div className="text-xs text-slate-600 line-clamp-2">
+                       {doc.transfer_items?.map((item: any) => `${item.quantity_presentation} ${item.product?.name}`).join(', ')}
+                     </div>
+                   </div>
+
+                   {doc.status !== 'CANCELED' && (
+                     <button 
+                       onClick={() => handleCancelDocument(doc.id)}
+                       className="mt-4 w-full py-1.5 border border-red-200 text-red-600 rounded text-xs font-semibold hover:bg-red-50 transition-colors"
+                     >
+                       Anular Traslado
+                     </button>
+                   )}
+                   {doc.status === 'CANCELED' && (
+                      <div className="mt-4 text-center text-xs font-bold text-red-500 uppercase">Anulado</div>
+                   )}
+                 </div>
+               ))}
+             </div>
+           )}
         </div>
       )}
 
-      <div className="flex items-center gap-3 mb-6 border-b border-slate-100 pb-4">
-        <div className="bg-red-100 text-red-600 p-2.5 rounded-lg">
-          <Trash2 className="w-6 h-6" />
-        </div>
-        <div>
-          <h2 className="text-xl font-black text-slate-800 tracking-tight">Traslado de Mercadería</h2>
-          <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Gestión de Daños, Vencimientos y Mermas</p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-          <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">1. Almacén Origen</label>
-          <select className="w-full bg-white border border-slate-300 p-2.5 rounded-lg text-sm font-bold focus:border-blue-500 outline-none" value={originWarehouse} onChange={(e) => setOriginWarehouse(e.target.value)}>
-            <option value="CENTRAL">CENTRAL (Almacén Principal)</option>
-          </select>
-        </div>
-        
-        <div className="bg-red-50 p-4 rounded-xl border border-red-200">
-          <label className="block text-xs font-black text-red-500 uppercase tracking-wider mb-2">2. Almacén Destino (Recepción)</label>
-          <select className="w-full bg-white border border-red-300 p-2.5 rounded-lg text-sm font-bold text-red-700 focus:border-red-500 outline-none" value={destWarehouse} onChange={(e) => setDestWarehouse(e.target.value)}>
-            <option value="MERMAS">MERMAS (Almacén de Dañados)</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 flex-1">
-        {/* SELECCIÓN DE PRODUCTO */}
-        <div className="flex flex-col">
-          <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">3. Buscar Producto Físico</label>
-          <div className="relative mb-4">
-            <Search className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-            <input 
-              className="w-full pl-10 border-2 border-slate-200 p-2.5 rounded-lg text-sm font-bold focus:border-blue-500 outline-none"
-              placeholder="Buscar por Nombre o Código (SKU)..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          {!selectedProduct && products.length > 0 && (
-            <div className="border border-slate-200 rounded-lg overflow-hidden shadow-sm flex-1 overflow-y-auto max-h-64">
-              {products.map(p => (
-                <div 
-                  key={p.id} 
-                  className="p-3 border-b border-slate-100 hover:bg-blue-50 cursor-pointer flex items-center justify-between"
-                  onClick={() => {
-                    setSelectedProduct(p);
-                    setSearchTerm('');
-                    setProducts([]);
-                  }}
-                >
-                  <div>
-                    <div className="font-bold text-slate-800 text-sm">{p.name}</div>
-                    <div className="text-xs text-slate-500 font-mono">{p.sku}</div>
-                  </div>
-                  <Package className="w-4 h-4 text-slate-400" />
-                </div>
-              ))}
-            </div>
-          )}
-
-          {selectedProduct && (
-            <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 relative mb-4">
-              <button 
-                className="absolute top-2 right-2 text-blue-400 hover:text-blue-600 text-xs font-bold underline"
-                onClick={() => { setSelectedProduct(null); setSelectedBatchId(null); }}
-              >
-                Cambiar Producto
-              </button>
-              <div className="font-black text-slate-900">{selectedProduct.name}</div>
-              <div className="text-sm font-mono text-slate-500 mb-2">{selectedProduct.sku}</div>
-              <div className="text-xs font-bold text-blue-700 bg-blue-100 inline-block px-2 py-1 rounded">
-                Unidad Mínima: {selectedProduct.unit_type} | Empaque: {selectedProduct.package_content} Und
-              </div>
-            </div>
-          )}
-
-          {/* LISTA DE LOTES */}
-          {selectedProduct && batches.length > 0 && (
-            <div className="mt-4">
-              <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">4. Seleccionar Lote Específico</label>
-              <div className="space-y-2">
-                {batches.map(b => (
-                  <div 
-                    key={b.id}
-                    className={`p-3 rounded-lg border-2 cursor-pointer flex justify-between items-center transition-colors ${selectedBatchId === b.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                    onClick={() => setSelectedBatchId(b.id)}
-                  >
-                    <div>
-                      <div className="font-black text-slate-800 text-sm">{b.code}</div>
-                      <div className="text-[10px] text-slate-500 font-bold uppercase mt-1">Vence: {b.expiration_date || 'S/F'}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-black text-lg text-slate-900">{b.quantity_current}</div>
-                      <div className="text-[10px] text-slate-400 font-bold">Stock Base</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          
-          {selectedProduct && batches.length === 0 && (
-            <div className="bg-orange-50 text-orange-700 p-4 rounded-lg text-sm font-bold flex items-center border border-orange-200 mt-4">
-              <AlertCircle className="w-5 h-5 mr-2" /> No hay stock disponible de este producto en el almacén de origen.
-            </div>
-          )}
-        </div>
-
-        {/* EJECUCIÓN DE TRASLADO */}
-        {selectedBatchId && selectedBatch && (
-          <div className="bg-slate-50 border border-slate-200 p-6 rounded-2xl flex flex-col justify-center">
-            <h3 className="font-black text-slate-800 mb-4 flex items-center">
-              <ArrowRightLeft className="w-5 h-5 mr-2 text-blue-600" /> Parámetros del Traslado
-            </h3>
-            
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Motivo del Traslado</label>
-                <select className="w-full border-2 border-slate-200 p-2.5 rounded-lg text-sm font-bold bg-white focus:border-blue-500 outline-none" value={reason} onChange={(e) => setReason(e.target.value)}>
-                  <option value="DAÑADO_MERMA">Producto Dañado / Roto</option>
-                  <option value="VENCIMIENTO">Producto Vencido</option>
-                  <option value="DEFECTO_FABRICA">Defecto de Fábrica</option>
-                  <option value="OTROS">Otros</option>
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Unidad de Medida</label>
-                  <div className="flex bg-slate-200 p-1 rounded-lg">
-                    <button 
-                      className={`flex-1 py-2 text-xs font-black rounded shadow-sm transition-colors ${unitType === 'BASE' ? 'bg-white text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                      onClick={() => setUnitType('BASE')}
-                    >
-                      UND
-                    </button>
-                    {isPackageAllowed && (
-                      <button 
-                        className={`flex-1 py-2 text-xs font-black rounded shadow-sm transition-colors ${unitType === 'PACKAGE' ? 'bg-white text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
-                        onClick={() => setUnitType('PACKAGE')}
-                      >
-                        CAJAS
-                      </button>
-                    )}
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-2">Cantidad a Trasladar</label>
-                  <input 
-                    type="number"
-                    min="1"
-                    max={maxAllowedQty}
-                    className="w-full border-2 border-slate-200 p-2.5 rounded-lg text-xl font-black text-center focus:border-blue-500 outline-none text-slate-900"
-                    value={transferQty}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value);
-                      if (!isNaN(val)) setTransferQty(val);
-                      else setTransferQty('');
-                    }}
-                  />
-                  <div className="text-[10px] text-right font-bold text-slate-400 mt-1">Máximo: {maxAllowedQty} {unitType === 'PACKAGE' ? 'Cajas' : 'Unidades'}</div>
-                </div>
-              </div>
-
-              <div className="pt-6 mt-4 border-t border-slate-200">
-                <button 
-                  onClick={handleTransfer}
-                  disabled={isProcessing || !transferQty || transferQty <= 0 || transferQty > maxAllowedQty}
-                  className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-300 disabled:text-slate-500 text-white p-4 rounded-xl font-black uppercase tracking-widest flex items-center justify-center transition-colors shadow-lg shadow-red-600/30 active:scale-[0.98]"
-                >
-                  {isProcessing ? <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> : <Trash2 className="w-5 h-5 mr-2" />}
-                  {isProcessing ? 'Procesando...' : 'Confirmar Traslado Definitivo'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 };

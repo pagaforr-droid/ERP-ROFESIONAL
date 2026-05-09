@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
 
 interface PdfDocumentProps {
   data: any | any[];
-  type?: 'FACTURA' | 'BOLETA' | 'GUIA' | 'GUIA_CONSOLIDADA' | 'BATCH' | 'BOLETA_PAGO' | string;
+  type?: 'FACTURA' | 'BOLETA' | 'GUIA' | 'GUIA_CONSOLIDADA' | 'BATCH' | 'BOLETA_PAGO' | 'TRASLADO' | string;
   companyInfo?: { name: string; ruc: string; address: string; logo_url?: string };
 }
 
@@ -452,6 +452,105 @@ const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any
   );
 };
 
+const TrasladoTemplate = ({ data, companyInfo }: { data: any, companyInfo: any }) => {
+  const code = data.document_number || data.code || 'TRF-00000000';
+  return (
+    <View style={styles.halfPage}>
+      <View style={styles.headerRow}>
+        <LogoComponent url={companyInfo.logo_url} defaultName={companyInfo.name} />
+        <View style={styles.companyCenter}>
+          <Text style={styles.companyName}>{companyInfo.name || 'EMPRESA DEMO S.A.C.'}</Text>
+          <Text style={styles.companyAddress}>{companyInfo.address || 'Dirección de la Empresa'}</Text>
+        </View>
+        <View style={styles.rucBox}>
+          <Text style={styles.rucTop}>RUC {companyInfo.ruc || '20000000001'}</Text>
+          <Text style={styles.rucMid}>COMPROBANTE DE TRASLADO</Text>
+          <Text style={styles.rucBot}>{code}</Text>
+        </View>
+      </View>
+      <View style={styles.clientBox}>
+        <View style={styles.clientCol1}>
+          <View style={styles.clientRowInfo}>
+            <Text style={styles.clientLabel}>Alm. Origen:</Text>
+            <Text style={styles.clientValue}>{data.origin_warehouse_id || 'CENTRAL'}</Text>
+          </View>
+          <View style={styles.clientRowInfo}>
+            <Text style={styles.clientLabel}>Alm. Destino:</Text>
+            <Text style={styles.clientValue}>{data.dest_warehouse_id || 'MERMAS'}</Text>
+          </View>
+          <View style={styles.clientRowInfo}>
+            <Text style={styles.clientLabel}>Motivo:</Text>
+            <Text style={styles.clientValue}>{data.reason || 'TRASLADO INTERNO'}</Text>
+          </View>
+        </View>
+        <View style={styles.clientCol2}>
+          <View style={styles.clientRowInfo}>
+            <Text style={styles.clientLabel}>Fecha:</Text>
+            <Text style={styles.clientValue}>{new Date(data.created_at || Date.now()).toLocaleDateString()}</Text>
+          </View>
+          <View style={styles.clientRowInfo}>
+            <Text style={styles.clientLabel}>Usuario:</Text>
+            <Text style={styles.clientValue}>{data.user_name || 'ADMIN'}</Text>
+          </View>
+          <View style={styles.clientRowInfo}>
+            <Text style={styles.clientLabel}>Estado:</Text>
+            <Text style={styles.clientValue}>{data.status || 'COMPLETADO'}</Text>
+          </View>
+        </View>
+      </View>
+      
+      {/* Tabla simplificada sin precios */}
+      <View style={styles.tableBox}>
+        <View style={styles.tableHeader}>
+          <Text style={[styles.th, { width: '20%' }]}>Código</Text>
+          <Text style={[styles.th, { width: '15%', textAlign: 'center' }]}>Cant.</Text>
+          <Text style={[styles.th, { width: '15%', textAlign: 'center' }]}>U.M.</Text>
+          <Text style={[styles.thLast, { flex: 1 }]}>Descripción del Producto</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          {(data.items || []).map((item: any, i: number) => {
+            const sku = item.product?.sku || item.product_sku || item.product_id?.substring(0, 8) || '001';
+            const name = item.product?.name || item.product_name || 'Producto';
+            const qty = item.quantity_presentation ?? item.quantity_base ?? 0;
+            
+            let formattedUm = 'UNDX1';
+            if (item.selected_unit && item.selected_unit.includes('/')) {
+                const parts = item.selected_unit.split('/');
+                const baseName = parts[0].trim().substring(0, 3).toUpperCase();
+                const factor = parts[1].trim();
+                formattedUm = `${baseName}X${factor}`;
+            } else {
+                const isPkg = item.selected_unit === item.product?.package_type || item.selected_unit === 'CJA' || item.selected_unit === 'PKG';
+                const content = isPkg ? (item.product?.package_content || 1) : 1;
+                const shortUnit = (item.selected_unit || 'UND').substring(0, 3).toUpperCase();
+                formattedUm = `${shortUnit}X${content}`;
+            }
+
+            return (
+              <View key={i} style={styles.tableRowItem}>
+                <Text style={[styles.td, { width: '20%' }]}>{sku}</Text>
+                <Text style={[styles.td, { width: '15%', textAlign: 'center' }]}>{qty}</Text>
+                <Text style={[styles.td, { width: '15%', textAlign: 'center' }]}>{formattedUm}</Text>
+                <Text style={[styles.tdLast, { flex: 1 }]}>{name}</Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={{ marginTop: 30, flexDirection: 'row', justifyContent: 'space-around' }}>
+         <View style={{ borderTopWidth: 1, borderColor: '#000', width: 150, alignItems: 'center' }}>
+            <Text style={{ fontSize: 8, marginTop: 2 }}>Firma Entrega (Origen)</Text>
+         </View>
+         <View style={{ borderTopWidth: 1, borderColor: '#000', width: 150, alignItems: 'center' }}>
+            <Text style={{ fontSize: 8, marginTop: 2 }}>Firma Recepción (Destino)</Text>
+         </View>
+      </View>
+      <Text style={styles.legalText}>Documento interno de control de inventarios. Tandao ERP®</Text>
+    </View>
+  );
+};
+
 export const PdfDocument: React.FC<PdfDocumentProps> = ({ data, type, companyInfo }) => {
   const cInfo = companyInfo || {
     name: 'EMPRESA DEMO S.A.C.',
@@ -478,6 +577,16 @@ export const PdfDocument: React.FC<PdfDocumentProps> = ({ data, type, companyInf
             </Page>
           );
         }
+        
+        if (docType === 'TRASLADO') {
+          return (
+            <Page key={index} size="A4" orientation="landscape" style={styles.pageLandscape}>
+              <TrasladoTemplate data={doc} companyInfo={cInfo} />
+              <TrasladoTemplate data={doc} companyInfo={cInfo} />
+            </Page>
+          );
+        }
+
         if (isBoletaFormat) {
           return (
             <Page key={index} size="A4" orientation="portrait" style={{...styles.pagePortrait, padding: 15}}>

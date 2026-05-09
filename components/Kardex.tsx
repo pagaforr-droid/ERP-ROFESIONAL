@@ -88,7 +88,7 @@ export const Kardex: React.FC = () => {
               supabase.from('purchases').select('*, items:purchase_items(*)').gte('issue_date', dateFrom).lte('issue_date', dateTo),
               supabase.from('sales').select('*, items:sale_items(*)').gte('created_at', `${dateFrom}T00:00:00.000Z`).lte('created_at', `${dateTo}T23:59:59.999Z`),
               supabase.from('dispatch_liquidations').select('*, documents:liquidation_documents(*)').gte('date', `${dateFrom}T00:00:00.000Z`).lte('date', `${dateTo}T23:59:59.999Z`),
-              supabase.from('stock_transfers').select('*').gte('created_at', `${dateFrom}T00:00:00.000Z`).lte('created_at', `${dateTo}T23:59:59.999Z`)
+              supabase.from('transfer_documents').select('*, items:transfer_items(*)').gte('created_at', `${dateFrom}T00:00:00.000Z`).lte('created_at', `${dateTo}T23:59:59.999Z`)
            ]);
            if (purRes.data) setDbPurchases(purRes.data as any[]);
            if (salRes.data) setDbSales(salRes.data as any[]);
@@ -317,25 +317,26 @@ export const Kardex: React.FC = () => {
      });
 
      (dbTransfers || []).forEach(t => {
-        const date = (t.created_at || new Date().toISOString()).split('T')[0];
-        const prod = (dbProducts || []).find(x => x.id === t.product_id);
-        if (!prod) return;
-        if (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()) && !(prod.sku || '').toLowerCase().includes(searchTerm.toLowerCase())) return;
-        if (filterCategory !== 'ALL' && prod.category !== filterCategory) return;
-        if (filterSupplier !== 'ALL' && prod.supplier_id !== filterSupplier) return;
-
-        list.push({
-           id: `TRF-OUT-${t.id}`,
-           date, type: 'OUT', docType: 'TRASLADO', docNumber: 'MERMA/DAÑO',
-           productName: prod.name || '', sku: prod.sku || '', quantity: t.quantity_base || 0, unitPrice: 0, total: 0, reference: `A: ${t.dest_warehouse_id}`
-        });
-
-        list.push({
-           id: `TRF-IN-${t.id}`,
-           date, type: 'IN', docType: 'TRASLADO', docNumber: 'MERMA/DAÑO',
-           productName: prod.name || '', sku: prod.sku || '', quantity: t.quantity_base || 0, unitPrice: 0, total: 0, reference: `DE: ${t.origin_warehouse_id}`
-        });
-     });
+   const date = (t.created_at || new Date().toISOString()).split('T')[0];
+   (t.items || []).forEach((item: any) => {
+      const prod = (dbProducts || []).find(x => x.id === item.product_id);
+      if (!prod) return;
+      if (searchTerm && !(prod.name || '').toLowerCase().includes(searchTerm.toLowerCase()) && !(prod.sku || '').toLowerCase().includes(searchTerm.toLowerCase())) return;
+      if (filterCategory !== 'ALL' && prod.category !== filterCategory) return;
+      if (filterSupplier !== 'ALL' && prod.supplier_id !== filterSupplier) return;
+      
+      list.push({
+         id: `TRF-OUT-${t.id}-${item.id}`,
+         date, type: 'OUT', docType: 'TRASLADO', docNumber: t.document_number || 'MERMA/DAÑO',
+         productName: prod.name || '', sku: prod.sku || '', quantity: item.quantity_base || 0, unitPrice: 0, total: 0, reference: `A: ${t.dest_warehouse_id}`
+      });
+      list.push({
+         id: `TRF-IN-${t.id}-${item.id}`,
+         date, type: 'IN', docType: 'TRASLADO', docNumber: t.document_number || 'MERMA/DAÑO',
+         productName: prod.name || '', sku: prod.sku || '', quantity: item.quantity_base || 0, unitPrice: 0, total: 0, reference: `DE: ${t.origin_warehouse_id}`
+      });
+   });
+});
 
      return list.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [dbSales, dbPurchases, dbLiquidations, dbTransfers, dbProducts, dateFrom, dateTo, searchTerm, filterCategory, filterSupplier]);
