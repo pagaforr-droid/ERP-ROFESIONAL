@@ -17,11 +17,14 @@ export default function SellerTrackingReport() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchSellers = async () => {
+    const initReport = async () => {
       const { data } = await supabase.from('sellers').select('*').order('name');
       if (data) setDbSellers(data as Seller[]);
+      
+      // Limpieza automática (Garbage Collector) de logs mayores a 8 días en segundo plano
+      supabase.rpc('cleanup_tracking_logs').catch(e => console.warn("Cleanup error (ignorable):", e));
     };
-    fetchSellers();
+    initReport();
   }, []);
 
   const fetchTrackingData = async () => {
@@ -37,8 +40,9 @@ export default function SellerTrackingReport() {
       const endOfDay = new Date(Number(year), Number(month) - 1, Number(day));
       endOfDay.setHours(23, 59, 59, 999);
 
+      // Usamos la nueva tabla inmutable en lugar de 'orders'
       const { data, error: fetchError } = await supabase
-        .from('orders')
+        .from('seller_tracking_logs')
         .select('*')
         .eq('seller_id', selectedSeller)
         .gte('created_at', startOfDay.toISOString())
@@ -47,7 +51,17 @@ export default function SellerTrackingReport() {
 
       if (fetchError) throw fetchError;
       
-      setOrders(data as Order[]);
+      // Mapear los datos de log a la estructura que el componente ya espera para no romper la UI
+      const mappedLogs = (data || []).map((log: any) => ({
+          id: log.id,
+          code: log.reference_code || 'N/A',
+          client_name: log.client_name || 'Desconocido',
+          creation_location: log.location,
+          created_at: log.created_at,
+          seller_id: log.seller_id
+      }));
+      
+      setOrders(mappedLogs as any[]);
     } catch (err: any) {
       console.error(err);
       setError('Error al cargar datos de seguimiento: ' + err.message);
