@@ -612,7 +612,7 @@ export const Dispatch: React.FC = () => {
       window.open(doc.output('bloburl'), '_blank');
    };
 
-   const generateSellerExtractPDF = async () => {
+   const generateSellerExtractPDF = () => {
       setIsPrinting(true);
       try {
          const doc = new jsPDF('portrait', 'mm', 'a4');
@@ -620,37 +620,6 @@ export const Dispatch: React.FC = () => {
 
          // Fetch data for past debt calculation
          const selectedActiveSales = sortedSales.filter(s => selectedSaleIds.includes(s.id));
-         const clientRucs = Array.from(new Set(selectedActiveSales.map(s => s.client_ruc)));
-
-         const { data: allClientSales } = await supabase
-            .from('sales')
-            .select('*')
-            .in('client_ruc', clientRucs)
-            .neq('status', 'canceled')
-            .neq('document_type', 'NOTA_CREDITO');
-
-         const { data: dbCols } = await supabase
-            .from('collection_records')
-            .select('*')
-            .in('sale_id', allClientSales?.map(s => s.id) || [])
-            .eq('status', 'VALIDATED');
-
-         const clientDebtMap = new Map<string, number>();
-         clientRucs.forEach(ruc => {
-            const salesForClient = allClientSales?.filter(s => s.client_ruc === ruc) || [];
-            let totalDebt = 0;
-            salesForClient.forEach(s => {
-               // Exclude the current sales in this dispatch from the "Past Debt"
-               if (selectedSaleIds.includes(s.id)) return;
-
-               const saleCols = dbCols?.filter(r => r.sale_id === s.id) || [];
-               const totalPaid = saleCols.reduce((sum, r) => sum + Number(r.amount_reported || 0), 0);
-               let balance = Number(s.total) - totalPaid;
-               balance = Math.max(0, Math.round(balance * 100) / 100);
-               totalDebt += balance;
-            });
-            clientDebtMap.set(ruc, totalDebt);
-         });
 
          // Header Info
          doc.setFontSize(10);
@@ -731,7 +700,11 @@ export const Dispatch: React.FC = () => {
          let totalSaldoAnt = 0;
          const uniqueClientsInSeller = Array.from(new Set(sellerSales.map(s => s.client_ruc)));
          uniqueClientsInSeller.forEach(ruc => {
-            totalSaldoAnt += (clientDebtMap.get(ruc) || 0);
+            const cSales = sellerSales.filter(s => s.client_ruc === ruc);
+            const debts = cSales.map(s => s.previous_debt || 0).filter(d => d > 0);
+            if (debts.length > 0) {
+               totalSaldoAnt += Math.min(...debts);
+            }
          });
 
          const displayedClientDebts = new Set<string>();
@@ -1224,7 +1197,11 @@ export const Dispatch: React.FC = () => {
                                  let totalSaldoAnt = 0;
                                  const uniqueClientsInSeller = Array.from(new Set(sellerSales.map(s => s.client_ruc)));
                                  uniqueClientsInSeller.forEach(ruc => {
-                                    totalSaldoAnt += (clientDebtMap.get(ruc) || 0);
+                                    const cSales = sellerSales.filter(s => s.client_ruc === ruc);
+                                    const debts = cSales.map(s => s.previous_debt || 0).filter(d => d > 0);
+                                    if (debts.length > 0) {
+                                       totalSaldoAnt += Math.min(...debts);
+                                    }
                                  });
 
                                  return (
