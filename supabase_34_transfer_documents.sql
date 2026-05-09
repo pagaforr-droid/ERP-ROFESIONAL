@@ -122,14 +122,16 @@ BEGIN
             ELSE
                 -- Crear nuevo lote en destino, heredando código y fecha
                 INSERT INTO public.batches (
-                    product_id, code, quantity_initial, quantity_current, expiration_date, warehouse_id
+                    product_id, code, quantity_initial, quantity_current, expiration_date, warehouse_id, cost, purchase_id
                 ) VALUES (
                     v_origin_batch.product_id,
                     v_origin_batch.code,
                     (v_alloc->>'quantity')::INT,
                     (v_alloc->>'quantity')::INT,
                     v_origin_batch.expiration_date,
-                    v_dest_warehouse
+                    v_dest_warehouse,
+                    v_origin_batch.cost,
+                    v_origin_batch.purchase_id
                 ) RETURNING id INTO v_dest_batch_id;
             END IF;
 
