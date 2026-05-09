@@ -14,7 +14,7 @@ interface ExtendedSale extends Sale {
 }
 
 export const Dispatch: React.FC = () => {
-   const { company, currentUser } = useStore();
+   const { company, currentUser, collectionRecords } = useStore();
    const [vehicles, setVehicles] = useState<Vehicle[]>([]);
    const [drivers, setDrivers] = useState<Driver[]>([]);
    const [clients, setClients] = useState<Client[]>([]);
@@ -646,12 +646,11 @@ export const Dispatch: React.FC = () => {
          const totalImporte = sellerSales.reduce((sum, s) => sum + s.total, 0);
          const uniqueClients = new Set(sellerSales.map(s => s.client_ruc)).size;
 
-         const sellerObj = sellers.find(s => s.name === seller);
-         const sellerIdDisplay = sellerObj?.id.replace(/\D/g, '').padStart(4, '0') || '0001';
+         let totalSaldo = 0;
 
          // Seller Header Row
          tableBody.push([
-            { content: `${sellerIdDisplay} - ${seller}`, colSpan: 5, styles: { fontStyle: 'bold', fontSize: 10, textColor: 0, cellPadding: { top: 6, bottom: 2 } } }
+            { content: seller, colSpan: 6, styles: { fontStyle: 'bold', fontSize: 10, textColor: 0, cellPadding: { top: 6, bottom: 2 } } }
          ]);
 
          // Columns Header Row
@@ -660,21 +659,30 @@ export const Dispatch: React.FC = () => {
             { content: 'CLIENTE / DIRECCIÓN', styles: { fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } },
             { content: 'F. PAGO', styles: { halign: 'center', fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } },
             { content: 'IMPORTE', styles: { halign: 'right', fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } },
+            { content: 'SALDO', styles: { halign: 'right', fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } },
             { content: 'ESTADO', styles: { halign: 'center', fontStyle: 'bold', fontSize: 7, fillColor: [255, 255, 255], textColor: 0, lineWidth: { top: 1, bottom: 1 }, lineColor: 0 } }
          ]);
 
          // Sales Rows
          sellerSales.forEach(sale => {
-            const client = clients.find(c => c.doc_number === sale.client_ruc);
-            const clientCode = client?.id.replace(/\D/g, '').padStart(6, '0') || sale.client_ruc.slice(0, 6) || '000000';
+            const clientDisplay = `${sale.client_ruc} - ${sale.client_name}\n${sale.client_address || sale.zoneName}`;
             const fPago = sale.payment_method.slice(0, 3) === 'EFE' ? 'CON' : sale.payment_method.slice(0, 3);
             const docTypeStr = sale.document_type === 'FACTURA' ? 'FA' : 'BO';
 
+            // Calculate exact balance dynamically
+            const saleCollections = collectionRecords ? collectionRecords.filter(r => r.sale_id === sale.id && r.status === 'VALIDATED') : [];
+            const totalPaid = saleCollections.reduce((sum, r) => sum + Number(r.amount_reported || 0), 0);
+            let currentBalance = Number(sale.total) - totalPaid;
+            currentBalance = Math.max(0, Math.round(currentBalance * 100) / 100);
+            
+            totalSaldo += currentBalance;
+
             tableBody.push([
                { content: `${docTypeStr}/${sale.series}-${sale.number}`, styles: { fontStyle: 'bold' } },
-               { content: `${clientCode} ${sale.client_name}\n${sale.client_address || sale.zoneName}`, styles: { fontStyle: 'normal' } },
+               { content: clientDisplay, styles: { fontStyle: 'normal' } },
                { content: fPago.toUpperCase(), styles: { halign: 'center', fontStyle: 'bold', textColor: [80, 80, 80] } },
                { content: sale.total.toFixed(2), styles: { halign: 'right', fontStyle: 'bold', fontSize: 9 } },
+               { content: currentBalance > 0 ? currentBalance.toFixed(2) : '-', styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, textColor: currentBalance > 0 ? [200, 0, 0] : 0 } },
                '' // ESTADO Checkbox
             ]);
          });
@@ -685,6 +693,7 @@ export const Dispatch: React.FC = () => {
             { content: `${uniqueClients} CLIENTES | ${sellerSales.length} COMPROBANTES`, styles: { fontStyle: 'bold', fontSize: 8, textColor: 0, lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0, cellPadding: { top: 2, bottom: 2 } } },
             { content: 'TOTAL:', styles: { halign: 'center', fontStyle: 'bold', fontSize: 8, textColor: 0, lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0, cellPadding: { top: 2, bottom: 2 } } },
             { content: `S/ ${totalImporte.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, textColor: 0, lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0, cellPadding: { top: 2, bottom: 2 } } },
+            { content: `S/ ${totalSaldo.toFixed(2)}`, styles: { halign: 'right', fontStyle: 'bold', fontSize: 9, textColor: [200, 0, 0], lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0, cellPadding: { top: 2, bottom: 2 } } },
             { content: '', styles: { lineWidth: { top: 1, bottom: 0.5 }, lineColor: 0 } }
          ]);
       });
@@ -700,16 +709,16 @@ export const Dispatch: React.FC = () => {
          margin: { left: 10, right: 10 },
          columnStyles: {
             0: { cellWidth: 35 },
-            1: { cellWidth: 85 },
+            1: { cellWidth: 70 },
             2: { cellWidth: 20 },
-            3: { cellWidth: 25 },
-            4: { cellWidth: 25 }
+            3: { cellWidth: 20 },
+            4: { cellWidth: 20 },
+            5: { cellWidth: 25 }
          },
          willDrawCell: function (data) {
-            // Draw Checkbox in the ESTADO column (index 4)
-            if (data.column.index === 4 && typeof data.cell.raw === 'string' && data.cell.raw === '') {
+            // Draw Checkbox in the ESTADO column (index 5)
+            if (data.column.index === 5 && typeof data.cell.raw === 'string' && data.cell.raw === '') {
                // Only draw if it's a sale row (not a header or summary row, which spans multiple or has text)
-               // The sale rows have bold document numbers in collumn 0, we can just check if row doesn't have colSpan and isn't header.
                if (!data.row.cells[0].colSpan && data.row.cells[0].raw && (data.row.cells[0].raw as string).includes('/')) {
                   doc.setDrawColor(0);
                   doc.setLineWidth(0.3);
