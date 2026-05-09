@@ -482,7 +482,7 @@ export const Dispatch: React.FC = () => {
          });
          nextCode = `RUT-${String(maxCount + 1).padStart(4, '0')} (Borrador)`;
       }
-      const userDisplay = currentUser?.user_metadata?.name || currentUser?.email?.split('@')[0].toUpperCase() || currentUser?.id?.slice(0, 4) || 'ADMIN';
+      const userDisplay = currentUser?.name || currentUser?.username?.toUpperCase() || currentUser?.id?.slice(0, 4) || 'ADMIN';
 
       doc.setFontSize(13);
       doc.setFont('helvetica', 'bold');
@@ -678,7 +678,7 @@ export const Dispatch: React.FC = () => {
             });
             nextCode = `RUT-${String(maxCount + 1).padStart(4, '0')} (Borrador)`;
          }
-         const userDisplay = currentUser?.user_metadata?.name || currentUser?.email?.split('@')[0].toUpperCase() || currentUser?.id?.slice(0, 4) || 'ADMIN';
+         const userDisplay = currentUser?.name || currentUser?.username?.toUpperCase() || currentUser?.id?.slice(0, 4) || 'ADMIN';
 
          // Title
          doc.setFontSize(13);
@@ -904,7 +904,7 @@ export const Dispatch: React.FC = () => {
          });
          nextCode = `RUT-${String(maxCount + 1).padStart(4, '0')} (Borrador)`;
       }
-      const userDisplay = currentUser?.user_metadata?.name || currentUser?.email?.split('@')[0].toUpperCase() || currentUser?.id?.slice(0, 4) || 'ADMIN';
+      const userDisplay = currentUser?.name || currentUser?.username?.toUpperCase() || currentUser?.id?.slice(0, 4) || 'ADMIN';
 
       // PREVIEW MODE / EDIT MODE SUMMARY
       return (
