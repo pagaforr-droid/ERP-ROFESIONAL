@@ -549,10 +549,10 @@ export const Dispatch: React.FC = () => {
          },
          margin: { left: 10, right: 10 },
          columnStyles: {
-            0: { cellWidth: 20 },
+            0: { cellWidth: 15 },
             1: { cellWidth: 69 },
-            2: { cellWidth: 15 },
-            3: { cellWidth: 20 },
+            2: { cellWidth: 24 },
+            3: { cellWidth: 16 },
             4: { cellWidth: 15 },
             5: { cellWidth: 20 },
             6: { cellWidth: 20 },
