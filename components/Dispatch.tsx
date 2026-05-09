@@ -436,6 +436,7 @@ export const Dispatch: React.FC = () => {
             units,
             unitType: prod.unit_type,
             packageType: prod.package_type,
+            packageContent: factor,
             totalWeight: data.weight,
             totalAmount: data.amount
          });
@@ -507,10 +508,13 @@ export const Dispatch: React.FC = () => {
             tableBody.push([{ content: item.category, colSpan: 8, styles: { fontStyle: 'bold', fontSize: 8, textColor: [100, 100, 100], cellPadding: { left: 10 } } }]);
          }
 
+         const pkgAbbr = (item.packageType || 'CAJA').toUpperCase() === 'CAJA' ? 'CJA' : (item.packageType || 'CAJA').toUpperCase().slice(0, 3);
+         const boxText = item.boxes > 0 ? `${item.boxes} ${pkgAbbr}x${item.packageContent}` : '-';
+
          tableBody.push([
             { content: item.sku, styles: { fontStyle: 'bold', fontSize: 7, halign: 'left' } },
             { content: item.productName, styles: { fontStyle: 'bold', fontSize: 7 } },
-            { content: item.boxes > 0 ? `${item.boxes} CJ` : '-', styles: { halign: 'center', fontStyle: 'bold', fontSize: 9 } },
+            { content: boxText, styles: { halign: 'center', fontStyle: 'bold', fontSize: 9 } },
             { content: item.units > 0 ? `${item.units} ${item.unitType === 'UND' || item.unitType === 'BOTELLA' ? 'BOT' : item.unitType.slice(0, 3)}` : '-', styles: { halign: 'center', fontStyle: 'bold', fontSize: 9 } },
             { content: item.totalWeight > 0 ? item.totalWeight.toFixed(2) : '-', styles: { halign: 'right' } },
             { content: item.totalAmount > 0 ? item.totalAmount.toFixed(2) : '-', styles: { halign: 'right' } },
