@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { supabase, USE_MOCK_DB } from '../services/supabase';
-import { Users, Truck, Home, Briefcase, Plus, Save, Search, Edit, Trash2, RefreshCw, X } from 'lucide-react';
+import { Users, Truck, Home, Briefcase, Plus, Save, Search, Edit, Trash2, RefreshCw, X, ArrowRightLeft } from 'lucide-react';
+import { DamagedGoodsTransfer } from './DamagedGoodsTransfer';
 
 type MasterType = 'clients' | 'suppliers' | 'warehouses' | 'drivers' | 'transporters';
 
@@ -11,6 +12,7 @@ interface Props {
 
 export const MasterData: React.FC<Props> = ({ type }) => {
   const store = useStore();
+  const [activeTab, setActiveTab] = useState<'DIRECTORY' | 'TRANSFER'>('DIRECTORY');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<any>({});
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -208,7 +210,18 @@ export const MasterData: React.FC<Props> = ({ type }) => {
            </button>
         </div>
       </div>
+      {type === 'warehouses' && (
+        <div className="flex bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-1">
+          <button onClick={() => setActiveTab('DIRECTORY')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'DIRECTORY' ? 'bg-blue-50 text-blue-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <Home className="w-4 h-4 mr-2" /> 1. Directorio de Almacenes
+          </button>
+          <button onClick={() => setActiveTab('TRANSFER')} className={`flex-1 py-3 text-sm font-black flex items-center justify-center rounded-lg transition-all ${activeTab === 'TRANSFER' ? 'bg-red-50 text-red-700 shadow-sm' : 'text-slate-500 hover:bg-slate-50'}`}>
+             <ArrowRightLeft className="w-4 h-4 mr-2" /> 2. Traslado de Mermas/Dañados
+          </button>
+        </div>
+      )}
 
+      {activeTab === 'DIRECTORY' ? (
       <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-slate-200 flex-1 flex flex-col">
         <div className="p-4 border-b border-slate-200 bg-slate-50">
           <div className="relative max-w-md">
@@ -261,6 +274,9 @@ export const MasterData: React.FC<Props> = ({ type }) => {
            </table>
         </div>
       </div>
+      ) : (
+        <DamagedGoodsTransfer />
+      )}
 
       {/* MODAL DE CREACIÓN / EDICIÓN */}
       {isModalOpen && (
