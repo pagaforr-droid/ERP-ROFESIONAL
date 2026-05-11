@@ -205,7 +205,7 @@ export const OrderProcessing: React.FC = () => {
    };
 
    const handleSelectAll = () => {
-      const processableOrders = orders.filter(o => !((o.previous_debt || 0) > 0 && !authorizedDebtOrders.has(o.id)));
+      const processableOrders = orders.filter(o => !((o.previous_debt || 0) > 0 && o.is_authorized));
       if (selectedIds.size === processableOrders.length && processableOrders.length > 0) {
          setSelectedIds(new Set());
       } else {
@@ -814,7 +814,7 @@ export const OrderProcessing: React.FC = () => {
          <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-0">
             <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center gap-4">
                {filterStatus === 'pending' && (() => {
-                  const processableCount = orders.filter(o => !((o.previous_debt || 0) > 0 && !authorizedDebtOrders.has(o.id))).length;
+                  const processableCount = orders.filter(o => !((o.previous_debt || 0) > 0 && o.is_authorized)).length;
                   const isAllSelected = selectedIds.size > 0 && selectedIds.size === processableCount;
                   return (
                      <button onClick={handleSelectAll} className="flex items-center text-sm font-bold text-slate-700 hover:text-blue-600">
@@ -851,7 +851,7 @@ export const OrderProcessing: React.FC = () => {
                         const client = dbClients.find(c => c.id === order.client_id || c.doc_number === order.client_doc_number);
                         const zone = dbZones.find(z => z.id === client?.zone_id);
                         const hasDebt = (order.previous_debt || 0) > 0;
-                        const isAuthorized = authorizedDebtOrders.has(order.id);
+                        const isAuthorized = order.is_authorized;
                         const requiresAuth = hasDebt && !isAuthorized;
                         const isSelected = selectedIds.has(order.id);
 
