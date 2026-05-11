@@ -810,7 +810,8 @@ export const OrderProcessing: React.FC = () => {
          </div>
 
          {/* TABLE */}
-         <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+         {activeTab === 'PEDIDOS' && (
+         <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-0">
             <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center gap-4">
                {filterStatus === 'pending' && (() => {
                   const processableCount = orders.filter(o => !((o.previous_debt || 0) > 0 && !authorizedDebtOrders.has(o.id))).length;
