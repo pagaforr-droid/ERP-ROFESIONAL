@@ -54,6 +54,31 @@ export const Kardex: React.FC = () => {
 
   useEffect(() => {
      fetchInventoryData();
+
+     if (!USE_MOCK_DB) {
+         const channel = supabase.channel('realtime_kardex_batches')
+             .on('postgres_changes', { event: '*', schema: 'public', table: 'batches' }, (payload) => {
+                 if (payload.eventType === 'UPDATE' || payload.eventType === 'INSERT') {
+                     setDbBatches(prev => {
+                         const existingIdx = prev.findIndex(b => b.id === payload.new.id);
+                         if (existingIdx >= 0) {
+                             const newArray = [...prev];
+                             newArray[existingIdx] = payload.new as Batch;
+                             return newArray;
+                         } else {
+                             return [...prev, payload.new as Batch];
+                         }
+                     });
+                 } else if (payload.eventType === 'DELETE') {
+                     setDbBatches(prev => prev.filter(b => b.id !== payload.old.id));
+                 }
+             })
+             .subscribe();
+
+         return () => {
+             supabase.removeChannel(channel);
+         };
+     }
   }, []);
 
   const fetchInventoryData = async () => {
@@ -105,27 +130,34 @@ export const Kardex: React.FC = () => {
   // Keep an alias to not break existing buttons immediately
   const fetchMasterData = fetchInventoryData;
 
+  // --- RECALCULATE MODAL STATE ---
+  const [recalcModalOpen, setRecalcModalOpen] = useState(false);
+  const [recalcProductId, setRecalcProductId] = useState<string>('ALL');
+
   const handleRecalculateKardex = async () => {
      if (currentUser?.role !== 'ADMIN') {
         showAlert("Acceso denegado: Solo el Administrador puede recalcular el Kardex.", "error");
         return;
      }
-     
-     requestConfirm("⚠️ ADVERTENCIA: Esta es una operación de base de datos intensiva.\n\nRecalculará el Stock Físico de TODOS los productos basándose estrictamente en su historial de entradas y salidas.\n\n¿Estás seguro de continuar?", async () => {
-         setIsRecalculating(true);
-         try {
-            const { error } = await supabase.rpc('admin_recalculate_kardex');
-            if (error) throw error;
-            
-            showAlert("¡Éxito! El Kardex ha sido recalculado matemáticamente.", "info");
-            await fetchMasterData(); // Recargar datos frescos
-         } catch (err: any) {
-            console.error("Error al recalcular Kardex:", err);
-            showAlert("Error al recalcular Kardex: " + err.message, "error");
-         } finally {
-            setIsRecalculating(false);
-         }
-     });
+     setRecalcModalOpen(true);
+  };
+
+  const confirmRecalculate = async () => {
+     setRecalcModalOpen(false);
+     setIsRecalculating(true);
+     try {
+        const payload = recalcProductId === 'ALL' ? {} : { p_product_id: recalcProductId };
+        const { error } = await supabase.rpc('admin_recalculate_kardex', payload);
+        if (error) throw error;
+        
+        showAlert("��xito! El Kardex ha sido recalculado matem�ticamente.", "info");
+        await fetchMasterData(); // Recargar datos frescos
+     } catch (err: any) {
+        console.error("Error al recalcular Kardex:", err);
+        showAlert("Error al recalcular Kardex: " + err.message, "error");
+     } finally {
+        setIsRecalculating(false);
+     }
   };
 
   const filteredPendingOrders = useMemo(() => {
@@ -938,3 +970,6 @@ export const Kardex: React.FC = () => {
     </div>
   );
 };
+
+
+

@@ -249,7 +249,9 @@ export const OrderProcessing: React.FC = () => {
 
             let hasError = false;
 
-            for (const chunk of itemChunks) {
+            for (let i = 0; i < itemChunks.length; i++) {
+               const chunk = itemChunks[i];
+               const isFinalChunk = i === itemChunks.length - 1;
                // Calculate chunk totals dynamically
                const chunkTotal = chunk.reduce((sum, item) => sum + Number(item.total_price || 0), 0);
                const chunkSubtotal = chunkTotal / 1.18;
@@ -275,6 +277,7 @@ export const OrderProcessing: React.FC = () => {
                   delivery_mode: order.delivery_mode, 
                   sunat_status: 'PENDING',
                   origin_order_id: order.id,
+                  is_final_chunk: isFinalChunk,
                   seller_id: order.seller_id,
                   previous_debt: order.previous_debt,
                   items: chunk.map(item => {
@@ -289,6 +292,7 @@ export const OrderProcessing: React.FC = () => {
                      }
 
                      return {
+                        origin_order_item_id: item.id,
                         product_id: item.product_id,
                         product_sku: (item as any).product_sku || (item as any).sku || productRef?.sku || 'UNK',
                         product_name: item.product_name,
@@ -871,3 +875,4 @@ export const OrderProcessing: React.FC = () => {
       </div>
    );
 };
+

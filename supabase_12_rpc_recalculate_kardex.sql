@@ -2,7 +2,7 @@
 -- FUNCION: RECALCULAR KARDEX DE FORMA ESTRICTA
 -- ========================================================================================
 
-CREATE OR REPLACE FUNCTION admin_recalculate_kardex()
+CREATE OR REPLACE FUNCTION admin_recalculate_kardex(p_product_id UUID DEFAULT NULL)
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -17,6 +17,7 @@ BEGIN
     -- 1. ELIMINAR LOTES HUÉRFANOS (que ya no están en purchase_items y no tienen historial)
     DELETE FROM batches b
     WHERE b.purchase_id IS NOT NULL
+      AND (p_product_id IS NULL OR b.product_id = p_product_id)
       AND NOT EXISTS (
           SELECT 1 FROM purchase_items pi
           WHERE pi.purchase_id = b.purchase_id
@@ -34,6 +35,7 @@ BEGIN
                ROW_NUMBER() OVER(PARTITION BY purchase_id, product_id, code ORDER BY created_at ASC) as rn
         FROM batches
         WHERE purchase_id IS NOT NULL
+          AND (p_product_id IS NULL OR product_id = p_product_id)
     ),
     keeper AS (
         SELECT purchase_id, product_id, code, id as keep_id
@@ -53,6 +55,7 @@ BEGIN
             SELECT id, ROW_NUMBER() OVER(PARTITION BY purchase_id, product_id, code ORDER BY created_at ASC) as rn
             FROM batches
             WHERE purchase_id IS NOT NULL
+              AND (p_product_id IS NULL OR product_id = p_product_id)
         ) dupes WHERE rn > 1
     );
 
@@ -61,6 +64,7 @@ BEGIN
     SET quantity_initial = pi.quantity_base
     FROM purchase_items pi
     WHERE b.purchase_id IS NOT NULL
+      AND (p_product_id IS NULL OR b.product_id = p_product_id)
       AND b.purchase_id = pi.purchase_id
       AND b.product_id = pi.product_id
       AND b.code = pi.batch_code
@@ -79,40 +83,12 @@ BEGIN
     FROM sale_items si
     JOIN sales s ON si.sale_id = s.id
     WHERE (s.document_type = 'NOTA_CREDITO' OR s.document_type = 'NOTA DE CREDITO')
+      AND (p_product_id IS NULL OR si.product_id = p_product_id)
       AND s.status != 'canceled'
       AND NOT EXISTS (
           SELECT 1 FROM batch_allocations ba WHERE ba.sale_item_id = si.id
       )
       AND (SELECT b.id FROM batches b WHERE b.product_id = si.product_id ORDER BY b.created_at DESC LIMIT 1) IS NOT NULL;
-
-    -- 4.5. RETROACTIVO: LIMPIEZA DE PEDIDOS FANTASMAS QUE CAUSAN DESCUENTO DOBLE
-    -- Identificar pedidos "pending" que en realidad ya fueron facturados (misma fecha, cliente y total)
-    -- y liberar sus reservas para que el recalculo sea exacto.
-    DELETE FROM batch_allocations 
-    WHERE order_item_id IN (
-        SELECT oi.id 
-        FROM order_items oi
-        JOIN orders o ON oi.order_id = o.id
-        WHERE o.status = 'pending'
-          AND EXISTS (
-              SELECT 1 FROM sales s 
-              WHERE s.client_ruc = o.client_doc_number 
-                AND s.total = o.total 
-                AND s.created_at >= o.created_at 
-                AND s.created_at <= o.created_at + INTERVAL '2 days'
-          )
-    );
-
-    UPDATE orders o
-    SET status = 'completed'
-    WHERE o.status = 'pending'
-      AND EXISTS (
-          SELECT 1 FROM sales s 
-          WHERE s.client_ruc = o.client_doc_number 
-            AND s.total = o.total 
-            AND s.created_at >= o.created_at 
-            AND s.created_at <= o.created_at + INTERVAL '2 days'
-      );
 
     -- 5. RECALCULAR QUANTITY_CURRENT STRICTAMENTE
     UPDATE batches b
@@ -121,6 +97,6 @@ BEGIN
          FROM batch_allocations ba
          WHERE ba.batch_id = b.id), 0
     )
-    WHERE b.id IS NOT NULL;
+    WHERE (p_product_id IS NULL OR b.product_id = p_product_id);
 END;
 $$;

@@ -267,10 +267,18 @@ BEGIN
 
     -- Liberar la reserva del pedido original para evitar descuento doble en el Kardex
     IF p_sale_data->>'origin_order_id' IS NOT NULL AND p_sale_data->>'origin_order_id' != '' THEN
-        UPDATE orders SET status = 'completed' WHERE id = (p_sale_data->>'origin_order_id')::uuid;
-        DELETE FROM batch_allocations WHERE order_item_id IN (
-            SELECT id FROM order_items WHERE order_id = (p_sale_data->>'origin_order_id')::uuid
-        );
+        -- SOLO borrar las reservas de los items especificos que estamos procesando en este chunk
+        FOR v_item IN SELECT * FROM jsonb_array_elements(p_sale_data->'items')
+        LOOP
+            IF v_item->>'origin_order_item_id' IS NOT NULL THEN
+                DELETE FROM batch_allocations WHERE order_item_id = (v_item->>'origin_order_item_id')::uuid;
+            END IF;
+        END LOOP;
+
+        -- Marcar el pedido como completado SOLO si es el último chunk (o si no se provee la bandera)
+        IF COALESCE((p_sale_data->>'is_final_chunk')::boolean, true) THEN
+            UPDATE orders SET status = 'completed' WHERE id = (p_sale_data->>'origin_order_id')::uuid;
+        END IF;
     END IF;
 
     -- Detalles e Inventario
@@ -297,7 +305,7 @@ BEGIN
         ) RETURNING id INTO v_sale_item_id;
 
         -- Reserva automática de lotes (El JSON lo envía "batch_allocations")
-        IF (v_item->'batch_allocations') IS NOT NULL AND jsonb_typeof(v_item->'batch_allocations') = 'array' THEN
+        IF (v_item->'batch_allocations') IS NOT NULL AND jsonb_typeof(v_item->'batch_allocations') = 'array' AND jsonb_array_length(v_item->'batch_allocations') > 0 THEN
             FOR v_batch IN SELECT * FROM jsonb_array_elements(v_item->'batch_allocations')
             LOOP
                 INSERT INTO batch_allocations (
@@ -309,6 +317,9 @@ BEGIN
                     (v_batch->>'quantity')::int
                 );
             END LOOP;
+        ELSE
+            -- VALIDACIÓN ESTRICTA: Si no tiene lotes, abortar para evitar Kardex fantasma
+            RAISE EXCEPTION 'No se puede procesar la venta: El producto "%" carece de asignaciones de lote. Esto puede deberse a un recálculo de Kardex concurrente o falta de stock.', v_item->>'product_name';
         END IF;
 
     END LOOP;
