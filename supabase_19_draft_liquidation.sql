@@ -98,6 +98,7 @@ DECLARE
     v_nc_series TEXT;
     v_nc_number TEXT;
     v_nc_full TEXT;
+    v_series_id UUID;
 BEGIN
     v_dispatch_id := (p_liquidation_data->>'dispatch_sheet_id')::UUID;
     v_liquidation_id := COALESCE((p_liquidation_data->>'id')::UUID, uuid_generate_v4());
@@ -178,16 +179,18 @@ BEGIN
         ELSIF v_doc->>'action' = 'PARTIAL_RETURN' THEN
             -- Asignación automática de Serie para NC (Depende del documento de origen)
             v_nc_series := NULL;
+            v_series_id := NULL;
             IF v_sale.document_type = 'FACTURA' THEN
-                SELECT series INTO v_nc_series FROM document_series WHERE type = 'NOTA_CREDITO' AND series LIKE 'F%' AND is_active = true ORDER BY series LIMIT 1;
+                SELECT id, series INTO v_series_id, v_nc_series FROM document_series WHERE type = 'NOTA_CREDITO' AND series LIKE 'F%' AND is_active = true ORDER BY series LIMIT 1;
                 IF v_nc_series IS NULL THEN v_nc_series := 'FC01'; END IF;
             ELSE
-                SELECT series INTO v_nc_series FROM document_series WHERE type = 'NOTA_CREDITO' AND series LIKE 'B%' AND is_active = true ORDER BY series LIMIT 1;
+                SELECT id, series INTO v_series_id, v_nc_series FROM document_series WHERE type = 'NOTA_CREDITO' AND series LIKE 'B%' AND is_active = true ORDER BY series LIMIT 1;
                 IF v_nc_series IS NULL THEN v_nc_series := 'BC01'; END IF;
             END IF;
             
-            UPDATE document_series SET current_number = current_number + 1 WHERE type = 'NOTA_CREDITO' AND series = v_nc_series RETURNING LPAD(current_number::TEXT, 8, '0') INTO v_nc_number;
-            IF v_nc_number IS NULL THEN
+            IF v_series_id IS NOT NULL THEN
+                UPDATE document_series SET current_number = current_number + 1 WHERE id = v_series_id RETURNING LPAD(current_number::TEXT, 8, '0') INTO v_nc_number;
+            ELSE
                 -- Si no existe la serie exacta, creamos una por defecto o la insertamos
                 INSERT INTO document_series (type, series, current_number, is_active) VALUES ('NOTA_CREDITO', v_nc_series, 1, true) RETURNING LPAD(current_number::TEXT, 8, '0') INTO v_nc_number;
             END IF;
