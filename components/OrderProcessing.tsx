@@ -801,10 +801,10 @@ export const OrderProcessing: React.FC = () => {
 
          {/* TABS */}
          <div className="flex bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden shrink-0">
-            <button onClick={() => setActiveTab('PEDIDOS')} className={lex-1 py-3 text-sm font-bold flex items-center justify-center transition-colors }>
+            <button onClick={() => setActiveTab('PEDIDOS')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center transition-colors ${activeTab === 'PEDIDOS' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}>
                <ListOrdered className="w-4 h-4 mr-2" /> Listado de Pedidos
             </button>
-            <button onClick={() => setActiveTab('CONSOLIDADO')} className={lex-1 py-3 text-sm font-bold flex items-center justify-center transition-colors }>
+            <button onClick={() => setActiveTab('CONSOLIDADO')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center transition-colors ${activeTab === 'CONSOLIDADO' ? 'bg-emerald-50 text-emerald-700 border-b-2 border-emerald-600' : 'text-slate-500 hover:bg-slate-50'}`}>
                <Layers className="w-4 h-4 mr-2" /> Consolidado de Mercadería
             </button>
          </div>
@@ -936,5 +936,6 @@ export const OrderProcessing: React.FC = () => {
       </div>
    );
 };
+
 
 
