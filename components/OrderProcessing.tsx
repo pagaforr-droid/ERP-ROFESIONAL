@@ -478,7 +478,7 @@ export const OrderProcessing: React.FC = () => {
          setAdminAuthModal({ isOpen: false, targetOrderId: '' }); 
          setAdminPasswordInput('');
       } else { 
-         showAlert("ContraseÃ±a incorrecta o usuario no autorizado.", 'error'); 
+         showAlert("contraseña incorrecta o usuario no autorizado.", 'error'); 
       }
    };
 
@@ -490,8 +490,8 @@ export const OrderProcessing: React.FC = () => {
             <div className="absolute inset-0 z-[300] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
                <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
                   <Shield className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full" />
-                  <h3 className="text-lg font-black text-slate-800 mb-2">AutorizaciÃ³n Requerida</h3>
-                  <p className="text-sm text-slate-500 mb-4">Ingrese la contraseÃ±a de administrador para autorizar el procesamiento de este pedido con saldo pendiente.</p>
+                  <h3 className="text-lg font-black text-slate-800 mb-2">Autorización Requerida</h3>
+                  <p className="text-sm text-slate-500 mb-4">Ingrese la contraseña de administrador para autorizar el procesamiento de este pedido con saldo pendiente.</p>
                   <input
                      id="order-admin-pwd"
                      type="password"
@@ -677,7 +677,7 @@ export const OrderProcessing: React.FC = () => {
                <div className="flex-1">
                   <h3 className="font-bold text-amber-800 mb-2 flex items-center text-sm">
                      <Settings className="w-4 h-4 mr-2" />
-                     ConfiguraciÃ³n de ImpresiÃ³n (Solo Admin)
+                     Configuración de Impresión (Solo Admin)
                   </h3>
                   <div className="flex gap-4">
                      <div>
@@ -705,7 +705,7 @@ export const OrderProcessing: React.FC = () => {
                <button 
                   onClick={async () => {
                      if (!companyConfigId) {
-                         showAlert('Error: No se encontrÃ³ la configuraciÃ³n de la empresa.', 'error');
+                         showAlert('Error: No se encontró la Configuración de la empresa.', 'error');
                          return;
                      }
                      try {
@@ -714,7 +714,7 @@ export const OrderProcessing: React.FC = () => {
                              max_items_boleta: maxItemsBoleta
                          }).eq('id', companyConfigId);
                          if (error) throw error;
-                         showAlert('ConfiguraciÃ³n guardada exitosamente en Supabase.', 'success' as any);
+                         showAlert('Configuración guardada exitosamente en Supabase.', 'success' as any);
                      } catch (err: any) {
                          showAlert('Error al guardar: ' + err.message, 'error');
                      }
@@ -781,7 +781,7 @@ export const OrderProcessing: React.FC = () => {
                type="button"
                onClick={handleSearch}
                disabled={isLoading}
-               className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg disabled:opacity-50 flex items-center transition-all min-w-[120px] justify-center active:scale-95"
+               Código-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg disabled:opacity-50 flex items-center transition-all min-w-[120px] justify-center active:scale-95"
             >
                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Search className="w-5 h-5 mr-2" /> Buscar</>}
             </button>
@@ -833,7 +833,7 @@ export const OrderProcessing: React.FC = () => {
                   <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10">
                      <tr>
                         {filterStatus === 'pending' && <th className="p-3 w-10 text-center"></th>}
-                        <th className="p-3">CÃ³digo</th>
+                        <th Código</th>
                         <th className="p-3">Fecha</th>
                         <th className="p-3">Vendedor / Zona</th>
                         <th className="p-3">Cliente</th>
@@ -948,7 +948,7 @@ export const OrderProcessing: React.FC = () => {
                <table className="w-full text-left text-sm">
                   <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10">
                      <tr>
-                        <th className="p-3">Código SKU</th>
+                        <th Código SKU</th>
                         <th className="p-3">Producto</th>
                         <th className="p-3 text-right">Cant. Base Total</th>
                         <th className="p-3 text-right">Consolidado de Extracción</th>
@@ -956,7 +956,7 @@ export const OrderProcessing: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                      {consolidatedItems.length === 0 ? (
-                        <tr><td colSpan={4} className="p-10 text-center text-slate-400 italic">No hay mercadería consolidada.</td></tr>
+                        <tr><td colSpan={4} className="p-10 text-center text-slate-400 italic">No hay Mercadería consolidada.</td></tr>
                      ) : consolidatedItems.map(item => (
                         <tr key={item.product_id} className="hover:bg-slate-50">
                            <td className="p-3 font-mono font-bold text-slate-500">{item.sku || 'N/A'}</td>
