@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { supabase } from '../services/supabase';
-import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText, Trash2, Settings, Save, Shield } from 'lucide-react';
+import { FileCheck, Search, Filter, AlertCircle, CheckCircle, ArrowRight, CheckSquare, Square, FileOutput, Loader2, X, HelpCircle, FileText, Trash2, Settings, Save, Shield, Layers, ListOrdered } from 'lucide-react';
 import { calculateBaseQuantity } from '../utils/productUtils';
 import { Order, Sale, SaleItem } from '../types';
 
@@ -85,8 +85,59 @@ export const OrderProcessing: React.FC = () => {
    const [maxItemsFactura, setMaxItemsFactura] = useState<number>(15);
    const [maxItemsBoleta, setMaxItemsBoleta] = useState<number>(15);
 
+   // Tabs
+   const [activeTab, setActiveTab] = useState<'PEDIDOS' | 'CONSOLIDADO'>('PEDIDOS');
+
    // Target Series
    const [targetSeries, setTargetSeries] = useState<{ FACTURA?: string, BOLETA?: string }>({});
+
+   // Consolidated Items
+   const consolidatedItems = useMemo(() => {
+       const targetOrders = selectedIds.size > 0 
+            ? orders.filter(o => selectedIds.has(o.id))
+            : orders;
+
+       const agg: Record<string, any> = {};
+
+       targetOrders.forEach(o => {
+           o.items.forEach(item => {
+               if (!agg[item.product_id]) {
+                   const productRef = dbProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
+                   agg[item.product_id] = {
+                       product_id: item.product_id,
+                       sku: (item as any).product_sku || (item as any).sku || productRef?.sku || '',
+                       name: item.product_name,
+                       unit_type: productRef?.unit_type || 'UND',
+                       package_type: productRef?.package_type || 'CAJAS',
+                       package_content: productRef?.package_content || 1,
+                       total_base: 0
+                   };
+               }
+               
+               let finalBaseQty = (item as any).quantity_base;
+               if (!finalBaseQty) {
+                   const conversionFactor = Number((item.unit_type || '').split('/')[1]) || 1;
+                   const presentationQty = (item as any).quantity_presentation || (item.quantity / conversionFactor);
+                   const productRef = dbProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);
+                   if (productRef) {
+                       const { quantityBase } = calculateBaseQuantity(productRef, item.unit_type, presentationQty);
+                       finalBaseQty = quantityBase;
+                   } else {
+                       finalBaseQty = item.quantity;
+                   }
+               }
+               
+               agg[item.product_id].total_base += finalBaseQty;
+           });
+       });
+
+       return Object.values(agg).map(p => {
+           const factor = p.package_content > 0 ? p.package_content : 1;
+           const pkgs = Math.floor(p.total_base / factor);
+           const units = p.total_base % factor;
+           return { ...p, pkgs, units };
+       }).sort((a, b) => a.name.localeCompare(b.name));
+   }, [selectedIds, orders, dbProducts, products]);
 
    // Fetch Logic
    const handleSearch = async () => {
@@ -748,6 +799,16 @@ export const OrderProcessing: React.FC = () => {
             )}
          </div>
 
+         {/* TABS */}
+         <div className="flex bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden shrink-0">
+            <button onClick={() => setActiveTab('PEDIDOS')} className={lex-1 py-3 text-sm font-bold flex items-center justify-center transition-colors }>
+               <ListOrdered className="w-4 h-4 mr-2" /> Listado de Pedidos
+            </button>
+            <button onClick={() => setActiveTab('CONSOLIDADO')} className={lex-1 py-3 text-sm font-bold flex items-center justify-center transition-colors }>
+               <Layers className="w-4 h-4 mr-2" /> Consolidado de Mercadería
+            </button>
+         </div>
+
          {/* TABLE */}
          <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col">
             <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center gap-4">
@@ -875,4 +936,5 @@ export const OrderProcessing: React.FC = () => {
       </div>
    );
 };
+
 
