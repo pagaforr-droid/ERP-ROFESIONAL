@@ -176,8 +176,15 @@ BEGIN
             UPDATE sales SET status = 'canceled'::general_status, payment_status = 'PENDING', collection_status = 'NONE'::collection_status, balance = total, dispatch_status = 'liquidated'::dispatch_status WHERE id = v_sale.id;
             
         ELSIF v_doc->>'action' = 'PARTIAL_RETURN' THEN
-            -- Obtener Serie para NC del Frontend
-            v_nc_series := COALESCE(v_doc->>'credit_note_series', 'NC01');
+            -- Asignación automática de Serie para NC (Depende del documento de origen)
+            v_nc_series := NULL;
+            IF v_sale.document_type = 'FACTURA' THEN
+                SELECT series INTO v_nc_series FROM document_series WHERE type = 'NOTA_CREDITO' AND series LIKE 'F%' AND is_active = true ORDER BY series LIMIT 1;
+                IF v_nc_series IS NULL THEN v_nc_series := 'FC01'; END IF;
+            ELSE
+                SELECT series INTO v_nc_series FROM document_series WHERE type = 'NOTA_CREDITO' AND series LIKE 'B%' AND is_active = true ORDER BY series LIMIT 1;
+                IF v_nc_series IS NULL THEN v_nc_series := 'BC01'; END IF;
+            END IF;
             
             UPDATE document_series SET current_number = current_number + 1 WHERE type = 'NOTA_CREDITO' AND series = v_nc_series RETURNING LPAD(current_number::TEXT, 8, '0') INTO v_nc_number;
             IF v_nc_number IS NULL THEN

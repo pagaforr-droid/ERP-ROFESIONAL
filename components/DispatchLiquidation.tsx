@@ -348,11 +348,6 @@ export const DispatchLiquidationComp: React.FC = () => {
       const sale = dispatchSales.find(s => s.id === targetSaleId);
       if (!sale) return;
 
-      if (!selectedNCSeries) {
-         showSystemAlert('Error', 'Debe seleccionar una Serie para la Nota de Crédito.', 'error');
-         return;
-      }
-
       let totalRefund = 0;
       let totalRefundSubtotal = 0;
       const returnedItemsList: any[] = [];
@@ -1581,23 +1576,6 @@ export const DispatchLiquidationComp: React.FC = () => {
                         <div className="flex items-center gap-6">
                            <div className="flex flex-col gap-2 border-r border-indigo-200 pr-4">
                               <div className="flex items-center gap-2">
-                                 <div className="text-[10px] font-bold text-indigo-500 uppercase w-20">Serie NC</div>
-                                 <select
-                                    className="text-sm font-bold border border-indigo-200 rounded p-1 focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900 flex-1"
-                                    value={selectedNCSeries}
-                                    onChange={(e) => setSelectedNCSeries(e.target.value)}
-                                 >
-                                    <option value="">Seleccione...</option>
-                                    {(() => {
-                                       const s = dispatchSales.find(s => s.id === targetSaleId);
-                                       const isFactura = s?.document_type === 'FACTURA';
-                                       return store.company.series
-                                          .filter(ser => ser.type === 'NOTA_CREDITO' && ser.is_active && ser.series.startsWith(isFactura ? 'F' : 'B'))
-                                          .map(ser => <option key={ser.id} value={ser.series}>{ser.series}</option>);
-                                    })()}
-                                 </select>
-                              </div>
-                              <div className="flex items-center gap-2">
                                  <div className="text-[10px] font-bold text-indigo-500 uppercase w-20">Motivo</div>
                                  <select
                                     className="text-sm font-bold border border-indigo-200 rounded p-1 focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900 flex-1"
@@ -1638,7 +1616,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                            </div>
 
                            <button onClick={confirmPartial} className="px-6 py-3 bg-indigo-400 text-white font-bold rounded shadow hover:bg-indigo-500 flex items-center transition-colors">
-                              <FileText className="w-4 h-4 mr-2" /> GENERAR NOTA DE CRÉDITO
+                              <FileText className="w-4 h-4 mr-2" /> REGISTRAR DEVOLUCIÓN PARCIAL
                            </button>
                         </div>
                      </div>
