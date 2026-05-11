@@ -1,4 +1,4 @@
-﻿
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { supabase } from '../services/supabase';
@@ -781,7 +781,7 @@ export const OrderProcessing: React.FC = () => {
                type="button"
                onClick={handleSearch}
                disabled={isLoading}
-               Código-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg disabled:opacity-50 flex items-center transition-all min-w-[120px] justify-center active:scale-95"
+               className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg disabled:opacity-50 flex items-center transition-all min-w-[120px] justify-center active:scale-95"
             >
                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><Search className="w-5 h-5 mr-2" /> Buscar</>}
             </button>
@@ -833,7 +833,7 @@ export const OrderProcessing: React.FC = () => {
                   <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10">
                      <tr>
                         {filterStatus === 'pending' && <th className="p-3 w-10 text-center"></th>}
-                        <th Código</th>
+                        <th className="p-3">Código</th>
                         <th className="p-3">Fecha</th>
                         <th className="p-3">Vendedor / Zona</th>
                         <th className="p-3">Cliente</th>
@@ -948,7 +948,7 @@ export const OrderProcessing: React.FC = () => {
                <table className="w-full text-left text-sm">
                   <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10">
                      <tr>
-                        <th Código SKU</th>
+                        <th className="p-3">Código SKU</th>
                         <th className="p-3">Producto</th>
                         <th className="p-3 text-right">Cant. Base Total</th>
                         <th className="p-3 text-right">Consolidado de Extracción</th>
