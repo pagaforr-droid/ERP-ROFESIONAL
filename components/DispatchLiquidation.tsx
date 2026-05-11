@@ -1536,7 +1536,7 @@ export const DispatchLiquidationComp: React.FC = () => {
                                                    <input
                                                       type="number"
                                                       min="0"
-                                                      disabled={item.selected_unit === 'UND' || item.selected_unit === product?.unit_type || item.selected_unit === 'BOT'}
+                                                      disabled={item.selected_unit === 'UND' || item.selected_unit?.includes('BOT') || item.selected_unit?.includes('UND') || (product?.unit_type && item.selected_unit?.includes(product.unit_type))}
                                                       className="w-16 border border-indigo-200 rounded p-1.5 text-center font-bold text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50 disabled:bg-slate-100 cursor-auto"
                                                       value={entries.boxes}
                                                       onChange={e => handleReturnChange(itemKey, 'boxes', parseInt(e.target.value) || 0)}
