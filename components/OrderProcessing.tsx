@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { supabase } from '../services/supabase';
@@ -388,7 +388,7 @@ export const OrderProcessing: React.FC = () => {
 
       } catch (error: any) {
          console.error("Error processing orders:", error);
-         showAlert("Ocurrió un error al procesar masivamente: " + error.message, 'error');
+         showAlert("OcurriÃ³ un error al procesar masivamente: " + error.message, 'error');
          setIsConfirmOpen(false);
       } finally {
          isProcessingRef.current = false;
@@ -425,7 +425,7 @@ export const OrderProcessing: React.FC = () => {
          closeAndReset();
       } catch (err: any) {
          console.error("Purge error:", err);
-         showAlert("ATENCIÓN: Se insertaron los documentos fiscales con éxito, pero hubo un error al purgar los pedidos originales. Detalles: " + err.message, 'warning');
+         showAlert("ATENCIÃ“N: Se insertaron los documentos fiscales con Ã©xito, pero hubo un error al purgar los pedidos originales. Detalles: " + err.message, 'warning');
          closeAndReset();
       } finally {
          isProcessingRef.current = false;
@@ -478,7 +478,7 @@ export const OrderProcessing: React.FC = () => {
          setAdminAuthModal({ isOpen: false, targetOrderId: '' }); 
          setAdminPasswordInput('');
       } else { 
-         showAlert("Contraseña incorrecta o usuario no autorizado.", 'error'); 
+         showAlert("ContraseÃ±a incorrecta o usuario no autorizado.", 'error'); 
       }
    };
 
@@ -490,8 +490,8 @@ export const OrderProcessing: React.FC = () => {
             <div className="absolute inset-0 z-[300] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
                <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
                   <Shield className="w-12 h-12 text-blue-500 mx-auto mb-4 bg-blue-50 p-2 rounded-full" />
-                  <h3 className="text-lg font-black text-slate-800 mb-2">Autorización Requerida</h3>
-                  <p className="text-sm text-slate-500 mb-4">Ingrese la contraseña de administrador para autorizar el procesamiento de este pedido con saldo pendiente.</p>
+                  <h3 className="text-lg font-black text-slate-800 mb-2">AutorizaciÃ³n Requerida</h3>
+                  <p className="text-sm text-slate-500 mb-4">Ingrese la contraseÃ±a de administrador para autorizar el procesamiento de este pedido con saldo pendiente.</p>
                   <input
                      id="order-admin-pwd"
                      type="password"
@@ -518,7 +518,7 @@ export const OrderProcessing: React.FC = () => {
                   {modalConfig.type === 'error' && <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />}
                   {modalConfig.type === 'warning' && <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />}
                   {modalConfig.type === 'info' && <CheckCircle className="w-12 h-12 text-blue-500 mx-auto mb-4" />}
-                  <h3 className="text-lg font-black text-slate-800 mb-2">{modalConfig.type === 'error' ? 'Error' : modalConfig.type === 'warning' ? 'Aviso' : 'Información'}</h3>
+                  <h3 className="text-lg font-black text-slate-800 mb-2">{modalConfig.type === 'error' ? 'Error' : modalConfig.type === 'warning' ? 'Aviso' : 'InformaciÃ³n'}</h3>
                   <p className="text-sm text-slate-600 mb-6">{modalConfig.message}</p>
                   <button onClick={() => setModalConfig({...modalConfig, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
                </div>
@@ -534,7 +534,7 @@ export const OrderProcessing: React.FC = () => {
                   <div className={`p-4 border-b border-slate-200 flex justify-between items-center ${processResult ? 'bg-green-600 text-white' : 'bg-slate-50'}`}>
                      <h3 className={`font-bold flex items-center ${processResult ? 'text-white' : 'text-slate-800'}`}>
                         {processResult ? <CheckCircle className="w-5 h-5 mr-2" /> : <HelpCircle className="w-5 h-5 mr-2 text-blue-600" />}
-                        {processResult ? '¡Proceso Exitoso!' : 'Confirmar Proceso'}
+                        {processResult ? 'Â¡Proceso Exitoso!' : 'Confirmar Proceso'}
                      </h3>
                      {!isProcessing && !processResult && (
                         <button onClick={closeAndReset} className="text-slate-400 hover:text-slate-600">
@@ -572,7 +572,7 @@ export const OrderProcessing: React.FC = () => {
                      ) : (
                         <>
                            <p className="text-slate-600 text-sm mb-4">
-                              Se generarán los siguientes documentos electrónicos:
+                              Se generarÃ¡n los siguientes documentos electrÃ³nicos:
                            </p>
 
                            <div className="space-y-2 mb-6">
@@ -653,12 +653,12 @@ export const OrderProcessing: React.FC = () => {
             <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
                <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 text-center animate-scale-up">
                   <Trash2 className="w-16 h-16 text-red-500 mx-auto mb-4 bg-red-50 p-3 rounded-full" />
-                  <h3 className="text-xl font-black text-slate-800 mb-2">¿Anular Pedido?</h3>
-                  <p className="text-slate-500 text-sm mb-6">El stock reservado regresará al Kardex. Esta acción no se puede deshacer.</p>
+                  <h3 className="text-xl font-black text-slate-800 mb-2">Â¿Anular Pedido?</h3>
+                  <p className="text-slate-500 text-sm mb-6">El stock reservado regresarÃ¡ al Kardex. Esta acciÃ³n no se puede deshacer.</p>
                   <div className="flex gap-3">
                      <button onClick={() => setOrderToAnnul(null)} disabled={isProcessing} className="flex-1 py-3 bg-slate-100 rounded-lg font-bold text-slate-600 disabled:opacity-50">Cancelar</button>
                      <button onClick={confirmAnnulOrder} disabled={isProcessing} className="flex-1 py-3 bg-red-600 text-white rounded-lg font-bold shadow-lg flex justify-center items-center disabled:opacity-50">
-                        {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Sí, Anular'}
+                        {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'SÃ­, Anular'}
                      </button>
                   </div>
                </div>
@@ -677,7 +677,7 @@ export const OrderProcessing: React.FC = () => {
                <div className="flex-1">
                   <h3 className="font-bold text-amber-800 mb-2 flex items-center text-sm">
                      <Settings className="w-4 h-4 mr-2" />
-                     Configuración de Impresión (Solo Admin)
+                     ConfiguraciÃ³n de ImpresiÃ³n (Solo Admin)
                   </h3>
                   <div className="flex gap-4">
                      <div>
@@ -705,7 +705,7 @@ export const OrderProcessing: React.FC = () => {
                <button 
                   onClick={async () => {
                      if (!companyConfigId) {
-                         showAlert('Error: No se encontró la configuración de la empresa.', 'error');
+                         showAlert('Error: No se encontrÃ³ la configuraciÃ³n de la empresa.', 'error');
                          return;
                      }
                      try {
@@ -714,7 +714,7 @@ export const OrderProcessing: React.FC = () => {
                              max_items_boleta: maxItemsBoleta
                          }).eq('id', companyConfigId);
                          if (error) throw error;
-                         showAlert('Configuración guardada exitosamente en Supabase.', 'success' as any);
+                         showAlert('ConfiguraciÃ³n guardada exitosamente en Supabase.', 'success' as any);
                      } catch (err: any) {
                          showAlert('Error al guardar: ' + err.message, 'error');
                      }
@@ -763,8 +763,8 @@ export const OrderProcessing: React.FC = () => {
                <label className="block text-xs font-bold text-slate-600 mb-1">Modalidad</label>
                <select className="w-full border border-slate-300 rounded p-2 text-sm" value={filterDeliveryMode} onChange={e => setFilterDeliveryMode(e.target.value as any)}>
                   <option value="ALL">Todas</option>
-                  <option value="REGULAR">Regulares (Siguiente día)</option>
-                  <option value="EXPRESS_MISMO_DIA">Fuera de Ruta (Mismo día)</option>
+                  <option value="REGULAR">Regulares (Siguiente dÃ­a)</option>
+                  <option value="EXPRESS_MISMO_DIA">Fuera de Ruta (Mismo dÃ­a)</option>
                </select>
             </div>
             <div className="w-32">
@@ -805,7 +805,7 @@ export const OrderProcessing: React.FC = () => {
                <ListOrdered className="w-4 h-4 mr-2" /> Listado de Pedidos
             </button>
             <button onClick={() => setActiveTab('CONSOLIDADO')} className={`flex-1 py-3 text-sm font-bold flex items-center justify-center transition-colors ${activeTab === 'CONSOLIDADO' ? 'bg-emerald-50 text-emerald-700 border-b-2 border-emerald-600' : 'text-slate-500 hover:bg-slate-50'}`}>
-               <Layers className="w-4 h-4 mr-2" /> Consolidado de Mercader�a
+               <Layers className="w-4 h-4 mr-2" /> Consolidado de Mercadería
             </button>
          </div>
 
@@ -832,7 +832,7 @@ export const OrderProcessing: React.FC = () => {
                   <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10">
                      <tr>
                         {filterStatus === 'pending' && <th className="p-3 w-10 text-center"></th>}
-                        <th className="p-3">Código</th>
+                        <th className="p-3">CÃ³digo</th>
                         <th className="p-3">Fecha</th>
                         <th className="p-3">Vendedor / Zona</th>
                         <th className="p-3">Cliente</th>
@@ -933,6 +933,52 @@ export const OrderProcessing: React.FC = () => {
                </table>
             </div>
          </div>
+         )}
+
+         {activeTab === 'CONSOLIDADO' && (
+         <div className="flex-1 bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden flex flex-col min-h-0">
+            <div className="p-4 bg-emerald-50 border-b border-emerald-200 flex items-center justify-between">
+               <div>
+                  <h3 className="font-black text-emerald-800 text-lg">Consolidado de Mercadería a Extraer</h3>
+                  <p className="text-sm text-emerald-600 font-medium">Basado en {selectedIds.size > 0 ? selectedIds.size + ' pedidos seleccionados' : orders.length + ' pedidos encontrados'}</p>
+               </div>
+            </div>
+            <div className="overflow-auto flex-1">
+               <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10">
+                     <tr>
+                        <th className="p-3">Código SKU</th>
+                        <th className="p-3">Producto</th>
+                        <th className="p-3 text-right">Cant. Base Total</th>
+                        <th className="p-3 text-right">Consolidado de Extracción</th>
+                     </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                     {consolidatedItems.length === 0 ? (
+                        <tr><td colSpan={4} className="p-10 text-center text-slate-400 italic">No hay mercadería consolidada.</td></tr>
+                     ) : consolidatedItems.map(item => (
+                        <tr key={item.product_id} className="hover:bg-slate-50">
+                           <td className="p-3 font-mono font-bold text-slate-500">{item.sku || 'N/A'}</td>
+                           <td className="p-3 font-bold text-slate-800">{item.name}</td>
+                           <td className="p-3 text-right font-black text-lg text-slate-900">{item.total_base} <span className="text-xs text-slate-500">{item.unit_type}</span></td>
+                           <td className="p-3 text-right">
+                              {(item.package_content > 1 && item.total_base > 0) ? (
+                                 <div className="inline-block bg-blue-50 text-blue-700 px-3 py-1 rounded font-black border border-blue-200">
+                                    {item.pkgs} {item.package_type} y {item.units} {item.unit_type}
+                                 </div>
+                              ) : (
+                                 <div className="inline-block bg-slate-100 text-slate-700 px-3 py-1 rounded font-black border border-slate-200">
+                                    {item.total_base} {item.unit_type}
+                                 </div>
+                              )}
+                           </td>
+                        </tr>
+                     ))}
+                  </tbody>
+               </table>
+            </div>
+         </div>
+         )}
       </div>
    );
 };
