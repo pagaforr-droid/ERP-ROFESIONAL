@@ -96,15 +96,20 @@ export const Dashboard: React.FC = () => {
         const { data: sellers } = await supabase.from('sellers').select('id, name').eq('is_active', true);
         const sellerStatsRaw = (sellers || []).map(seller => {
            const sellerSales = validSales.filter(s => s.seller_id === seller.id);
-           const salesThisMonth = sellerSales.filter(s => s.created_at >= startOfMonth).reduce((sum, s) => sum + s.total, 0);
+           const salesToday = sellerSales.filter(s => {
+              const saleDate = new Date(s.created_at);
+              return saleDate.getFullYear() === today.getFullYear() && 
+                     saleDate.getMonth() === today.getMonth() && 
+                     saleDate.getDate() === today.getDate();
+           }).reduce((sum, s) => sum + s.total, 0);
            const totalDebt = sellerSales.reduce((sum, s) => sum + (s.balance || 0), 0);
            return {
               name: seller.name.split(' ')[0],
               fullName: seller.name,
-              sales: salesThisMonth,
+              salesToday: salesToday,
               debt: totalDebt
            };
-        }).sort((a, b) => b.sales - a.sales);
+        }).sort((a, b) => b.salesToday - a.salesToday);
         
         // 5. Fetch Quotas
         const { data: quotas } = await supabase.from('quotas').select('amount').eq('period', currentMonth).eq('target_type', 'GLOBAL');
@@ -162,11 +167,11 @@ export const Dashboard: React.FC = () => {
         
         // 7. Critical Stock
         const { data: products } = await supabase.from('products').select('id, name, sku, category, package_content, package_type').eq('is_active', true);
-        const { data: batches } = await supabase.from('batches').select('product_id, quantity_current, warehouse_id').neq('warehouse_id', 'MERMAS');
+        const { data: batches } = await supabase.from('batches').select('product_id, quantity_current, warehouse_id');
         
         const criticalStockProductsRaw = (products || []).map(p => {
            const totalStockUnits = (batches || [])
-              .filter(b => b.product_id === p.id)
+              .filter(b => b.product_id === p.id && b.warehouse_id !== 'MERMAS')
               .reduce((sum, b) => sum + b.quantity_current, 0);
               
            const factor = p.package_content || 1;
@@ -365,9 +370,9 @@ export const Dashboard: React.FC = () => {
         <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 lg:col-span-2">
           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2">
             <Users className="h-5 w-5 text-blue-500" />
-            Rendimiento y Deuda por Vendedor ({currentMonth})
+            Rendimiento y Deuda por Vendedor (Hoy)
           </h3>
-          <p className="text-sm text-slate-500 mb-6">Comparativa de ventas mensuales vs deuda acumulada histórica.</p>
+          <p className="text-sm text-slate-500 mb-6">Comparativa de ventas de hoy vs deuda acumulada histórica.</p>
           
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
@@ -385,8 +390,8 @@ export const Dashboard: React.FC = () => {
                   formatter={(value: number) => formatCurrency(value)}
                 />
                 <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
-                <Bar yAxisId="left" dataKey="sales" name="Ventas (Mes)" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={50} />
-                <Bar yAxisId="right" dataKey="debt" name="Deuda (Total)" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                <Bar yAxisId="left" dataKey="salesToday" name="Ventas (Hoy)" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={50} label={{ position: 'top', formatter: (val: number) => val > 0 ? `S/${(val/1000).toFixed(1)}k` : '', fill: '#3b82f6', fontSize: 11, fontWeight: 'bold' }} />
+                <Bar yAxisId="right" dataKey="debt" name="Deuda (Total)" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={50} label={{ position: 'top', formatter: (val: number) => val > 0 ? `S/${(val/1000).toFixed(1)}k` : '', fill: '#ef4444', fontSize: 11, fontWeight: 'bold' }} />
               </BarChart>
             </ResponsiveContainer>
           </div>
