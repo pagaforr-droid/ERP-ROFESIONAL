@@ -1061,14 +1061,28 @@ export const DispatchLiquidationComp: React.FC = () => {
                               const vehicle = vehicles.find(v => v.id === ds.vehicle_id);
                               const driver = drivers.find(d => d.id === vehicle?.driver_id);
                               
+                              const dsSales = sales.filter(s => ds.sale_ids?.includes(s.id));
+                              const uniqueSellerIds = Array.from(new Set(dsSales.map(s => s.seller_id).filter(Boolean)));
+                              const uniqueSellers = uniqueSellerIds.map(id => sellers.find(s => s.id === id)).filter(Boolean);
+                              const sellerColors = ['bg-indigo-100 text-indigo-700', 'bg-fuchsia-100 text-fuchsia-700', 'bg-teal-100 text-teal-700', 'bg-rose-100 text-rose-700', 'bg-amber-100 text-amber-700'];
+
+                              const dsDate = new Date(ds.date || Date.now());
+                              const diffDays = Math.floor((Date.now() - dsDate.getTime()) / (1000 * 60 * 60 * 24));
+                              const isDelayed = diffDays > 3;
+                              
                               return (
-                              <div key={ds.id} className="bg-white rounded-xl shadow-sm border-l-4 border-l-blue-600 border border-slate-200 p-4 flex flex-col hover:-translate-y-1 hover:shadow-md transition-all duration-200">
-                                 <div className="flex justify-between items-start border-b border-slate-100 pb-3 mb-3">
+                              <div key={ds.id} className={`bg-white rounded-xl shadow-sm border-l-4 ${isDelayed ? 'border-l-red-500' : 'border-l-blue-600'} border border-slate-200 p-4 flex flex-col hover:-translate-y-1 hover:shadow-md transition-all duration-200`}>
+                                 <div className="flex justify-between items-start border-b border-slate-100 pb-3 mb-3 relative">
+                                    {isDelayed && (
+                                       <div className="absolute -top-6 -right-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm flex items-center animate-pulse">
+                                          <AlertTriangle className="w-3 h-3 mr-1" /> +3 DÍAS
+                                       </div>
+                                    )}
                                     <div>
                                        <div className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Hoja de Ruta</div>
                                        <div className="font-black text-lg text-slate-800 leading-none">{ds.code}</div>
                                     </div>
-                                    <div className="text-[9px] bg-orange-100 text-orange-700 px-2 py-1 rounded font-bold uppercase border border-orange-200">PENDIENTE</div>
+                                    <div className={`text-[9px] px-2 py-1 rounded font-bold uppercase border ${isDelayed ? 'bg-red-50 text-red-700 border-red-200' : 'bg-orange-100 text-orange-700 border-orange-200'}`}>PENDIENTE</div>
                                  </div>
                                  
                                  <div className="space-y-2 mb-4 flex-1">
@@ -1083,15 +1097,29 @@ export const DispatchLiquidationComp: React.FC = () => {
                                        <User className="w-4 h-4 mr-2 text-emerald-500 shrink-0" /> 
                                        <span className="font-bold text-slate-700 truncate">{driver?.name || 'Chofer no asignado'}</span>
                                     </div>
+                                    
+                                    {uniqueSellers.length > 0 && (
+                                       <div className="pt-1 flex flex-wrap gap-1">
+                                          {uniqueSellers.map((s, idx) => (
+                                             <span key={s.id} className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${sellerColors[idx % sellerColors.length]}`}>
+                                                {s.name.split(' ')[0]}
+                                             </span>
+                                          ))}
+                                       </div>
+                                    )}
+
                                     <div className="flex justify-between items-center text-xs text-slate-500 px-1 mt-3 pt-2 border-t border-slate-50">
-                                       <span className="flex items-center"><Calendar className="w-3.5 h-3.5 mr-1" /> {ds.date ? new Date(ds.date).toLocaleDateString() : 'N/A'}</span>
+                                       <div className="flex flex-col">
+                                          <span className="flex items-center font-bold text-slate-700"><Calendar className="w-3 h-3 mr-1" /> {ds.date ? new Date(ds.date).toLocaleDateString() : 'N/A'}</span>
+                                          <span className="text-[10px] text-slate-400 ml-4">{ds.date ? new Date(ds.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</span>
+                                       </div>
                                        <span className="flex items-center font-bold text-slate-700"><FileText className="w-3.5 h-3.5 mr-1 text-slate-400" /> {ds.sale_ids?.length || 0} docs</span>
                                     </div>
                                  </div>
                                  
                                  <button
                                     onClick={() => startLiquidation(ds)}
-                                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold py-2.5 rounded-lg hover:from-blue-700 hover:to-indigo-700 shadow flex justify-center items-center text-sm"
+                                    className={`w-full text-white font-bold py-2.5 rounded-lg shadow flex justify-center items-center text-sm transition-all ${isDelayed ? 'bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'}`}
                                  >
                                     Liquidar Ruta <ArrowRight className="w-4 h-4 ml-2" />
                                  </button>
