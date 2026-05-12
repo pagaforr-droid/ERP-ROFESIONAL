@@ -610,6 +610,7 @@ export interface DispatchLiquidation {
   total_returns_value: number;
   documents: LiquidationDocument[];
   status?: 'PROCESADO' | 'COMPLETADO' | string;
+  user_id?: string;
 }
 
 export interface PurchasePayment {

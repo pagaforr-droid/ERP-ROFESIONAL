@@ -38,12 +38,13 @@ export const DispatchLiquidationComp: React.FC = () => {
    const [liquidationDocuments, setLiquidationDocuments] = useState<LiquidationDocument[]>([]);
    const [vehicles, setVehicles] = useState<Vehicle[]>([]);
    const [drivers, setDrivers] = useState<Driver[]>([]);
+   const [erpUsers, setErpUsers] = useState<any[]>([]); // NEW
    const [isLoadingData, setIsLoadingData] = useState(true);
 
    const fetchData = async () => {
       setIsLoadingData(true);
       try {
-         const [dsRes, dlRes, salesRes, prodRes, dsSalesRes, sellersRes, ldRes, vehiclesRes, driversRes] = await Promise.all([
+         const [dsRes, dlRes, salesRes, prodRes, dsSalesRes, sellersRes, ldRes, vehiclesRes, driversRes, usersRes] = await Promise.all([
             supabase.from('dispatch_sheets').select('*'),
             supabase.from('dispatch_liquidations').select('*'),
             supabase.from('sales').select('*, items:sale_items(*)').neq('dispatch_status', 'liquidated'),
@@ -52,7 +53,8 @@ export const DispatchLiquidationComp: React.FC = () => {
             supabase.from('sellers').select('*'),
             supabase.from('liquidation_documents').select('*'),
             supabase.from('vehicles').select('*'),
-            supabase.from('drivers').select('*')
+            supabase.from('drivers').select('*'),
+            supabase.from('erp_users').select('id, name')
          ]);
          
          if (dsRes.data) {
@@ -71,6 +73,7 @@ export const DispatchLiquidationComp: React.FC = () => {
          if (ldRes.data) setLiquidationDocuments(ldRes.data);
          if (vehiclesRes.data) setVehicles(vehiclesRes.data);
          if (driversRes.data) setDrivers(driversRes.data);
+         if (usersRes.data) setErpUsers(usersRes.data);
       } catch (error) {
          console.error('Error fetching liquidation data', error);
       } finally {
@@ -1202,6 +1205,8 @@ export const DispatchLiquidationComp: React.FC = () => {
                                  <tr>
                                     <th className="p-3">Código Liquidación</th>
                                     <th className="p-3">Hoja de Ruta</th>
+                                    <th className="p-3">Transportista</th>
+                                    <th className="p-3">Encargado de Liquidar</th>
                                     <th className="p-3">Fecha</th>
                                     <th className="p-3">Estado</th>
                                     <th className="p-3 text-right">Monto Caja (S/)</th>
@@ -1209,10 +1214,34 @@ export const DispatchLiquidationComp: React.FC = () => {
                                  </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100">
-                                 {liquidatedDispatches.map(liq => (
+                                 {liquidatedDispatches.map(liq => {
+                                    const ds = dispatchSheets.find(d => d.id === liq.dispatch_sheet_id);
+                                    const vh = ds ? vehicles.find(v => v.id === ds.vehicle_id) : null;
+                                    const drv = vh ? drivers.find(dr => dr.id === vh.driver_id) : null;
+                                    const usr = erpUsers.find(u => u.id === liq.user_id);
+                                    
+                                    return (
                                     <tr key={liq.id} className="hover:bg-slate-50">
-                                       <td className="p-3 font-bold text-slate-800">{liq.id}</td>
-                                       <td className="p-3 text-slate-600">{dispatchSheets.find(ds => ds.id === liq.dispatch_sheet_id)?.code || 'N/A'}</td>
+                                       <td className="p-3 font-bold text-slate-800">{liq.id.substring(0,8)}...</td>
+                                       <td className="p-3 text-slate-600">{ds?.code || 'N/A'}</td>
+                                       <td className="p-3 text-slate-600">
+                                          {drv ? (
+                                             <div className="flex flex-col">
+                                                <span className="font-bold text-slate-700">{drv.name}</span>
+                                                <span className="text-[10px] text-slate-500">Unidad: {vh?.plate}</span>
+                                             </div>
+                                          ) : 'N/A'}
+                                       </td>
+                                       <td className="p-3 text-slate-600">
+                                          {usr ? (
+                                             <div className="flex items-center text-xs text-indigo-700 bg-indigo-50 px-2 py-1 rounded w-max">
+                                                <User className="w-3 h-3 mr-1" />
+                                                <span className="font-bold uppercase">{usr.name}</span>
+                                             </div>
+                                          ) : (
+                                             <span className="text-xs text-slate-400 italic">No registrado</span>
+                                          )}
+                                       </td>
                                        <td className="p-3 text-slate-600">{liq.date ? new Date(liq.date).toLocaleString() : 'N/A'}</td>
                                        <td className="p-3">
                                           <span className={`px-2 py-1 text-xs font-bold rounded ${liq.status === 'COMPLETADO' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
@@ -1248,7 +1277,8 @@ export const DispatchLiquidationComp: React.FC = () => {
                                           )}
                                        </td>
                                     </tr>
-                                 ))}
+                                    );
+                                 })}
                               </tbody>
                            </table>
                         </div>
