@@ -161,7 +161,7 @@ export const Dispatch: React.FC = () => {
    // 1. Enrich Sales with Territory Info and Weight
    const enrichedSales: ExtendedSale[] = useMemo(() => {
       return sales
-         .filter(s => (s.dispatch_status === 'pending' || (editMode && selectedSaleIds.includes(s.id))) && (filterDeliveryMode === 'ALL' || s.delivery_mode === filterDeliveryMode))
+         .filter(s => (s.dispatch_status === 'pending' || (editMode && selectedSaleIds.includes(s.id))))
          .map(sale => {
             const client = clients.find(c => c.doc_number === sale.client_ruc);
             const zone = zones.find(z => z.id === client?.zone_id);
