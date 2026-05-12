@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../services/store';
-import { Product, SaleItem, Client, Sale, Batch } from '../types';
+import { Product, SaleItem, Client, Sale, Batch, AutoPromotion } from '../types';
 import { ShoppingCart, Search, Trash2, CheckCircle2, X, Plus, Minus, CreditCard, Banknote, HelpCircle, AlertTriangle, ShieldCheck, User, Zap, Loader2, Printer, Check, ScanLine, Tag, Package, Hash, Keyboard, Smartphone, Lock, Unlock, Clock, BrainCircuit } from 'lucide-react';
 import { supabase } from '../services/supabase';
 import { PdfEngine } from './PdfEngine';
 import { allocateBatchesFIFO } from '../utils/productUtils';
+import { applyAutoPromotionsEngine } from '../utils/promoUtils';
 
 export const POS: React.FC = () => {
    const store = useStore();
@@ -103,6 +104,9 @@ export const POS: React.FC = () => {
    const [dbCompany, setDbCompany] = useState<any>(null); 
    const [dbSeries, setDbSeries] = useState<any[]>([]);
    const [dbSellers, setDbSellers] = useState<any[]>([]);
+   const [dbAutoPromos, setDbAutoPromos] = useState<AutoPromotion[]>([]);
+   const [dbRewardProducts, setDbRewardProducts] = useState<Product[]>([]);
+   const [loadedBatches, setLoadedBatches] = useState<Record<string, Batch[]>>({});
    
    const [docType, setDocType] = useState<'FACTURA' | 'BOLETA'>('BOLETA');
    const [series, setSeries] = useState('');
@@ -114,23 +118,43 @@ export const POS: React.FC = () => {
    useEffect(() => {
        const fetchMasters = async () => {
            try {
-               const [compRes, serRes, sellRes] = await Promise.all([
+               const [compRes, serRes, sellRes, apRes] = await Promise.all([
                    supabase.from('company_config').select('*').limit(1).maybeSingle(),
                    supabase.from('document_series').select('*').eq('is_active', true).order('series'),
-                   supabase.from('sellers').select('*').eq('is_active', true)
+                   supabase.from('sellers').select('*').eq('is_active', true),
+                   supabase.from('auto_promotions').select('*').eq('is_active', true)
                ]);
                
                if (compRes.data) setDbCompany(compRes.data);
                if (sellRes.data) setDbSellers(sellRes.data);
                if (serRes.data) {
-                   setDbSeries(serRes.data);
-                   const initialBoleta = serRes.data.find((s: any) => s.type === 'BOLETA');
-                   if (initialBoleta) {
-                       setSeries(initialBoleta.series);
-                       setDocNumber(String(initialBoleta.current_number + 1).padStart(8, '0'));
-                   }
-               }
-           } catch (e) { console.error("Error cargando maestros:", e); }
+                    setDbSeries(serRes.data);
+                    const initialBoleta = serRes.data.find((s: any) => s.type === 'BOLETA');
+                    if (initialBoleta) {
+                        setSeries(initialBoleta.series);
+                        setDocNumber(String(initialBoleta.current_number + 1).padStart(8, '0'));
+                    }
+                }
+                if (apRes.data) {
+                    setDbAutoPromos(apRes.data);
+                    const rewardIds = apRes.data.map(ap => ap.reward_product_id).filter(Boolean);
+                    if (rewardIds.length > 0) {
+                        const { data: rpData } = await supabase.from('products').select('*').in('id', rewardIds);
+                        if (rpData) {
+                            setDbRewardProducts(rpData as Product[]);
+                            const { data: rpBatches } = await supabase.from('batches').select('*').in('product_id', rewardIds).gt('quantity_current', 0);
+                            if (rpBatches) {
+                               const bCache: Record<string, Batch[]> = {};
+                               rpBatches.forEach(b => {
+                                  if (!bCache[b.product_id]) bCache[b.product_id] = [];
+                                  bCache[b.product_id].push(b as Batch);
+                               });
+                               setLoadedBatches(prev => ({...prev, ...bCache}));
+                            }
+                        }
+                    }
+                }
+            } catch (e) { console.error("Error cargando maestros:", e); }
        };
        fetchMasters();
    }, []);
@@ -157,6 +181,22 @@ export const POS: React.FC = () => {
    const [isSearchingProd, setIsSearchingProd] = useState(false);
    
    const [cart, setCart] = useState<SaleItem[]>([]);
+   const [clientPromoUsage, setClientPromoUsage] = useState<Record<string, number>>({});
+
+   useEffect(() => {
+       const fetchClientPromoUsage = async () => {
+           if (!clientData.id) { setClientPromoUsage({}); return; }
+           const { data } = await supabase.from('promotion_client_uses').select('auto_promo_id, uses_count').eq('client_id', clientData.id);
+           if (data) {
+               const usage: Record<string, number> = {};
+               data.forEach((row: any) => { usage[row.auto_promo_id] = row.uses_count; });
+               setClientPromoUsage(usage);
+           } else {
+               setClientPromoUsage({});
+           }
+       };
+       fetchClientPromoUsage();
+   }, [clientData.id]);
 
    // --- CHECKOUT STATE ---
    const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -387,6 +427,31 @@ export const POS: React.FC = () => {
        }
    };
 
+   const applyPromotions = (currentCart: SaleItem[]) => {
+       const context = {
+           channel: 'IN_STORE' as const,
+           city: '', 
+           sellerId: currentUser?.id,
+           userRole: currentUser?.role,
+           priceListId: '',
+           clientId: clientData.id || undefined
+       };
+       
+       const allLoadedProducts = Array.from(new Set([...searchedProducts, ...dbRewardProducts]));
+       const allLoadedBatches = Object.values(loadedBatches).flat();
+       
+       const { newCart } = applyAutoPromotionsEngine(
+           currentCart,
+           dbAutoPromos,
+           allLoadedProducts,
+           allLoadedBatches,
+           context,
+           clientPromoUsage
+       );
+       
+       setCart(newCart);
+   };
+
    const addProductToCart = async (prod: Product) => {
        const isPkgMode = presentationMode === 'PKG';
        const conversionFactor = isPkgMode ? Number(prod.package_content || 1) : 1;
@@ -436,7 +501,7 @@ export const POS: React.FC = () => {
                total_price: newQty * Number(item.unit_price), // Keeps the price it was added with
                batch_allocations: allocations
            };
-           setCart(newCart);
+           applyPromotions(newCart);
        } else {
            const allocations = await allocateFast(prod.id, baseConversion);
            const newItem: SaleItem = {
@@ -445,18 +510,19 @@ export const POS: React.FC = () => {
                quantity_base: baseConversion, unit_price: price, total_price: price,
                discount_percent: 0, discount_amount: 0, is_bonus: false, batch_allocations: allocations, product: prod
            };
-           setCart([...cart, newItem]);
+           applyPromotions([...cart, newItem]);
        }
    };
 
    const handleQtyChange = async (index: number, delta: number) => {
        const newCart = [...cart];
        const item = newCart[index];
+       if (item.is_bonus) return;
        const newQty = Number(item.quantity_presentation) + delta;
        
        if (newQty <= 0) {
            newCart.splice(index, 1);
-           setCart(newCart);
+           applyPromotions(newCart);
            return;
        }
 
@@ -473,13 +539,14 @@ export const POS: React.FC = () => {
            total_price: newQty * Number(item.unit_price),
            batch_allocations: allocations
        };
-       setCart(newCart);
+       applyPromotions(newCart);
    };
 
    const removeFromCart = (index: number) => {
        const newCart = [...cart];
+       if (newCart[index].is_bonus) return;
        newCart.splice(index, 1);
-       setCart(newCart);
+       applyPromotions(newCart);
        setTimeout(() => barcodeInputRef.current?.focus(), 100);
    };
 
@@ -792,20 +859,23 @@ export const POS: React.FC = () => {
                         </div>
                     ) : (
                         cart.map((item, idx) => (
-                            <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 flex flex-col gap-2 shadow-sm hover:border-blue-300 transition-colors">
+                            <div key={idx} className={`p-3 rounded-lg border flex flex-col gap-2 shadow-sm transition-colors ${item.is_bonus ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-200 hover:border-blue-300'}`}>
                                 <div className="flex justify-between items-start gap-2">
-                                    <span className="font-bold text-xs text-slate-700 leading-tight flex-1">{item.product_name}</span>
-                                    <button onClick={() => removeFromCart(idx)} className="text-slate-400 hover:text-rose-500 p-0.5 rounded transition-colors"><X className="w-4 h-4" /></button>
+                                    <div className="flex-1">
+                                        <span className={`font-bold text-xs leading-tight ${item.is_bonus ? 'text-orange-800' : 'text-slate-700'}`}>{item.product_name}</span>
+                                        {item.is_bonus && <div className="text-[9px] font-black text-orange-600 uppercase tracking-wider mt-0.5">BONO AUTOMÁTICO</div>}
+                                    </div>
+                                    {!item.is_bonus && <button onClick={() => removeFromCart(idx)} className="text-slate-400 hover:text-rose-500 p-0.5 rounded transition-colors"><X className="w-4 h-4" /></button>}
                                 </div>
                                 <div className="flex items-center justify-between">
-                                    <div className="flex items-center bg-slate-50 rounded border border-slate-200 p-0.5">
-                                        <button onClick={() => { handleQtyChange(idx, -1); barcodeInputRef.current?.focus(); }} className="w-6 h-6 flex items-center justify-center text-slate-600 hover:bg-slate-200 rounded active:scale-95"><Minus className="w-3 h-3"/></button>
+                                    <div className={`flex items-center rounded border p-0.5 ${item.is_bonus ? 'bg-orange-100/50 border-orange-200' : 'bg-slate-50 border-slate-200'}`}>
+                                        <button onClick={() => { handleQtyChange(idx, -1); barcodeInputRef.current?.focus(); }} disabled={item.is_bonus} className="w-6 h-6 flex items-center justify-center text-slate-600 hover:bg-slate-200 rounded active:scale-95 disabled:opacity-30"><Minus className="w-3 h-3"/></button>
                                         <span className="w-8 text-center font-bold text-sm text-slate-800 select-none">{item.quantity_presentation}</span>
-                                        <button onClick={() => { handleQtyChange(idx, 1); barcodeInputRef.current?.focus(); }} className="w-6 h-6 flex items-center justify-center text-slate-600 hover:bg-slate-200 rounded active:scale-95"><Plus className="w-3 h-3"/></button>
+                                        <button onClick={() => { handleQtyChange(idx, 1); barcodeInputRef.current?.focus(); }} disabled={item.is_bonus} className="w-6 h-6 flex items-center justify-center text-slate-600 hover:bg-slate-200 rounded active:scale-95 disabled:opacity-30"><Plus className="w-3 h-3"/></button>
                                     </div>
                                     <div className="text-right">
                                         <div className="text-[10px] text-slate-400 font-bold uppercase">{item.selected_unit}</div>
-                                        <div className="font-black text-sm text-emerald-600">S/ {Number(item.total_price).toFixed(2)}</div>
+                                        <div className={`font-black text-sm ${item.is_bonus ? 'text-orange-600' : 'text-emerald-600'}`}>S/ {Number(item.total_price).toFixed(2)}</div>
                                     </div>
                                 </div>
                             </div>
