@@ -471,10 +471,24 @@ export const OrderProcessing: React.FC = () => {
       setTimeout(() => document.getElementById('order-admin-pwd')?.focus(), 100);
    };
 
-   const verifyAdminAndAuthorize = () => {
+   const verifyAdminAndAuthorize = async () => {
       const adminUser = adminPasswordInput === '123456' || dbUsers.find(u => u.role === 'ADMIN' && (u.password === adminPasswordInput || u.pin_code === adminPasswordInput));
       if (adminUser) { 
-         setAuthorizedDebtOrders(prev => new Set(prev).add(adminAuthModal.targetOrderId));
+         if (isProcessingRef.current) return;
+         isProcessingRef.current = true;
+         setIsProcessing(true);
+         try {
+            const { error } = await supabase.from('orders').update({ is_authorized: true }).eq('id', adminAuthModal.targetOrderId);
+            if (error) throw error;
+            setOrders(prev => prev.map(o => o.id === adminAuthModal.targetOrderId ? { ...o, is_authorized: true } : o));
+            setAuthorizedDebtOrders(prev => new Set(prev).add(adminAuthModal.targetOrderId));
+            showAlert("Pedido autorizado correctamente.", 'info' as any);
+         } catch (e: any) {
+            showAlert("Error al autorizar pedido: " + e.message, 'error');
+         } finally {
+            isProcessingRef.current = false;
+            setIsProcessing(false);
+         }
          setAdminAuthModal({ isOpen: false, targetOrderId: '' }); 
          setAdminPasswordInput('');
       } else { 
