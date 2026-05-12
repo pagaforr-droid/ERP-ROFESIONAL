@@ -181,7 +181,7 @@ export const Dispatch: React.FC = () => {
                totalWeight: weight
             };
          });
-   }, [sales, clients, zones, sellers, products, editMode, selectedSaleIds, filterDeliveryMode]);
+   }, [sales, clients, zones, sellers, products, editMode, selectedSaleIds]);
 
    // 2. Filter & Sort Logic
    const sortedSales = useMemo(() => {
