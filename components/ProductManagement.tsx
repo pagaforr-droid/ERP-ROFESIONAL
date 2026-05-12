@@ -215,6 +215,33 @@ export const ProductManagement: React.FC = () => {
         const data = XLSX.utils.sheet_to_json(ws);
 
         let skippedCount = 0;
+
+        // --- 1. RESOLVER PROVEEDORES FALTANTES ---
+        const uniqueSuppliers = new Set<string>();
+        data.forEach((row: any) => {
+            const supplierStr = String(row.supplier || row.proveedor || row.Proveedor || '').trim().toUpperCase();
+            if (supplierStr) uniqueSuppliers.add(supplierStr);
+        });
+
+        const newSuppliersToInsert: any[] = [];
+        const currentSuppliers = [...suppliers];
+
+        for (const suppName of uniqueSuppliers) {
+            const exists = currentSuppliers.find(s => s.name.toUpperCase() === suppName || s.id === suppName);
+            if (!exists) {
+                const newId = crypto.randomUUID();
+                const newSupp = { id: newId, name: suppName, ruc: '00000000000' };
+                newSuppliersToInsert.push(newSupp);
+                currentSuppliers.push(newSupp);
+            }
+        }
+
+        if (newSuppliersToInsert.length > 0) {
+            const { error: suppError } = await supabase.from('suppliers').insert(newSuppliersToInsert);
+            if (suppError) throw new Error("Error importando proveedores: " + suppError.message);
+        }
+
+        // --- 2. PROCESAR PRODUCTOS ---
         const newProductsToInsert: any[] = [];
 
         data.forEach((row: any) => {
@@ -224,9 +251,9 @@ export const ProductManagement: React.FC = () => {
           if (products.find(p => p.sku === skuStr)) { skippedCount++; return; }
 
           let foundSupplierId = null;
-          const supplierStr = String(row.supplier || row.proveedor || row.Proveedor || '').trim();
+          const supplierStr = String(row.supplier || row.proveedor || row.Proveedor || '').trim().toUpperCase();
           if (supplierStr) {
-            const supp = suppliers.find(s => s.name.toLowerCase() === supplierStr.toLowerCase() || s.id === supplierStr);
+            const supp = currentSuppliers.find(s => s.name.toUpperCase() === supplierStr || s.id === supplierStr);
             if (supp) foundSupplierId = supp.id;
           }
 
@@ -793,6 +820,11 @@ export const ProductManagement: React.FC = () => {
                     <td className="p-4">
                        <div className="font-bold text-slate-700">{p.brand || '-'}</div>
                        <div className="text-xs text-slate-400">{p.category || 'SIN CATEGORÍA'}</div>
+                       {p.supplier_id && (
+                           <div className="text-[10px] font-bold text-amber-600 bg-amber-50 px-1 py-0.5 rounded mt-1 w-max border border-amber-100">
+                              {suppliers.find(s => s.id === p.supplier_id)?.name}
+                           </div>
+                       )}
                     </td>
                     <td className="p-4 text-right">
                        <div className="font-black text-slate-800">S/ {Number(p.price_unit).toFixed(2)}</div>
