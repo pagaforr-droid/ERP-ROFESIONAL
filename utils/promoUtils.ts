@@ -193,6 +193,23 @@ export const applyAutoPromotionsEngine = (
            multiplyFactor = Math.min(multiplyFactor, ap.max_reward_multiplier);
        }
 
+       // CAP: TOPE POR CLIENTE (Restante Histórico)
+       if (ap.max_uses_per_client && ap.max_uses_per_client > 0) {
+           const currentUses = clientUsage[ap.id] || 0;
+           const remainingUses = ap.max_uses_per_client - currentUses;
+           multiplyFactor = Math.min(multiplyFactor, Math.max(0, remainingUses));
+       }
+
+       // CAP: TOPE GLOBAL (Restante en BD)
+       if (ap.global_reward_limit && ap.global_reward_limit > 0) {
+           const currentGlobalUses = ap.current_reward_uses || 0;
+           const remainingGlobalUses = ap.global_reward_limit - currentGlobalUses;
+           multiplyFactor = Math.min(multiplyFactor, Math.max(0, remainingGlobalUses));
+       }
+
+       if (multiplyFactor <= 0) continue; // Si agotó el límite, no aplicar bonificación
+
+
        const rewardProd = products.find(p => p.id === ap.reward_product_id);
        if (rewardProd) {
           const requestedBaseQty = ap.reward_quantity * multiplyFactor * (ap.reward_unit_type === 'PKG' ? Number(rewardProd.package_content || 1) : 1);
