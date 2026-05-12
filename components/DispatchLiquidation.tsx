@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
-import { DispatchSheet, Sale, LiquidationDocument, DispatchLiquidation } from '../types';
-import { Search, CheckCircle, AlertTriangle, ArrowRight, Printer, XCircle, FileText, Ban, DollarSign, CreditCard, ShieldAlert, Save, Package, HelpCircle, User, Calendar, RotateCcw, Plus, ListChecks, Camera, MapPin, Image as ImageIcon, X, Edit3 } from 'lucide-react';
+import { DispatchSheet, Sale, LiquidationDocument, DispatchLiquidation, Vehicle, Driver } from '../types';
+import { Search, CheckCircle, AlertTriangle, ArrowRight, Printer, XCircle, FileText, Ban, DollarSign, CreditCard, ShieldAlert, Save, Package, HelpCircle, User, Calendar, RotateCcw, Plus, ListChecks, Camera, MapPin, Image as ImageIcon, X, Edit3, Truck } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from '../services/supabase';
@@ -36,19 +36,23 @@ export const DispatchLiquidationComp: React.FC = () => {
    const [products, setProducts] = useState<import('../types').Product[]>([]);
    const [sellers, setSellers] = useState<any[]>([]);
    const [liquidationDocuments, setLiquidationDocuments] = useState<LiquidationDocument[]>([]);
+   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+   const [drivers, setDrivers] = useState<Driver[]>([]);
    const [isLoadingData, setIsLoadingData] = useState(true);
 
    const fetchData = async () => {
       setIsLoadingData(true);
       try {
-         const [dsRes, dlRes, salesRes, prodRes, dsSalesRes, sellersRes, ldRes] = await Promise.all([
+         const [dsRes, dlRes, salesRes, prodRes, dsSalesRes, sellersRes, ldRes, vehiclesRes, driversRes] = await Promise.all([
             supabase.from('dispatch_sheets').select('*'),
             supabase.from('dispatch_liquidations').select('*'),
             supabase.from('sales').select('*, items:sale_items(*)').neq('dispatch_status', 'liquidated'),
             supabase.from('products').select('*'),
             supabase.from('dispatch_sales').select('*'),
             supabase.from('sellers').select('*'),
-            supabase.from('liquidation_documents').select('*')
+            supabase.from('liquidation_documents').select('*'),
+            supabase.from('vehicles').select('*'),
+            supabase.from('drivers').select('*')
          ]);
          
          if (dsRes.data) {
@@ -65,6 +69,8 @@ export const DispatchLiquidationComp: React.FC = () => {
          if (prodRes.data) setProducts(prodRes.data);
          if (sellersRes.data) setSellers(sellersRes.data);
          if (ldRes.data) setLiquidationDocuments(ldRes.data);
+         if (vehiclesRes.data) setVehicles(vehiclesRes.data);
+         if (driversRes.data) setDrivers(driversRes.data);
       } catch (error) {
          console.error('Error fetching liquidation data', error);
       } finally {
@@ -1050,25 +1056,47 @@ export const DispatchLiquidationComp: React.FC = () => {
                            <p>No hay rutas pendientes de liquidar.</p>
                         </div>
                      ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                           {pendingDispatches.map(ds => (
-                              <div key={ds.id} className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 flex flex-col hover:shadow-md transition-shadow">
-                                 <div className="flex justify-between items-start border-b border-slate-100 pb-2 mb-2">
-                                    <div className="font-bold text-lg text-slate-800">{ds.code}</div>
-                                    <div className="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded font-bold uppercase">PENDIENTE</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                           {pendingDispatches.map(ds => {
+                              const vehicle = vehicles.find(v => v.id === ds.vehicle_id);
+                              const driver = drivers.find(d => d.id === vehicle?.driver_id);
+                              
+                              return (
+                              <div key={ds.id} className="bg-white rounded-xl shadow-sm border-l-4 border-l-blue-600 border border-slate-200 p-4 flex flex-col hover:-translate-y-1 hover:shadow-md transition-all duration-200">
+                                 <div className="flex justify-between items-start border-b border-slate-100 pb-3 mb-3">
+                                    <div>
+                                       <div className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Hoja de Ruta</div>
+                                       <div className="font-black text-lg text-slate-800 leading-none">{ds.code}</div>
+                                    </div>
+                                    <div className="text-[9px] bg-orange-100 text-orange-700 px-2 py-1 rounded font-bold uppercase border border-orange-200">PENDIENTE</div>
                                  </div>
-                                 <div className="space-y-1 mb-4 flex-1">
-                                    <div className="text-sm flex items-center text-slate-600"><Calendar className="w-4 h-4 mr-2" /> {ds.date ? new Date(ds.date).toLocaleDateString() : 'N/A'}</div>
-                                    <div className="text-sm flex items-center text-slate-600"><FileText className="w-4 h-4 mr-2" /> {ds.sale_ids?.length || 0} documentos asignados</div>
+                                 
+                                 <div className="space-y-2 mb-4 flex-1">
+                                    <div className="flex items-center text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                       <Truck className="w-4 h-4 mr-2 text-blue-500 shrink-0" /> 
+                                       <div className="truncate">
+                                          <span className="font-bold text-slate-700">{vehicle?.plate || 'Sin Placa'}</span>
+                                          <span className="text-slate-400 ml-1">- {vehicle?.brand || 'Sin Vehículo'}</span>
+                                       </div>
+                                    </div>
+                                    <div className="flex items-center text-xs text-slate-600 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                       <User className="w-4 h-4 mr-2 text-emerald-500 shrink-0" /> 
+                                       <span className="font-bold text-slate-700 truncate">{driver?.name || 'Chofer no asignado'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-xs text-slate-500 px-1 mt-3 pt-2 border-t border-slate-50">
+                                       <span className="flex items-center"><Calendar className="w-3.5 h-3.5 mr-1" /> {ds.date ? new Date(ds.date).toLocaleDateString() : 'N/A'}</span>
+                                       <span className="flex items-center font-bold text-slate-700"><FileText className="w-3.5 h-3.5 mr-1 text-slate-400" /> {ds.sale_ids?.length || 0} docs</span>
+                                    </div>
                                  </div>
+                                 
                                  <button
                                     onClick={() => startLiquidation(ds)}
-                                    className="w-full bg-blue-600 text-white font-bold py-2 rounded hover:bg-blue-700 shadow flex justify-center items-center"
+                                    className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold py-2.5 rounded-lg hover:from-blue-700 hover:to-indigo-700 shadow flex justify-center items-center text-sm"
                                  >
-                                    Comenzar Liquidación <ArrowRight className="w-4 h-4 ml-2" />
+                                    Liquidar Ruta <ArrowRight className="w-4 h-4 ml-2" />
                                  </button>
                               </div>
-                           ))}
+                           )})}
                         </div>
                      )}
                   </>
