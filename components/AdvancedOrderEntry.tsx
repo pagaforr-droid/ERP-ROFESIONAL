@@ -78,6 +78,22 @@ export const AdvancedOrderEntry: React.FC = () => {
   const [paymentMethod, setPaymentMethod] = useState('CONTADO');
   const [showBranchSelector, setShowBranchSelector] = useState(false);
   const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
+  const [clientPromoUsage, setClientPromoUsage] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const fetchClientPromoUsage = async () => {
+      if (!selectedClientId) { setClientPromoUsage({}); return; }
+      const { data } = await supabase.from('promotion_client_uses').select('auto_promo_id, uses_count').eq('client_id', selectedClientId);
+      if (data) {
+          const usage: Record<string, number> = {};
+          data.forEach((row: any) => { usage[row.auto_promo_id] = row.uses_count; });
+          setClientPromoUsage(usage);
+      } else {
+          setClientPromoUsage({});
+      }
+    };
+    fetchClientPromoUsage();
+  }, [selectedClientId]);
 
   const [productSearch, setProductSearch] = useState('');
   const [searchedProducts, setSearchedProducts] = useState<(Product & { current_stock: number })[]>([]);
@@ -360,7 +376,7 @@ export const AdvancedOrderEntry: React.FC = () => {
          Object.values(cartProductsCache), 
          [], // No full batches available here initially, we can leave empty or pass loadedBatches later
          context, 
-         {}
+         clientPromoUsage
       );
       
       setCart(newCart);

@@ -138,6 +138,22 @@ export const NewSale: React.FC = () => {
    const [selectedSellerId, setSelectedSellerId] = useState('');
 
    const [clientCreditInfo, setClientCreditInfo] = useState({ limit: 0, debt: 0, overdue: false, isChecking: false });
+   const [clientPromoUsage, setClientPromoUsage] = useState<Record<string, number>>({});
+
+   useEffect(() => {
+       const fetchClientPromoUsage = async () => {
+           if (!selectedClientId) { setClientPromoUsage({}); return; }
+           const { data } = await supabase.from('promotion_client_uses').select('auto_promo_id, uses_count').eq('client_id', selectedClientId);
+           if (data) {
+               const usage: Record<string, number> = {};
+               data.forEach((row: any) => { usage[row.auto_promo_id] = row.uses_count; });
+               setClientPromoUsage(usage);
+           } else {
+               setClientPromoUsage({});
+           }
+       };
+       fetchClientPromoUsage();
+   }, [selectedClientId]);
 
    useEffect(() => {
        if (clientSearch.length < 3) { setSearchedClients([]); return; }
@@ -588,7 +604,7 @@ export const NewSale: React.FC = () => {
          allLoadedProducts, 
          allLoadedBatches, 
          context, 
-         {} // TODO: clientPromoUsage integration
+         clientPromoUsage
       );
       
       setCart(newCart);

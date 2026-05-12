@@ -23,6 +23,22 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
   const [orderData, setOrderData] = useState<Order | null>(null);
   const [cart, setCart] = useState<any[]>([]);
   const [priceListId, setPriceListId] = useState('');
+  const [clientPromoUsage, setClientPromoUsage] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const fetchClientPromoUsage = async () => {
+      if (!orderData?.client_id) { setClientPromoUsage({}); return; }
+      const { data } = await supabase.from('promotion_client_uses').select('auto_promo_id, uses_count').eq('client_id', orderData.client_id);
+      if (data) {
+          const usage: Record<string, number> = {};
+          data.forEach((row: any) => { usage[row.auto_promo_id] = row.uses_count; });
+          setClientPromoUsage(usage);
+      } else {
+          setClientPromoUsage({});
+      }
+    };
+    fetchClientPromoUsage();
+  }, [orderData?.client_id]);
 
   useEffect(() => {
     loadOrderFullData();
@@ -123,7 +139,7 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
          dbProducts, 
          [], // No batches needed right here since it's just edit
          context, 
-         {}
+         clientPromoUsage
     );
     
     setCart(newCart);
