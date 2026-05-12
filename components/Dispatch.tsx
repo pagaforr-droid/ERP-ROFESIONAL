@@ -1391,7 +1391,7 @@ export const Dispatch: React.FC = () => {
             <div className="flex gap-6 h-full overflow-hidden">
 
                {/* LEFT PANEL: CONFIG & SUMMARY */}
-               <div className="w-80 flex flex-col gap-4">
+               <div className="w-80 flex flex-col gap-4 overflow-y-auto pr-2 pb-2 custom-scrollbar shrink-0">
                   {/* 1. Vehicle Selector */}
                   <div className="bg-white p-4 rounded-lg shadow border border-slate-200">
                      <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">1. Asignar Unidad de Transporte</label>
