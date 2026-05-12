@@ -1544,138 +1544,163 @@ export const DispatchLiquidationComp: React.FC = () => {
                         );
                      })()}
 
-                     <div className="flex-1 overflow-auto p-0">
-                        <table className="w-full text-sm text-left border-collapse">
-                           <thead className="bg-white border-b-2 border-slate-100 text-slate-500 font-bold text-[11px] sticky top-0 z-10">
-                              <tr>
-                                 <th className="p-4 uppercase">Producto Facturado</th>
-                                 <th className="p-4 uppercase text-center w-24">Cant. Original</th>
-                                 <th className="p-4 uppercase text-right w-24">Precio Unit.</th>
-                                 <th className="p-4 uppercase text-center w-64 bg-slate-50 border-x border-slate-100">CANT. DEVOLVER</th>
-                                 <th className="p-4 uppercase text-right w-32">Subtotal Dev.</th>
-                              </tr>
-                           </thead>
-                           <tbody className="divide-y divide-slate-100">
-                              {(dispatchSales.find(s => s.id === targetSaleId)?.items || []).map((item, idx) => {
-                                 const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
-                                 const entries = returnEntries[itemKey] || { boxes: 0, units: 0 };
-                                 const product = products.find(p => p.id === item.product_id);
-                                 const factor = product?.package_content || 1;
+                     {(() => {
+                        let hasExceededError = false;
+                        const saleItems = dispatchSales.find(s => s.id === targetSaleId)?.items || [];
+                        
+                        // Pre-calculate to check if there are errors
+                        saleItems.forEach((item, idx) => {
+                           const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
+                           const entries = returnEntries[itemKey] || { boxes: 0, units: 0 };
+                           const factor = products.find(p => p.id === item.product_id)?.package_content || 1;
+                           if ((entries.boxes * factor) + entries.units > item.quantity_base) {
+                              hasExceededError = true;
+                           }
+                        });
 
-                                 // Calculate Refund Preview
-                                 const returnedBase = (entries.boxes * factor) + entries.units;
-                                 const refundRatio = returnedBase / item.quantity_base;
-                                 const refundAmt = item.total_price * refundRatio;
+                        return (
+                           <>
+                              <div className="flex-1 overflow-auto p-0">
+                                 <table className="w-full text-sm text-left border-collapse">
+                                    <thead className="bg-white border-b-2 border-slate-100 text-slate-500 font-bold text-[11px] sticky top-0 z-10">
+                                       <tr>
+                                          <th className="p-4 uppercase">Producto Facturado</th>
+                                          <th className="p-4 uppercase text-center w-24">Cant. Original</th>
+                                          <th className="p-4 uppercase text-right w-24">Precio Unit.</th>
+                                          <th className="p-4 uppercase text-center w-64 bg-slate-50 border-x border-slate-100">CANT. DEVOLVER</th>
+                                          <th className="p-4 uppercase text-right w-32">Subtotal Dev.</th>
+                                       </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                       {saleItems.map((item, idx) => {
+                                          const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
+                                          const entries = returnEntries[itemKey] || { boxes: 0, units: 0 };
+                                          const product = products.find(p => p.id === item.product_id);
+                                          const factor = product?.package_content || 1;
 
-                                 return (
-                                    <tr key={itemKey} className={`hover:bg-slate-50 transition-colors ${returnedBase > 0 ? 'bg-indigo-50/30' : ''}`}>
-                                       <td className="p-4">
-                                          <div className="font-bold text-slate-800 capitalize">{item.product_name.toLowerCase()}</div>
-                                          <div className="text-[11px] text-slate-400 mt-1">{product?.sku || 'SKU'} <span className="mx-1">|</span> Factor: {factor} unds/caja</div>
-                                       </td>
-                                       <td className="p-4 text-center font-bold text-slate-700">
-                                          {item.quantity_presentation} <span className="text-[10px] text-slate-400 font-normal">{item.selected_unit}</span>
-                                       </td>
-                                       <td className="p-4 text-right text-slate-600">
-                                          S/ {item.unit_price.toFixed(2)}
-                                       </td>
+                                          // Calculate Refund Preview
+                                          const returnedBase = (entries.boxes * factor) + entries.units;
+                                          const refundRatio = returnedBase / item.quantity_base;
+                                          const refundAmt = item.total_price * refundRatio;
+                                          const isExceeding = returnedBase > item.quantity_base;
 
-                                       <td className="p-4 bg-slate-50 border-x border-slate-100">
-                                          <div className="flex flex-col gap-2">
-                                             {!item.is_bonus && (
-                                                <div className="flex items-center gap-1">
-                                                   <input
-                                                      type="number"
-                                                      min="0"
-                                                      disabled={item.selected_unit === 'UND' || item.selected_unit?.includes('BOT') || item.selected_unit?.includes('UND') || (product?.unit_type && item.selected_unit?.includes(product.unit_type))}
-                                                      className="w-16 border border-indigo-200 rounded p-1.5 text-center font-bold text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none disabled:opacity-50 disabled:bg-slate-100 cursor-auto"
-                                                      value={entries.boxes}
-                                                      onChange={e => handleReturnChange(itemKey, 'boxes', parseInt(e.target.value) || 0)}
-                                                   />
-                                                   <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1.5 rounded border border-indigo-100 font-bold min-w-[3rem] max-w-[4rem] text-center uppercase truncate" title={product?.package_type || 'CJA'}>
-                                                      {product?.package_type || 'CJA'}
-                                                   </span>
-                                                </div>
-                                             )}
-                                             <div className="flex items-center gap-1">
-                                                <input
-                                                   type="number"
-                                                   min="0"
-                                                   className="w-16 border border-indigo-200 rounded p-1.5 text-center font-bold text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none"
-                                                   value={entries.units}
-                                                   onChange={e => handleReturnChange(itemKey, 'units', parseInt(e.target.value) || 0)}
-                                                />
-                                                <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1.5 rounded border border-indigo-100 font-bold min-w-[3rem] max-w-[4rem] text-center uppercase truncate" title={product?.unit_type || 'UND'}>
-                                                      {product?.unit_type || 'UND'}
-                                                </span>
-                                             </div>
-                                          </div>
-                                       </td>
-                                       <td className="p-4 text-right font-bold text-slate-900">
-                                          S/ {refundAmt.toFixed(2)}
-                                       </td>
-                                    </tr>
-                                 );
-                              })}
-                           </tbody>
-                        </table>
-                     </div>
+                                          return (
+                                             <tr key={itemKey} className={`hover:bg-slate-50 transition-colors ${isExceeding ? 'bg-red-50/50' : (returnedBase > 0 ? 'bg-indigo-50/30' : '')}`}>
+                                                <td className="p-4">
+                                                   <div className="font-bold text-slate-800 capitalize">{item.product_name.toLowerCase()}</div>
+                                                   <div className="text-[11px] text-slate-400 mt-1">{product?.sku || 'SKU'} <span className="mx-1">|</span> Factor: {factor} unds/caja</div>
+                                                </td>
+                                                <td className="p-4 text-center font-bold text-slate-700">
+                                                   {item.quantity_presentation} <span className="text-[10px] text-slate-400 font-normal">{item.selected_unit}</span>
+                                                </td>
+                                                <td className="p-4 text-right text-slate-600">
+                                                   S/ {item.unit_price.toFixed(2)}
+                                                </td>
 
-                     <div className="p-4 bg-indigo-50/50 border-t border-indigo-100 flex justify-between items-center">
-                        <div className="flex items-center gap-4">
-                           <ShieldAlert className="w-5 h-5 text-indigo-400" />
-                           <p className="text-xs text-indigo-700 max-w-sm">
-                              La nota de crédito afectará el saldo del comprobante y devolverá el stock disponible al Kardex inmediatamente.
-                           </p>
-                        </div>
-
-                        <div className="flex items-center gap-6">
-                           <div className="flex flex-col gap-2 border-r border-indigo-200 pr-4">
-                              <div className="flex items-center gap-2">
-                                 <div className="text-[10px] font-bold text-indigo-500 uppercase w-20">Motivo</div>
-                                 <select
-                                    className="text-sm font-bold border border-indigo-200 rounded p-1 focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900 flex-1"
-                                    value={selectedNCMotivo}
-                                    onChange={(e) => setSelectedNCMotivo(e.target.value)}
-                                 >
-                                    <option value="07">07 - Devolución por ítem</option>
-                                    <option value="01">01 - Anulación de la operación</option>
-                                 </select>
+                                                <td className={`p-4 border-x border-slate-100 ${isExceeding ? 'bg-red-50' : 'bg-slate-50'}`}>
+                                                   <div className="flex flex-col gap-2 relative">
+                                                      {isExceeding && <div className="absolute -top-3 left-0 right-0 text-center text-[10px] text-red-600 font-bold animate-pulse bg-red-100/80 rounded py-0.5">⚠️ EXCEDE VENTA</div>}
+                                                      {!item.is_bonus && (
+                                                         <div className="flex items-center gap-1">
+                                                            <input
+                                                               type="number"
+                                                               min="0"
+                                                               disabled={item.selected_unit === 'UND' || item.selected_unit?.includes('BOT') || item.selected_unit?.includes('UND') || (product?.unit_type && item.selected_unit?.includes(product.unit_type))}
+                                                               className={`w-16 border rounded p-1.5 text-center font-bold outline-none disabled:opacity-50 disabled:bg-slate-100 cursor-auto focus:ring-2 ${isExceeding ? 'border-red-300 text-red-900 focus:ring-red-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`}
+                                                               value={entries.boxes}
+                                                               onChange={e => handleReturnChange(itemKey, 'boxes', parseInt(e.target.value) || 0)}
+                                                            />
+                                                            <span className={`text-xs px-2 py-1.5 rounded border font-bold min-w-[3rem] max-w-[4rem] text-center uppercase truncate ${isExceeding ? 'bg-red-50 text-red-600 border-red-100' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`} title={product?.package_type || 'CJA'}>
+                                                               {product?.package_type || 'CJA'}
+                                                            </span>
+                                                         </div>
+                                                      )}
+                                                      <div className="flex items-center gap-1">
+                                                         <input
+                                                            type="number"
+                                                            min="0"
+                                                            className={`w-16 border rounded p-1.5 text-center font-bold outline-none focus:ring-2 ${isExceeding ? 'border-red-300 text-red-900 focus:ring-red-500' : 'border-indigo-200 text-indigo-900 focus:ring-indigo-500'}`}
+                                                            value={entries.units}
+                                                            onChange={e => handleReturnChange(itemKey, 'units', parseInt(e.target.value) || 0)}
+                                                         />
+                                                         <span className={`text-xs px-2 py-1.5 rounded border font-bold min-w-[3rem] max-w-[4rem] text-center uppercase truncate ${isExceeding ? 'bg-red-50 text-red-600 border-red-100' : 'bg-indigo-50 text-indigo-600 border-indigo-100'}`} title={product?.unit_type || 'UND'}>
+                                                               {product?.unit_type || 'UND'}
+                                                         </span>
+                                                      </div>
+                                                   </div>
+                                                </td>
+                                                <td className="p-4 text-right font-bold text-slate-900">
+                                                   S/ {refundAmt.toFixed(2)}
+                                                </td>
+                                             </tr>
+                                          );
+                                       })}
+                                    </tbody>
+                                 </table>
                               </div>
-                           </div>
 
-                           <div className="text-right">
-                              <div className="text-[10px] font-bold text-indigo-500 uppercase">Destino Saldo</div>
-                              <select
-                                 className="mt-1 text-sm font-bold border border-indigo-200 rounded p-1 focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900"
-                                 value={partialBalanceType}
-                                 onChange={(e) => setPartialBalanceType(e.target.value as 'CONTADO' | 'CREDITO')}
-                              >
-                                 <option value="CONTADO">Cobrar Efectivo</option>
-                                 <option value="CREDITO">Mantener Crédito</option>
-                              </select>
-                           </div>
+                              <div className="p-4 bg-indigo-50/50 border-t border-indigo-100 flex justify-between items-center">
+                                 <div className="flex items-center gap-4">
+                                    <ShieldAlert className="w-5 h-5 text-indigo-400" />
+                                    <p className="text-xs text-indigo-700 max-w-sm">
+                                       La nota de crédito afectará el saldo del comprobante y devolverá el stock disponible al Kardex inmediatamente.
+                                    </p>
+                                 </div>
 
-                           <div className="text-right px-4 border-l border-indigo-200">
-                              <div className="text-[10px] font-bold text-indigo-500 uppercase">Monto a Devolver (Inc. IGV)</div>
-                              {(() => {
-                                 let refund = 0;
-                                 (dispatchSales.find(s => s.id === targetSaleId)?.items || []).forEach((item, idx) => {
-                                    const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
-                                    const entries = returnEntries[itemKey] || { boxes: 0, units: 0 };
-                                    const factor = products.find(p => p.id === item.product_id)?.package_content || 1;
-                                    const retBase = (entries.boxes * factor) + entries.units;
-                                    refund += (retBase / item.quantity_base) * item.total_price;
-                                 });
-                                 return <div className="font-bold text-2xl text-indigo-600">S/ {refund.toFixed(2)}</div>;
-                              })()}
-                           </div>
+                                 <div className="flex items-center gap-6">
+                                    <div className="flex flex-col gap-2 border-r border-indigo-200 pr-4">
+                                       <div className="flex items-center gap-2">
+                                          <div className="text-[10px] font-bold text-indigo-500 uppercase w-20">Motivo</div>
+                                          <select
+                                             className="text-sm font-bold border border-indigo-200 rounded p-1 focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900 flex-1"
+                                             value={selectedNCMotivo}
+                                             onChange={(e) => setSelectedNCMotivo(e.target.value)}
+                                          >
+                                             <option value="07">07 - Devolución por ítem</option>
+                                             <option value="01">01 - Anulación de la operación</option>
+                                          </select>
+                                       </div>
+                                    </div>
 
-                           <button onClick={confirmPartial} className="px-6 py-3 bg-indigo-400 text-white font-bold rounded shadow hover:bg-indigo-500 flex items-center transition-colors">
-                              <FileText className="w-4 h-4 mr-2" /> REGISTRAR DEVOLUCIÓN PARCIAL
-                           </button>
-                        </div>
-                     </div>
+                                    <div className="text-right">
+                                       <div className="text-[10px] font-bold text-indigo-500 uppercase">Destino Saldo</div>
+                                       <select
+                                          className="mt-1 text-sm font-bold border border-indigo-200 rounded p-1 focus:ring-2 focus:ring-indigo-500 outline-none text-indigo-900"
+                                          value={partialBalanceType}
+                                          onChange={(e) => setPartialBalanceType(e.target.value as 'CONTADO' | 'CREDITO')}
+                                       >
+                                          <option value="CONTADO">Cobrar Efectivo</option>
+                                          <option value="CREDITO">Mantener Crédito</option>
+                                       </select>
+                                    </div>
+
+                                    <div className="text-right px-4 border-l border-indigo-200">
+                                       <div className="text-[10px] font-bold text-indigo-500 uppercase">Monto a Devolver (Inc. IGV)</div>
+                                       {(() => {
+                                          let refund = 0;
+                                          saleItems.forEach((item, idx) => {
+                                             const itemKey = `${item.id}_${item.is_bonus ? 'bonus' : 'regular'}_${idx}`;
+                                             const entries = returnEntries[itemKey] || { boxes: 0, units: 0 };
+                                             const factor = products.find(p => p.id === item.product_id)?.package_content || 1;
+                                             const retBase = (entries.boxes * factor) + entries.units;
+                                             refund += (retBase / item.quantity_base) * item.total_price;
+                                          });
+                                          return <div className={`font-bold text-2xl ${hasExceededError ? 'text-red-500' : 'text-indigo-600'}`}>S/ {refund.toFixed(2)}</div>;
+                                       })()}
+                                    </div>
+
+                                    <button 
+                                       onClick={confirmPartial} 
+                                       disabled={hasExceededError}
+                                       className={`px-6 py-3 text-white font-bold rounded shadow flex items-center transition-colors ${hasExceededError ? 'bg-slate-400 cursor-not-allowed opacity-50' : 'bg-indigo-400 hover:bg-indigo-500'}`}
+                                    >
+                                       <FileText className="w-4 h-4 mr-2" /> REGISTRAR DEVOLUCIÓN PARCIAL
+                                    </button>
+                                 </div>
+                              </div>
+                           </>
+                        );
+                     })()}
                   </div>
                </div>
             )}
