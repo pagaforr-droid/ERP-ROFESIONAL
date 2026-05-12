@@ -67,6 +67,8 @@ export const ProductManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'DETALLE' | 'PRECIOS'>('DETALLE');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterSupplier, setFilterSupplier] = useState('');
+  const [filterCategory, setFilterCategory] = useState('');
 
   const initialFormState: Partial<Product> = {
     sku: '', barcode: '', name: '',
@@ -80,10 +82,12 @@ export const ProductManagement: React.FC = () => {
 
   const [formData, setFormData] = useState<Partial<Product>>(initialFormState);
 
-  const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.sku.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredProducts = products.filter(p => {
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.sku.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSupplier = filterSupplier ? p.supplier_id === filterSupplier : true;
+    const matchesCategory = filterCategory ? p.category === filterCategory : true;
+    return matchesSearch && matchesSupplier && matchesCategory;
+  });
 
   const handleEdit = (p: Product) => {
     setFormData({ ...p });
@@ -775,8 +779,8 @@ export const ProductManagement: React.FC = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex-1 flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-slate-200 bg-slate-50">
-          <div className="relative max-w-xl">
+        <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-wrap gap-4 items-center">
+          <div className="relative flex-1 min-w-[300px]">
             <Search className="absolute left-3 top-3 text-slate-400 w-5 h-5" />
             <input
               className="w-full pl-10 pr-4 py-2.5 border-2 border-slate-200 rounded-lg text-slate-800 shadow-inner focus:border-blue-500 outline-none font-medium"
@@ -785,6 +789,22 @@ export const ProductManagement: React.FC = () => {
               onChange={e => setSearchTerm(e.target.value)}
             />
           </div>
+          <select 
+            className="border-2 border-slate-200 rounded-lg p-2.5 outline-none focus:border-blue-500 text-slate-700 font-medium min-w-[200px]"
+            value={filterSupplier}
+            onChange={e => setFilterSupplier(e.target.value)}
+          >
+            <option value="">Todos los Proveedores</option>
+            {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <select 
+            className="border-2 border-slate-200 rounded-lg p-2.5 outline-none focus:border-blue-500 text-slate-700 font-medium uppercase min-w-[200px]"
+            value={filterCategory}
+            onChange={e => setFilterCategory(e.target.value)}
+          >
+            <option value="">Todas las Categorías</option>
+            {categories.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
         </div>
         <div className="flex-1 overflow-auto">
           <table className="w-full text-left text-sm">
