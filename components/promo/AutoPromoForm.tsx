@@ -66,7 +66,14 @@ export const AutoPromoForm: React.FC<Props> = ({ initialData, onClose, onSave })
         target_client_categories: initialData?.target_client_categories || [],
         target_price_list_ids: initialData?.target_price_list_ids || [],
         condition_product_ids: initialData?.condition_product_ids || [],
-        target_cities: initialData?.target_cities || []
+        target_cities: initialData?.target_cities || [],
+        max_reward_multiplier: initialData?.max_reward_multiplier || 0,
+        max_uses_per_client: initialData?.max_uses_per_client || 0,
+        global_reward_limit: initialData?.global_reward_limit || 0,
+        is_exclusive: initialData?.is_exclusive || false,
+        is_happy_hour: initialData?.is_happy_hour || false,
+        start_time: initialData?.start_time || '',
+        end_time: initialData?.end_time || ''
     });
 
     const [showProductSelector, setShowProductSelector] = useState(false);

@@ -147,6 +147,8 @@ export const PromoManager: React.FC = () => {
             if (payload.condition_product_id === '') payload.condition_product_id = null;
             if (payload.condition_supplier_id === '') payload.condition_supplier_id = null;
             if (payload.reward_product_id === '') payload.reward_product_id = null;
+            if (payload.start_time === '') payload.start_time = null;
+            if (payload.end_time === '') payload.end_time = null;
 
             // 2. ESCUDO VALIDADOR DE UUIDs (Evita que viajen datos "p1", "p2", etc.)
             const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
