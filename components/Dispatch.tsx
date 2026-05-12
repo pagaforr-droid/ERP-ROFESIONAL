@@ -28,7 +28,9 @@ export const Dispatch: React.FC = () => {
    const [isLoading, setIsLoading] = useState(true);
 
    const [activeTab, setActiveTab] = useState<'PROGRAMAR' | 'EN_RUTA' | 'HISTORIAL'>('PROGRAMAR');
-   const [filterDeliveryMode, setFilterDeliveryMode] = useState<'ALL' | 'REGULAR' | 'EXPRESS_MISMO_DIA'>('ALL');
+   const [filterZone, setFilterZone] = useState<string>('ALL');
+   const [filterSeller, setFilterSeller] = useState<string>('ALL');
+   const [sortBy, setSortBy] = useState<'zone_seller' | 'date_desc' | 'date_asc'>('zone_seller');
    const [selectedVehicleId, setSelectedVehicleId] = useState('');
    const [selectedSaleIds, setSelectedSaleIds] = useState<string[]>([]);
 
@@ -179,30 +181,33 @@ export const Dispatch: React.FC = () => {
                totalWeight: weight
             };
          });
-   }, [sales, clients, zones, sellers, products, filterDeliveryMode, editMode, selectedSaleIds]);
+   }, [sales, clients, zones, sellers, products, editMode, selectedSaleIds, filterDeliveryMode]);
 
-   // 2. Sort Logic: Zone -> Seller -> Date (Desc) -> Document
+   // 2. Filter & Sort Logic
    const sortedSales = useMemo(() => {
-      return [...enrichedSales].sort((a, b) => {
-         // 1. Zone
-         if (a.zoneName < b.zoneName) return -1;
-         if (a.zoneName > b.zoneName) return 1;
+      let filtered = enrichedSales;
+      if (filterZone !== 'ALL') {
+         filtered = filtered.filter(s => s.zoneName === filterZone);
+      }
+      if (filterSeller !== 'ALL') {
+         filtered = filtered.filter(s => s.sellerName === filterSeller);
+      }
 
-         // 2. Seller
-         if (a.sellerName < b.sellerName) return -1;
-         if (a.sellerName > b.sellerName) return 1;
-
-         // 3. Date (Newest first)
-         const dateA = new Date(a.created_at).getTime();
-         const dateB = new Date(b.created_at).getTime();
-         if (dateA !== dateB) return dateB - dateA;
-
-         // 4. Document
-         const docA = `${a.series}-${a.number}`;
-         const docB = `${b.series}-${b.number}`;
-         return docA.localeCompare(docB);
+      return [...filtered].sort((a, b) => {
+         if (sortBy === 'zone_seller') {
+            if (a.zoneName < b.zoneName) return -1;
+            if (a.zoneName > b.zoneName) return 1;
+            if (a.sellerName < b.sellerName) return -1;
+            if (a.sellerName > b.sellerName) return 1;
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+         } else if (sortBy === 'date_desc') {
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+         } else if (sortBy === 'date_asc') {
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+         }
+         return 0;
       });
-   }, [enrichedSales]);
+   }, [enrichedSales, filterZone, filterSeller, sortBy]);
 
    // 3. Calculate Totals for Selection
    const selectedTotals = useMemo(() => {
@@ -1420,18 +1425,49 @@ export const Dispatch: React.FC = () => {
                      )}
                   </div>
 
-                  {/* Modality Filter */}
+                  {/* Filters & Sorting */}
                   <div className="bg-white p-4 rounded-lg shadow border border-slate-200">
-                     <label className="block text-xs font-bold text-slate-600 mb-2 uppercase">Modalidad de Pedido</label>
-                     <select
-                        className="w-full border border-slate-300 rounded p-2 text-sm bg-slate-50 font-medium"
-                        value={filterDeliveryMode}
-                        onChange={e => setFilterDeliveryMode(e.target.value as any)}
-                     >
-                        <option value="ALL">Todas las Modalidades</option>
-                        <option value="REGULAR">Regulares (Siguiente día)</option>
-                        <option value="EXPRESS_MISMO_DIA">Fuera de Ruta (Mismo día)</option>
-                     </select>
+                     <label className="block text-xs font-bold text-slate-600 mb-3 uppercase">Filtros y Ordenamiento</label>
+                     <div className="space-y-3">
+                        <div>
+                           <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Vendedor</label>
+                           <select
+                              className="w-full border border-slate-300 rounded p-1.5 text-xs bg-slate-50 font-medium text-slate-700"
+                              value={filterSeller}
+                              onChange={e => setFilterSeller(e.target.value)}
+                           >
+                              <option value="ALL">Todos los Vendedores</option>
+                              {Array.from(new Set(enrichedSales.map(s => s.sellerName))).sort().map(s => (
+                                 <option key={s} value={s}>{s}</option>
+                              ))}
+                           </select>
+                        </div>
+                        <div>
+                           <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Zona de Entrega</label>
+                           <select
+                              className="w-full border border-slate-300 rounded p-1.5 text-xs bg-slate-50 font-medium text-slate-700"
+                              value={filterZone}
+                              onChange={e => setFilterZone(e.target.value)}
+                           >
+                              <option value="ALL">Todas las Zonas</option>
+                              {Array.from(new Set(enrichedSales.map(s => s.zoneName))).sort().map(z => (
+                                 <option key={z} value={z}>{z}</option>
+                              ))}
+                           </select>
+                        </div>
+                        <div className="pt-2 border-t border-slate-100">
+                           <label className="block text-[10px] font-bold text-slate-500 mb-1 uppercase">Ordenar Tabla Por</label>
+                           <select
+                              className="w-full border border-slate-300 rounded p-1.5 text-xs bg-blue-50 font-bold text-blue-800"
+                              value={sortBy}
+                              onChange={e => setSortBy(e.target.value as any)}
+                           >
+                              <option value="zone_seller">Zona y Vendedor (Agrupado)</option>
+                              <option value="date_asc">Fecha (Más Antiguos Primero)</option>
+                              <option value="date_desc">Fecha (Más Recientes Primero)</option>
+                           </select>
+                        </div>
+                     </div>
                   </div>
 
                   {/* 2. Selection Summary */}
@@ -1485,39 +1521,58 @@ export const Dispatch: React.FC = () => {
                      <table className="w-full text-left text-sm whitespace-nowrap">
                         <thead className="bg-slate-100 text-slate-700 sticky top-0 shadow-sm z-10 text-[10px] uppercase font-black">
                            <tr>
-                              <th className="py-1.5 px-2 border-b w-8 text-center"><input type="checkbox" onChange={handleSelectAll} checked={selectedSaleIds.length === sortedSales.length && sortedSales.length > 0} className="w-3.5 h-3.5 align-middle" /></th>
-                              <th className="py-1.5 px-2 border-b">Documento</th>
-                              <th className="py-1.5 px-2 border-b">Hora Proc.</th>
-                              <th className="py-1.5 px-2 border-b">Cliente</th>
-                              <th className="py-1.5 px-2 border-b">Zona</th>
-                              <th className="py-1.5 px-2 border-b">Vendedor</th>
-                              <th className="py-1.5 px-2 border-b text-right">Peso</th>
-                              <th className="py-1.5 px-2 border-b text-right">Importe</th>
+                              <th className="py-2 px-3 border-b w-8 text-center"><input type="checkbox" onChange={handleSelectAll} checked={selectedSaleIds.length === sortedSales.length && sortedSales.length > 0} className="w-4 h-4 align-middle" /></th>
+                              <th className="py-2 px-3 border-b">Documento</th>
+                              <th className="py-2 px-3 border-b">Fecha y Hora</th>
+                              <th className="py-2 px-3 border-b">Cliente</th>
+                              <th className="py-2 px-3 border-b">Vendedor / Zona</th>
+                              <th className="py-2 px-3 border-b text-right">Peso</th>
+                              <th className="py-2 px-3 border-b text-right">Importe</th>
                            </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                            {sortedSales.length === 0 ? (
                               <tr><td colSpan={7} className="p-8 text-center text-slate-400">No hay documentos pendientes para despachar.</td></tr>
                            ) : (
-                              sortedSales.map(sale => {
+                              sortedSales.map((sale, index) => {
                                  const isSelected = selectedSaleIds.includes(sale.id);
+                                 const docType = sale.document_type === 'FACTURA' ? 'FACTURA' : 'BOLETA';
+                                 const docColor = docType === 'FACTURA' ? 'bg-purple-100 text-purple-700 border-purple-200' : 'bg-cyan-100 text-cyan-700 border-cyan-200';
+                                 const isEven = index % 2 === 0;
+                                 
+                                 const saleDate = new Date(sale.created_at);
+                                 const hoursOld = (new Date().getTime() - saleDate.getTime()) / (1000 * 60 * 60);
+                                 const isOld = hoursOld > 24;
+
                                  return (
-                                    <tr key={sale.id} className={`hover:bg-slate-100 transition-colors cursor-pointer border-b border-slate-100 ${isSelected ? 'bg-indigo-50 hover:bg-indigo-100' : ''}`} onClick={() => handleToggleSale(sale.id)}>
-                                       <td className="py-1 px-2 text-center"><input type="checkbox" checked={isSelected} readOnly className="w-3.5 h-3.5 cursor-pointer align-middle" /></td>
-                                       <td className="py-1 px-2 font-black text-slate-800 text-[11px] whitespace-nowrap">
-                                          {sale.document_type.substring(0, 3)} {sale.series}-{sale.number}
+                                    <tr key={sale.id} className={`transition-colors cursor-pointer border-b ${isSelected ? 'bg-blue-50 hover:bg-blue-100 border-blue-200' : isEven ? 'bg-white hover:bg-slate-50 border-slate-100' : 'bg-slate-50/50 hover:bg-slate-100 border-slate-100'}`} onClick={() => handleToggleSale(sale.id)}>
+                                       <td className="py-2 px-3 text-center"><input type="checkbox" checked={isSelected} readOnly className="w-4 h-4 cursor-pointer align-middle" /></td>
+                                       <td className="py-2 px-3 font-black text-slate-800 text-[11px] whitespace-nowrap">
+                                          <div className="flex items-center gap-2">
+                                             <span className={`px-1.5 py-0.5 rounded text-[9px] border ${docColor}`}>
+                                                {docType}
+                                             </span>
+                                             <span>{sale.series}-{sale.number}</span>
+                                          </div>
                                           {sale.delivery_mode === 'EXPRESS_MISMO_DIA' && (
-                                             <span className="block text-[8px] bg-red-100 text-red-700 font-bold px-1 py-0.5 rounded uppercase mt-0 w-max">Fuera de Ruta</span>
+                                             <span className="inline-block text-[8px] bg-red-100 text-red-700 font-bold px-1 py-0.5 rounded uppercase mt-1">Fuera de Ruta</span>
                                           )}
                                        </td>
-                                       <td className="py-1 px-2 text-slate-600 font-bold text-[10px]">
-                                          {new Date(sale.created_at).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                       <td className="py-2 px-3 text-[10px]">
+                                          <div className="font-bold text-slate-800">{saleDate.toLocaleDateString('es-PE')}</div>
+                                          <div className="text-slate-500 font-medium">{saleDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
+                                          {isOld && <div className="text-[9px] text-amber-600 font-bold flex items-center mt-0.5"><AlertTriangle className="w-3 h-3 mr-0.5" /> +24h sin despacho</div>}
                                        </td>
-                                       <td className="py-1 px-2 text-slate-700 truncate max-w-[180px] font-bold text-[10px]" title={sale.client_name}>{sale.client_name}</td>
-                                       <td className="py-1 px-2 text-slate-500 font-bold text-[9px] uppercase">{sale.zoneName}</td>
-                                       <td className="py-1 px-2 text-slate-500 font-bold text-[9px] uppercase">{sale.sellerName.split(' ')[0]}</td>
-                                       <td className="py-1 px-2 text-right font-bold text-slate-600 text-[10px]">{sale.totalWeight > 0 ? `${sale.totalWeight.toFixed(1)} Kg` : '-'}</td>
-                                       <td className="py-1 px-2 text-right font-black text-emerald-700 text-[11px]">S/ {sale.total.toFixed(2)}</td>
+                                       <td className="py-2 px-3 text-slate-700 truncate max-w-[200px] text-[10px]">
+                                          <div className="font-bold" title={sale.client_name}>{sale.client_name}</div>
+                                          <div className="text-slate-400 text-[9px]">{sale.client_ruc}</div>
+                                       </td>
+                                       <td className="py-2 px-3">
+                                          <div className="font-bold text-slate-800 text-[10px] uppercase flex items-center gap-1"><User className="w-3 h-3 text-slate-400" /> {sale.sellerName.split(' ')[0]}</div>
+                                          <div className="inline-block px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[9px] font-bold uppercase mt-1">{sale.zoneName}</div>
+                                       </td>
+                                       <td className="py-2 px-3 text-right font-bold text-slate-600 text-[11px]">{sale.totalWeight > 0 ? `${sale.totalWeight.toFixed(1)} Kg` : '-'}</td>
+                                       <td className="py-2 px-3 text-right font-black text-emerald-700 text-[12px]">S/ {sale.total.toFixed(2)}</td>
                                     </tr>
                                  );
                               })

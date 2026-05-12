@@ -441,7 +441,7 @@ export default function App() {
                 {renderContent()}
               </div>
             ) : (
-              <div className="max-w-7xl mx-auto h-full">
+              <div className="w-full max-w-[1800px] mx-auto h-full">
                 {renderContent()}
               </div>
             )}
