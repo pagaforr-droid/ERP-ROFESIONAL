@@ -78,7 +78,18 @@ export const NewSale: React.FC = () => {
                    const rewardIds = apRes.data.map(ap => ap.reward_product_id).filter(Boolean);
                    if (rewardIds.length > 0) {
                        const { data: rpData } = await supabase.from('products').select('*').in('id', rewardIds);
-                       if (rpData) setDbRewardProducts(rpData as Product[]);
+                       if (rpData) {
+                           setDbRewardProducts(rpData as Product[]);
+                           const { data: rpBatches } = await supabase.from('batches').select('*').in('product_id', rewardIds).gt('quantity_current', 0);
+                           if (rpBatches) {
+                              const bCache: Record<string, Batch[]> = {};
+                              rpBatches.forEach(b => {
+                                 if (!bCache[b.product_id]) bCache[b.product_id] = [];
+                                 bCache[b.product_id].push(b as Batch);
+                              });
+                              setLoadedBatches(prev => ({...prev, ...bCache}));
+                           }
+                       }
                    }
                }
            } catch (e) { console.error("Error cargando maestros:", e); }
@@ -568,12 +579,14 @@ export const NewSale: React.FC = () => {
          priceListId: p_list_id,
          clientId: selectedClientId || undefined
       };
+      const allLoadedProducts = Array.from(new Set([...Object.values(cartProductsCache), ...dbRewardProducts]));
+      const allLoadedBatches = Object.values(loadedBatches).flat();
       
       const { newCart, warnings } = applyAutoPromotionsEngine(
          currentCart, 
          dbAutoPromos, 
-         products, 
-         batches, 
+         allLoadedProducts, 
+         allLoadedBatches, 
          context, 
          {} // TODO: clientPromoUsage integration
       );
