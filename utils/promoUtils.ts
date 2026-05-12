@@ -1,4 +1,5 @@
-import { Promotion, Combo, AutoPromotion } from '../types';
+import { Promotion, Combo, AutoPromotion, BatchAllocation, Batch } from '../types';
+import { allocateBatchesFIFO } from './productUtils';
 
 export const isPromoCurrentlyActive = (promo: Promotion | Combo | AutoPromotion): boolean => {
   if (!promo.is_active) return false;
@@ -235,6 +236,8 @@ export const applyAutoPromotionsEngine = (
           const conversionFactor = isPkgMode ? Number(rewardProd.package_content || 1) : 1;
           const realUnitName = isPkgMode ? `${(rewardProd.package_type || 'CAJA').toUpperCase()} / ${conversionFactor}` : `${(rewardProd.unit_type || 'UND').toUpperCase()} / 1`;
 
+          const productBatches = batches.filter(b => b.product_id === rewardProd.id && b.quantity_current > 0).sort((a, b) => new Date(a.expiration_date).getTime() - new Date(b.expiration_date).getTime());
+          
           newCart.push({ 
              id: crypto.randomUUID(), 
              sale_id: '', 
@@ -242,7 +245,7 @@ export const applyAutoPromotionsEngine = (
              product_sku: rewardProd.sku, 
              product_name: rewardProd.name, 
              quantity_base: rewardQty * conversionFactor, 
-             batch_allocations: [], 
+             batch_allocations: allocateBatchesFIFO(rewardQty * conversionFactor, productBatches), 
              quantity: rewardQty, 
              quantity_presentation: rewardQty, 
              unit_price: 0, 
