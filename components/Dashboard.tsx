@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { useStore } from '../services/store';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../services/supabase';
 import { 
   TrendingUp, TrendingDown, DollarSign, Users, Package, 
   Truck, AlertOctagon, Briefcase, Activity, Calendar, Wallet, PieChart as PieChartIcon 
@@ -9,128 +9,224 @@ import {
   PieChart, Pie, Cell, Legend, CartesianGrid 
 } from 'recharts';
 
-// Helper to check if a date string matches today's local date
-const isToday = (dateString: string) => {
-  const date = new Date(dateString);
-  const today = new Date();
-  return date.getDate() === today.getDate() &&
-         date.getMonth() === today.getMonth() &&
-         date.getFullYear() === today.getFullYear();
-};
-
 export const Dashboard: React.FC = () => {
-  const { sales, purchases, sellers, dispatchSheets, products, batches, quotas, cashMovements } = useStore();
+  const [loading, setLoading] = useState(true);
+  const [metrics, setMetrics] = useState({
+    totalSalesToday: 0,
+    todaySalesCount: 0,
+    accountsReceivable: 0,
+    accountsPayable: 0,
+    todayIncome: 0,
+    todayExpense: 0,
+    quotaDataInfo: { data: [], percentage: 0, totalSales: 0, quota: 0 },
+    sellerStats: [] as any[],
+    deliveryData: [] as any[],
+    activeRoutesCount: 0,
+    criticalStockProducts: [] as any[]
+  });
 
-  // 1. KPIs
-  const todaySales = sales.filter(s => isToday(s.created_at) && s.status !== 'canceled');
-  const totalSalesToday = todaySales.reduce((acc, s) => acc + s.total, 0);
+  const currentMonth = new Date().toISOString().substring(0, 7);
 
-  const accountsReceivable = sales.filter(s => s.status !== 'canceled').reduce((acc, s) => acc + (s.balance || 0), 0);
-  const accountsPayable = purchases.reduce((acc, p) => acc + (p.balance || 0), 0);
+  useEffect(() => {
+    const loadDashboardData = async () => {
+      try {
+        setLoading(true);
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0];
+        // Ensure we cover from the very start of the month to include timezone offsets
+        const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString();
+        
+        // 1. Fetch Sales (This month + Active Debt)
+        const { data: recentSales } = await supabase
+          .from('sales')
+          .select('id, total, balance, status, dispatch_status, created_at, seller_id')
+          .or(`created_at.gte.${startOfMonth},balance.gt.0`)
+          .neq('status', 'canceled');
+          
+        const validSales = recentSales || [];
+        
+        // Calculate Sales KPIs
+        let totalSalesToday = 0;
+        let todaySalesCount = 0;
+        let accountsReceivable = 0;
+        let totalSalesThisMonth = 0;
+        
+        validSales.forEach(s => {
+           const saleDate = new Date(s.created_at);
+           const isTodayStr = saleDate.getFullYear() === today.getFullYear() && 
+                              saleDate.getMonth() === today.getMonth() && 
+                              saleDate.getDate() === today.getDate();
+           
+           if (isTodayStr) {
+              totalSalesToday += s.total;
+              todaySalesCount++;
+           }
+           if (s.balance > 0) {
+              accountsReceivable += s.balance;
+           }
+           if (s.created_at >= startOfMonth) {
+              totalSalesThisMonth += s.total;
+           }
+        });
+        
+        // 2. Fetch Accounts Payable
+        const { data: purchases } = await supabase
+          .from('purchases')
+          .select('balance')
+          .gt('balance', 0);
+        const accountsPayable = (purchases || []).reduce((acc, p) => acc + (p.balance || 0), 0);
+        
+        // 3. Fetch Cash Movements (Today)
+        const { data: cashMovements } = await supabase
+          .from('cash_movements')
+          .select('type, amount, date')
+          .gte('date', todayStr);
+          
+        let todayIncome = 0;
+        let todayExpense = 0;
+        (cashMovements || []).forEach(c => {
+           const movDate = new Date(c.date);
+           if (movDate.getDate() === today.getDate() && movDate.getMonth() === today.getMonth()) {
+              if (c.type === 'INCOME') todayIncome += c.amount;
+              if (c.type === 'EXPENSE') todayExpense += c.amount;
+           }
+        });
+        
+        // 4. Fetch Sellers and Calculate Performance
+        const { data: sellers } = await supabase.from('sellers').select('id, name').eq('is_active', true);
+        const sellerStatsRaw = (sellers || []).map(seller => {
+           const sellerSales = validSales.filter(s => s.seller_id === seller.id);
+           const salesThisMonth = sellerSales.filter(s => s.created_at >= startOfMonth).reduce((sum, s) => sum + s.total, 0);
+           const totalDebt = sellerSales.reduce((sum, s) => sum + (s.balance || 0), 0);
+           return {
+              name: seller.name.split(' ')[0],
+              fullName: seller.name,
+              sales: salesThisMonth,
+              debt: totalDebt
+           };
+        }).sort((a, b) => b.sales - a.sales);
+        
+        // 5. Fetch Quotas
+        const { data: quotas } = await supabase.from('quotas').select('amount').eq('period', currentMonth).eq('target_type', 'GLOBAL');
+        const globalQuotaAmount = quotas && quotas.length > 0 ? quotas[0].amount : 0;
+        
+        const achieved = Math.min(totalSalesThisMonth, globalQuotaAmount || totalSalesThisMonth || 1);
+        const missing = Math.max(0, (globalQuotaAmount || 0) - totalSalesThisMonth);
 
-  const todayCashMovements = cashMovements.filter(c => isToday(c.date));
-  const todayIncome = todayCashMovements.filter(c => c.type === 'INCOME').reduce((acc, c) => acc + c.amount, 0);
-  const todayExpense = todayCashMovements.filter(c => c.type === 'EXPENSE').reduce((acc, c) => acc + c.amount, 0);
+        const quotaData = [
+          { name: 'Avance', value: achieved, color: '#8b5cf6' },
+          { name: 'Faltante', value: missing, color: '#e2e8f0' }
+        ];
+        const quotaPercentage = globalQuotaAmount > 0 
+          ? Math.min(100, Math.round((totalSalesThisMonth / globalQuotaAmount) * 100)) 
+          : (totalSalesThisMonth > 0 ? 100 : 0);
+        
+        const quotaDataInfo = { data: quotaData, percentage: quotaPercentage, totalSales: totalSalesThisMonth, quota: globalQuotaAmount };
+        
+        // 6. Delivery Status
+        const { data: dispatchSheets } = await supabase
+          .from('dispatch_sheets')
+          .select('id, status, sale_ids')
+          .gte('date', todayStr)
+          .neq('status', 'canceled');
+          
+        let pendingCount = 0;
+        let inTransitCount = 0;
+        let deliveredCount = 0;
+        let partialCount = 0;
+        
+        const dispatchSaleIds = (dispatchSheets || []).flatMap(d => d.sale_ids || []);
+        
+        if (dispatchSaleIds.length > 0) {
+           const { data: dispatchSales } = await supabase
+              .from('sales')
+              .select('dispatch_status')
+              .in('id', dispatchSaleIds);
+              
+           (dispatchSales || []).forEach(s => {
+               if (s.dispatch_status === 'pending' || s.dispatch_status === 'assigned') pendingCount++;
+               else if (s.dispatch_status === 'in_transit') inTransitCount++;
+               else if (s.dispatch_status === 'delivered' || s.dispatch_status === 'liquidated') deliveredCount++;
+               else if (s.dispatch_status === 'partial' || s.dispatch_status === 'failed') partialCount++;
+           });
+        }
+        
+        const activeRoutesCount = (dispatchSheets || []).filter(d => d.status === 'in_transit' || d.status === 'pending').length;
+        
+        const deliveryData = [
+          { name: 'Entregados', value: deliveredCount, color: '#10b981' },
+          { name: 'En Ruta', value: inTransitCount, color: '#3b82f6' },
+          { name: 'Pendientes', value: pendingCount, color: '#f59e0b' },
+          { name: 'Fallidos', value: partialCount, color: '#ef4444' }
+        ].filter(d => d.value > 0);
+        
+        // 7. Critical Stock
+        const { data: products } = await supabase.from('products').select('id, name, sku, category, package_content, package_type').eq('is_active', true);
+        const { data: batches } = await supabase.from('batches').select('product_id, quantity_current, warehouse_id').neq('warehouse_id', 'MERMAS');
+        
+        const criticalStockProductsRaw = (products || []).map(p => {
+           const totalStockUnits = (batches || [])
+              .filter(b => b.product_id === p.id)
+              .reduce((sum, b) => sum + b.quantity_current, 0);
+              
+           const factor = p.package_content || 1;
+           const stockBoxes = totalStockUnits / factor;
+           return {
+              ...p,
+              stockUnits: totalStockUnits,
+              stockBoxes
+           };
+        }).filter(p => p.stockBoxes < 10)
+          .sort((a, b) => a.stockBoxes - b.stockBoxes);
 
-  // 2. Seller Performance & Debt (Current Month)
-  const currentMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
-  const sellerStats = useMemo(() => {
-    return sellers.map(seller => {
-      const sellerSales = sales.filter(s => s.seller_id === seller.id && s.status !== 'canceled');
-      const salesThisMonth = sellerSales.filter(s => s.created_at.startsWith(currentMonth)).reduce((sum, s) => sum + s.total, 0);
-      const totalDebt = sellerSales.reduce((sum, s) => sum + (s.balance || 0), 0);
-      return {
-        name: seller.name.split(' ')[0], // First name for chart fit
-        fullName: seller.name,
-        sales: salesThisMonth,
-        debt: totalDebt
-      };
-    }).sort((a, b) => b.sales - a.sales);
-  }, [sellers, sales, currentMonth]);
-
-  // 3. Delivery Status (Dispatch Sheets of today)
-  const deliveryData = useMemo(() => {
-    const todayDispatches = dispatchSheets.filter(d => isToday(d.date) && d.status !== 'canceled');
-    let pendingCount = 0;
-    let inTransitCount = 0;
-    let deliveredCount = 0;
-    let partialCount = 0;
-
-    todayDispatches.forEach(d => {
-       d.sale_ids.forEach(saleId => {
-          const s = sales.find(x => x.id === saleId && x.status !== 'canceled');
-          if (s) {
-             if (s.dispatch_status === 'pending' || s.dispatch_status === 'assigned') pendingCount++;
-             else if (s.dispatch_status === 'in_transit') inTransitCount++;
-             else if (s.dispatch_status === 'delivered' || s.dispatch_status === 'liquidated') deliveredCount++;
-             else if (s.dispatch_status === 'partial' || s.dispatch_status === 'failed') partialCount++;
-          }
-       });
-    });
-
-    return [
-      { name: 'Entregados', value: deliveredCount, color: '#10b981' },
-      { name: 'En Ruta', value: inTransitCount, color: '#3b82f6' },
-      { name: 'Pendientes', value: pendingCount, color: '#f59e0b' },
-      { name: 'Fallidos', value: partialCount, color: '#ef4444' }
-    ].filter(d => d.value > 0);
-  }, [dispatchSheets, sales]);
-
-  // 4. Company Quota vs Total Sales this month
-  const quotaDataInfo = useMemo(() => {
-    const globalQuotaObj = quotas.find(q => q.period === currentMonth && q.target_type === 'GLOBAL');
-    const globalQuotaAmount = globalQuotaObj ? globalQuotaObj.amount : 0;
+        // Update State
+        setMetrics({
+           totalSalesToday,
+           todaySalesCount,
+           accountsReceivable,
+           accountsPayable,
+           todayIncome,
+           todayExpense,
+           quotaDataInfo,
+           sellerStats: sellerStatsRaw,
+           deliveryData,
+           activeRoutesCount,
+           criticalStockProducts: criticalStockProductsRaw
+        });
+        
+      } catch (err) {
+         console.error("Error loading dashboard data:", err);
+      } finally {
+         setLoading(false);
+      }
+    };
     
-    const totalSalesThisMonth = sales
-      .filter(s => s.created_at.startsWith(currentMonth) && s.status !== 'canceled')
-      .reduce((acc, s) => acc + s.total, 0);
+    loadDashboardData();
+  }, [currentMonth]);
 
-    const achieved = Math.min(totalSalesThisMonth, globalQuotaAmount || totalSalesThisMonth || 1);
-    const missing = Math.max(0, (globalQuotaAmount || 0) - totalSalesThisMonth);
-
-    const quotaData = [
-      { name: 'Avance', value: achieved, color: '#8b5cf6' },
-      { name: 'Faltante', value: missing, color: '#e2e8f0' }
-    ];
-
-    const quotaPercentage = globalQuotaAmount > 0 
-      ? Math.min(100, Math.round((totalSalesThisMonth / globalQuotaAmount) * 100)) 
-      : (totalSalesThisMonth > 0 ? 100 : 0);
-
-    return { data: quotaData, percentage: quotaPercentage, totalSales: totalSalesThisMonth, quota: globalQuotaAmount };
-  }, [quotas, sales, currentMonth]);
-
-  // 5. Critical Stock (< 10 boxes)
-  const criticalStockProducts = useMemo(() => {
-    return products.map(p => {
-      const totalStockUnits = batches
-        .filter(b => b.product_id === p.id && b.warehouse_id !== 'MERMAS')
-        .reduce((sum, b) => sum + b.quantity_current, 0);
-      
-      const factor = p.package_content || 1;
-      const stockInBoxes = totalStockUnits / factor;
-      
-      return {
-        ...p,
-        stockUnits: totalStockUnits,
-        stockBoxes: stockInBoxes
-      };
-    }).filter(p => p.stockBoxes < 10 && p.is_active)
-      .sort((a, b) => a.stockBoxes - b.stockBoxes);
-  }, [products, batches]);
-
-  // Formatting Helpers
   const formatCurrency = (val: number) => `S/ ${val.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const activeRoutesCount = dispatchSheets.filter(d => (d.status === 'in_transit' || d.status === 'pending') && isToday(d.date)).length;
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="flex flex-col items-center">
+          <svg className="animate-spin h-10 w-10 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span className="text-slate-500 font-medium animate-pulse">Conectando con Supabase...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 pb-12 animate-fade-in">
-      
       {/* Header Section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Dashboard Estratégico</h2>
-          <p className="text-sm text-slate-500">Resumen en tiempo real de operaciones y métricas clave.</p>
+          <p className="text-sm text-slate-500">Resumen en tiempo real de operaciones y métricas clave conectadas a Supabase.</p>
         </div>
         <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-lg border border-indigo-100">
           <Calendar className="h-5 w-5 text-indigo-500" />
@@ -154,8 +250,8 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
           <div className="relative z-10">
-            <p className="text-3xl font-bold text-slate-900">{formatCurrency(totalSalesToday)}</p>
-            <p className="text-xs text-slate-500 mt-1">{todaySales.length} comprobantes emitidos</p>
+            <p className="text-3xl font-bold text-slate-900">{formatCurrency(metrics.totalSalesToday)}</p>
+            <p className="text-xs text-slate-500 mt-1">{metrics.todaySalesCount} comprobantes emitidos</p>
           </div>
         </div>
 
@@ -171,7 +267,7 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
           <div className="relative z-10">
-            <p className="text-3xl font-bold text-blue-700">{formatCurrency(accountsReceivable)}</p>
+            <p className="text-3xl font-bold text-blue-700">{formatCurrency(metrics.accountsReceivable)}</p>
             <p className="text-xs text-slate-500 mt-1">Deuda acumulada activa</p>
           </div>
         </div>
@@ -188,7 +284,7 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
           <div className="relative z-10">
-            <p className="text-3xl font-bold text-rose-700">{formatCurrency(accountsPayable)}</p>
+            <p className="text-3xl font-bold text-rose-700">{formatCurrency(metrics.accountsPayable)}</p>
             <p className="text-xs text-slate-500 mt-1">Obligaciones pendientes</p>
           </div>
         </div>
@@ -205,11 +301,11 @@ export const Dashboard: React.FC = () => {
             </div>
           </div>
           <div className="relative z-10">
-            <p className="text-2xl font-bold text-slate-900">{formatCurrency(todayIncome - todayExpense)}</p>
+            <p className="text-2xl font-bold text-slate-900">{formatCurrency(metrics.todayIncome - metrics.todayExpense)}</p>
             <div className="flex gap-2 text-xs mt-1">
-              <span className="text-emerald-600">+{formatCurrency(todayIncome)}</span>
+              <span className="text-emerald-600">+{formatCurrency(metrics.todayIncome)}</span>
               <span className="text-slate-300">|</span>
-              <span className="text-rose-600">-{formatCurrency(todayExpense)}</span>
+              <span className="text-rose-600">-{formatCurrency(metrics.todayExpense)}</span>
             </div>
           </div>
         </div>
@@ -232,7 +328,7 @@ export const Dashboard: React.FC = () => {
              <ResponsiveContainer width="100%" height="100%">
                <PieChart>
                  <Pie
-                   data={quotaDataInfo.data}
+                   data={metrics.quotaDataInfo.data}
                    cx="50%"
                    cy="50%"
                    innerRadius={60}
@@ -241,7 +337,7 @@ export const Dashboard: React.FC = () => {
                    dataKey="value"
                    stroke="none"
                  >
-                   {quotaDataInfo.data.map((entry, index) => (
+                   {metrics.quotaDataInfo.data.map((entry: any, index: number) => (
                      <Cell key={`cell-${index}`} fill={entry.color} />
                    ))}
                  </Pie>
@@ -249,18 +345,18 @@ export const Dashboard: React.FC = () => {
                </PieChart>
              </ResponsiveContainer>
              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-3xl font-black text-slate-800">{quotaDataInfo.percentage}%</span>
+                <span className="text-3xl font-black text-slate-800">{metrics.quotaDataInfo.percentage}%</span>
                 <span className="text-xs font-medium text-slate-500 uppercase tracking-widest">Meta</span>
              </div>
           </div>
           <div className="mt-4 flex justify-between items-center text-sm border-t border-slate-100 pt-4">
             <div>
               <p className="text-slate-500">Ventas Mes</p>
-              <p className="font-bold text-indigo-700">{formatCurrency(quotaDataInfo.totalSales)}</p>
+              <p className="font-bold text-indigo-700">{formatCurrency(metrics.quotaDataInfo.totalSales)}</p>
             </div>
             <div className="text-right">
               <p className="text-slate-500">Meta Global</p>
-              <p className="font-bold text-slate-800">{quotaDataInfo.quota > 0 ? formatCurrency(quotaDataInfo.quota) : 'No definida'}</p>
+              <p className="font-bold text-slate-800">{metrics.quotaDataInfo.quota > 0 ? formatCurrency(metrics.quotaDataInfo.quota) : 'No definida'}</p>
             </div>
           </div>
         </div>
@@ -276,7 +372,7 @@ export const Dashboard: React.FC = () => {
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
-                data={sellerStats.slice(0, 10)} // Top 10 sellers
+                data={metrics.sellerStats.slice(0, 10)}
                 margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
               >
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -309,16 +405,16 @@ export const Dashboard: React.FC = () => {
               Estado de Reparto
             </h3>
             <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
-              {activeRoutesCount} Rutas Activas
+              {metrics.activeRoutesCount} Rutas Activas
             </span>
           </div>
           
-          {deliveryData.length > 0 ? (
+          {metrics.deliveryData.length > 0 ? (
             <div className="h-52">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={deliveryData}
+                    data={metrics.deliveryData}
                     cx="50%"
                     cy="50%"
                     innerRadius={50}
@@ -327,7 +423,7 @@ export const Dashboard: React.FC = () => {
                     dataKey="value"
                     stroke="none"
                   >
-                    {deliveryData.map((entry, index) => (
+                    {metrics.deliveryData.map((entry: any, index: number) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
@@ -356,7 +452,7 @@ export const Dashboard: React.FC = () => {
           <p className="text-sm text-slate-500 mb-4">Productos que requieren reposición inmediata (por debajo del límite crítico).</p>
           
           <div className="flex-1 overflow-auto rounded-lg border border-slate-100 bg-slate-50">
-            {criticalStockProducts.length > 0 ? (
+            {metrics.criticalStockProducts.length > 0 ? (
               <table className="w-full text-left text-sm">
                 <thead className="bg-slate-100 text-slate-600 sticky top-0 shadow-sm">
                   <tr>
@@ -367,7 +463,7 @@ export const Dashboard: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {criticalStockProducts.slice(0, 8).map(prod => (
+                  {metrics.criticalStockProducts.slice(0, 8).map(prod => (
                     <tr key={prod.id} className="bg-white hover:bg-rose-50/50 transition-colors">
                       <td className="py-3 px-4">
                         <p className="font-medium text-slate-800">{prod.name}</p>
@@ -394,9 +490,9 @@ export const Dashboard: React.FC = () => {
               </div>
             )}
           </div>
-          {criticalStockProducts.length > 8 && (
+          {metrics.criticalStockProducts.length > 8 && (
             <p className="text-xs text-slate-500 text-center mt-3 font-medium">
-              + {criticalStockProducts.length - 8} productos más en estado crítico. Revisa el reporte de inventario.
+              + {metrics.criticalStockProducts.length - 8} productos más en estado crítico. Revisa el reporte de inventario.
             </p>
           )}
         </div>
