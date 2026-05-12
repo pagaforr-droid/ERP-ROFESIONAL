@@ -1,111 +1,406 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useStore } from '../services/store';
-import { TrendingUp, Package, Truck, AlertOctagon } from 'lucide-react';
+import { 
+  TrendingUp, TrendingDown, DollarSign, Users, Package, 
+  Truck, AlertOctagon, Briefcase, Activity, Calendar, Wallet, PieChart as PieChartIcon 
+} from 'lucide-react';
+import { 
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
+  PieChart, Pie, Cell, Legend, CartesianGrid 
+} from 'recharts';
+
+// Helper to check if a date string matches today's local date
+const isToday = (dateString: string) => {
+  const date = new Date(dateString);
+  const today = new Date();
+  return date.getDate() === today.getDate() &&
+         date.getMonth() === today.getMonth() &&
+         date.getFullYear() === today.getFullYear();
+};
 
 export const Dashboard: React.FC = () => {
-  const { sales, dispatchSheets, products, batches } = useStore();
+  const { sales, purchases, sellers, dispatchSheets, products, batches, quotas, cashMovements } = useStore();
 
-  const totalSales = sales.reduce((acc, s) => acc + s.total, 0);
-  const activeRoutes = dispatchSheets.filter(d => d.status === 'in_transit' || d.status === 'pending').length;
-  
-  // Low Stock Logic (Total stock across all batches)
-  const lowStockProducts = products.filter(p => {
-    const totalStock = batches
-      .filter(b => b.product_id === p.id)
-      .reduce((sum, b) => sum + b.quantity_current, 0);
-    return totalStock < p.min_stock;
-  });
+  // 1. KPIs
+  const todaySales = sales.filter(s => isToday(s.created_at) && s.status !== 'canceled');
+  const totalSalesToday = todaySales.reduce((acc, s) => acc + s.total, 0);
+
+  const accountsReceivable = sales.filter(s => s.status !== 'canceled').reduce((acc, s) => acc + (s.balance || 0), 0);
+  const accountsPayable = purchases.reduce((acc, p) => acc + (p.balance || 0), 0);
+
+  const todayCashMovements = cashMovements.filter(c => isToday(c.date));
+  const todayIncome = todayCashMovements.filter(c => c.type === 'INCOME').reduce((acc, c) => acc + c.amount, 0);
+  const todayExpense = todayCashMovements.filter(c => c.type === 'EXPENSE').reduce((acc, c) => acc + c.amount, 0);
+
+  // 2. Seller Performance & Debt (Current Month)
+  const currentMonth = new Date().toISOString().substring(0, 7); // YYYY-MM
+  const sellerStats = useMemo(() => {
+    return sellers.map(seller => {
+      const sellerSales = sales.filter(s => s.seller_id === seller.id && s.status !== 'canceled');
+      const salesThisMonth = sellerSales.filter(s => s.created_at.startsWith(currentMonth)).reduce((sum, s) => sum + s.total, 0);
+      const totalDebt = sellerSales.reduce((sum, s) => sum + (s.balance || 0), 0);
+      return {
+        name: seller.name.split(' ')[0], // First name for chart fit
+        fullName: seller.name,
+        sales: salesThisMonth,
+        debt: totalDebt
+      };
+    }).sort((a, b) => b.sales - a.sales);
+  }, [sellers, sales, currentMonth]);
+
+  // 3. Delivery Status (Dispatch Sheets of today)
+  const deliveryData = useMemo(() => {
+    const todayDispatches = dispatchSheets.filter(d => isToday(d.date) && d.status !== 'canceled');
+    let pendingCount = 0;
+    let inTransitCount = 0;
+    let deliveredCount = 0;
+    let partialCount = 0;
+
+    todayDispatches.forEach(d => {
+       d.sale_ids.forEach(saleId => {
+          const s = sales.find(x => x.id === saleId && x.status !== 'canceled');
+          if (s) {
+             if (s.dispatch_status === 'pending' || s.dispatch_status === 'assigned') pendingCount++;
+             else if (s.dispatch_status === 'in_transit') inTransitCount++;
+             else if (s.dispatch_status === 'delivered' || s.dispatch_status === 'liquidated') deliveredCount++;
+             else if (s.dispatch_status === 'partial' || s.dispatch_status === 'failed') partialCount++;
+          }
+       });
+    });
+
+    return [
+      { name: 'Entregados', value: deliveredCount, color: '#10b981' },
+      { name: 'En Ruta', value: inTransitCount, color: '#3b82f6' },
+      { name: 'Pendientes', value: pendingCount, color: '#f59e0b' },
+      { name: 'Fallidos', value: partialCount, color: '#ef4444' }
+    ].filter(d => d.value > 0);
+  }, [dispatchSheets, sales]);
+
+  // 4. Company Quota vs Total Sales this month
+  const quotaDataInfo = useMemo(() => {
+    const globalQuotaObj = quotas.find(q => q.period === currentMonth && q.target_type === 'GLOBAL');
+    const globalQuotaAmount = globalQuotaObj ? globalQuotaObj.amount : 0;
+    
+    const totalSalesThisMonth = sales
+      .filter(s => s.created_at.startsWith(currentMonth) && s.status !== 'canceled')
+      .reduce((acc, s) => acc + s.total, 0);
+
+    const achieved = Math.min(totalSalesThisMonth, globalQuotaAmount || totalSalesThisMonth || 1);
+    const missing = Math.max(0, (globalQuotaAmount || 0) - totalSalesThisMonth);
+
+    const quotaData = [
+      { name: 'Avance', value: achieved, color: '#8b5cf6' },
+      { name: 'Faltante', value: missing, color: '#e2e8f0' }
+    ];
+
+    const quotaPercentage = globalQuotaAmount > 0 
+      ? Math.min(100, Math.round((totalSalesThisMonth / globalQuotaAmount) * 100)) 
+      : (totalSalesThisMonth > 0 ? 100 : 0);
+
+    return { data: quotaData, percentage: quotaPercentage, totalSales: totalSalesThisMonth, quota: globalQuotaAmount };
+  }, [quotas, sales, currentMonth]);
+
+  // 5. Critical Stock (< 10 boxes)
+  const criticalStockProducts = useMemo(() => {
+    return products.map(p => {
+      const totalStockUnits = batches
+        .filter(b => b.product_id === p.id && b.warehouse_id !== 'MERMAS')
+        .reduce((sum, b) => sum + b.quantity_current, 0);
+      
+      const factor = p.package_content || 1;
+      const stockInBoxes = totalStockUnits / factor;
+      
+      return {
+        ...p,
+        stockUnits: totalStockUnits,
+        stockBoxes: stockInBoxes
+      };
+    }).filter(p => p.stockBoxes < 10 && p.is_active)
+      .sort((a, b) => a.stockBoxes - b.stockBoxes);
+  }, [products, batches]);
+
+  // Formatting Helpers
+  const formatCurrency = (val: number) => `S/ ${val.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const activeRoutesCount = dispatchSheets.filter(d => (d.status === 'in_transit' || d.status === 'pending') && isToday(d.date)).length;
 
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-slate-800">Panel Principal</h2>
+    <div className="space-y-6 pb-12 animate-fade-in">
       
-      {/* KPI Cards */}
+      {/* Header Section */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Dashboard Estratégico</h2>
+          <p className="text-sm text-slate-500">Resumen en tiempo real de operaciones y métricas clave.</p>
+        </div>
+        <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-lg border border-indigo-100">
+          <Calendar className="h-5 w-5 text-indigo-500" />
+          <span className="font-medium text-indigo-700">
+            {new Date().toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+          </span>
+        </div>
+      </div>
+      
+      {/* 1. KPIs Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-slate-500">Ventas Totales</p>
-              <p className="text-2xl font-bold text-slate-900">S/ {totalSales.toFixed(2)}</p>
+        {/* Ventas Hoy */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+            <Activity className="h-16 w-16 text-emerald-500" />
+          </div>
+          <div className="flex items-center justify-between mb-4 relative z-10">
+            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Ventas de Hoy</h3>
+            <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600">
+              <TrendingUp className="h-5 w-5" />
             </div>
-            <div className="p-2 bg-green-100 rounded-full">
-              <TrendingUp className="h-6 w-6 text-green-600" />
-            </div>
+          </div>
+          <div className="relative z-10">
+            <p className="text-3xl font-bold text-slate-900">{formatCurrency(totalSalesToday)}</p>
+            <p className="text-xs text-slate-500 mt-1">{todaySales.length} comprobantes emitidos</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-slate-500">Rutas Activas</p>
-              <p className="text-2xl font-bold text-slate-900">{activeRoutes}</p>
+        {/* Cuentas por Cobrar */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+            <Briefcase className="h-16 w-16 text-blue-500" />
+          </div>
+          <div className="flex items-center justify-between mb-4 relative z-10">
+            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Por Cobrar (Clientes)</h3>
+            <div className="p-2 bg-blue-100 rounded-lg text-blue-600">
+              <Users className="h-5 w-5" />
             </div>
-            <div className="p-2 bg-blue-100 rounded-full">
-              <Truck className="h-6 w-6 text-blue-600" />
-            </div>
+          </div>
+          <div className="relative z-10">
+            <p className="text-3xl font-bold text-blue-700">{formatCurrency(accountsReceivable)}</p>
+            <p className="text-xs text-slate-500 mt-1">Deuda acumulada activa</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-slate-500">Alertas Stock Bajo</p>
-              <p className="text-2xl font-bold text-red-600">{lowStockProducts.length}</p>
+        {/* Cuentas por Pagar */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+            <Package className="h-16 w-16 text-rose-500" />
+          </div>
+          <div className="flex items-center justify-between mb-4 relative z-10">
+            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Por Pagar (Prov.)</h3>
+            <div className="p-2 bg-rose-100 rounded-lg text-rose-600">
+              <TrendingDown className="h-5 w-5" />
             </div>
-            <div className="p-2 bg-red-100 rounded-full">
-              <AlertOctagon className="h-6 w-6 text-red-600" />
-            </div>
+          </div>
+          <div className="relative z-10">
+            <p className="text-3xl font-bold text-rose-700">{formatCurrency(accountsPayable)}</p>
+            <p className="text-xs text-slate-500 mt-1">Obligaciones pendientes</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-slate-500">Lotes Activos</p>
-              <p className="text-2xl font-bold text-slate-900">{batches.filter(b => b.quantity_current > 0).length}</p>
+        {/* Movimiento Caja Hoy */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-shadow relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+            <Wallet className="h-16 w-16 text-violet-500" />
+          </div>
+          <div className="flex items-center justify-between mb-4 relative z-10">
+            <h3 className="text-sm font-semibold text-slate-500 uppercase tracking-wider">Flujo Caja (Hoy)</h3>
+            <div className="p-2 bg-violet-100 rounded-lg text-violet-600">
+              <DollarSign className="h-5 w-5" />
             </div>
-            <div className="p-2 bg-purple-100 rounded-full">
-              <Package className="h-6 w-6 text-purple-600" />
+          </div>
+          <div className="relative z-10">
+            <p className="text-2xl font-bold text-slate-900">{formatCurrency(todayIncome - todayExpense)}</p>
+            <div className="flex gap-2 text-xs mt-1">
+              <span className="text-emerald-600">+{formatCurrency(todayIncome)}</span>
+              <span className="text-slate-300">|</span>
+              <span className="text-rose-600">-{formatCurrency(todayExpense)}</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tables Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
-          <h3 className="font-semibold text-slate-800 mb-4">Ventas Recientes</h3>
-          <ul className="space-y-3">
-            {sales.slice(0, 5).map(sale => (
-              <li key={sale.id} className="flex justify-between items-center border-b border-slate-100 pb-2 last:border-0">
-                <div>
-                  <p className="font-medium text-slate-900">{sale.client_name}</p>
-                  <p className="text-xs text-slate-500">{new Date(sale.created_at).toLocaleDateString()} - {sale.document_type} {sale.number}</p>
-                </div>
-                <div className="text-right">
-                  <p className="font-mono font-medium">S/ {sale.total.toFixed(2)}</p>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${sale.dispatch_status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
-                    {sale.dispatch_status === 'pending' ? 'Pendiente' : 'Entregado'}
-                  </span>
-                </div>
-              </li>
-            ))}
-            {sales.length === 0 && <li className="text-slate-400 text-sm">No hay ventas recientes.</li>}
-          </ul>
+      {/* 2. Charts Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Company Quota Pie Chart */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 lg:col-span-1 flex flex-col justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <PieChartIcon className="h-5 w-5 text-indigo-500" />
+              Avance de Cuota ({currentMonth})
+            </h3>
+            <p className="text-sm text-slate-500 mb-6">Progreso global de ventas frente a la meta mensual.</p>
+          </div>
+          
+          <div className="h-64 relative flex items-center justify-center">
+             <ResponsiveContainer width="100%" height="100%">
+               <PieChart>
+                 <Pie
+                   data={quotaDataInfo.data}
+                   cx="50%"
+                   cy="50%"
+                   innerRadius={60}
+                   outerRadius={80}
+                   paddingAngle={5}
+                   dataKey="value"
+                   stroke="none"
+                 >
+                   {quotaDataInfo.data.map((entry, index) => (
+                     <Cell key={`cell-${index}`} fill={entry.color} />
+                   ))}
+                 </Pie>
+                 <Tooltip formatter={(value: number) => formatCurrency(value)} />
+               </PieChart>
+             </ResponsiveContainer>
+             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-3xl font-black text-slate-800">{quotaDataInfo.percentage}%</span>
+                <span className="text-xs font-medium text-slate-500 uppercase tracking-widest">Meta</span>
+             </div>
+          </div>
+          <div className="mt-4 flex justify-between items-center text-sm border-t border-slate-100 pt-4">
+            <div>
+              <p className="text-slate-500">Ventas Mes</p>
+              <p className="font-bold text-indigo-700">{formatCurrency(quotaDataInfo.totalSales)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-slate-500">Meta Global</p>
+              <p className="font-bold text-slate-800">{quotaDataInfo.quota > 0 ? formatCurrency(quotaDataInfo.quota) : 'No definida'}</p>
+            </div>
+          </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
-          <h3 className="font-semibold text-slate-800 mb-4">Alertas de Stock</h3>
-          <ul className="space-y-3">
-            {lowStockProducts.slice(0, 5).map(prod => (
-              <li key={prod.id} className="flex justify-between items-center bg-red-50 p-2 rounded">
-                <span className="text-sm font-medium text-slate-700">{prod.name}</span>
-                <span className="text-xs font-bold text-red-600">Stock Bajo</span>
-              </li>
-            ))}
-             {lowStockProducts.length === 0 && <li className="text-slate-400 text-sm">Niveles de inventario saludables.</li>}
-          </ul>
+        {/* Sellers Performance Bar Chart */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 lg:col-span-2">
+          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2">
+            <Users className="h-5 w-5 text-blue-500" />
+            Rendimiento y Deuda por Vendedor ({currentMonth})
+          </h3>
+          <p className="text-sm text-slate-500 mb-6">Comparativa de ventas mensuales vs deuda acumulada histórica.</p>
+          
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={sellerStats.slice(0, 10)} // Top 10 sellers
+                margin={{ top: 20, right: 30, left: 20, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                <YAxis yAxisId="left" orientation="left" stroke="#3b82f6" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(val) => \`S/\${val/1000}k\`} />
+                <YAxis yAxisId="right" orientation="right" stroke="#ef4444" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(val) => \`S/\${val/1000}k\`} />
+                <Tooltip 
+                  cursor={{fill: '#f1f5f9'}}
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value: number) => formatCurrency(value)}
+                />
+                <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
+                <Bar yAxisId="left" dataKey="sales" name="Ventas (Mes)" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                <Bar yAxisId="right" dataKey="debt" name="Deuda (Total)" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={50} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
+
+      </div>
+
+      {/* 3. Bottom Row: Delivery Progress & Alerts */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* Delivery Status */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+              <Truck className="h-5 w-5 text-emerald-500" />
+              Estado de Reparto
+            </h3>
+            <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
+              {activeRoutesCount} Rutas Activas
+            </span>
+          </div>
+          
+          {deliveryData.length > 0 ? (
+            <div className="h-52">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={deliveryData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={70}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {deliveryData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    itemStyle={{ color: '#1e293b', fontWeight: 'bold' }}
+                  />
+                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="h-52 flex flex-col items-center justify-center text-slate-400">
+              <Truck className="h-10 w-10 mb-2 opacity-50" />
+              <p className="text-sm">No hay despachos programados hoy.</p>
+            </div>
+          )}
+        </div>
+
+        {/* Critical Stock */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 lg:col-span-2 flex flex-col">
+          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2 mb-2">
+            <AlertOctagon className="h-5 w-5 text-rose-500" />
+            Stock Crítico ({'< 10 Cajas'})
+          </h3>
+          <p className="text-sm text-slate-500 mb-4">Productos que requieren reposición inmediata (por debajo del límite crítico).</p>
+          
+          <div className="flex-1 overflow-auto rounded-lg border border-slate-100 bg-slate-50">
+            {criticalStockProducts.length > 0 ? (
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-100 text-slate-600 sticky top-0 shadow-sm">
+                  <tr>
+                    <th className="py-3 px-4 font-semibold">Producto</th>
+                    <th className="py-3 px-4 font-semibold">Categoría</th>
+                    <th className="py-3 px-4 font-semibold text-right">Stock Físico</th>
+                    <th className="py-3 px-4 font-semibold text-center">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {criticalStockProducts.slice(0, 8).map(prod => (
+                    <tr key={prod.id} className="bg-white hover:bg-rose-50/50 transition-colors">
+                      <td className="py-3 px-4">
+                        <p className="font-medium text-slate-800">{prod.name}</p>
+                        <p className="text-xs text-slate-400">SKU: {prod.sku}</p>
+                      </td>
+                      <td className="py-3 px-4 text-slate-600">{prod.category}</td>
+                      <td className="py-3 px-4 text-right">
+                        <p className="font-bold text-slate-800">{prod.stockBoxes.toFixed(1)} {prod.package_type || 'Cajas'}</p>
+                        <p className="text-xs text-slate-500">({prod.stockUnits} un.)</p>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`text-xs font-bold px-2 py-1 rounded-full ${prod.stockBoxes <= 0 ? 'bg-rose-100 text-rose-700' : 'bg-orange-100 text-orange-700'}`}>
+                          {prod.stockBoxes <= 0 ? 'Agotado' : 'Por Agotar'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 py-10">
+                <Package className="h-10 w-10 mb-2 opacity-50" />
+                <p className="text-sm">Todos los productos tienen niveles de inventario saludables.</p>
+              </div>
+            )}
+          </div>
+          {criticalStockProducts.length > 8 && (
+            <p className="text-xs text-slate-500 text-center mt-3 font-medium">
+              + {criticalStockProducts.length - 8} productos más en estado crítico. Revisa el reporte de inventario.
+            </p>
+          )}
+        </div>
+
       </div>
     </div>
   );
