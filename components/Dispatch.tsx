@@ -11,6 +11,7 @@ interface ExtendedSale extends Sale {
    sellerName: string;
    zoneName: string;
    totalWeight: number;
+   clientAddress?: string;
 }
 
 export const Dispatch: React.FC = () => {
@@ -178,7 +179,8 @@ export const Dispatch: React.FC = () => {
                ...sale,
                sellerName: seller?.name || 'V. GENERAL',
                zoneName: zone?.name || 'SIN ZONA',
-               totalWeight: weight
+               totalWeight: weight,
+               clientAddress: client?.address || 'Sin dirección registrada'
             };
          });
    }, [sales, clients, zones, sellers, products, editMode, selectedSaleIds]);
@@ -1546,33 +1548,33 @@ export const Dispatch: React.FC = () => {
 
                                  return (
                                     <tr key={sale.id} className={`transition-colors cursor-pointer border-b ${isSelected ? 'bg-blue-50 hover:bg-blue-100 border-blue-200' : isEven ? 'bg-white hover:bg-slate-50 border-slate-100' : 'bg-slate-50/50 hover:bg-slate-100 border-slate-100'}`} onClick={() => handleToggleSale(sale.id)}>
-                                       <td className="py-2 px-3 text-center"><input type="checkbox" checked={isSelected} readOnly className="w-4 h-4 cursor-pointer align-middle" /></td>
-                                       <td className="py-2 px-3 font-black text-slate-800 text-[11px] whitespace-nowrap">
-                                          <div className="flex items-center gap-2">
-                                             <span className={`px-1.5 py-0.5 rounded text-[9px] border ${docColor}`}>
+                                       <td className="py-1.5 px-1.5 text-center"><input type="checkbox" checked={isSelected} readOnly className="w-4 h-4 cursor-pointer align-middle" /></td>
+                                       <td className="py-1.5 px-1.5 font-black text-slate-800 text-[11px] whitespace-nowrap">
+                                          <div className="flex items-center gap-1">
+                                             <span className={`px-1.5 py-0.5 rounded text-[8px] border ${docColor}`}>
                                                 {docType}
                                              </span>
                                              <span>{sale.series}-{sale.number}</span>
                                           </div>
                                           {sale.delivery_mode === 'EXPRESS_MISMO_DIA' && (
-                                             <span className="inline-block text-[8px] bg-red-100 text-red-700 font-bold px-1 py-0.5 rounded uppercase mt-1">Fuera de Ruta</span>
+                                             <span className="inline-block text-[8px] bg-red-100 text-red-700 font-bold px-1 py-0.5 rounded uppercase mt-0.5">Fuera de Ruta</span>
                                           )}
                                        </td>
-                                       <td className="py-2 px-3 text-[10px]">
-                                          <div className="font-bold text-slate-800">{saleDate.toLocaleDateString('es-PE')}</div>
-                                          <div className="text-slate-500 font-medium">{saleDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true })}</div>
-                                          {isOld && <div className="text-[9px] text-amber-600 font-bold flex items-center mt-0.5"><AlertTriangle className="w-3 h-3 mr-0.5" /> +24h sin despacho</div>}
+                                       <td className="py-1.5 px-1.5 text-[10px] whitespace-nowrap">
+                                          <span className="font-bold text-slate-800">{saleDate.toLocaleDateString('es-PE')}</span>
+                                          <span className="text-slate-500 font-medium ml-1.5">{saleDate.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit', hour12: true })}</span>
+                                          {isOld && <div className="text-[8px] text-amber-600 font-bold flex items-center mt-0.5"><AlertTriangle className="w-3 h-3 mr-0.5" /> +24h sin desp.</div>}
                                        </td>
-                                       <td className="py-2 px-3 text-slate-700 truncate max-w-[200px] text-[10px]">
-                                          <div className="font-bold" title={sale.client_name}>{sale.client_name}</div>
-                                          <div className="text-slate-400 text-[9px]">{sale.client_ruc}</div>
+                                       <td className="py-1.5 px-1.5 text-slate-700 truncate max-w-[280px] text-[10px]">
+                                          <div className="font-bold truncate" title={sale.client_name}>{sale.client_name}</div>
+                                          <div className="text-slate-400 text-[9px] truncate" title={sale.clientAddress}>{sale.clientAddress}</div>
                                        </td>
-                                       <td className="py-2 px-3">
+                                       <td className="py-1.5 px-1.5 whitespace-nowrap">
                                           <div className="font-bold text-slate-800 text-[10px] uppercase flex items-center gap-1"><User className="w-3 h-3 text-slate-400" /> {sale.sellerName.split(' ')[0]}</div>
-                                          <div className="inline-block px-1.5 py-0.5 bg-slate-200 text-slate-700 rounded text-[9px] font-bold uppercase mt-1">{sale.zoneName}</div>
+                                          <div className="inline-block px-1 py-0.5 bg-slate-200 text-slate-700 rounded text-[8px] font-bold uppercase mt-0.5">{sale.zoneName}</div>
                                        </td>
-                                       <td className="py-2 px-3 text-right font-bold text-slate-600 text-[11px]">{sale.totalWeight > 0 ? `${sale.totalWeight.toFixed(1)} Kg` : '-'}</td>
-                                       <td className="py-2 px-3 text-right font-black text-emerald-700 text-[12px]">S/ {sale.total.toFixed(2)}</td>
+                                       <td className="py-1.5 px-1.5 text-right font-bold text-slate-600 text-[11px] whitespace-nowrap">{sale.totalWeight > 0 ? `${sale.totalWeight.toFixed(1)} Kg` : '-'}</td>
+                                       <td className="py-1.5 px-1.5 text-right font-black text-emerald-700 text-[12px] whitespace-nowrap">S/ {sale.total.toFixed(2)}</td>
                                     </tr>
                                  );
                               })
