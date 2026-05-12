@@ -388,7 +388,7 @@ export const OrderProcessing: React.FC = () => {
 
       } catch (error: any) {
          console.error("Error processing orders:", error);
-         showAlert("OcurriÃ³ un error al procesar masivamente: " + error.message, 'error');
+         showAlert("Ocurrió un error al procesar masivamente: " + error.message, 'error');
          setIsConfirmOpen(false);
       } finally {
          isProcessingRef.current = false;
@@ -425,7 +425,7 @@ export const OrderProcessing: React.FC = () => {
          closeAndReset();
       } catch (err: any) {
          console.error("Purge error:", err);
-         showAlert("ATENCIÃ“N: Se insertaron los documentos fiscales con Ã©xito, pero hubo un error al purgar los pedidos originales. Detalles: " + err.message, 'warning');
+         showAlert("ATENCIÓN: Se insertaron los documentos fiscales con éxito, pero hubo un error al purgar los pedidos originales. Detalles: " + err.message, 'warning');
          closeAndReset();
       } finally {
          isProcessingRef.current = false;
@@ -532,7 +532,7 @@ export const OrderProcessing: React.FC = () => {
                   {modalConfig.type === 'error' && <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />}
                   {modalConfig.type === 'warning' && <AlertCircle className="w-12 h-12 text-amber-500 mx-auto mb-4" />}
                   {modalConfig.type === 'info' && <CheckCircle className="w-12 h-12 text-blue-500 mx-auto mb-4" />}
-                  <h3 className="text-lg font-black text-slate-800 mb-2">{modalConfig.type === 'error' ? 'Error' : modalConfig.type === 'warning' ? 'Aviso' : 'InformaciÃ³n'}</h3>
+                  <h3 className="text-lg font-black text-slate-800 mb-2">{modalConfig.type === 'error' ? 'Error' : modalConfig.type === 'warning' ? 'Aviso' : 'Información'}</h3>
                   <p className="text-sm text-slate-600 mb-6">{modalConfig.message}</p>
                   <button onClick={() => setModalConfig({...modalConfig, isOpen: false})} className="px-8 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Aceptar</button>
                </div>
@@ -586,7 +586,7 @@ export const OrderProcessing: React.FC = () => {
                      ) : (
                         <>
                            <p className="text-slate-600 text-sm mb-4">
-                              Se generarÃ¡n los siguientes documentos electrÃ³nicos:
+                              Se generarán los siguientes documentos electrónicos:
                            </p>
 
                            <div className="space-y-2 mb-6">
@@ -668,11 +668,11 @@ export const OrderProcessing: React.FC = () => {
                <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl p-6 text-center animate-scale-up">
                   <Trash2 className="w-16 h-16 text-red-500 mx-auto mb-4 bg-red-50 p-3 rounded-full" />
                   <h3 className="text-xl font-black text-slate-800 mb-2">Â¿Anular Pedido?</h3>
-                  <p className="text-slate-500 text-sm mb-6">El stock reservado regresarÃ¡ al Kardex. Esta acciÃ³n no se puede deshacer.</p>
+                  <p className="text-slate-500 text-sm mb-6">El stock reservado regresará al Kardex. Esta acción no se puede deshacer.</p>
                   <div className="flex gap-3">
                      <button onClick={() => setOrderToAnnul(null)} disabled={isProcessing} className="flex-1 py-3 bg-slate-100 rounded-lg font-bold text-slate-600 disabled:opacity-50">Cancelar</button>
                      <button onClick={confirmAnnulOrder} disabled={isProcessing} className="flex-1 py-3 bg-red-600 text-white rounded-lg font-bold shadow-lg flex justify-center items-center disabled:opacity-50">
-                        {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'SÃ­, Anular'}
+                        {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Sí, Anular'}
                      </button>
                   </div>
                </div>
@@ -777,8 +777,8 @@ export const OrderProcessing: React.FC = () => {
                <label className="block text-xs font-bold text-slate-600 mb-1">Modalidad</label>
                <select className="w-full border border-slate-300 rounded p-2 text-sm" value={filterDeliveryMode} onChange={e => setFilterDeliveryMode(e.target.value as any)}>
                   <option value="ALL">Todas</option>
-                  <option value="REGULAR">Regulares (Siguiente dÃ­a)</option>
-                  <option value="EXPRESS_MISMO_DIA">Fuera de Ruta (Mismo dÃ­a)</option>
+                  <option value="REGULAR">Regulares (Siguiente día)</option>
+                  <option value="EXPRESS_MISMO_DIA">Fuera de Ruta (Mismo día)</option>
                </select>
             </div>
             <div className="w-32">
