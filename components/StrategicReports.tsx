@@ -123,7 +123,12 @@ export const StrategicReports: React.FC = () => {
      const periodStr = dateFrom.substring(0, 7);
      let matchedQuotas = quotas.filter(q => q.period === periodStr);
      
-     if (filterSeller) matchedQuotas = matchedQuotas.filter(q => q.seller_id === filterSeller);
+     if (filterSeller) {
+         matchedQuotas = matchedQuotas.filter(q => q.seller_id === filterSeller);
+     } else {
+         // Si no hay filtro de vendedor, buscamos estrictamente la cuota asignada a LA EMPRESA (seller_id = null)
+         matchedQuotas = matchedQuotas.filter(q => !q.seller_id);
+     }
      
      // CRITICAL FIX: To avoid double counting, we must choose which target_type to sum based on filters
      if (filterSupplier) {

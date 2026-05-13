@@ -139,7 +139,7 @@ export const QuotaManager: React.FC = () => {
                   period: selectedPeriod,
                   seller_id: seller.id === 'COMPANY' ? null : seller.id,
                   target_type: targetType,
-                  target_id: col.id === 'GLOBAL' ? undefined : col.id,
+                  target_id: col.id === 'GLOBAL' ? null : col.id,
                   amount: amount
                });
             }

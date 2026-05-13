@@ -836,3 +836,22 @@ export interface LegacyCollection {
   cash_movement_id?: string;
 }
 
+export interface LegacyCollectionSheet {
+  id: string;
+  responsible_name: string;
+  status: 'PROCESSED' | 'REVERTED';
+  total_amount: number;
+  cash_movement_id?: string;
+  reversal_cash_movement_id?: string;
+  user_id: string;
+  created_at: string;
+}
+
+export interface LegacyCollectionSheetDetail {
+  id: string;
+  sheet_id: string;
+  legacy_debt_id: string;
+  amount_collected: number;
+  previous_balance: number;
+  legacy_debt?: LegacyDebt; // For frontend joining
+}

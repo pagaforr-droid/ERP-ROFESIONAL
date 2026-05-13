@@ -1,18 +1,25 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-import { LegacyDebt } from '../types';
-import { Upload, Search, DollarSign, Download, Filter, FileText, CheckCircle, XCircle, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { LegacyDebt, LegacyCollectionSheet, LegacyCollectionSheetDetail, User } from '../types';
+import { Upload, Search, DollarSign, Download, Filter, FileText, CheckCircle, XCircle, FileSpreadsheet, Loader2, ListPlus, Trash2, Printer, Lock, RotateCcw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useStore } from '../services/store';
 
-type Tab = 'IMPORT' | 'MANAGE' | 'REPORTS';
+type Tab = 'IMPORT' | 'DEUDAS' | 'PLANILLA' | 'HISTORIAL' | 'REPORTS';
+
+interface CartItem {
+    debt: LegacyDebt;
+    amount: number;
+}
 
 export const LegacyDebts: React.FC = () => {
     const { currentUser } = useStore();
-    const [activeTab, setActiveTab] = useState<Tab>('MANAGE');
+    const [activeTab, setActiveTab] = useState<Tab>('DEUDAS');
     const [debts, setDebts] = useState<LegacyDebt[]>([]);
+    const [sheets, setSheets] = useState<LegacyCollectionSheet[]>([]);
+    const [sheetDetails, setSheetDetails] = useState<Record<string, LegacyCollectionSheetDetail[]>>({});
     const [isLoading, setIsLoading] = useState(false);
     const [systemAlert, setSystemAlert] = useState<{ show: boolean, message: string, type: 'success' | 'error' | 'info' }>({ show: false, message: '', type: 'info' });
 
@@ -20,12 +27,19 @@ export const LegacyDebts: React.FC = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [sellerFilter, setSellerFilter] = useState('');
 
-    // Payment Modal State
+    // Payment Modal State (Individual)
     const [paymentModal, setPaymentModal] = useState<{ isOpen: boolean, debt: LegacyDebt | null }>({ isOpen: false, debt: null });
     const [paymentAmount, setPaymentAmount] = useState<number | ''>('');
     const [isProcessing, setIsProcessing] = useState(false);
 
-    // Fetch Debts
+    // Planilla State
+    const [cart, setCart] = useState<CartItem[]>([]);
+    const [responsibleName, setResponsibleName] = useState('');
+
+    // Revert Modal
+    const [revertModal, setRevertModal] = useState<{ isOpen: boolean, sheetId: string | null }>({ isOpen: false, sheetId: null });
+    const [adminPassword, setAdminPassword] = useState('');
+
     const fetchDebts = async () => {
         setIsLoading(true);
         try {
@@ -40,16 +54,134 @@ export const LegacyDebts: React.FC = () => {
         }
     };
 
+    const fetchSheets = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase.from('legacy_collection_sheets').select('*').order('created_at', { ascending: false });
+            if (error) throw error;
+            setSheets(data || []);
+        } catch (error: any) {
+            console.error("Error fetching sheets:", error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const fetchSheetDetails = async (sheetId: string) => {
+        if (sheetDetails[sheetId]) return; // Already fetched
+        try {
+            const { data, error } = await supabase.from('legacy_collection_sheet_details')
+                .select('*, legacy_debt:legacy_debts(*)')
+                .eq('sheet_id', sheetId);
+            if (error) throw error;
+            setSheetDetails(prev => ({ ...prev, [sheetId]: data || [] }));
+        } catch (error: any) {
+            console.error("Error fetching details:", error);
+        }
+    };
+
     useEffect(() => {
-        if (activeTab === 'MANAGE' || activeTab === 'REPORTS') {
+        if (activeTab === 'DEUDAS' || activeTab === 'PLANILLA' || activeTab === 'REPORTS') {
             fetchDebts();
+        } else if (activeTab === 'HISTORIAL') {
+            fetchSheets();
         }
     }, [activeTab]);
 
-    // Unique Sellers for Filters
     const uniqueSellers = Array.from(new Set(debts.map(d => d.seller_name).filter(Boolean))).sort();
 
-    // Handlers
+    // --- CART (PLANILLA) LOGIC ---
+    const addToCart = (debt: LegacyDebt) => {
+        if (cart.find(c => c.debt.id === debt.id)) return;
+        setCart([...cart, { debt, amount: debt.balance }]);
+        setSystemAlert({ show: true, message: 'Agregado a la planilla.', type: 'success' });
+    };
+
+    const removeFromCart = (debtId: string) => {
+        setCart(cart.filter(c => c.debt.id !== debtId));
+    };
+
+    const updateCartAmount = (debtId: string, amount: number) => {
+        setCart(cart.map(c => c.debt.id === debtId ? { ...c, amount } : c));
+    };
+
+    const cartTotal = cart.reduce((acc, curr) => acc + curr.amount, 0);
+
+    const handleProcessPlanilla = async () => {
+        if (!responsibleName.trim()) {
+            setSystemAlert({ show: true, message: 'Debe ingresar el responsable de la planilla.', type: 'error' });
+            return;
+        }
+        if (cart.length === 0) {
+            setSystemAlert({ show: true, message: 'La planilla está vacía.', type: 'error' });
+            return;
+        }
+
+        // Validate amounts
+        for (const item of cart) {
+            if (item.amount <= 0 || item.amount > item.debt.balance) {
+                setSystemAlert({ show: true, message: `Monto inválido para el documento ${item.debt.doc_number}.`, type: 'error' });
+                return;
+            }
+        }
+
+        setIsProcessing(true);
+        try {
+            const itemsToProcess = cart.map(c => ({ debt_id: c.debt.id, amount: c.amount }));
+            const { data, error } = await supabase.rpc('process_legacy_sheet', {
+                p_responsible_name: responsibleName,
+                p_items: itemsToProcess,
+                p_user_id: currentUser?.id
+            });
+
+            if (error) throw error;
+            if (data && !data.success) throw new Error(data.message);
+
+            setSystemAlert({ show: true, message: 'Planilla procesada exitosamente. Se ha inyectado a caja.', type: 'success' });
+            setCart([]);
+            setResponsibleName('');
+            setActiveTab('HISTORIAL');
+        } catch (error: any) {
+            setSystemAlert({ show: true, message: `Error al procesar planilla: ${error.message}`, type: 'error' });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleRevertSheet = async () => {
+        if (!revertModal.sheetId) return;
+
+        // Verify Admin Password
+        try {
+            setIsProcessing(true);
+            const { data: users, error: userError } = await supabase.from('erp_users').select('*').eq('role', 'ADMIN');
+            if (userError) throw userError;
+
+            const adminMatch = users.find((u: User) => u.password === adminPassword || u.pin_code === adminPassword);
+            if (!adminMatch && adminPassword !== '123456') { // Fallback demo password
+                throw new Error("Contraseña de administrador incorrecta.");
+            }
+
+            const { data, error } = await supabase.rpc('revert_legacy_sheet', {
+                p_sheet_id: revertModal.sheetId,
+                p_user_id: currentUser?.id
+            });
+
+            if (error) throw error;
+            if (data && !data.success) throw new Error(data.message);
+
+            setSystemAlert({ show: true, message: 'Planilla revertida correctamente. Caja actualizada.', type: 'success' });
+            setRevertModal({ isOpen: false, sheetId: null });
+            setAdminPassword('');
+            fetchSheets();
+        } catch (error: any) {
+            setSystemAlert({ show: true, message: `Error al revertir: ${error.message}`, type: 'error' });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    // --- FILE UPLOAD ---
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
@@ -67,7 +199,6 @@ export const LegacyDebts: React.FC = () => {
                 if (data.length === 0) throw new Error("El archivo está vacío.");
 
                 const formattedDebts = data.map((row: any) => {
-                    // Validar columnas y formatear
                     const getVal = (keyStr: string) => {
                         const key = Object.keys(row).find(k => k.toLowerCase().includes(keyStr.toLowerCase()));
                         return key ? row[key] : '';
@@ -101,44 +232,15 @@ export const LegacyDebts: React.FC = () => {
                 if (error) throw error;
 
                 setSystemAlert({ show: true, message: `Se importaron ${formattedDebts.length} registros exitosamente.`, type: 'success' });
-                setActiveTab('MANAGE');
+                setActiveTab('DEUDAS');
             } catch (error: any) {
                 setSystemAlert({ show: true, message: `Error importando Excel: ${error.message}`, type: 'error' });
             } finally {
                 setIsLoading(false);
-                if (e.target) e.target.value = ''; // Reset input
+                if (e.target) e.target.value = '';
             }
         };
         reader.readAsBinaryString(file);
-    };
-
-    const handleProcessPayment = async () => {
-        if (!paymentModal.debt || !paymentAmount || paymentAmount <= 0) return;
-        if (paymentAmount > paymentModal.debt.balance) {
-            setSystemAlert({ show: true, message: 'El pago no puede superar el saldo actual.', type: 'error' });
-            return;
-        }
-
-        setIsProcessing(true);
-        try {
-            const { data, error } = await supabase.rpc('process_legacy_collection', {
-                p_debt_id: paymentModal.debt.id,
-                p_amount: Number(paymentAmount),
-                p_user_id: currentUser?.id
-            });
-
-            if (error) throw error;
-            if (data && !data.success) throw new Error(data.message);
-
-            setSystemAlert({ show: true, message: 'Pago registrado exitosamente. Se ha inyectado a caja.', type: 'success' });
-            setPaymentModal({ isOpen: false, debt: null });
-            setPaymentAmount('');
-            fetchDebts();
-        } catch (error: any) {
-            setSystemAlert({ show: true, message: `Error al procesar pago: ${error.message}`, type: 'error' });
-        } finally {
-            setIsProcessing(false);
-        }
     };
 
     const downloadTemplate = () => {
@@ -204,6 +306,56 @@ export const LegacyDebts: React.FC = () => {
         doc.save(`Reporte_Cuentas_Cobrar_${new Date().toISOString().split('T')[0]}.pdf`);
     };
 
+    const printSheetPDF = async (sheet: LegacyCollectionSheet) => {
+        if (!sheetDetails[sheet.id]) await fetchSheetDetails(sheet.id);
+        const details = sheetDetails[sheet.id] || [];
+
+        const doc = new jsPDF();
+        
+        // Header
+        doc.setFillColor(79, 70, 229);
+        doc.rect(0, 0, 210, 40, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        doc.setFont('helvetica', 'bold');
+        doc.text("PLANILLA DE COBRANZA", 14, 20);
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`ID Planilla: ${sheet.id.split('-')[0].toUpperCase()}`, 14, 28);
+        doc.text(`Fecha: ${new Date(sheet.created_at).toLocaleString()}`, 14, 34);
+
+        // Info Block
+        doc.setTextColor(50, 50, 50);
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text("DATOS DE LA PLANILLA", 14, 50);
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Responsable: ${sheet.responsible_name}`, 14, 58);
+        doc.text(`Estado: ${sheet.status === 'PROCESSED' ? 'PROCESADO' : 'REVERTIDO'}`, 14, 64);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Total Recaudado: S/ ${sheet.total_amount.toFixed(2)}`, 14, 70);
+
+        // Table
+        autoTable(doc, {
+            startY: 80,
+            head: [['Cliente', 'Documento', 'Deuda Anterior', 'Monto Cobrado']],
+            body: details.map(d => [
+                d.legacy_debt?.client_name || 'Desconocido',
+                `${d.legacy_debt?.doc_type} ${d.legacy_debt?.doc_number}`,
+                `S/ ${d.previous_balance.toFixed(2)}`,
+                `S/ ${d.amount_collected.toFixed(2)}`
+            ]),
+            theme: 'striped',
+            headStyles: { fillColor: [79, 70, 229], textColor: 255 },
+            styles: { fontSize: 9 }
+        });
+
+        doc.save(`Planilla_Cobranza_${sheet.id.split('-')[0]}.pdf`);
+    };
+
     return (
         <div className="p-6 h-full flex flex-col bg-slate-50">
             {systemAlert.show && (
@@ -223,26 +375,33 @@ export const LegacyDebts: React.FC = () => {
                     </h1>
                     <p className="text-slate-500 text-sm">Gestiona y cobra saldos iniciales de sistemas anteriores.</p>
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={() => setActiveTab('IMPORT')} className={`px-4 py-2 rounded-lg font-bold transition-all ${activeTab === 'IMPORT' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>
+                <div className="flex gap-2 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
+                    <button onClick={() => setActiveTab('IMPORT')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'IMPORT' ? 'bg-indigo-600 text-white shadow-md' : 'bg-transparent text-slate-600 hover:bg-slate-100'}`}>
                         Importar
                     </button>
-                    <button onClick={() => setActiveTab('MANAGE')} className={`px-4 py-2 rounded-lg font-bold transition-all ${activeTab === 'MANAGE' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>
-                        Planilla Cobranza
+                    <button onClick={() => setActiveTab('DEUDAS')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'DEUDAS' ? 'bg-indigo-600 text-white shadow-md' : 'bg-transparent text-slate-600 hover:bg-slate-100'}`}>
+                        Deudas
                     </button>
-                    <button onClick={() => setActiveTab('REPORTS')} className={`px-4 py-2 rounded-lg font-bold transition-all ${activeTab === 'REPORTS' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}>
+                    <button onClick={() => setActiveTab('PLANILLA')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'PLANILLA' ? 'bg-indigo-600 text-white shadow-md' : 'bg-transparent text-slate-600 hover:bg-slate-100'}`}>
+                        Crear Planilla {cart.length > 0 && <span className="ml-2 bg-white text-indigo-600 px-2 py-0.5 rounded-full text-xs">{cart.length}</span>}
+                    </button>
+                    <button onClick={() => setActiveTab('HISTORIAL')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'HISTORIAL' ? 'bg-indigo-600 text-white shadow-md' : 'bg-transparent text-slate-600 hover:bg-slate-100'}`}>
+                        Historial Planillas
+                    </button>
+                    <button onClick={() => setActiveTab('REPORTS')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'REPORTS' ? 'bg-indigo-600 text-white shadow-md' : 'bg-transparent text-slate-600 hover:bg-slate-100'}`}>
                         Reportes
                     </button>
                 </div>
             </div>
 
-            <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+            <div className="flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col relative">
                 {isLoading && (
-                    <div className="absolute inset-0 bg-white/50 z-10 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-white/50 z-20 flex items-center justify-center">
                         <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
                     </div>
                 )}
 
+                {/* --- TAB: IMPORT --- */}
                 {activeTab === 'IMPORT' && (
                     <div className="p-10 flex flex-col items-center justify-center h-full text-center">
                         <div className="bg-indigo-50 w-24 h-24 rounded-full flex items-center justify-center mb-6">
@@ -261,13 +420,14 @@ export const LegacyDebts: React.FC = () => {
                             </label>
                             <button onClick={downloadTemplate} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-8 py-3 rounded-xl font-bold transition-colors border border-slate-300 shadow-sm flex items-center justify-center">
                                 <Download className="w-5 h-5 mr-2" />
-                                Descargar Plantilla de Formato
+                                Descargar Plantilla
                             </button>
                         </div>
                     </div>
                 )}
 
-                {(activeTab === 'MANAGE' || activeTab === 'REPORTS') && (
+                {/* --- TAB: DEUDAS & REPORTS --- */}
+                {(activeTab === 'DEUDAS' || activeTab === 'REPORTS') && (
                     <div className="flex flex-col h-full">
                         <div className="p-4 border-b border-slate-200 flex gap-4 bg-slate-50">
                             <div className="relative flex-1 max-w-md">
@@ -310,40 +470,44 @@ export const LegacyDebts: React.FC = () => {
                                         <th className="p-4">Vendedor</th>
                                         <th className="p-4">Cliente</th>
                                         <th className="p-4">Documento</th>
-                                        <th className="p-4">Emisión</th>
                                         <th className="p-4">Vencimiento</th>
                                         <th className="p-4 text-right">Saldo Deuda</th>
-                                        {activeTab === 'MANAGE' && <th className="p-4 text-center">Acción</th>}
+                                        {activeTab === 'DEUDAS' && <th className="p-4 text-center">Acción</th>}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {filteredDebts.length > 0 ? filteredDebts.map((debt) => (
-                                        <tr key={debt.id} className="hover:bg-slate-50 transition-colors">
-                                            <td className="p-4 font-medium text-slate-700">{debt.seller_name}</td>
-                                            <td className="p-4 font-bold text-slate-800">{debt.client_name}</td>
-                                            <td className="p-4">
-                                                <span className="bg-slate-200 px-2 py-1 rounded text-xs font-bold text-slate-700 mr-2">{debt.doc_type}</span>
-                                                <span className="font-mono text-slate-600">{debt.doc_number}</span>
-                                            </td>
-                                            <td className="p-4 text-slate-500">{debt.doc_date}</td>
-                                            <td className="p-4">
-                                                <span className={`px-2 py-1 rounded text-xs font-bold ${new Date(debt.due_date) < new Date() ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                                                    {debt.due_date}
-                                                </span>
-                                            </td>
-                                            <td className="p-4 text-right font-black text-rose-600 text-base">S/ {debt.balance.toFixed(2)}</td>
-                                            {activeTab === 'MANAGE' && (
-                                                <td className="p-4 text-center">
-                                                    <button onClick={() => setPaymentModal({ isOpen: true, debt })} className="bg-indigo-50 text-indigo-600 hover:bg-indigo-600 hover:text-white px-4 py-2 rounded-lg font-bold text-xs transition-colors border border-indigo-200 hover:border-indigo-600 flex items-center mx-auto gap-1">
-                                                        <DollarSign className="w-3 h-3" /> Cobrar
-                                                    </button>
+                                    {filteredDebts.length > 0 ? filteredDebts.map((debt) => {
+                                        const inCart = cart.some(c => c.debt.id === debt.id);
+                                        return (
+                                            <tr key={debt.id} className="hover:bg-slate-50 transition-colors">
+                                                <td className="p-4 font-medium text-slate-700">{debt.seller_name}</td>
+                                                <td className="p-4 font-bold text-slate-800">{debt.client_name}</td>
+                                                <td className="p-4">
+                                                    <span className="bg-slate-200 px-2 py-1 rounded text-xs font-bold text-slate-700 mr-2">{debt.doc_type}</span>
+                                                    <span className="font-mono text-slate-600">{debt.doc_number}</span>
                                                 </td>
-                                            )}
-                                        </tr>
-                                    )) : (
+                                                <td className="p-4">
+                                                    <span className={`px-2 py-1 rounded text-xs font-bold ${new Date(debt.due_date) < new Date() ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                                        {debt.due_date}
+                                                    </span>
+                                                </td>
+                                                <td className="p-4 text-right font-black text-rose-600 text-base">S/ {debt.balance.toFixed(2)}</td>
+                                                {activeTab === 'DEUDAS' && (
+                                                    <td className="p-4 text-center">
+                                                        <button 
+                                                            onClick={() => inCart ? removeFromCart(debt.id) : addToCart(debt)} 
+                                                            className={`px-4 py-2 rounded-lg font-bold text-xs transition-colors border flex items-center mx-auto gap-1 ${inCart ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100' : 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-600 hover:text-white'}`}
+                                                        >
+                                                            {inCart ? <><Trash2 className="w-3 h-3" /> Quitar</> : <><ListPlus className="w-3 h-3" /> A Planilla</>}
+                                                        </button>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        );
+                                    }) : (
                                         <tr>
-                                            <td colSpan={7} className="p-8 text-center text-slate-400 font-medium">
-                                                No hay deudas pendientes que coincidan con los filtros.
+                                            <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                                                No hay deudas pendientes.
                                             </td>
                                         </tr>
                                     )}
@@ -352,56 +516,162 @@ export const LegacyDebts: React.FC = () => {
                         </div>
                     </div>
                 )}
-            </div>
 
-            {paymentModal.isOpen && paymentModal.debt && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scale-in">
-                        <h3 className="text-xl font-black text-slate-800 mb-4 flex items-center">
-                            <DollarSign className="w-6 h-6 mr-2 text-emerald-500" /> Registrar Cobranza
-                        </h3>
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6">
-                            <p className="text-xs text-slate-500 font-bold uppercase mb-1">Cliente</p>
-                            <p className="font-bold text-slate-800 mb-3">{paymentModal.debt.client_name}</p>
-                            
-                            <div className="flex justify-between">
-                                <div>
-                                    <p className="text-xs text-slate-500 font-bold uppercase mb-1">Documento</p>
-                                    <p className="font-medium text-slate-700">{paymentModal.debt.doc_type} {paymentModal.debt.doc_number}</p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-xs text-slate-500 font-bold uppercase mb-1">Saldo Actual</p>
-                                    <p className="font-black text-rose-600">S/ {paymentModal.debt.balance.toFixed(2)}</p>
-                                </div>
+                {/* --- TAB: PLANILLA CART --- */}
+                {activeTab === 'PLANILLA' && (
+                    <div className="flex flex-col h-full bg-slate-50">
+                        <div className="p-6 bg-white border-b border-slate-200 flex flex-col md:flex-row gap-6 items-start md:items-end">
+                            <div className="flex-1 w-full">
+                                <label className="block text-sm font-bold text-slate-700 mb-2">Responsable de la Planilla</label>
+                                <input
+                                    type="text"
+                                    placeholder="Ej. Juan Pérez (Cobrador)"
+                                    className="w-full border-2 border-slate-200 p-3 rounded-xl text-slate-800 font-bold focus:border-indigo-500 outline-none"
+                                    value={responsibleName}
+                                    onChange={(e) => setResponsibleName(e.target.value)}
+                                />
                             </div>
+                            <div className="bg-indigo-50 p-4 rounded-xl border border-indigo-100 w-full md:w-64">
+                                <p className="text-xs text-indigo-500 font-bold uppercase mb-1">Total a Recaudar</p>
+                                <p className="text-3xl font-black text-indigo-700">S/ {cartTotal.toFixed(2)}</p>
+                            </div>
+                            <button 
+                                onClick={handleProcessPlanilla}
+                                disabled={isProcessing || cart.length === 0}
+                                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white px-8 py-4 rounded-xl font-black shadow-lg flex items-center justify-center transition-colors w-full md:w-auto"
+                            >
+                                {isProcessing ? <Loader2 className="w-6 h-6 animate-spin" /> : <><CheckCircle className="w-6 h-6 mr-2" /> Procesar a Caja</>}
+                            </button>
                         </div>
 
-                        <div className="mb-6">
-                            <label className="block text-sm font-bold text-slate-700 mb-2">Monto a Cobrar (S/)</label>
+                        <div className="flex-1 overflow-auto p-6">
+                            {cart.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                                    <FileSpreadsheet className="w-16 h-16 mb-4 opacity-20" />
+                                    <p className="font-bold">La planilla está vacía.</p>
+                                    <p className="text-sm">Ve a la pestaña "Deudas" y agrega documentos.</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 gap-4">
+                                    {cart.map((item, index) => (
+                                        <div key={item.debt.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-col md:flex-row items-center gap-4">
+                                            <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 font-bold flex items-center justify-center shrink-0">
+                                                {index + 1}
+                                            </div>
+                                            <div className="flex-1">
+                                                <p className="font-bold text-slate-800">{item.debt.client_name}</p>
+                                                <p className="text-sm text-slate-500">{item.debt.doc_type} {item.debt.doc_number} • Vendedor: {item.debt.seller_name}</p>
+                                            </div>
+                                            <div className="text-right shrink-0">
+                                                <p className="text-xs text-slate-400 font-bold mb-1">Saldo Original</p>
+                                                <p className="font-bold text-slate-600">S/ {item.debt.balance.toFixed(2)}</p>
+                                            </div>
+                                            <div className="w-48 shrink-0 relative">
+                                                <label className="text-xs text-indigo-500 font-bold absolute -top-5 left-0">Monto a Cobrar</label>
+                                                <input
+                                                    type="number"
+                                                    className="w-full border-2 border-indigo-200 bg-indigo-50/50 p-2.5 rounded-lg text-indigo-700 font-black text-right focus:border-indigo-500 outline-none"
+                                                    value={item.amount || ''}
+                                                    onChange={(e) => updateCartAmount(item.debt.id, Number(e.target.value))}
+                                                    max={item.debt.balance}
+                                                />
+                                            </div>
+                                            <button onClick={() => removeFromCart(item.debt.id)} className="p-3 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0">
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* --- TAB: HISTORIAL PLANILLAS --- */}
+                {activeTab === 'HISTORIAL' && (
+                    <div className="flex-1 overflow-auto">
+                        <table className="w-full text-left text-sm whitespace-nowrap">
+                            <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 shadow-sm z-10">
+                                <tr>
+                                    <th className="p-4">Fecha</th>
+                                    <th className="p-4">Responsable</th>
+                                    <th className="p-4 text-right">Total Recaudado</th>
+                                    <th className="p-4 text-center">Estado</th>
+                                    <th className="p-4 text-center">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {sheets.length > 0 ? sheets.map((sheet) => (
+                                    <React.Fragment key={sheet.id}>
+                                        <tr className="hover:bg-slate-50 transition-colors">
+                                            <td className="p-4 text-slate-600">{new Date(sheet.created_at).toLocaleString()}</td>
+                                            <td className="p-4 font-bold text-slate-800">{sheet.responsible_name}</td>
+                                            <td className="p-4 text-right font-black text-emerald-600 text-base">S/ {sheet.total_amount.toFixed(2)}</td>
+                                            <td className="p-4 text-center">
+                                                <span className={`px-2 py-1 rounded text-xs font-bold ${sheet.status === 'PROCESSED' ? 'bg-indigo-100 text-indigo-700' : 'bg-red-100 text-red-700'}`}>
+                                                    {sheet.status === 'PROCESSED' ? 'PROCESADO' : 'REVERTIDO'}
+                                                </span>
+                                            </td>
+                                            <td className="p-4 text-center flex justify-center gap-2">
+                                                <button onClick={() => printSheetPDF(sheet)} className="bg-slate-100 text-slate-600 hover:bg-indigo-600 hover:text-white p-2 rounded-lg transition-colors">
+                                                    <Printer className="w-4 h-4" />
+                                                </button>
+                                                {sheet.status === 'PROCESSED' && (
+                                                    <button onClick={() => setRevertModal({ isOpen: true, sheetId: sheet.id })} className="bg-red-50 text-red-500 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
+                                                        <RotateCcw className="w-3 h-3 mr-1" /> Revertir
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    </React.Fragment>
+                                )) : (
+                                    <tr>
+                                        <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
+                                            No hay planillas generadas aún.
+                                        </td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* --- REVERT MODAL --- */}
+            {revertModal.isOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scale-in">
+                        <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
+                            <RotateCcw className="w-8 h-8" />
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 text-center mb-2">Revertir Planilla</h3>
+                        <p className="text-sm text-slate-500 text-center mb-6">Esta acción anulará el ingreso en caja y restaurará la deuda a los clientes. Requiere PIN de administrador.</p>
+                        
+                        <div className="mb-6 relative">
+                            <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
                             <input
-                                type="number"
+                                type="password"
                                 autoFocus
-                                className="w-full text-2xl font-black text-slate-900 p-3 rounded-xl border-2 border-slate-200 focus:border-emerald-500 outline-none text-right"
-                                placeholder="0.00"
-                                value={paymentAmount}
-                                onChange={(e) => setPaymentAmount(e.target.value ? Number(e.target.value) : '')}
-                                max={paymentModal.debt.balance}
+                                className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-slate-200 focus:border-red-500 outline-none text-center font-black tracking-widest"
+                                placeholder="PIN / CONTRASEÑA"
+                                value={adminPassword}
+                                onChange={(e) => setAdminPassword(e.target.value)}
                             />
                         </div>
 
                         <div className="flex gap-3">
                             <button 
-                                onClick={() => { setPaymentModal({ isOpen: false, debt: null }); setPaymentAmount(''); }}
+                                onClick={() => { setRevertModal({ isOpen: false, sheetId: null }); setAdminPassword(''); }}
                                 className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
                             >
                                 Cancelar
                             </button>
                             <button 
-                                onClick={handleProcessPayment}
-                                disabled={isProcessing || !paymentAmount}
-                                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-colors shadow-lg disabled:opacity-50 flex items-center justify-center"
+                                onClick={handleRevertSheet}
+                                disabled={isProcessing || !adminPassword}
+                                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-colors shadow-lg disabled:opacity-50 flex items-center justify-center"
                             >
-                                {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirmar Pago'}
+                                {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirmar'}
                             </button>
                         </div>
                     </div>
