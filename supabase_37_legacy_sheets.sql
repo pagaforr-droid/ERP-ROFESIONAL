@@ -27,8 +27,12 @@ CREATE TABLE IF NOT EXISTS public.legacy_collection_sheet_details (
 ALTER TABLE public.legacy_collection_sheets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.legacy_collection_sheet_details ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Enable all for legacy_collection_sheets" ON public.legacy_collection_sheets;
 CREATE POLICY "Enable all for legacy_collection_sheets" ON public.legacy_collection_sheets FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Enable all for legacy_collection_sheet_details" ON public.legacy_collection_sheet_details;
 CREATE POLICY "Enable all for legacy_collection_sheet_details" ON public.legacy_collection_sheet_details FOR ALL USING (true) WITH CHECK (true);
+
 
 -- 4. RPC para procesar planilla de cobranza
 CREATE OR REPLACE FUNCTION public.process_legacy_sheet(
