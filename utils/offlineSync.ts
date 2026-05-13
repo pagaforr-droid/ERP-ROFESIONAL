@@ -61,3 +61,50 @@ export const markOfflineOrderError = (localId: string, errorMsg: string): void =
 export const clearOfflineQueue = (): void => {
     localStorage.removeItem(STORAGE_KEY);
 };
+
+// --- MASTER DATA SNAPSHOTS ---
+
+const MASTER_DATA_KEY = 'traceflow_master_data_snapshot';
+const ACTIVE_SELLER_KEY = 'traceflow_active_seller';
+
+export const saveMasterDataLocal = (sellerId: string, data: any): void => {
+    try {
+        const snapshot = {
+            sellerId,
+            timestamp: new Date().toISOString(),
+            data
+        };
+        localStorage.setItem(MASTER_DATA_KEY, JSON.stringify(snapshot));
+    } catch (e) {
+        console.error("Error saving master data snapshot:", e);
+        // Podría fallar si se excede la cuota de localStorage
+    }
+};
+
+export const getMasterDataLocal = (sellerId: string): any | null => {
+    try {
+        const stored = localStorage.getItem(MASTER_DATA_KEY);
+        if (!stored) return null;
+        const snapshot = JSON.parse(stored);
+        // Retornar solo si coincide el vendedor, para no cruzar data
+        if (snapshot.sellerId === sellerId) {
+            return snapshot.data;
+        }
+        return null;
+    } catch (e) {
+        console.error("Error reading master data snapshot:", e);
+        return null;
+    }
+};
+
+export const saveActiveSeller = (sellerId: string): void => {
+    localStorage.setItem(ACTIVE_SELLER_KEY, sellerId);
+};
+
+export const getActiveSeller = (): string | null => {
+    return localStorage.getItem(ACTIVE_SELLER_KEY);
+};
+
+export const clearActiveSeller = (): void => {
+    localStorage.removeItem(ACTIVE_SELLER_KEY);
+};

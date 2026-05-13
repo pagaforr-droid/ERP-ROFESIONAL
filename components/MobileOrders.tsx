@@ -4,7 +4,7 @@ import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types
 import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User, ArrowRight, Edit, Minus, Eye, ShoppingCart, Lock, Truck, Zap, CloudOff, RefreshCw, WifiOff } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
-import { saveOfflineOrder, getOfflineOrdersBySeller, removeOfflineOrder, markOfflineOrderError, OfflineOrder } from '../utils/offlineSync';
+import { saveOfflineOrder, getOfflineOrdersBySeller, removeOfflineOrder, markOfflineOrderError, OfflineOrder, saveMasterDataLocal, getMasterDataLocal, saveActiveSeller, getActiveSeller, clearActiveSeller } from '../utils/offlineSync';
 
 type ViewMode = 'SELLER_SELECT' | 'CLIENT_LIST' | 'CLIENT_DETAIL' | 'PRODUCT_SELECT';
 type ClientTab = 'ORDER' | 'COLLECTION';
@@ -124,6 +124,37 @@ export const MobileOrders: React.FC = () => {
       };
    }, []);
 
+   // --- BARRERAS ANTI-ACCIDENTES ---
+   useEffect(() => {
+      // 1. Prevenir Pull-to-Refresh en móviles
+      const originalOverscroll = document.body.style.overscrollBehaviorY;
+      document.body.style.overscrollBehaviorY = 'none';
+
+      // 2. Alerta de salida accidental (beforeunload)
+      const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+         e.preventDefault();
+         e.returnValue = ''; // Requerido por navegadores modernos para mostrar la alerta nativa
+         return '';
+      };
+      window.addEventListener('beforeunload', handleBeforeUnload);
+
+      // 3. Prevenir F5 y Ctrl+R en teclado físico
+      const handleKeyDown = (e: KeyboardEvent) => {
+         if (e.key === 'F5' || (e.ctrlKey && (e.key === 'r' || e.key === 'R')) || (e.metaKey && (e.key === 'r' || e.key === 'R'))) {
+            e.preventDefault();
+            setSystemAlert({ show: true, message: 'Actualización bloqueada. Si necesitas reiniciar, usa el botón de Salir.', type: 'info' });
+         }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+
+      // Limpieza al desmontar el módulo para no afectar al resto del ERP
+      return () => {
+         document.body.style.overscrollBehaviorY = originalOverscroll;
+         window.removeEventListener('beforeunload', handleBeforeUnload);
+         window.removeEventListener('keydown', handleKeyDown);
+      };
+   }, []);
+
    useEffect(() => {
        if (currentSellerId) {
            setOfflineOrders(getOfflineOrdersBySeller(currentSellerId));
@@ -133,6 +164,8 @@ export const MobileOrders: React.FC = () => {
    useEffect(() => {
       const loadInitialApp = async () => {
          try {
+            if (!navigator.onLine || isOffline) throw new Error("Offline");
+
             const [sellRes, zoneRes] = await Promise.all([
                supabase.from('sellers').select('*').eq('is_active', true).order('name'),
                supabase.from('zones').select('*')
@@ -142,16 +175,37 @@ export const MobileOrders: React.FC = () => {
 
              if (currentUser?.role === 'SELLER' && sellRes.data) {
                 const matchingSeller = sellRes.data.find(s => String(s.name || '').trim().toUpperCase() === String(currentUser.name || '').trim().toUpperCase());
-                if (matchingSeller) handleSellerSelect(matchingSeller.id);
+                if (matchingSeller) {
+                    saveActiveSeller(matchingSeller.id);
+                    handleSellerSelect(matchingSeller.id);
+                }
+             } else {
+                 const activeSellerId = getActiveSeller();
+                 if (activeSellerId && sellRes.data) {
+                     handleSellerSelect(activeSellerId);
+                 }
              }
          } catch (error) {
             console.error("Error al iniciar App Móvil:", error);
+            const activeSellerId = getActiveSeller();
+            if (activeSellerId) {
+                const snapshot = getMasterDataLocal(activeSellerId);
+                if (snapshot) {
+                    setDbSellers(snapshot.sellers || []);
+                    setDbZones(snapshot.zones || []);
+                    handleSellerSelect(activeSellerId);
+                } else {
+                    setSystemAlert({ show: true, message: 'Sin conexión y sin respaldo local. Conéctese a internet.', type: 'error' });
+                }
+            } else {
+                 setSystemAlert({ show: true, message: 'Sin conexión para inicio de sesión inicial.', type: 'error' });
+            }
          } finally {
             setIsLoadingInitial(false);
          }
       };
       loadInitialApp();
-   }, [currentUser]);
+   }, [currentUser, isOffline]);
 
    const handleSellerSelect = async (sellerId: string) => {
       if (!sellerId) return;
@@ -172,6 +226,8 @@ export const MobileOrders: React.FC = () => {
       setListTab('CLIENTS');
 
       try {
+         if (!navigator.onLine || isOffline) throw new Error("Offline");
+
          const today = new Date().toISOString().split('T')[0];
          const sellerZoneIds = dbZones.filter(z => z.assigned_seller_id === sellerId).map(z => z.id);
 
@@ -184,8 +240,8 @@ export const MobileOrders: React.FC = () => {
             supabase.from('auto_promotions').select('*').eq('is_active', true),
             supabase.from('promotions').select('*').eq('is_active', true),
             clientQuery,
-            // 🔥 CORRECCIÓN 1: Ahora consultamos la vista que trae el stock precalculado de los lotes
-            supabase.from('vw_active_products').select('*'),
+            // 🔥 CORRECCIÓN: Filtramos para descargar solo productos con stock > 0 para optimizar memoria
+            supabase.from('vw_active_products').select('*').gt('current_stock', 0),
             supabase.from('sales').select('*').or('balance.gt.0,and(balance.is.null,total.gt.0)').neq('status', 'canceled').neq('document_type', 'NOTA_CREDITO'),
             supabase.from('orders').select('*').eq('seller_id', sellerId).gte('created_at', today),
             supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true)
@@ -205,9 +261,49 @@ export const MobileOrders: React.FC = () => {
             setPedidoSeries(seriesRes.data[0].series || '');
             setPedidoNumber(String(seriesRes.data[0].current_number + 1).padStart(8, '0'));
          }
-      } catch (error) {
+
+         // Guardar Snapshot Local
+         saveActiveSeller(sellerId);
+         saveMasterDataLocal(sellerId, {
+             company: compRes.data,
+             priceLists: plRes.data,
+             autoPromos: apRes.data,
+             promos: promRes.data,
+             clients: cliRes.data,
+             products: prodRes.data,
+             sales: salesRes.data,
+             orders: ordersRes.data,
+             series: seriesRes.data,
+             sellers: dbSellers,
+             zones: dbZones
+         });
+
+      } catch (error: any) {
          console.error("Error cargando maestros:", error);
-         setSystemAlert({ show: true, message: 'Error de conexión al cargar la ruta.', type: 'error' });
+         if (error.message === 'Offline' || error.message === 'Failed to fetch' || String(error.message).includes('fetch') || error.code === 'TypeError') {
+             const snapshot = getMasterDataLocal(sellerId);
+             if (snapshot) {
+                 setDbCompany(snapshot.company || null);
+                 setDbPriceLists(snapshot.priceLists || []);
+                 setDbAutoPromos(snapshot.autoPromos || []);
+                 setDbPromos(snapshot.promos || []);
+                 setDbClients(snapshot.clients || []);
+                 setDbProducts(snapshot.products || []);
+                 setDbSales(snapshot.sales || []);
+                 setDbOrders(snapshot.orders || []);
+                 
+                 if (snapshot.series && snapshot.series.length > 0) {
+                     setDbSeries(snapshot.series);
+                     setPedidoSeries(snapshot.series[0].series || '');
+                     setPedidoNumber(String(snapshot.series[0].current_number + 1).padStart(8, '0'));
+                 }
+                 setSystemAlert({ show: true, message: 'Ruta cargada desde Respaldo Offline Local.', type: 'info' });
+             } else {
+                 setSystemAlert({ show: true, message: 'Sin conexión y sin respaldo local para esta ruta.', type: 'error' });
+             }
+         } else {
+             setSystemAlert({ show: true, message: 'Error de conexión al cargar la ruta.', type: 'error' });
+         }
       } finally {
          setIsLoadingData(false);
       }
@@ -555,12 +651,20 @@ export const MobileOrders: React.FC = () => {
    const handleProductClick = async (p: Product) => {
       setIsLoadingData(true);
       try {
-         // 🔥 CORRECCIÓN 4: Capturamos y manejamos errores de RLS aquí
-         const { data: bData, error } = await supabase.from('batches').select('*').eq('product_id', p.id).gt('quantity_current', 0);
+         let bData = null;
+         let fetchError = null;
 
-         if (error) {
-            console.error("Error crítico leyendo lotes:", error);
-            setSystemAlert({ show: true, message: 'Error de conexión validando el stock en tiempo real.', type: 'error' });
+         if (navigator.onLine && !isOffline) {
+             const { data, error } = await supabase.from('batches').select('*').eq('product_id', p.id).gt('quantity_current', 0);
+             bData = data;
+             if (error && !String(error.message).includes('fetch') && error.message !== 'Offline' && error.code !== 'TypeError') {
+                 fetchError = error;
+             }
+         }
+
+         if (fetchError) {
+            console.error("Error crítico leyendo lotes:", fetchError);
+            setSystemAlert({ show: true, message: 'Error validando el stock en tiempo real.', type: 'error' });
             return;
          }
 
@@ -961,6 +1065,7 @@ export const MobileOrders: React.FC = () => {
                      <div className="flex items-center gap-2 mt-0.5">
                          <p className="text-[11px] text-blue-300 font-medium">Vendedor: {dbSellers.find(s => s.id === currentSellerId)?.name || 'Desconocido'}</p>
                          {isOffline && <span className="bg-red-500/20 text-red-300 border border-red-500/50 text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 font-bold"><WifiOff className="w-3 h-3"/> OFFLINE</span>}
+                         {(!navigator.onLine || isOffline) && getActiveSeller() === currentSellerId && <span className="bg-orange-500/20 text-orange-300 border border-orange-500/50 text-[9px] px-1.5 py-0.5 rounded font-bold">RESPALDO LOCAL</span>}
                      </div>
                   </div>
                   <div className="flex gap-2 items-center">
