@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Product, Client, Order, AutoPromotion, Promotion, Sale } from '../types';
-import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User, ArrowRight, Edit, Minus, Eye, ShoppingCart, Lock, Truck, Zap } from 'lucide-react';
+import { Plus, Trash2, Search, Save, X, ChevronDown, ChevronLeft, MapPin, Clock, Wallet, CheckCircle, Loader2, LogOut, User, ArrowRight, Edit, Minus, Eye, ShoppingCart, Lock, Truck, Zap, CloudOff, RefreshCw, WifiOff } from 'lucide-react';
 import { isPromoValidForContext } from '../utils/promoUtils';
 import { supabase } from '../services/supabase';
+import { saveOfflineOrder, getOfflineOrdersBySeller, removeOfflineOrder, markOfflineOrderError, OfflineOrder } from '../utils/offlineSync';
 
 type ViewMode = 'SELLER_SELECT' | 'CLIENT_LIST' | 'CLIENT_DETAIL' | 'PRODUCT_SELECT';
 type ClientTab = 'ORDER' | 'COLLECTION';
@@ -109,7 +110,25 @@ export const MobileOrders: React.FC = () => {
    const [systemConfirm, setSystemConfirm] = useState<{ show: boolean, message: string, onConfirm: () => void, title?: string }>({ show: false, message: '', onConfirm: () => {} });
    const [showOrdersModal, setShowOrdersModal] = useState(false);
    const [selectedOrderActions, setSelectedOrderActions] = useState<Order | null>(null);
+   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+   const [offlineOrders, setOfflineOrders] = useState<OfflineOrder[]>([]);
    
+   useEffect(() => {
+      const handleOnline = () => setIsOffline(false);
+      const handleOffline = () => setIsOffline(true);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+      return () => {
+         window.removeEventListener('online', handleOnline);
+         window.removeEventListener('offline', handleOffline);
+      };
+   }, []);
+
+   useEffect(() => {
+       if (currentSellerId) {
+           setOfflineOrders(getOfflineOrdersBySeller(currentSellerId));
+       }
+   }, [currentSellerId, viewMode, listTab]);
 
    useEffect(() => {
       const loadInitialApp = async () => {
@@ -668,9 +687,30 @@ export const MobileOrders: React.FC = () => {
             };
 
             try {
+               if (!navigator.onLine || isOffline) {
+                   saveOfflineOrder(orderPayload, currentSellerId || 'UNK');
+                   setSystemAlert({ show: true, message: '¡Guardado Localmente (Sin Conexión)! Se enviará al recuperar la señal.', type: 'info' });
+                   setViewMode('CLIENT_LIST');
+                   setListTab('HISTORY');
+                   setCart([]);
+                   setOfflineOrders(getOfflineOrdersBySeller(currentSellerId || 'UNK'));
+                   return;
+               }
+
                const rpcName = isEditMode ? 'update_order_transaction' : 'process_order_transaction';
                const { data, error } = await supabase.rpc(rpcName, { p_order_data: orderPayload });
-               if (error) throw error;
+               if (error) {
+                   if (error.message === 'Failed to fetch' || String(error.message).includes('fetch') || error.code === 'TypeError') {
+                       saveOfflineOrder(orderPayload, currentSellerId || 'UNK');
+                       setSystemAlert({ show: true, message: '¡Guardado Localmente por fallo de red! Se reintentará luego.', type: 'info' });
+                       setViewMode('CLIENT_LIST');
+                       setListTab('HISTORY');
+                       setCart([]);
+                       setOfflineOrders(getOfflineOrdersBySeller(currentSellerId || 'UNK'));
+                       return;
+                   }
+                   throw error;
+               }
                setSystemAlert({ show: true, message: isEditMode ? '¡Pedido modificado con éxito!' : ('¡Pedido guardado! Código: ' + (data?.real_code || pedidoNumber)), type: 'success' });
                setViewMode('CLIENT_LIST');
                setListTab('HISTORY');
@@ -685,6 +725,59 @@ export const MobileOrders: React.FC = () => {
             }
          }
       });
+   };
+
+   const syncOfflineOrders = async () => {
+      if (!navigator.onLine || isOffline) {
+          setSystemAlert({ show: true, message: 'No hay conexión a internet para sincronizar.', type: 'error' });
+          return;
+      }
+
+      setIsSaving(true);
+      setSavingMessage('Sincronizando pedidos locales...');
+      isSavingRef.current = true;
+
+      const pendingOrders = getOfflineOrdersBySeller(currentSellerId);
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const localOrder of pendingOrders) {
+          if (localOrder.status === 'ERROR') continue; // Solo reintentar los PENDING_SYNC
+
+          try {
+             const { error } = await supabase.rpc('process_order_transaction', { p_order_data: localOrder.payload });
+             
+             if (error) {
+                if (String(error.message).toLowerCase().includes('stock')) {
+                   markOfflineOrderError(localOrder.localId, 'Pedido sin stock');
+                   errorCount++;
+                } else {
+                   markOfflineOrderError(localOrder.localId, error.message);
+                   errorCount++;
+                }
+             } else {
+                removeOfflineOrder(localOrder.localId);
+                successCount++;
+             }
+          } catch (e: any) {
+             console.error("Sync error:", e);
+             errorCount++;
+          }
+      }
+
+      setOfflineOrders(getOfflineOrdersBySeller(currentSellerId));
+      isSavingRef.current = false;
+      setIsSaving(false);
+      setSavingMessage('Sincronizando con Base...');
+
+      if (successCount > 0 || errorCount > 0) {
+          setSystemAlert({ 
+             show: true, 
+             message: `Sincronización finalizada.\nÉxitos: ${successCount}\nErrores: ${errorCount}`, 
+             type: errorCount > 0 ? 'error' : 'success' 
+          });
+          handleSellerSelect(currentSellerId);
+      }
    };
 
    const handleNewOrder = () => {
@@ -865,11 +958,22 @@ export const MobileOrders: React.FC = () => {
                <div className="flex justify-between items-center mb-3">
                   <div>
                      <h2 className="text-lg font-black leading-tight">Ruta Móvil</h2>
-                     <p className="text-[11px] text-blue-300 font-medium">Vendedor: {dbSellers.find(s => s.id === currentSellerId)?.name || 'Desconocido'}</p>
+                     <div className="flex items-center gap-2 mt-0.5">
+                         <p className="text-[11px] text-blue-300 font-medium">Vendedor: {dbSellers.find(s => s.id === currentSellerId)?.name || 'Desconocido'}</p>
+                         {isOffline && <span className="bg-red-500/20 text-red-300 border border-red-500/50 text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 font-bold"><WifiOff className="w-3 h-3"/> OFFLINE</span>}
+                     </div>
                   </div>
-                  <button onClick={() => setIsExitModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full transition-colors shrink-0">
-                     <LogOut className="w-4 h-4 text-slate-300" />
-                  </button>
+                  <div className="flex gap-2 items-center">
+                     {offlineOrders.length > 0 && (
+                        <button onClick={() => setShowOrdersModal(true)} className="relative bg-orange-500 hover:bg-orange-600 p-2 rounded-full transition-colors shadow-lg animate-pulse">
+                           <CloudOff className="w-4 h-4 text-white" />
+                           <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center border border-white">{offlineOrders.length}</span>
+                        </button>
+                     )}
+                     <button onClick={() => setIsExitModalOpen(true)} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full transition-colors shrink-0">
+                        <LogOut className="w-4 h-4 text-slate-300" />
+                     </button>
+                  </div>
                </div>
 
                <div className="flex bg-slate-800 rounded-xl p-1 gap-1">
@@ -1197,6 +1301,39 @@ export const MobileOrders: React.FC = () => {
                </div>
                
                <div className="flex-1 overflow-y-auto p-4 pb-[120px] space-y-3">
+                  {offlineOrders.length > 0 && (
+                      <div className="mb-6">
+                         <div className="flex items-center justify-between mb-3">
+                             <h3 className="text-sm font-black text-slate-500 flex items-center gap-1 uppercase tracking-wider"><CloudOff className="w-4 h-4"/> Locales ({offlineOrders.length})</h3>
+                             <button onClick={syncOfflineOrders} disabled={isSaving || isOffline} className="text-[10px] bg-blue-600 text-white px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 disabled:opacity-50">
+                                 {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                 SINCRONIZAR
+                             </button>
+                         </div>
+                         <div className="space-y-2">
+                             {offlineOrders.map(o => (
+                                 <div key={o.localId} className="bg-orange-50 p-4 rounded-2xl shadow-sm border border-orange-200">
+                                     <div className="flex justify-between items-start mb-2">
+                                        <div className="flex flex-col gap-1">
+                                           <div className="bg-orange-200 text-orange-800 text-[10px] font-black px-2 py-0.5 rounded flex items-center gap-1 w-fit"><CloudOff className="w-3 h-3"/> PENDIENTE</div>
+                                           <div className="font-bold text-slate-700 text-sm">{o.payload.client_name}</div>
+                                        </div>
+                                        <div className="text-right">
+                                           <div className="font-black text-orange-600 text-base">S/ {Number(o.payload.total).toFixed(2)}</div>
+                                        </div>
+                                     </div>
+                                     <div className="text-xs text-slate-500">{o.payload.items.length} items • {new Date(o.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                                     {o.status === 'ERROR' && (
+                                         <div className="mt-2 text-[10px] font-black text-red-600 bg-red-100 p-2 rounded border border-red-200">Error: {o.errorMessage}</div>
+                                     )}
+                                 </div>
+                             ))}
+                         </div>
+                         <hr className="my-4 border-slate-200" />
+                      </div>
+                  )}
+
+                  <h3 className="text-sm font-black text-slate-500 flex items-center gap-1 uppercase tracking-wider mb-2">Pedidos Enviados</h3>
                   {dbOrders.map(o => (
                      <div key={o.id} onClick={() => { if(o.status === 'pending') setSelectedOrderActions(o); }} className={`bg-white p-4 rounded-2xl shadow-sm border border-slate-100 ${o.status === 'pending' ? 'active:scale-95 transition-transform cursor-pointer' : 'opacity-70'}`}>
                         <div className="flex justify-between items-start mb-2">
