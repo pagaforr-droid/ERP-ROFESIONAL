@@ -312,8 +312,19 @@ export const LegacyDebts: React.FC = () => {
     };
 
     const printSheetPDF = async (sheet: LegacyCollectionSheet) => {
-        if (!sheetDetails[sheet.id]) await fetchSheetDetails(sheet.id);
-        const details = sheetDetails[sheet.id] || [];
+        let details = sheetDetails[sheet.id];
+        if (!details) {
+            const { data, error } = await supabase.from('legacy_collection_sheet_details')
+                .select('*, legacy_debt:legacy_debts(*)')
+                .eq('sheet_id', sheet.id);
+            if (error) {
+                console.error("Error fetching details for PDF:", error);
+                setSystemAlert({ show: true, message: 'Error cargando detalles para el PDF.', type: 'error' });
+                return;
+            }
+            details = data || [];
+            setSheetDetails(prev => ({ ...prev, [sheet.id]: details }));
+        }
 
         const doc = new jsPDF();
         
@@ -343,16 +354,53 @@ export const LegacyDebts: React.FC = () => {
         doc.setFont('helvetica', 'bold');
         doc.text(`Total Recaudado: S/ ${sheet.total_amount.toFixed(2)}`, 14, 70);
 
-        // Table
+        // Agrupar por vendedor
+        const groupedBySeller: Record<string, any[]> = {};
+        let generalTotal = 0;
+
+        details.forEach((d: any) => {
+            const seller = d.legacy_debt?.seller_name || 'SIN VENDEDOR';
+            if (!groupedBySeller[seller]) groupedBySeller[seller] = [];
+            groupedBySeller[seller].push(d);
+            generalTotal += Number(d.amount_collected);
+        });
+
+        const tableBody: any[] = [];
+        
+        for (const [seller, items] of Object.entries(groupedBySeller)) {
+            // Header del Vendedor
+            tableBody.push([
+                { content: `VENDEDOR: ${seller}`, colSpan: 4, styles: { fillColor: [240, 240, 240], fontStyle: 'bold', textColor: [50, 50, 50] } }
+            ]);
+
+            let sellerSubtotal = 0;
+            items.forEach((d: any) => {
+                tableBody.push([
+                    d.legacy_debt?.client_name || 'Desconocido',
+                    `${d.legacy_debt?.doc_type} ${d.legacy_debt?.doc_number}`,
+                    `S/ ${Number(d.previous_balance).toFixed(2)}`,
+                    `S/ ${Number(d.amount_collected).toFixed(2)}`
+                ]);
+                sellerSubtotal += Number(d.amount_collected);
+            });
+
+            // Subtotal del Vendedor
+            tableBody.push([
+                { content: 'SUBTOTAL VENDEDOR', colSpan: 3, styles: { fontStyle: 'bold', halign: 'right' } },
+                { content: `S/ ${sellerSubtotal.toFixed(2)}`, styles: { fontStyle: 'bold', textColor: [79, 70, 229] } }
+            ]);
+        }
+
+        // Total General
+        tableBody.push([
+            { content: 'TOTAL GENERAL DE LA PLANILLA', colSpan: 3, styles: { fontStyle: 'bold', halign: 'right', fillColor: [79, 70, 229], textColor: 255 } },
+            { content: `S/ ${generalTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [79, 70, 229], textColor: 255 } }
+        ]);
+
         autoTable(doc, {
             startY: 80,
             head: [['Cliente', 'Documento', 'Deuda Anterior', 'Monto Cobrado']],
-            body: details.map(d => [
-                d.legacy_debt?.client_name || 'Desconocido',
-                `${d.legacy_debt?.doc_type} ${d.legacy_debt?.doc_number}`,
-                `S/ ${d.previous_balance.toFixed(2)}`,
-                `S/ ${d.amount_collected.toFixed(2)}`
-            ]),
+            body: tableBody,
             theme: 'striped',
             headStyles: { fillColor: [79, 70, 229], textColor: 255 },
             styles: { fontSize: 9 }
