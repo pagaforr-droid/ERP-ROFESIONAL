@@ -343,20 +343,72 @@ export const LegacyDebts: React.FC = () => {
         doc.setFontSize(10);
         if (sellerFilter) doc.text(`Vendedor: ${sellerFilter}`, 14, 22);
 
+        const groupedBySeller: Record<string, LegacyDebt[]> = {};
+        filteredDebts.forEach((d) => {
+            const seller = d.seller_name || 'SIN VENDEDOR';
+            if (!groupedBySeller[seller]) groupedBySeller[seller] = [];
+            groupedBySeller[seller].push(d);
+        });
+
+        const tableBody: any[] = [];
+        let generalTotal = 0;
+        
+        for (const [seller, items] of Object.entries(groupedBySeller)) {
+            if (!sellerFilter) {
+                tableBody.push([
+                    { content: `VENDEDOR: ${seller}`, colSpan: 6, styles: { fillColor: [240, 240, 240], fontStyle: 'bold', textColor: [50, 50, 50] } }
+                ]);
+            }
+
+            let sellerTotal = 0;
+            items.forEach((d) => {
+                tableBody.push([
+                    d.client_name,
+                    d.doc_type,
+                    d.doc_number,
+                    d.doc_date,
+                    d.due_date,
+                    `S/ ${d.balance.toFixed(2)}`
+                ]);
+                sellerTotal += d.balance;
+                generalTotal += d.balance;
+            });
+
+            if (!sellerFilter) {
+                tableBody.push([
+                    { content: 'SUBTOTAL VENDEDOR', colSpan: 5, styles: { fontStyle: 'bold', halign: 'right' } },
+                    { content: `S/ ${sellerTotal.toFixed(2)}`, styles: { fontStyle: 'bold', textColor: [79, 70, 229] } }
+                ]);
+            }
+        }
+
+        if (sellerFilter) {
+            tableBody.push([
+                { content: 'TOTAL VENDEDOR', colSpan: 5, styles: { fontStyle: 'bold', halign: 'right', fillColor: [79, 70, 229], textColor: 255 } },
+                { content: `S/ ${generalTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [79, 70, 229], textColor: 255 } }
+            ]);
+        } else {
+             tableBody.push([
+                { content: 'TOTAL GENERAL', colSpan: 5, styles: { fontStyle: 'bold', halign: 'right', fillColor: [79, 70, 229], textColor: 255 } },
+                { content: `S/ ${generalTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [79, 70, 229], textColor: 255 } }
+            ]);
+        }
+
         autoTable(doc, {
             startY: 25,
-            head: [['Vendedor', 'Cliente', 'Doc', 'Número', 'Emisión', 'Vencimiento', 'Saldo']],
-            body: filteredDebts.map(d => [
-                d.seller_name,
-                d.client_name,
-                d.doc_type,
-                d.doc_number,
-                d.doc_date,
-                d.due_date,
-                `S/ ${d.balance.toFixed(2)}`
-            ]),
+            head: [['Cliente', 'Doc', 'Número', 'Emisión', 'Vencimiento', 'Saldo']],
+            body: tableBody,
             theme: 'grid',
-            headStyles: { fillColor: [79, 70, 229] }
+            headStyles: { fillColor: [79, 70, 229], fontSize: 8 },
+            styles: { fontSize: 7, cellPadding: 1.5 },
+            columnStyles: {
+                0: { cellWidth: 75 }, // Cliente
+                1: { cellWidth: 12 }, // Doc
+                2: { cellWidth: 30 }, // Numero
+                3: { cellWidth: 20 }, // Emision
+                4: { cellWidth: 20 }, // Vencimiento
+                5: { cellWidth: 25, halign: 'right' }, // Saldo
+            }
         });
 
         doc.save(`Reporte_Cuentas_Cobrar_${new Date().toISOString().split('T')[0]}.pdf`);
