@@ -1,4 +1,4 @@
-// LegacyDebts Component - Updated with Planilla grouping and subtotals [FORCE SYNC]
+// LegacyDebts Component - Updated with Planilla grouping, subtotals and Reverted Edit [FORCE SYNC]
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { LegacyDebt, LegacyCollectionSheet, LegacyCollectionSheetDetail, User } from '../types';
