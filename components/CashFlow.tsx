@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { CashMovement, ExpenseCategory, ScheduledTransaction } from '../types';
-import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, XCircle, BarChart3, Briefcase, Store, Truck, Coins, Loader2, Edit2 } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, XCircle, BarChart3, Briefcase, Store, Truck, Coins, Loader2, Edit2, FileSpreadsheet } from 'lucide-react';
 import { supabase } from '../services/supabase';
 
 type Tab = 'SESSION' | 'DASHBOARD' | 'MOVEMENTS' | 'PLANNER' | 'CONFIG';
@@ -102,6 +102,8 @@ export const CashFlow: React.FC = () => {
             DynamicIcon = <Truck className="w-4 h-4 text-emerald-600" />;
          } else if (m.category_name === 'COBRANZA MANUAL' || m.description.includes('Planilla de Cobranza')) {
             DynamicIcon = <Coins className="w-4 h-4 text-amber-500" />;
+         } else if (m.category_name === 'COBRANZA MIGRACION') {
+            DynamicIcon = <FileSpreadsheet className="w-4 h-4 text-indigo-500" />;
          }
 
          list.push({

@@ -793,7 +793,8 @@ export type ViewState =
   | 'supplier-credit-notes' // NEW: NC Proveedores
   | 'personnel-management'
   | 'pos' // NEW: Punto de Venta
-  | 'seller-tracking';
+  | 'seller-tracking'
+  | 'legacy-debts'; // NEW: Cuentas por Cobrar Migración
 
 export interface PosSession {
     id: string;
@@ -806,8 +807,32 @@ export interface PosSession {
     system_expected_close?: number;
     declared_cash?: number;
     declared_card?: number;
-    declared_yape?: number;
     declared_total?: number;
     difference?: number;
+}
+
+// === LEGACY DEBTS (CUENTAS POR COBRAR MIGRACIÓN) ===
+
+export interface LegacyDebt {
+  id: string;
+  seller_name: string;
+  client_name: string;
+  doc_date: string;
+  due_date: string;
+  doc_type: string;
+  doc_number: string;
+  original_amount: number;
+  balance: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface LegacyCollection {
+  id: string;
+  legacy_debt_id: string;
+  amount: number;
+  payment_date: string;
+  user_id: string;
+  cash_movement_id?: string;
 }
 

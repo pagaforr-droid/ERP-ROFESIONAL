@@ -31,6 +31,7 @@ import { VirtualStore } from './components/VirtualStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CollectionConsolidation } from './components/CollectionConsolidation';
 import { AccountsReceivable } from './components/AccountsReceivable'; // NUEVO MÓDULO
+import { LegacyDebts } from './components/LegacyDebts';
 import { SunatManager } from './components/SunatManager';
 import { CreditNotes } from './components/CreditNotes';
 import { SupplierCreditNotes } from './components/SupplierCreditNotes';
@@ -118,6 +119,7 @@ const SIDEBAR_SECTIONS = [
       { view: 'cash-flow', icon: DollarSign, label: 'Flujo de Caja' },
       { view: 'collection-consolidation', icon: Wallet, label: 'Consolidar Cobranzas' },
       { view: 'accounts-receivable', icon: PieChart, label: 'Cuentas por Cobrar' },
+      { view: 'legacy-debts', icon: FileSpreadsheet, label: 'CxC Migración' },
     ]
   },
   {
@@ -162,7 +164,7 @@ const SIDEBAR_SECTIONS = [
 ];
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'supplier-credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'pos' | 'system-maintenance'>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'supplier-credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'pos' | 'system-maintenance' | 'legacy-debts'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
   const [showGodMode, setShowGodMode] = useState(false);
@@ -218,7 +220,7 @@ export default function App() {
     }
     
     // 2. Validar Permisos de Usuario
-    return currentUser.permissions?.includes(view) || view === 'edit-sale' || view === 'pos' || view === 'accounts-receivable' || view === 'seller-tracking' || view === 'supplier-credit-notes'; 
+    return currentUser.permissions?.includes(view) || view === 'edit-sale' || view === 'pos' || view === 'accounts-receivable' || view === 'seller-tracking' || view === 'supplier-credit-notes' || view === 'legacy-debts'; 
   };
 
   const renderContent = () => {
@@ -238,6 +240,7 @@ export default function App() {
       case 'cash-flow': return <CashFlow />;
       case 'collection-consolidation': return <CollectionConsolidation />;
       case 'accounts-receivable': return <AccountsReceivable />; // RENDER DEL NUEVO MÓDULO
+      case 'legacy-debts': return <LegacyDebts />;
       case 'sunat-manager': return <SunatManager />;
       case 'credit-notes': return <CreditNotes />;
       case 'supplier-credit-notes': return <SupplierCreditNotes />;
