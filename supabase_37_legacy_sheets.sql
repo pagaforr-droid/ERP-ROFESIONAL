@@ -52,7 +52,32 @@ BEGIN
     v_sheet_id := gen_random_uuid();
     v_cash_movement_id := gen_random_uuid()::TEXT;
 
-    -- 2. Procesar cada ítem
+    -- 2. Calcular total primero para poder insertar la cabecera
+    SELECT SUM((item->>'amount')::NUMERIC) INTO v_total_amount 
+    FROM jsonb_array_elements(p_items) AS item;
+
+    IF v_total_amount IS NULL OR v_total_amount <= 0 THEN
+        RAISE EXCEPTION 'El monto total de la planilla debe ser mayor a 0';
+    END IF;
+
+    -- 3. Insertar cabecera de la planilla (Para evitar error de FK en los detalles)
+    INSERT INTO public.legacy_collection_sheets (
+        id,
+        responsible_name,
+        status,
+        total_amount,
+        cash_movement_id,
+        user_id
+    ) VALUES (
+        v_sheet_id,
+        p_responsible_name,
+        'PROCESSED',
+        v_total_amount,
+        v_cash_movement_id,
+        p_user_id
+    );
+
+    -- 4. Procesar cada ítem (Actualizar deudas e insertar detalles)
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
     LOOP
         -- Bloquear deuda para evitar concurrencia
@@ -90,15 +115,9 @@ BEGIN
             (v_item->>'amount')::NUMERIC,
             v_debt.balance
         );
-
-        v_total_amount := v_total_amount + (v_item->>'amount')::NUMERIC;
     END LOOP;
 
-    IF v_total_amount <= 0 THEN
-        RAISE EXCEPTION 'El monto total de la planilla debe ser mayor a 0';
-    END IF;
-
-    -- 3. Insertar movimiento de caja consolidado
+    -- 5. Insertar movimiento de caja consolidado
     INSERT INTO public.cash_movements (
         id, 
         date, 
@@ -119,23 +138,6 @@ BEGIN
         'COBRANZA MIGRACION PLANILLA',
         NULL,
         v_sheet_id::TEXT
-    );
-
-    -- 4. Insertar cabecera de la planilla
-    INSERT INTO public.legacy_collection_sheets (
-        id,
-        responsible_name,
-        status,
-        total_amount,
-        cash_movement_id,
-        user_id
-    ) VALUES (
-        v_sheet_id,
-        p_responsible_name,
-        'PROCESSED',
-        v_total_amount,
-        v_cash_movement_id,
-        p_user_id
     );
 
     RETURN jsonb_build_object(
