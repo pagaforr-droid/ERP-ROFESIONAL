@@ -1,5 +1,5 @@
 -- ==============================================================================
--- Migración 37: Módulo de Planillas de Cobranza (CxC Legacy)
+-- Migración 37: Módulo de Planillas de Cobranza (CxC Legacy) [FORCE PUSH SYNC]
 -- ==============================================================================
 
 -- 1. Crear tabla legacy_collection_sheets
