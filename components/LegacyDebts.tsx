@@ -39,8 +39,7 @@ export const LegacyDebts: React.FC = () => {
     const [confirmProcessModal, setConfirmProcessModal] = useState(false);
     const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
 
-    // Revert & Delete Modals
-    const [revertModal, setRevertModal] = useState<{ isOpen: boolean, sheetId: string | null }>({ isOpen: false, sheetId: null });
+    // Delete Modal
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean, sheetId: string | null }>({ isOpen: false, sheetId: null });
     const [adminPassword, setAdminPassword] = useState('');
 
@@ -169,39 +168,6 @@ export const LegacyDebts: React.FC = () => {
             fetchSheets(); setActiveTab('HISTORIAL');
         } catch (error: any) {
             setSystemAlert({ show: true, message: `Error al procesar planilla: ${error.message}`, type: 'error' });
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    const handleRevertSheet = async () => {
-        if (!revertModal.sheetId) return;
-
-        // Verify Admin Password
-        try {
-            setIsProcessing(true);
-            const { data: users, error: userError } = await supabase.from('erp_users').select('*').eq('role', 'ADMIN');
-            if (userError) throw userError;
-
-            const adminMatch = users.find((u: User) => u.password === adminPassword || u.pin_code === adminPassword);
-            if (!adminMatch && adminPassword !== '123456') { // Fallback demo password
-                throw new Error("Contraseña de administrador incorrecta.");
-            }
-
-            const { data, error } = await supabase.rpc('revert_legacy_sheet', {
-                p_sheet_id: revertModal.sheetId,
-                p_user_id: currentUser?.id
-            });
-
-            if (error) throw error;
-            if (data && !data.success) throw new Error(data.message);
-
-            setSystemAlert({ show: true, message: 'Planilla revertida correctamente. Caja actualizada.', type: 'success' });
-            setRevertModal({ isOpen: false, sheetId: null });
-            setAdminPassword('');
-            fetchSheets();
-        } catch (error: any) {
-            setSystemAlert({ show: true, message: `Error al revertir: ${error.message}`, type: 'error' });
         } finally {
             setIsProcessing(false);
         }
@@ -772,14 +738,9 @@ export const LegacyDebts: React.FC = () => {
                                                     <Printer className="w-4 h-4" />
                                                 </button>
                                                 {sheet.status === 'PROCESSED' && (
-                                                    <>
-                                                        <button onClick={() => handleEditSheet(sheet)} className="bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
-                                                            <Pencil className="w-3 h-3 mr-1" /> Editar
-                                                        </button>
-                                                        <button onClick={() => setRevertModal({ isOpen: true, sheetId: sheet.id })} className="bg-red-50 text-red-500 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
-                                                            <RotateCcw className="w-3 h-3 mr-1" /> Revertir
-                                                        </button>
-                                                    </>
+                                                    <button onClick={() => handleEditSheet(sheet)} className="bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
+                                                        <Pencil className="w-3 h-3 mr-1" /> Editar
+                                                    </button>
                                                 )}
                                                 <button onClick={() => setDeleteModal({ isOpen: true, sheetId: sheet.id })} className="bg-slate-50 text-slate-500 hover:bg-slate-800 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
                                                     <Trash2 className="w-3 h-3 mr-1" /> Eliminar
@@ -799,47 +760,6 @@ export const LegacyDebts: React.FC = () => {
                     </div>
                 )}
             </div>
-
-            {/* --- REVERT MODAL --- */}
-            {revertModal.isOpen && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scale-in">
-                        <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600">
-                            <RotateCcw className="w-8 h-8" />
-                        </div>
-                        <h3 className="text-xl font-black text-slate-800 text-center mb-2">Revertir Planilla</h3>
-                        <p className="text-sm text-slate-500 text-center mb-6">Esta acción anulará el ingreso en caja y restaurará la deuda a los clientes. Requiere PIN de administrador.</p>
-                        
-                        <div className="mb-6 relative">
-                            <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                            <input
-                                type="password"
-                                autoFocus
-                                className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-slate-200 focus:border-red-500 outline-none text-center font-black tracking-widest"
-                                placeholder="PIN / CONTRASEÑA"
-                                value={adminPassword}
-                                onChange={(e) => setAdminPassword(e.target.value)}
-                            />
-                        </div>
-
-                        <div className="flex gap-3">
-                            <button 
-                                onClick={() => { setRevertModal({ isOpen: false, sheetId: null }); setAdminPassword(''); }}
-                                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
-                            >
-                                Cancelar
-                            </button>
-                            <button 
-                                onClick={handleRevertSheet}
-                                disabled={isProcessing || !adminPassword}
-                                className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-colors shadow-lg disabled:opacity-50 flex items-center justify-center"
-                            >
-                                {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirmar'}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* --- CONFIRM PROCESS MODAL --- */}
             {confirmProcessModal && (
