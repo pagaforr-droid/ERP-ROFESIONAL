@@ -344,7 +344,11 @@ export const LegacyDebts: React.FC = () => {
         if (sellerFilter) doc.text(`Vendedor: ${sellerFilter}`, 14, 22);
 
         const groupedBySeller: Record<string, LegacyDebt[]> = {};
-        filteredDebts.forEach((d) => {
+        
+        // Ensure debts are sorted by Client A-Z
+        const sortedDebts = [...filteredDebts].sort((a, b) => a.client_name.localeCompare(b.client_name));
+
+        sortedDebts.forEach((d) => {
             const seller = d.seller_name || 'SIN VENDEDOR';
             if (!groupedBySeller[seller]) groupedBySeller[seller] = [];
             groupedBySeller[seller].push(d);
@@ -353,21 +357,34 @@ export const LegacyDebts: React.FC = () => {
         const tableBody: any[] = [];
         let generalTotal = 0;
         
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        
         for (const [seller, items] of Object.entries(groupedBySeller)) {
             if (!sellerFilter) {
                 tableBody.push([
-                    { content: `VENDEDOR: ${seller}`, colSpan: 6, styles: { fillColor: [240, 240, 240], fontStyle: 'bold', textColor: [50, 50, 50] } }
+                    { content: `VENDEDOR: ${seller}`, colSpan: 7, styles: { fillColor: [240, 240, 240], fontStyle: 'bold', textColor: [50, 50, 50] } }
                 ]);
             }
 
             let sellerTotal = 0;
             items.forEach((d) => {
+                const dueDate = new Date(d.due_date);
+                // Ajustar huso horario local si es necesario, pero string YYYY-MM-DD funciona bien con UTC
+                dueDate.setMinutes(dueDate.getMinutes() + dueDate.getTimezoneOffset());
+                dueDate.setHours(0,0,0,0);
+                
+                const timeDiff = today.getTime() - dueDate.getTime();
+                const daysDiff = Math.floor(timeDiff / (1000 * 3600 * 24));
+                const delayText = daysDiff > 0 ? `${daysDiff} días` : 'Al día';
+
                 tableBody.push([
                     d.client_name,
                     d.doc_type,
                     d.doc_number,
                     d.doc_date,
                     d.due_date,
+                    delayText,
                     `S/ ${d.balance.toFixed(2)}`
                 ]);
                 sellerTotal += d.balance;
@@ -376,7 +393,7 @@ export const LegacyDebts: React.FC = () => {
 
             if (!sellerFilter) {
                 tableBody.push([
-                    { content: 'SUBTOTAL VENDEDOR', colSpan: 5, styles: { fontStyle: 'bold', halign: 'right' } },
+                    { content: 'SUBTOTAL VENDEDOR', colSpan: 6, styles: { fontStyle: 'bold', halign: 'right' } },
                     { content: `S/ ${sellerTotal.toFixed(2)}`, styles: { fontStyle: 'bold', textColor: [79, 70, 229] } }
                 ]);
             }
@@ -384,30 +401,31 @@ export const LegacyDebts: React.FC = () => {
 
         if (sellerFilter) {
             tableBody.push([
-                { content: 'TOTAL VENDEDOR', colSpan: 5, styles: { fontStyle: 'bold', halign: 'right', fillColor: [79, 70, 229], textColor: 255 } },
+                { content: 'TOTAL VENDEDOR', colSpan: 6, styles: { fontStyle: 'bold', halign: 'right', fillColor: [79, 70, 229], textColor: 255 } },
                 { content: `S/ ${generalTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [79, 70, 229], textColor: 255 } }
             ]);
         } else {
              tableBody.push([
-                { content: 'TOTAL GENERAL', colSpan: 5, styles: { fontStyle: 'bold', halign: 'right', fillColor: [79, 70, 229], textColor: 255 } },
+                { content: 'TOTAL GENERAL', colSpan: 6, styles: { fontStyle: 'bold', halign: 'right', fillColor: [79, 70, 229], textColor: 255 } },
                 { content: `S/ ${generalTotal.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [79, 70, 229], textColor: 255 } }
             ]);
         }
 
         autoTable(doc, {
             startY: 25,
-            head: [['Cliente', 'Doc', 'Número', 'Emisión', 'Vencimiento', 'Saldo']],
+            head: [['Cliente', 'Doc', 'Número', 'Emisión', 'Vencimiento', 'Retraso', 'Saldo']],
             body: tableBody,
             theme: 'grid',
-            headStyles: { fillColor: [79, 70, 229], fontSize: 8 },
-            styles: { fontSize: 7, cellPadding: 1.5 },
+            headStyles: { fillColor: [79, 70, 229], fontSize: 7 },
+            styles: { fontSize: 6, cellPadding: 1 },
             columnStyles: {
-                0: { cellWidth: 75 }, // Cliente
-                1: { cellWidth: 12 }, // Doc
-                2: { cellWidth: 30 }, // Numero
-                3: { cellWidth: 20 }, // Emision
-                4: { cellWidth: 20 }, // Vencimiento
-                5: { cellWidth: 25, halign: 'right' }, // Saldo
+                0: { cellWidth: 70 }, // Cliente
+                1: { cellWidth: 10 }, // Doc
+                2: { cellWidth: 28 }, // Numero
+                3: { cellWidth: 18 }, // Emision
+                4: { cellWidth: 18 }, // Vencimiento
+                5: { cellWidth: 16 }, // Retraso
+                6: { cellWidth: 22, halign: 'right' }, // Saldo
             }
         });
 
