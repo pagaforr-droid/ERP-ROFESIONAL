@@ -250,16 +250,20 @@ export const LegacyDebts: React.FC = () => {
             
             const details = data || [];
             
-            const newCart: CartItem[] = details.map((d: any) => ({
-                debt: d.legacy_debt,
-                amount: d.amount_collected
-            }));
+            const newCart: CartItem[] = details.map((d: any) => {
+                // Restore the balance in the UI so the user can edit the amount up to the original debt
+                const restoredBalance = Number(d.legacy_debt.balance) + Number(d.amount_collected);
+                return {
+                    debt: { ...d.legacy_debt, balance: restoredBalance },
+                    amount: d.amount_collected
+                };
+            });
 
             setCart(newCart);
             setResponsibleName(sheet.responsible_name);
             setEditingSheetId(sheet.id);
             setActiveTab('PLANILLA');
-            setSystemAlert({ show: true, message: 'Planilla cargada para edición. Los cambios actualizarán la planilla original.', type: 'info' });
+            setSystemAlert({ show: true, message: 'Planilla cargada para edición. Los saldos han sido restaurados temporalmente para su corrección.', type: 'info' });
         } catch (error: any) {
             setSystemAlert({ show: true, message: `Error cargando planilla: ${error.message}`, type: 'error' });
         } finally {
