@@ -326,3 +326,55 @@ EXCEPTION WHEN OTHERS THEN
     RETURN jsonb_build_object('success', false, 'message', SQLERRM);
 END;
 $$;
+
+-- 7. RPC para eliminar físicamente una planilla (Hard Delete)
+CREATE OR REPLACE FUNCTION public.delete_legacy_sheet(
+    p_sheet_id UUID,
+    p_user_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_sheet public.legacy_collection_sheets%ROWTYPE;
+    v_detail public.legacy_collection_sheet_details%ROWTYPE;
+BEGIN
+    -- 1. Bloquear y obtener planilla
+    SELECT * INTO v_sheet
+    FROM public.legacy_collection_sheets
+    WHERE id = p_sheet_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Planilla no encontrada';
+    END IF;
+
+    -- 2. Restaurar los saldos si la planilla no estaba revertida
+    IF v_sheet.status = 'PROCESSED' THEN
+        FOR v_detail IN SELECT * FROM public.legacy_collection_sheet_details WHERE sheet_id = p_sheet_id
+        LOOP
+            UPDATE public.legacy_debts
+            SET balance = balance + v_detail.amount_collected,
+                is_active = true
+            WHERE id = v_detail.legacy_debt_id;
+        END LOOP;
+    END IF;
+
+    -- 3. Eliminar movimientos de caja asociados
+    IF v_sheet.cash_movement_id IS NOT NULL THEN
+        DELETE FROM public.cash_movements WHERE id = v_sheet.cash_movement_id;
+    END IF;
+    
+    IF v_sheet.reversal_cash_movement_id IS NOT NULL THEN
+        DELETE FROM public.cash_movements WHERE id = v_sheet.reversal_cash_movement_id;
+    END IF;
+
+    -- 4. Eliminar la planilla (los detalles se borran por CASCADE)
+    DELETE FROM public.legacy_collection_sheets WHERE id = p_sheet_id;
+
+    RETURN jsonb_build_object('success', true, 'message', 'Planilla y movimientos eliminados correctamente');
+EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'message', SQLERRM);
+END;
+$$;

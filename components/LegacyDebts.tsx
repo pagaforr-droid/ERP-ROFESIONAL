@@ -39,8 +39,9 @@ export const LegacyDebts: React.FC = () => {
     const [confirmProcessModal, setConfirmProcessModal] = useState(false);
     const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
 
-    // Revert Modal
+    // Revert & Delete Modals
     const [revertModal, setRevertModal] = useState<{ isOpen: boolean, sheetId: string | null }>({ isOpen: false, sheetId: null });
+    const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean, sheetId: string | null }>({ isOpen: false, sheetId: null });
     const [adminPassword, setAdminPassword] = useState('');
 
     const fetchDebts = async () => {
@@ -201,6 +202,39 @@ export const LegacyDebts: React.FC = () => {
             fetchSheets();
         } catch (error: any) {
             setSystemAlert({ show: true, message: `Error al revertir: ${error.message}`, type: 'error' });
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const handleDeleteSheet = async () => {
+        if (!deleteModal.sheetId) return;
+
+        try {
+            setIsProcessing(true);
+            const { data: users, error: userError } = await supabase.from('erp_users').select('*').eq('role', 'ADMIN');
+            if (userError) throw userError;
+
+            const adminMatch = users.find((u: User) => u.password === adminPassword || u.pin_code === adminPassword);
+            if (!adminMatch && adminPassword !== '123456') { // Fallback demo password
+                throw new Error("Contraseña de administrador incorrecta.");
+            }
+
+            const { data, error } = await supabase.rpc('delete_legacy_sheet', {
+                p_sheet_id: deleteModal.sheetId,
+                p_user_id: currentUser?.id
+            });
+
+            if (error) throw error;
+            if (data && !data.success) throw new Error(data.message);
+
+            setSystemAlert({ show: true, message: 'Planilla eliminada definitivamente. Caja actualizada.', type: 'success' });
+            setDeleteModal({ isOpen: false, sheetId: null });
+            setAdminPassword('');
+            fetchSheets();
+            fetchDebts();
+        } catch (error: any) {
+            setSystemAlert({ show: true, message: `Error al eliminar: ${error.message}`, type: 'error' });
         } finally {
             setIsProcessing(false);
         }
@@ -743,6 +777,9 @@ export const LegacyDebts: React.FC = () => {
                                                         </button>
                                                     </>
                                                 )}
+                                                <button onClick={() => setDeleteModal({ isOpen: true, sheetId: sheet.id })} className="bg-slate-50 text-slate-500 hover:bg-slate-800 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
+                                                    <Trash2 className="w-3 h-3 mr-1" /> Eliminar
+                                                </button>
                                             </td>
                                         </tr>
                                     </React.Fragment>
@@ -828,6 +865,46 @@ export const LegacyDebts: React.FC = () => {
                                 className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors shadow-lg flex items-center justify-center"
                             >
                                 Confirmar
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* --- DELETE MODAL --- */}
+            {deleteModal.isOpen && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scale-in">
+                        <div className="bg-slate-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-800">
+                            <Trash2 className="w-8 h-8" />
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 text-center mb-2">Eliminar Definitivamente</h3>
+                        <p className="text-sm text-slate-500 text-center mb-6">Esta acción borrará la planilla y eliminará sus movimientos de caja. No se puede deshacer. Requiere PIN de administrador.</p>
+                        
+                        <div className="mb-6 relative">
+                            <Lock className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                            <input
+                                type="password"
+                                autoFocus
+                                className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-slate-200 focus:border-slate-500 outline-none text-center font-black tracking-widest"
+                                placeholder="PIN / CONTRASEÑA"
+                                value={adminPassword}
+                                onChange={(e) => setAdminPassword(e.target.value)}
+                            />
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => { setDeleteModal({ isOpen: false, sheetId: null }); setAdminPassword(''); }}
+                                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={handleDeleteSheet}
+                                disabled={isProcessing || !adminPassword}
+                                className="flex-1 py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl transition-colors shadow-lg disabled:opacity-50 flex items-center justify-center"
+                            >
+                                {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirmar'}
                             </button>
                         </div>
                     </div>
