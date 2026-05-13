@@ -8,11 +8,16 @@ CREATE TABLE IF NOT EXISTS public.legacy_collection_sheets (
     responsible_name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'PROCESSED', -- PROCESSED, REVERTED
     total_amount NUMERIC(10,2) NOT NULL DEFAULT 0,
-    cash_movement_id TEXT,
-    reversal_cash_movement_id TEXT,
+    cash_movement_id UUID,
+    reversal_cash_movement_id UUID,
     user_id UUID REFERENCES public.erp_users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- Alter table in case it was created with TEXT previously
+ALTER TABLE public.legacy_collection_sheets 
+    ALTER COLUMN cash_movement_id TYPE UUID USING cash_movement_id::UUID,
+    ALTER COLUMN reversal_cash_movement_id TYPE UUID USING reversal_cash_movement_id::UUID;
 
 -- 2. Crear tabla legacy_collection_sheet_details
 CREATE TABLE IF NOT EXISTS public.legacy_collection_sheet_details (
@@ -48,13 +53,13 @@ DECLARE
     v_item JSONB;
     v_debt public.legacy_debts%ROWTYPE;
     v_total_amount NUMERIC := 0;
-    v_cash_movement_id TEXT;
+    v_cash_movement_id UUID;
     v_sheet_id UUID;
     v_new_balance NUMERIC;
 BEGIN
     -- 1. Generar UUIDs
     v_sheet_id := gen_random_uuid();
-    v_cash_movement_id := gen_random_uuid()::TEXT;
+    v_cash_movement_id := gen_random_uuid();
 
     -- 2. Calcular total primero para poder insertar la cabecera
     SELECT SUM((item->>'amount')::NUMERIC) INTO v_total_amount 
@@ -141,7 +146,7 @@ BEGIN
         p_user_id,
         'COBRANZA MIGRACION PLANILLA',
         NULL,
-        v_sheet_id::TEXT
+        v_sheet_id
     );
 
     RETURN jsonb_build_object(
@@ -166,7 +171,7 @@ AS $$
 DECLARE
     v_sheet public.legacy_collection_sheets%ROWTYPE;
     v_detail public.legacy_collection_sheet_details%ROWTYPE;
-    v_reversal_cash_movement_id TEXT;
+    v_reversal_cash_movement_id UUID;
     v_debt public.legacy_debts%ROWTYPE;
 BEGIN
     -- 1. Bloquear planilla
@@ -195,7 +200,7 @@ BEGIN
     END LOOP;
 
     -- 3. Generar movimiento de caja de reversión (Egreso)
-    v_reversal_cash_movement_id := gen_random_uuid()::TEXT;
+    v_reversal_cash_movement_id := gen_random_uuid();
     
     INSERT INTO public.cash_movements (
         id, 
@@ -216,7 +221,7 @@ BEGIN
         p_user_id,
         'REVERSION PLANILLA MIGRACION',
         NULL,
-        p_sheet_id::TEXT
+        p_sheet_id
     );
 
     -- 4. Actualizar estado de la planilla
