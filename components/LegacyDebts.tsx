@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { LegacyDebt, LegacyCollectionSheet, LegacyCollectionSheetDetail, User } from '../types';
-import { Upload, Search, DollarSign, Download, Filter, FileText, CheckCircle, XCircle, FileSpreadsheet, Loader2, ListPlus, Trash2, Printer, Lock, RotateCcw } from 'lucide-react';
+import { Upload, Search, DollarSign, Download, Filter, FileText, CheckCircle, XCircle, FileSpreadsheet, Loader2, ListPlus, Trash2, Printer, Lock, RotateCcw, Pencil } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -184,6 +184,32 @@ export const LegacyDebts: React.FC = () => {
             setSystemAlert({ show: true, message: `Error al revertir: ${error.message}`, type: 'error' });
         } finally {
             setIsProcessing(false);
+        }
+    };
+
+    const handleEditRevertedSheet = async (sheet: LegacyCollectionSheet) => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase.from('legacy_collection_sheet_details')
+                .select('*, legacy_debt:legacy_debts(*)')
+                .eq('sheet_id', sheet.id);
+            if (error) throw error;
+            
+            const details = data || [];
+            
+            const newCart: CartItem[] = details.map((d: any) => ({
+                debt: d.legacy_debt,
+                amount: d.amount_collected
+            }));
+
+            setCart(newCart);
+            setResponsibleName(sheet.responsible_name);
+            setActiveTab('PLANILLA');
+            setSystemAlert({ show: true, message: 'Planilla cargada en el carrito para edición.', type: 'info' });
+        } catch (error: any) {
+            setSystemAlert({ show: true, message: `Error cargando planilla: ${error.message}`, type: 'error' });
+        } finally {
+            setIsLoading(false);
         }
     };
 
@@ -673,6 +699,11 @@ export const LegacyDebts: React.FC = () => {
                                                 {sheet.status === 'PROCESSED' && (
                                                     <button onClick={() => setRevertModal({ isOpen: true, sheetId: sheet.id })} className="bg-red-50 text-red-500 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
                                                         <RotateCcw className="w-3 h-3 mr-1" /> Revertir
+                                                    </button>
+                                                )}
+                                                {sheet.status === 'REVERTED' && (
+                                                    <button onClick={() => handleEditRevertedSheet(sheet)} className="bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
+                                                        <Pencil className="w-3 h-3 mr-1" /> Editar
                                                     </button>
                                                 )}
                                             </td>
