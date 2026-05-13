@@ -235,3 +235,94 @@ EXCEPTION WHEN OTHERS THEN
     RETURN jsonb_build_object('success', false, 'message', SQLERRM);
 END;
 $$;
+
+-- 6. RPC para editar/actualizar planilla de cobranza en su lugar
+CREATE OR REPLACE FUNCTION public.update_legacy_sheet(
+    p_sheet_id UUID,
+    p_responsible_name TEXT,
+    p_items JSONB,
+    p_user_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_sheet public.legacy_collection_sheets%ROWTYPE;
+    v_detail public.legacy_collection_sheet_details%ROWTYPE;
+    v_item JSONB;
+    v_debt public.legacy_debts%ROWTYPE;
+    v_total_amount NUMERIC(10,2) := 0;
+BEGIN
+    -- 1. Bloquear y obtener planilla
+    SELECT * INTO v_sheet
+    FROM public.legacy_collection_sheets
+    WHERE id = p_sheet_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Planilla no encontrada';
+    END IF;
+
+    IF v_sheet.status = 'REVERTED' THEN
+        RAISE EXCEPTION 'No se puede actualizar una planilla revertida. Cree una nueva.';
+    END IF;
+
+    -- 2. Restaurar los saldos originales de los detalles actuales
+    FOR v_detail IN SELECT * FROM public.legacy_collection_sheet_details WHERE sheet_id = p_sheet_id
+    LOOP
+        UPDATE public.legacy_debts
+        SET balance = balance + v_detail.amount_collected,
+            is_active = true
+        WHERE id = v_detail.legacy_debt_id;
+    END LOOP;
+
+    -- 3. Eliminar los detalles anteriores
+    DELETE FROM public.legacy_collection_sheet_details WHERE sheet_id = p_sheet_id;
+
+    -- 4. Procesar los nuevos items y descontar saldos
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+    LOOP
+        SELECT * INTO v_debt FROM public.legacy_debts WHERE id = (v_item->>'debt_id')::UUID FOR UPDATE;
+        
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'Deuda no encontrada: %', v_item->>'debt_id';
+        END IF;
+
+        IF v_debt.balance < (v_item->>'amount')::NUMERIC THEN
+            RAISE EXCEPTION 'El monto a cobrar supera el saldo de la deuda para el documento %', v_debt.doc_number;
+        END IF;
+
+        -- Insertar nuevo detalle
+        INSERT INTO public.legacy_collection_sheet_details (
+            sheet_id, legacy_debt_id, amount_collected, previous_balance
+        ) VALUES (
+            p_sheet_id, v_debt.id, (v_item->>'amount')::NUMERIC, v_debt.balance
+        );
+
+        -- Actualizar saldo de la deuda
+        UPDATE public.legacy_debts
+        SET balance = balance - (v_item->>'amount')::NUMERIC,
+            is_active = CASE WHEN (balance - (v_item->>'amount')::NUMERIC) <= 0 THEN false ELSE true END
+        WHERE id = v_debt.id;
+
+        v_total_amount := v_total_amount + (v_item->>'amount')::NUMERIC;
+    END LOOP;
+
+    -- 5. Actualizar la planilla
+    UPDATE public.legacy_collection_sheets
+    SET responsible_name = p_responsible_name,
+        total_amount = v_total_amount
+    WHERE id = p_sheet_id;
+
+    -- 6. Actualizar el movimiento de caja (Ingreso) original
+    UPDATE public.cash_movements
+    SET amount = v_total_amount,
+        description = 'Planilla de Cobranza (Migración) - Responsable: ' || p_responsible_name
+    WHERE id = v_sheet.cash_movement_id;
+
+    RETURN jsonb_build_object('success', true, 'message', 'Planilla actualizada correctamente');
+EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'message', SQLERRM);
+END;
+$$;

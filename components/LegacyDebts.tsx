@@ -37,6 +37,7 @@ export const LegacyDebts: React.FC = () => {
     const [cart, setCart] = useState<CartItem[]>([]);
     const [responsibleName, setResponsibleName] = useState('');
     const [confirmProcessModal, setConfirmProcessModal] = useState(false);
+    const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
 
     // Revert Modal
     const [revertModal, setRevertModal] = useState<{ isOpen: boolean, sheetId: string | null }>({ isOpen: false, sheetId: null });
@@ -134,19 +135,37 @@ export const LegacyDebts: React.FC = () => {
         setIsProcessing(true);
         try {
             const itemsToProcess = cart.map(c => ({ debt_id: c.debt.id, amount: c.amount }));
-            const { data, error } = await supabase.rpc('process_legacy_sheet', {
-                p_responsible_name: responsibleName,
-                p_items: itemsToProcess,
-                p_user_id: currentUser?.id
-            });
+            
+            let data, error;
+
+            if (editingSheetId) {
+                const res = await supabase.rpc('update_legacy_sheet', {
+                    p_sheet_id: editingSheetId,
+                    p_responsible_name: responsibleName,
+                    p_items: itemsToProcess,
+                    p_user_id: currentUser?.id
+                });
+                data = res.data;
+                error = res.error;
+            } else {
+                const res = await supabase.rpc('process_legacy_sheet', {
+                    p_responsible_name: responsibleName,
+                    p_items: itemsToProcess,
+                    p_user_id: currentUser?.id
+                });
+                data = res.data;
+                error = res.error;
+            }
 
             if (error) throw error;
             if (data && !data.success) throw new Error(data.message);
 
-            setSystemAlert({ show: true, message: 'Planilla procesada exitosamente. Se ha inyectado a caja.', type: 'success' });
+            setSystemAlert({ show: true, message: editingSheetId ? 'Planilla actualizada correctamente.' : 'Planilla procesada exitosamente. Se ha inyectado a caja.', type: 'success' });
             setCart([]);
             setResponsibleName('');
-            setActiveTab('HISTORIAL');
+            setEditingSheetId(null);
+            fetchDebts();
+            fetchSheets(); setActiveTab('HISTORIAL');
         } catch (error: any) {
             setSystemAlert({ show: true, message: `Error al procesar planilla: ${error.message}`, type: 'error' });
         } finally {
@@ -187,7 +206,7 @@ export const LegacyDebts: React.FC = () => {
         }
     };
 
-    const handleEditRevertedSheet = async (sheet: LegacyCollectionSheet) => {
+    const handleEditSheet = async (sheet: LegacyCollectionSheet) => {
         setIsLoading(true);
         try {
             const { data, error } = await supabase.from('legacy_collection_sheet_details')
@@ -204,8 +223,9 @@ export const LegacyDebts: React.FC = () => {
 
             setCart(newCart);
             setResponsibleName(sheet.responsible_name);
+            setEditingSheetId(sheet.id);
             setActiveTab('PLANILLA');
-            setSystemAlert({ show: true, message: 'Planilla cargada en el carrito para edición.', type: 'info' });
+            setSystemAlert({ show: true, message: 'Planilla cargada para edición. Los cambios actualizarán la planilla original.', type: 'info' });
         } catch (error: any) {
             setSystemAlert({ show: true, message: `Error cargando planilla: ${error.message}`, type: 'error' });
         } finally {
@@ -459,7 +479,7 @@ export const LegacyDebts: React.FC = () => {
                     <button onClick={() => setActiveTab('IMPORT')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'IMPORT' ? 'bg-indigo-600 text-white shadow-md' : 'bg-transparent text-slate-600 hover:bg-slate-100'}`}>
                         Importar
                     </button>
-                    <button onClick={() => setActiveTab('DEUDAS')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'DEUDAS' ? 'bg-indigo-600 text-white shadow-md' : 'bg-transparent text-slate-600 hover:bg-slate-100'}`}>
+                    <button onClick={() => setActiveTab('DEUDAS')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'DEUDAS' ? 'bg-indigo-600 text-white shadow-md' : 'bg-transparent text-slate-100 hover:bg-slate-100'}`}>
                         Deudas
                     </button>
                     <button onClick={() => setActiveTab('PLANILLA')} className={`px-4 py-2 rounded-lg font-bold text-sm transition-all ${activeTab === 'PLANILLA' ? 'bg-indigo-600 text-white shadow-md' : 'bg-transparent text-slate-600 hover:bg-slate-100'}`}>
@@ -509,8 +529,13 @@ export const LegacyDebts: React.FC = () => {
                 {/* --- TAB: DEUDAS & REPORTS --- */}
                 {(activeTab === 'DEUDAS' || activeTab === 'REPORTS') && (
                     <div className="flex flex-col h-full">
-                        <div className="p-4 border-b border-slate-200 flex gap-4 bg-slate-50">
-                            <div className="relative flex-1 max-w-md">
+                        <div className="flex flex-col md:flex-row items-center gap-4 bg-white p-6 border-b border-slate-200">
+                            {editingSheetId && (
+                                <div className="bg-amber-100 text-amber-800 px-4 py-2 rounded-lg font-bold flex items-center border border-amber-200 w-full md:w-auto">
+                                    <Pencil className="w-5 h-5 mr-2" /> Editando Planilla
+                                </div>
+                            )}
+                            <div className="flex-1 w-full relative">
                                 <Search className="absolute left-3 top-2.5 w-5 h-5 text-slate-400" />
                                 <input
                                     type="text"
@@ -615,12 +640,24 @@ export const LegacyDebts: React.FC = () => {
                                 <p className="text-xs text-indigo-500 font-bold uppercase mb-1">Total a Recaudar</p>
                                 <p className="text-3xl font-black text-indigo-700">S/ {cartTotal.toFixed(2)}</p>
                             </div>
+                            {editingSheetId && (
+                                <button 
+                                    onClick={() => {
+                                        setCart([]);
+                                        setResponsibleName('');
+                                        setEditingSheetId(null);
+                                    }}
+                                    className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-6 py-4 rounded-xl font-bold transition-colors w-full md:w-auto"
+                                >
+                                    Cancelar
+                                </button>
+                            )}
                             <button 
                                 onClick={handleProcessClick}
                                 disabled={isProcessing || cart.length === 0}
-                                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white px-8 py-4 rounded-xl font-black shadow-lg flex items-center justify-center transition-colors w-full md:w-auto"
+                                className={`${editingSheetId ? 'bg-amber-500 hover:bg-amber-600' : 'bg-emerald-600 hover:bg-emerald-700'} disabled:bg-slate-300 text-white px-8 py-4 rounded-xl font-black shadow-lg flex items-center justify-center transition-colors w-full md:w-auto`}
                             >
-                                {isProcessing ? <Loader2 className="w-6 h-6 animate-spin" /> : <><CheckCircle className="w-6 h-6 mr-2" /> Procesar a Caja</>}
+                                {isProcessing ? <Loader2 className="w-6 h-6 animate-spin" /> : editingSheetId ? <><Pencil className="w-6 h-6 mr-2" /> Actualizar Planilla</> : <><CheckCircle className="w-6 h-6 mr-2" /> Procesar a Caja</>}
                             </button>
                         </div>
 
@@ -697,14 +734,14 @@ export const LegacyDebts: React.FC = () => {
                                                     <Printer className="w-4 h-4" />
                                                 </button>
                                                 {sheet.status === 'PROCESSED' && (
-                                                    <button onClick={() => setRevertModal({ isOpen: true, sheetId: sheet.id })} className="bg-red-50 text-red-500 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
-                                                        <RotateCcw className="w-3 h-3 mr-1" /> Revertir
-                                                    </button>
-                                                )}
-                                                {sheet.status === 'REVERTED' && (
-                                                    <button onClick={() => handleEditRevertedSheet(sheet)} className="bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
-                                                        <Pencil className="w-3 h-3 mr-1" /> Editar
-                                                    </button>
+                                                    <>
+                                                        <button onClick={() => handleEditSheet(sheet)} className="bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
+                                                            <Pencil className="w-3 h-3 mr-1" /> Editar
+                                                        </button>
+                                                        <button onClick={() => setRevertModal({ isOpen: true, sheetId: sheet.id })} className="bg-red-50 text-red-500 hover:bg-red-600 hover:text-white px-3 py-2 rounded-lg font-bold text-xs transition-colors flex items-center">
+                                                            <RotateCcw className="w-3 h-3 mr-1" /> Revertir
+                                                        </button>
+                                                    </>
                                                 )}
                                             </td>
                                         </tr>
