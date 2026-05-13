@@ -35,6 +35,7 @@ export const LegacyDebts: React.FC = () => {
     // Planilla State
     const [cart, setCart] = useState<CartItem[]>([]);
     const [responsibleName, setResponsibleName] = useState('');
+    const [confirmProcessModal, setConfirmProcessModal] = useState(false);
 
     // Revert Modal
     const [revertModal, setRevertModal] = useState<{ isOpen: boolean, sheetId: string | null }>({ isOpen: false, sheetId: null });
@@ -107,7 +108,7 @@ export const LegacyDebts: React.FC = () => {
 
     const cartTotal = cart.reduce((acc, curr) => acc + curr.amount, 0);
 
-    const handleProcessPlanilla = async () => {
+    const handleProcessClick = () => {
         if (!responsibleName.trim()) {
             setSystemAlert({ show: true, message: 'Debe ingresar el responsable de la planilla.', type: 'error' });
             return;
@@ -124,7 +125,11 @@ export const LegacyDebts: React.FC = () => {
                 return;
             }
         }
+        
+        setConfirmProcessModal(true);
+    };
 
+    const handleProcessPlanilla = async () => {
         setIsProcessing(true);
         try {
             const itemsToProcess = cart.map(c => ({ debt_id: c.debt.id, amount: c.amount }));
@@ -536,7 +541,7 @@ export const LegacyDebts: React.FC = () => {
                                 <p className="text-3xl font-black text-indigo-700">S/ {cartTotal.toFixed(2)}</p>
                             </div>
                             <button 
-                                onClick={handleProcessPlanilla}
+                                onClick={handleProcessClick}
                                 disabled={isProcessing || cart.length === 0}
                                 className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white px-8 py-4 rounded-xl font-black shadow-lg flex items-center justify-center transition-colors w-full md:w-auto"
                             >
@@ -672,6 +677,40 @@ export const LegacyDebts: React.FC = () => {
                                 className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-colors shadow-lg disabled:opacity-50 flex items-center justify-center"
                             >
                                 {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Confirmar'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* --- CONFIRM PROCESS MODAL --- */}
+            {confirmProcessModal && (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 animate-scale-in">
+                        <div className="bg-indigo-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-600">
+                            <CheckCircle className="w-8 h-8" />
+                        </div>
+                        <h3 className="text-xl font-black text-slate-800 text-center mb-2">Confirmar Planilla</h3>
+                        <p className="text-sm text-slate-500 text-center mb-6">
+                            ¿Estás seguro de procesar esta planilla? Se generará un ingreso en caja por <strong className="text-slate-800">S/ {cartTotal.toFixed(2)}</strong>.
+                        </p>
+
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => setConfirmProcessModal(false)}
+                                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setConfirmProcessModal(false);
+                                    handleProcessPlanilla();
+                                }}
+                                disabled={isProcessing}
+                                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors shadow-lg flex items-center justify-center"
+                            >
+                                Confirmar
                             </button>
                         </div>
                     </div>
