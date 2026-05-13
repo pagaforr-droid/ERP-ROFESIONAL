@@ -141,6 +141,21 @@ export const LegacyDebts: React.FC = () => {
         }
     };
 
+    const downloadTemplate = () => {
+        const ws = XLSX.utils.json_to_sheet([{
+            'VENDEDOR': 'EJEMPLO VENDEDOR',
+            'CLIENTE': 'EJEMPLO CLIENTE',
+            'FECHA DOC': '2024-01-01',
+            'FECHA VEN': '2024-01-31',
+            'TIPO DOC': 'FA',
+            'NUMERO DOC': 'F001-000123',
+            'SALDO': 1500.50
+        }]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Plantilla_Migracion");
+        XLSX.writeFile(wb, `Plantilla_Importacion_Migracion.xlsx`);
+    };
+
     // Reports Handlers
     const filteredDebts = debts.filter(d => {
         const matchesSearch = d.client_name.toLowerCase().includes(searchTerm.toLowerCase()) || d.doc_number.toLowerCase().includes(searchTerm.toLowerCase());
@@ -238,10 +253,17 @@ export const LegacyDebts: React.FC = () => {
                             Sube un archivo Excel (.xlsx). El sistema buscará automáticamente las columnas: <br/>
                             <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-xs text-slate-600">Vendedor, Cliente, Fecha Doc, Fecha Ven, Tipo, Numero, Saldo</span>
                         </p>
-                        <label className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-xl font-bold cursor-pointer transition-colors shadow-lg hover:shadow-xl">
-                            Seleccionar Archivo Excel
-                            <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} disabled={isLoading} />
-                        </label>
+                        <div className="flex flex-col sm:flex-row gap-4">
+                            <label className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-3 rounded-xl font-bold cursor-pointer transition-colors shadow-lg hover:shadow-xl flex items-center justify-center">
+                                <Upload className="w-5 h-5 mr-2" />
+                                Seleccionar Archivo Excel
+                                <input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} disabled={isLoading} />
+                            </label>
+                            <button onClick={downloadTemplate} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-8 py-3 rounded-xl font-bold transition-colors border border-slate-300 shadow-sm flex items-center justify-center">
+                                <Download className="w-5 h-5 mr-2" />
+                                Descargar Plantilla de Formato
+                            </button>
+                        </div>
                     </div>
                 )}
 
