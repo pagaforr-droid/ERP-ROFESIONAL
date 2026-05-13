@@ -1069,6 +1069,9 @@ export const MobileOrders: React.FC = () => {
                      </div>
                   </div>
                   <div className="flex gap-2 items-center">
+                     <button onClick={() => { if (!isOffline && currentSellerId) completeSellerSelect(currentSellerId); }} disabled={isOffline || isLoadingData} className="bg-slate-800 hover:bg-slate-700 p-2 rounded-full transition-colors shrink-0 disabled:opacity-50" title="Actualizar Catálogo">
+                        <RefreshCw className={`w-4 h-4 ${isLoadingData ? 'animate-spin text-blue-500' : 'text-slate-300'}`} />
+                     </button>
                      {offlineOrders.length > 0 && (
                         <button onClick={() => setShowOrdersModal(true)} className="relative bg-orange-500 hover:bg-orange-600 p-2 rounded-full transition-colors shadow-lg animate-pulse">
                            <CloudOff className="w-4 h-4 text-white" />
