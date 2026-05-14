@@ -5,6 +5,7 @@ import { Sale, SaleItem, DocumentSeries, NCType } from '../types';
 import { Search, FileText, ArrowLeftRight, CheckCircle2, ShieldAlert, FilePlus, Calendar, User, Hash, X } from 'lucide-react';
 import { PdfEngine } from './PdfEngine';
 import { supabase } from '../services/supabase';
+import { PendingCreditNotes } from './PendingCreditNotes';
 
 // MOTIVOS SUNAT
 const SUNAT_MOTIVOS_NC = [
@@ -270,6 +271,7 @@ export const CreditNotes: React.FC = () => {
 
                 const ncPayload = {
                     id: crypto.randomUUID(),
+                    origin_sale_id: originalSale.id,
                     series: selectedSeries,
                     client_id: originalSale.client_id,
                     client_name: originalSale.client_name,
@@ -356,15 +358,7 @@ export const CreditNotes: React.FC = () => {
             </div>
 
             {activeTab === 'APLICAR' ? (
-                 <div className="flex-1 bg-white border border-slate-200 rounded p-8 flex flex-col items-center justify-center text-center shadow-sm">
-                     <div className="w-20 h-20 bg-indigo-50 text-indigo-300 rounded-full flex items-center justify-center mb-6">
-                         <ArrowLeftRight className="w-10 h-10" />
-                     </div>
-                     <h2 className="text-2xl font-black text-slate-800 mb-2">Módulo en Desarrollo</h2>
-                     <p className="text-slate-500 max-w-md">
-                         Aquí aparecerán las Notas de Crédito que generaron un <strong>"Saldo a Favor"</strong> (aplicadas a facturas ya canceladas). Podrá aplicarlas como pago a futuras facturas del cliente.
-                     </p>
-                 </div>
+                 <PendingCreditNotes />
             ) : (
                 <>
                 {!originalSale ? (

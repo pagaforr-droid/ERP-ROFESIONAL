@@ -392,6 +392,12 @@ DECLARE
     v_nc_item_id UUID;
     v_current_number INT;
     v_code TEXT;
+    
+    v_origin_sale_id UUID;
+    v_origin_balance DECIMAL(12,2);
+    v_nc_total DECIMAL(12,2);
+    v_applied_amount DECIMAL(12,2) := 0;
+    v_nc_balance DECIMAL(12,2);
 BEGIN
     -- 1. Correlativo Nota de Crédito
     UPDATE document_series 
@@ -407,10 +413,38 @@ BEGIN
 
     v_code := LPAD(v_current_number::text, 8, '0');
 
-    -- 2. Insertar Nota de Crédito (en tabla sales)
+    -- 2. Manejo de Saldos (Aplicación automática al documento origen)
+    v_nc_total := (p_nc_data->>'total')::numeric;
+    v_nc_balance := v_nc_total;
+    
+    v_origin_sale_id := NULLIF(p_nc_data->>'origin_sale_id', '')::uuid;
+    IF v_origin_sale_id IS NOT NULL THEN
+        SELECT balance INTO v_origin_balance FROM sales WHERE id = v_origin_sale_id FOR UPDATE;
+        
+        IF v_origin_balance IS NOT NULL AND v_origin_balance > 0 THEN
+            v_applied_amount := LEAST(v_nc_total, v_origin_balance);
+            
+            -- Reducir el saldo de la factura origen
+            UPDATE sales SET balance = balance - v_applied_amount WHERE id = v_origin_sale_id;
+            
+            -- El saldo de la NC es lo que sobra (si es que sobra)
+            v_nc_balance := v_nc_total - v_applied_amount;
+            
+            -- Registrar trazabilidad
+            INSERT INTO sale_history (sale_id, action, user_id, details)
+            VALUES (
+                v_origin_sale_id,
+                'CREDIT_NOTE_APPLIED',
+                NULLIF(p_nc_data->>'user_id', '')::uuid,
+                'Nota de Crédito ' || (p_nc_data->>'series') || '-' || v_code || ' aplicada automáticamente por S/ ' || v_applied_amount
+            );
+        END IF;
+    END IF;
+
+    -- 3. Insertar Nota de Crédito (en tabla sales)
     INSERT INTO sales (
         id, document_type, series, number, payment_method, payment_status, 
-        client_name, client_ruc, client_address, client_id, subtotal, igv, total,
+        client_name, client_ruc, client_address, client_id, subtotal, igv, total, balance,
         status, dispatch_status, sunat_status, observation
     ) VALUES (
         COALESCE(NULLIF(p_nc_data->>'id', ''), uuid_generate_v4()::text)::uuid,
@@ -425,14 +459,15 @@ BEGIN
         NULLIF(p_nc_data->>'client_id', '')::uuid,
         (p_nc_data->>'subtotal')::numeric,
         (p_nc_data->>'igv')::numeric,
-        (p_nc_data->>'total')::numeric,
+        v_nc_total,
+        v_nc_balance,
         'completed',
         'delivered',
         'PENDING',
         p_nc_data->>'observation'
     ) RETURNING id INTO v_nc_id;
 
-    -- 3. Procesar Items y RESTITUIR STOCK (vía batch_allocations negativo)
+    -- 4. Procesar Items y RESTITUIR STOCK (vía batch_allocations negativo)
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_nc_data->'items')
     LOOP
         INSERT INTO sale_items (
@@ -468,6 +503,6 @@ BEGIN
         END IF;
     END LOOP;
 
-    RETURN jsonb_build_object('success', true, 'real_number', v_code);
+    RETURN jsonb_build_object('success', true, 'real_number', v_code, 'nc_id', v_nc_id, 'applied_amount', v_applied_amount);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
