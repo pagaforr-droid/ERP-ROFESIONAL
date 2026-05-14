@@ -411,62 +411,106 @@ export const Attendance: React.FC = () => {
          </div>
 
          {activeTab === 'CLOCK' && (
-            <div className="flex-1 flex flex-col bg-slate-50 rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-               <div className="bg-slate-900 text-white p-8 flex flex-col items-center justify-center relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-r from-blue-900 to-indigo-900 opacity-50"></div>
-                  <div className="text-7xl font-mono font-bold tracking-widest text-white drop-shadow-xl z-10">
-                     {currentTime.toLocaleTimeString('es-PE', { hour12: false })}
+            <div className="flex-1 flex flex-col bg-slate-50 rounded-2xl border border-slate-200/60 shadow-inner overflow-hidden">
+               {/* Nuevo Header de Reloj tipo Dashboard */}
+               <div className="bg-white px-6 md:px-8 py-5 border-b border-slate-200 flex flex-col md:flex-row justify-between items-center gap-4 relative z-10 shadow-sm">
+                  <div className="flex items-center gap-4 md:gap-6">
+                     <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shadow-lg shadow-blue-500/30 transform transition-transform hover:scale-105 shrink-0">
+                        <Clock className="w-7 h-7 md:w-8 md:h-8 text-white" />
+                     </div>
+                     <div>
+                        <div className="text-3xl md:text-4xl font-mono font-black tracking-tight text-slate-800 drop-shadow-sm">
+                           {currentTime.toLocaleTimeString('es-PE', { hour12: false })}
+                        </div>
+                        <div className="text-xs md:text-sm text-slate-500 font-bold uppercase tracking-widest mt-0.5 md:mt-1">
+                           {currentTime.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'short' })}
+                        </div>
+                     </div>
                   </div>
-                  <div className="text-xl text-blue-200 mt-2 font-medium uppercase tracking-widest z-10">
-                     {currentTime.toLocaleDateString('es-PE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  
+                  {/* Métricas Rápidas */}
+                  <div className="bg-slate-50 px-4 md:px-6 py-2.5 md:py-3 rounded-xl border border-slate-200 flex items-center gap-4 md:gap-6 w-full md:w-auto justify-center">
+                     <div className="text-center">
+                        <div className="text-xl md:text-2xl font-black text-green-600 leading-none">{employees.filter(e => { const r = getEmployeeStatus(e.id); return r && (!r.break_start || r.break_end); }).length}</div>
+                        <div className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">En Turno</div>
+                     </div>
+                     <div className="w-px h-8 bg-slate-200"></div>
+                     <div className="text-center">
+                        <div className="text-xl md:text-2xl font-black text-orange-500 leading-none">{employees.filter(e => { const r = getEmployeeStatus(e.id); return r && r.break_start && !r.break_end; }).length}</div>
+                        <div className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">Pausa</div>
+                     </div>
+                     <div className="w-px h-8 bg-slate-200"></div>
+                     <div className="text-center">
+                        <div className="text-xl md:text-2xl font-black text-slate-400 leading-none">{employees.filter(e => !getEmployeeStatus(e.id)).length}</div>
+                        <div className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase tracking-wider mt-1">Inactivos</div>
+                     </div>
                   </div>
                </div>
 
-               <div className="flex-1 overflow-auto p-8">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+               <div className="flex-1 overflow-auto p-4 md:p-6 bg-slate-50">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
                      {employees.map(employee => {
                         const activeRecord = getEmployeeStatus(employee.id);
-                        const isOnShift = !!activeRecord;
+                        const isOnBreak = activeRecord?.break_start && !activeRecord?.break_end;
+                        const isOnShift = !!activeRecord && !isOnBreak;
 
                         return (
                            <button
                               key={employee.id}
                               onClick={() => handleEmployeeClick(employee.id)}
-                              className={`relative group flex flex-col items-center p-6 rounded-2xl border-2 transition-all transform hover:-translate-y-1 hover:shadow-xl bg-white ${isOnShift ? (activeRecord?.break_start && !activeRecord?.break_end ? 'border-orange-400 shadow-orange-100' : 'border-green-400 shadow-green-100') : 'border-slate-200 hover:border-blue-400 shadow-sm'}`}
+                              className={`group relative bg-white flex items-center p-3.5 rounded-2xl border transition-all duration-300 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                                 isOnShift ? 'border-green-200 shadow-sm shadow-green-100/50 hover:border-green-400' 
+                                 : isOnBreak ? 'border-orange-200 shadow-sm shadow-orange-100/50 hover:border-orange-400' 
+                                 : 'border-slate-200 shadow-sm hover:border-blue-300'
+                              }`}
                            >
-                              <div className={`absolute top-4 right-4 w-3 h-3 rounded-full ${isOnShift ? (activeRecord?.break_start && !activeRecord?.break_end ? 'bg-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.8)]' : 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.8)]') : 'bg-slate-300'}`}></div>
-                              
-                              <div onClick={(e) => { e.stopPropagation(); setConfigModal({ isOpen: true, employeeId: employee.id }); setConfigPin(''); setConfigPhoto(null); }} className="absolute top-3 left-3 p-2 bg-slate-100 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors z-10" title="Configurar Foto/PIN">
+                              {/* Glowing Status Dot */}
+                              <div className={`absolute top-0 right-0 -mt-1 -mr-1 w-3.5 h-3.5 rounded-full border-2 border-white z-10 transition-colors ${
+                                 isOnShift ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' 
+                                 : isOnBreak ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.6)]' 
+                                 : 'bg-slate-300'
+                              }`}></div>
+
+                              {/* Settings Icon */}
+                              <div 
+                                 onClick={(e) => { e.stopPropagation(); setConfigModal({ isOpen: true, employeeId: employee.id }); setConfigPin(''); setConfigPhoto(null); }} 
+                                 className="absolute top-1/2 -translate-y-1/2 right-3 opacity-0 group-hover:opacity-100 p-2 bg-slate-100 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all z-10" 
+                                 title="Configurar Foto/PIN"
+                              >
                                  <Settings className="w-4 h-4" />
                               </div>
 
-                              <div className={`p-1 rounded-full mb-4 transition-colors ${isOnShift ? (activeRecord?.break_start && !activeRecord?.break_end ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600') : 'bg-slate-100 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500'}`}>
+                              <div className={`shrink-0 w-12 h-12 rounded-xl flex items-center justify-center mr-3.5 transition-colors ${
+                                 isOnShift ? 'bg-green-50 text-green-600 border border-green-100' : isOnBreak ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-slate-50 text-slate-400 border border-slate-100 group-hover:bg-blue-50 group-hover:text-blue-600 group-hover:border-blue-100'
+                              }`}>
                                  {employee.photo_url ? (
-                                    <img src={employee.photo_url} alt={employee.name} className="w-16 h-16 rounded-full object-cover border-2 border-white shadow-sm" />
+                                    <img src={employee.photo_url} alt={employee.name} className="w-full h-full rounded-xl object-cover" />
                                  ) : (
-                                    <div className="p-4"><UserIcon className="w-8 h-8" /></div>
+                                    <UserIcon className="w-5 h-5" />
                                  )}
                               </div>
 
-                              <h3 className="font-bold text-lg text-slate-800 mb-1">{employee.name}</h3>
-                              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">DNI: {employee.dni}</p>
-
-                              {isOnShift ? (
-                                 <div className={`px-4 py-2 rounded-xl flex flex-col items-center border w-full ${activeRecord?.break_start && !activeRecord?.break_end ? 'bg-orange-50 text-orange-800 border-orange-200' : 'bg-green-50 text-green-800 border-green-200'}`}>
-                                    <div className="text-xs font-bold flex items-center mb-1">
-                                       {activeRecord?.break_start && !activeRecord?.break_end ? (
-                                          <><Coffee className={`w-4 h-4 mr-1 text-orange-600`} /> EN REFRIGERIO</>
-                                       ) : (
-                                          <><LogIn className="w-4 h-4 mr-1 text-green-600" /> {formatTime(activeRecord.check_in)}</>
-                                       )}
-                                    </div>
-                                    <div className={`text-[11px] font-mono font-bold tracking-wider ${activeRecord?.break_start && !activeRecord?.break_end ? 'text-orange-600' : 'text-green-600'}`}>
-                                       {formatDuration(currentTime.getTime() - new Date(activeRecord.check_in).getTime())}
-                                    </div>
+                              <div className="flex-1 text-left min-w-0 pr-8">
+                                 <h3 className="font-extrabold text-sm text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors">{employee.name}</h3>
+                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5 truncate">{employee.dni}</p>
+                                 
+                                 <div className="mt-1.5 h-5 flex items-center">
+                                    {isOnShift || isOnBreak ? (
+                                       <div className={`inline-flex items-center px-1.5 py-0.5 rounded border ${
+                                          isOnBreak ? 'bg-orange-50/50 text-orange-700 border-orange-200' : 'bg-green-50/50 text-green-700 border-green-200'
+                                       }`}>
+                                          {isOnBreak ? <Coffee className="w-2.5 h-2.5 mr-1" /> : <Clock className="w-2.5 h-2.5 mr-1" />}
+                                          <span className="font-mono text-[10px] font-bold">
+                                             {formatDuration(currentTime.getTime() - new Date(activeRecord.check_in).getTime())}
+                                          </span>
+                                       </div>
+                                    ) : (
+                                       <span className="text-[9px] font-bold text-slate-300 uppercase tracking-wider group-hover:text-blue-400 transition-colors">
+                                          Iniciar Turno
+                                       </span>
+                                    )}
                                  </div>
-                              ) : (
-                                 <div className="text-slate-400 text-xs font-bold uppercase tracking-wider py-2">Click para Ingresar</div>
-                              )}
+                              </div>
                            </button>
                         );
                      })}
@@ -480,45 +524,68 @@ export const Attendance: React.FC = () => {
                </div>
 
                {authModal.isOpen && (
-                  <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
-                     <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
-                        <div className={`p-8 text-center ${authModal.mode === 'IN' ? 'bg-gradient-to-b from-green-500 to-green-600' : 'bg-gradient-to-b from-rose-500 to-rose-600'} text-white relative`}>
-                           <button onClick={() => setAuthModal({ isOpen: false, employeeId: null, mode: null })} className="absolute top-4 right-4 text-white/70 hover:text-white">
-                              <X className="w-6 h-6" />
+                  <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                     <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden transform transition-all">
+                        {/* Header Minimalista y Colorido */}
+                        <div className={`p-6 pb-8 relative text-center ${
+                           authModal.mode === 'IN' ? 'bg-gradient-to-br from-green-500 to-emerald-600' : 
+                           authModal.mode === 'BREAK_OUT' ? 'bg-gradient-to-br from-orange-400 to-amber-500' :
+                           authModal.mode === 'BREAK_IN' ? 'bg-gradient-to-br from-blue-500 to-indigo-600' :
+                           'bg-gradient-to-br from-rose-500 to-red-600'
+                        }`}>
+                           <div className="absolute top-0 left-0 w-full h-full overflow-hidden opacity-20 pointer-events-none">
+                              <div className="absolute -top-6 -left-6 w-24 h-24 rounded-full bg-white blur-xl"></div>
+                              <div className="absolute bottom-0 right-0 w-32 h-32 rounded-full bg-white blur-2xl"></div>
+                           </div>
+
+                           <button onClick={() => setAuthModal({ isOpen: false, employeeId: null, mode: null })} className="absolute top-4 right-4 text-white/80 hover:text-white bg-black/10 hover:bg-black/20 p-2 rounded-full backdrop-blur-sm transition-all z-10">
+                              <X className="w-5 h-5" />
                            </button>
-                           {authModal.mode === 'IN' ? <LogIn className="w-16 h-16 mx-auto mb-3 opacity-90" /> : <LogOut className="w-16 h-16 mx-auto mb-3 opacity-90" />}
-                           <h3 className="text-3xl font-black uppercase tracking-tight mb-1">
-                              {authModal.mode === 'IN' ? 'Entrada' : authModal.mode === 'BREAK_OUT' ? 'Refrigerio' : authModal.mode === 'BREAK_IN' ? 'Fin Refrigerio' : 'Salida'}
-                           </h3>
-                           <p className="text-white/90 text-sm font-medium">
-                              {employees.find(e => e.id === authModal.employeeId)?.name}
-                           </p>
+
+                           <div className="relative z-10">
+                              <div className="w-16 h-16 mx-auto bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-4 shadow-inner border border-white/30">
+                                 {authModal.mode === 'IN' ? <LogIn className="w-8 h-8 text-white" /> : 
+                                  authModal.mode === 'BREAK_OUT' ? <Coffee className="w-8 h-8 text-white" /> :
+                                  authModal.mode === 'BREAK_IN' ? <UserCheck className="w-8 h-8 text-white" /> :
+                                  <LogOut className="w-8 h-8 text-white" />}
+                              </div>
+                              <h3 className="text-2xl font-black text-white tracking-tight leading-none mb-1">
+                                 {authModal.mode === 'IN' ? 'Entrada' : authModal.mode === 'BREAK_OUT' ? 'Pausa' : authModal.mode === 'BREAK_IN' ? 'Fin Pausa' : 'Salida'}
+                              </h3>
+                              <p className="text-white/90 text-sm font-medium opacity-90 truncate px-4">
+                                 {employees.find(e => e.id === authModal.employeeId)?.name}
+                              </p>
+                           </div>
                         </div>
 
-                        <form onSubmit={handleAuthSubmit} className="p-8">
-                           {/* WEBCAM COMPONENT HIDDEN BUT ACTIVE FOR CAPTURE */}
+                        <form onSubmit={handleAuthSubmit} className="p-6 -mt-4 relative bg-white rounded-t-[2rem]">
                            <div className="hidden">
                               <Webcam audio={false} ref={webcamRef} screenshotFormat="image/jpeg" videoConstraints={{ facingMode: "user" }} />
                            </div>
 
-                           <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 text-center">PIN (DNI o Clave)</label>
-                           <div className="relative mb-6">
-                              <Lock className="absolute left-4 top-3.5 text-slate-400 w-6 h-6" />
-                              <input
-                                 ref={pinRef}
-                                 type="password"
-                                 className="w-full pl-12 pr-4 py-3 border-2 border-slate-200 rounded-xl text-center text-2xl font-black tracking-[0.5em] focus:border-blue-500 focus:ring-0 outline-none transition-colors"
-                                 value={pinInput}
-                                 onChange={e => setPinInput(e.target.value)}
-                                 placeholder="••••••"
-                                 autoComplete="off"
-                                 disabled={isLoadingAuth}
-                              />
+                           <div className="mb-6">
+                              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 text-center">Código de Seguridad</label>
+                              <div className="relative">
+                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                    <Lock className="h-5 w-5 text-slate-300" />
+                                 </div>
+                                 <input
+                                    ref={pinRef}
+                                    type="password"
+                                    className="block w-full pl-11 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-center text-3xl font-black tracking-[0.5em] text-slate-800 placeholder-slate-300 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all outline-none"
+                                    value={pinInput}
+                                    onChange={e => setPinInput(e.target.value)}
+                                    placeholder="••••••"
+                                    autoComplete="off"
+                                    disabled={isLoadingAuth}
+                                 />
+                              </div>
                            </div>
 
                            {errorMsg && (
-                              <div className="mb-6 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-600 text-sm font-bold text-center flex items-center justify-center">
-                                 <AlertCircle className="w-5 h-5 mr-2" /> {errorMsg}
+                              <div className="mb-6 px-4 py-3 bg-rose-50 border border-rose-100 rounded-xl flex items-center">
+                                 <AlertCircle className="w-5 h-5 text-rose-500 mr-2 shrink-0" />
+                                 <p className="text-xs font-bold text-rose-700 leading-tight">{errorMsg}</p>
                               </div>
                            )}
 
@@ -526,17 +593,22 @@ export const Attendance: React.FC = () => {
                               <button
                                  type="button"
                                  onClick={() => setAuthModal(prev => ({ ...prev, mode: 'OUT' }))}
-                                 className="w-full py-3 mb-3 rounded-xl font-bold text-sm text-rose-600 border-2 border-rose-200 hover:bg-rose-50 transition-all"
+                                 className="w-full py-3 mb-3 rounded-xl font-bold text-xs text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
                               >
-                                 OMITIR REFRIGERIO (FINALIZAR TURNO)
+                                 Omitir pausa e ir directo a Salida
                               </button>
                            )}
+
                            <button
                               type="submit"
                               disabled={!pinInput || isLoadingAuth}
-                              className={`w-full py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-all active:scale-95 flex justify-center items-center ${authModal.mode === 'IN' || authModal.mode === 'BREAK_IN' ? 'bg-green-600 hover:bg-green-700 shadow-green-600/30' : authModal.mode === 'BREAK_OUT' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/30' : 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/30'} ${isLoadingAuth ? 'opacity-70 cursor-wait' : ''}`}
+                              className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-wider text-white shadow-xl transition-all active:scale-[0.98] flex justify-center items-center ${
+                                 authModal.mode === 'IN' || authModal.mode === 'BREAK_IN' ? 'bg-green-600 hover:bg-green-700 shadow-green-600/20' : 
+                                 authModal.mode === 'BREAK_OUT' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20' : 
+                                 'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
+                              } ${(!pinInput || isLoadingAuth) ? 'opacity-50 cursor-not-allowed shadow-none' : 'hover:-translate-y-0.5'}`}
                            >
-                              {isLoadingAuth ? <RefreshCw className="w-6 h-6 animate-spin" /> : 'CONFIRMAR MARCAJE'}
+                              {isLoadingAuth ? <RefreshCw className="w-5 h-5 animate-spin" /> : 'Confirmar Marcaje'}
                            </button>
                         </form>
                      </div>
@@ -595,16 +667,16 @@ export const Attendance: React.FC = () => {
 
                <div className="flex-1 overflow-auto">
                   <table className="w-full text-left text-sm whitespace-nowrap">
-                     <thead className="bg-slate-100 text-slate-600 font-bold sticky top-0 z-10">
+                     <thead className="bg-slate-100 text-slate-500 font-bold sticky top-0 z-10">
                         <tr>
-                           <th className="p-4 border-b border-slate-200">Fecha</th>
-                           <th className="p-4 border-b border-slate-200">Colaborador</th>
-                           <th className="p-4 border-b border-slate-200 text-center">Entrada</th>
-                           <th className="p-4 border-b border-slate-200 text-center">Salida</th>
-                           <th className="p-4 border-b border-slate-200 text-center">Horas</th>
-                           <th className="p-4 border-b border-slate-200 text-center">Evidencias</th>
-                           <th className="p-4 border-b border-slate-200 text-center">Estado</th>
-                           <th className="p-4 border-b border-slate-200 text-center">Acciones</th>
+                           <th className="px-4 py-3 border-b border-slate-200 uppercase tracking-wider text-[11px]">Fecha</th>
+                           <th className="px-4 py-3 border-b border-slate-200 uppercase tracking-wider text-[11px]">Colaborador</th>
+                           <th className="px-4 py-3 border-b border-slate-200 text-center uppercase tracking-wider text-[11px]">Entrada</th>
+                           <th className="px-4 py-3 border-b border-slate-200 text-center uppercase tracking-wider text-[11px]">Salida</th>
+                           <th className="px-4 py-3 border-b border-slate-200 text-center uppercase tracking-wider text-[11px]">Horas</th>
+                           <th className="px-4 py-3 border-b border-slate-200 text-center uppercase tracking-wider text-[11px]">Evidencias</th>
+                           <th className="px-4 py-3 border-b border-slate-200 text-center uppercase tracking-wider text-[11px]">Estado</th>
+                           <th className="px-4 py-3 border-b border-slate-200 text-center uppercase tracking-wider text-[11px]">Acciones</th>
                         </tr>
                      </thead>
                      <tbody className="divide-y divide-slate-100">
@@ -615,9 +687,21 @@ export const Attendance: React.FC = () => {
                               : 0;
 
                            return (
-                              <tr key={r.id} className="hover:bg-slate-50 group">
-                                 <td className="p-4 font-mono font-medium text-slate-600">{r.date}</td>
-                                 <td className="p-4 font-bold text-slate-800">{employee ? employee.name : 'Desconocido'}</td>
+                              <tr key={r.id} className="hover:bg-slate-50/80 transition-colors group">
+                                 <td className="p-4 text-xs font-mono font-medium text-slate-500">{r.date}</td>
+                                 <td className="p-4">
+                                    <div className="flex items-center gap-3">
+                                       {employee?.photo_url ? (
+                                          <img src={employee.photo_url} className="w-8 h-8 rounded-full object-cover border border-slate-200 shadow-sm shrink-0" />
+                                       ) : (
+                                          <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0"><UserIcon className="w-4 h-4 text-slate-400" /></div>
+                                       )}
+                                       <div>
+                                          <div className="font-bold text-slate-800 text-sm leading-tight">{employee ? employee.name : 'Desconocido'}</div>
+                                          <div className="text-[9px] text-slate-400 font-black tracking-widest uppercase mt-0.5">{employee ? employee.dni : '---'}</div>
+                                       </div>
+                                    </div>
+                                 </td>
                                  <td className="p-4 text-center">
                                     <span className="bg-green-100 text-green-800 px-2 py-1 rounded-lg font-mono font-bold text-xs">{formatTime(r.check_in)}</span>
                                  </td>
@@ -639,11 +723,17 @@ export const Attendance: React.FC = () => {
                                  </td>
                                  <td className="p-4 text-center">
                                     {r.status === 'OPEN' ? (
-                                       <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded font-bold animate-pulse">EN TURNO</span>
+                                       <span className="inline-flex items-center bg-blue-50 text-blue-700 text-[10px] px-2.5 py-1 rounded-full font-black tracking-widest border border-blue-200 animate-pulse">
+                                          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full mr-1.5"></span>EN TURNO
+                                       </span>
                                     ) : r.status === 'CLOSED_ABANDONO' ? (
-                                       <span className="bg-rose-100 text-rose-700 text-xs px-2 py-1 rounded font-bold border border-rose-200" title="Sistema cerró el turno por olvido del trabajador">ABANDONO</span>
+                                       <span className="inline-flex items-center bg-rose-50 text-rose-700 text-[10px] px-2.5 py-1 rounded-full font-black tracking-widest border border-rose-200" title="Sistema cerró el turno por olvido del trabajador">
+                                          <span className="w-1.5 h-1.5 bg-rose-500 rounded-full mr-1.5"></span>ABANDONO
+                                       </span>
                                     ) : (
-                                       <span className="bg-slate-200 text-slate-600 text-xs px-2 py-1 rounded font-bold">CERRADO</span>
+                                       <span className="inline-flex items-center bg-slate-100 text-slate-600 text-[10px] px-2.5 py-1 rounded-full font-black tracking-widest border border-slate-200">
+                                          CERRADO
+                                       </span>
                                     )}
                                  </td>
                                  <td className="p-4 text-center">
