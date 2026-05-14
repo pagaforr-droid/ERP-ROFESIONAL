@@ -315,7 +315,7 @@ export const NewSale: React.FC = () => {
       // 🚨 INYECCIÓN DEL NOMBRE DEL VENDEDOR PARA LAS VISTAS PREVIAS NUEVAS
       const seller = dbSellers.find(s => s.id === selectedSellerId);
       const tempSale: any = { 
-         id: 'preview', document_type: docType, series: series, number: docNumber, payment_method: paymentMethod, payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID', balance: paymentMethod === 'CREDITO' ? grandTotal : 0, client_name: clientData.name || 'CLIENTE MOSTRADOR', client_ruc: clientData.doc_number || '00000000', client_address: clientData.address || '', subtotal, igv, total: grandTotal, status: 'completed', dispatch_status: 'pending', created_at: new Date().toISOString(), items: cart, sunat_status: 'PENDING',
+         id: 'preview', document_type: docType, series: series, number: docNumber, payment_method: paymentMethod, payment_status: 'PENDING', balance: grandTotal, client_name: clientData.name || 'CLIENTE MOSTRADOR', client_ruc: clientData.doc_number || '00000000', client_address: clientData.address || '', subtotal, igv, total: grandTotal, status: 'completed', dispatch_status: 'pending', created_at: new Date().toISOString(), items: cart, sunat_status: 'PENDING',
          seller_name: seller ? seller.name : '',
          previous_debt: clientCreditInfo.debt 
       };
@@ -631,8 +631,8 @@ export const NewSale: React.FC = () => {
          series: series,
          number: docNumber, // temporal
          payment_method: paymentMethod,
-         payment_status: paymentMethod === 'CREDITO' ? 'PENDING' : 'PAID',
-         balance: paymentMethod === 'CREDITO' ? grandTotal : 0,
+         payment_status: 'PENDING',
+         balance: grandTotal,
          client_name: clientData.name || 'CLIENTE VARIOS',
          client_ruc: clientData.doc_number || '00000000',
          client_address: clientData.address || '',
