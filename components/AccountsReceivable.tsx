@@ -83,11 +83,8 @@ export const AccountsReceivable: React.FC = () => {
         const aging = calculateAging(sale);
         const seller = sellers.find(sll => sll.id === sale.seller_id);
         
-        // Calcular pagos validados para determinar el saldo real ("liquidado")
-        const saleCollections = collectionRecords.filter(r => r.sale_id === sale.id && r.status === 'VALIDATED');
-        const totalPaid = saleCollections.reduce((sum, r) => sum + Number(r.amount_reported || 0), 0);
-        
-        let currentBalance = Number(sale.total) - totalPaid;
+        // Usar directamente el saldo real de la base de datos para evitar incongruencias de sincronización local
+        let currentBalance = Number(sale.balance || 0);
         // Evitar negativos o decimales infinitos
         currentBalance = Math.max(0, Math.round(currentBalance * 100) / 100);
 
