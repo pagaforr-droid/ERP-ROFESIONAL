@@ -3,7 +3,7 @@
 -- ========================================================================================
 -- Corrige el error de "función no encontrada" y el conflicto de "best candidate"
 -- al eliminar versiones duplicadas y forzar el uso de JSONB.
--- Trigger Deployment: 2026-05-08 18:21
+-- Trigger Deployment: 2026-05-14 13:05 - Fixed payment_status logic in NC
 
 -- Limpieza de versiones previas para evitar conflictos de sobrecarga
 DROP FUNCTION IF EXISTS public.process_order_transaction(json);
