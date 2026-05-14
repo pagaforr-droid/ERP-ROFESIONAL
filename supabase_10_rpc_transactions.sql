@@ -425,7 +425,10 @@ BEGIN
             v_applied_amount := LEAST(v_nc_total, v_origin_balance);
             
             -- Reducir el saldo de la factura origen
-            UPDATE sales SET balance = balance - v_applied_amount WHERE id = v_origin_sale_id;
+            UPDATE sales 
+            SET balance = balance - v_applied_amount,
+                payment_status = CASE WHEN (balance - v_applied_amount) <= 0 THEN 'PAID' ELSE payment_status END
+            WHERE id = v_origin_sale_id;
             
             -- El saldo de la NC es lo que sobra (si es que sobra)
             v_nc_balance := v_nc_total - v_applied_amount;

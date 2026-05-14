@@ -42,8 +42,15 @@ BEGIN
     END IF;
 
     -- Aplicar los descuentos a los saldos
-    UPDATE sales SET balance = balance - p_amount WHERE id = p_nc_id;
-    UPDATE sales SET balance = balance - p_amount WHERE id = p_invoice_id;
+    UPDATE sales 
+    SET balance = balance - p_amount,
+        payment_status = CASE WHEN (balance - p_amount) <= 0 THEN 'PAID' ELSE payment_status END
+    WHERE id = p_nc_id;
+    
+    UPDATE sales 
+    SET balance = balance - p_amount,
+        payment_status = CASE WHEN (balance - p_amount) <= 0 THEN 'PAID' ELSE payment_status END
+    WHERE id = p_invoice_id;
 
     -- Historial en la factura
     INSERT INTO sale_history (sale_id, action, user_id, details)
