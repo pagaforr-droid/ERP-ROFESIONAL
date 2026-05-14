@@ -438,6 +438,17 @@ BEGIN
                 NULLIF(p_nc_data->>'user_id', '')::uuid,
                 'Nota de Crédito ' || (p_nc_data->>'series') || '-' || v_code || ' aplicada automáticamente por S/ ' || v_applied_amount
             );
+
+            -- INSERTAR COMO PAGO VÁLIDO PARA QUE LA UI LO RECONOZCA
+            INSERT INTO collection_records (
+                sale_id, client_name, document_ref, amount_reported, status
+            ) VALUES (
+                v_origin_sale_id,
+                p_nc_data->>'client_name',
+                'NC ' || (p_nc_data->>'series') || '-' || v_code,
+                v_applied_amount,
+                'VALIDATED'
+            );
         END IF;
     END IF;
 

@@ -63,6 +63,18 @@ BEGIN
         'Saldo de S/ ' || p_amount || ' aplicado a ' || v_invoice_type || ' ' || v_invoice_series || '-' || v_invoice_number
     );
 
+    -- Insertar como pago validado para que la UI recalcule el saldo "currentBalance" de la factura
+    INSERT INTO collection_records (
+        sale_id, client_name, document_ref, amount_reported, status, seller_id
+    ) VALUES (
+        p_invoice_id,
+        (SELECT client_name FROM sales WHERE id = p_invoice_id),
+        'NC ' || v_nc_series || '-' || v_nc_number,
+        p_amount,
+        'VALIDATED',
+        p_user_id
+    );
+
     RETURN jsonb_build_object('success', true, 'applied_amount', p_amount);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
