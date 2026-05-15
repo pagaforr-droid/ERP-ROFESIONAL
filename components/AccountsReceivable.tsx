@@ -31,6 +31,14 @@ export const AccountsReceivable: React.FC = () => {
            setLocalSales(salesData as any[]);
         }
 
+        // Siempre actualizar los pagos y planillas para que el historial refleje la realidad
+        const { data: recData } = await supabase.from('collection_records').select('*');
+        if (recData) useStore.setState({ collectionRecords: recData as any[] });
+
+        const { data: planData } = await supabase.from('collection_planillas').select('*');
+        if (planData) useStore.setState({ collectionPlanillas: planData as any[] });
+
+
         // Cargar catálogos solo si no existen en el store global para no duplicar llamadas
         const state = useStore.getState();
         if (state.clients.length === 0) {
@@ -40,6 +48,10 @@ export const AccountsReceivable: React.FC = () => {
         if (state.sellers.length === 0) {
            const { data: sellersData } = await supabase.from('sellers').select('*');
            if (sellersData) useStore.setState({ sellers: sellersData as any[] });
+        }
+        if (state.users.length === 0) {
+           const { data: usersData } = await supabase.from('erp_users').select('*');
+           if (usersData) useStore.setState({ users: usersData as any[] });
         }
         
         setIsLoading(false);
