@@ -22,7 +22,7 @@ interface DisplayDocument {
 }
 
 export const DocumentManager: React.FC = () => {
-   const { dispatchLiquidations, dispatchSheets, sellers, users, company } = useStore();
+   const { dispatchLiquidations, dispatchSheets, sellers, users, company, vehicles, transporters, drivers } = useStore();
    const [dbDocuments, setDbDocuments] = useState<any[]>([]);
    const [isLoading, setIsLoading] = useState(false);
 
