@@ -118,20 +118,19 @@ export const DocumentManager: React.FC = () => {
    React.useEffect(() => {
        const fetchCatalogs = async () => {
           const state = useStore.getState();
-          if (state.dispatchSheets.length === 0) {
-             const { data } = await supabase.from('dispatch_sheets').select('*, dispatch_sales(sale_id)');
-             if (data) {
-                const mappedDs = data.map((d: any) => ({
-                   ...d,
-                   sale_ids: d.dispatch_sales ? d.dispatch_sales.map((ds: any) => ds.sale_id) : []
-                }));
-                useStore.setState({ dispatchSheets: mappedDs });
-             }
+          // Siempre obtener las planillas más recientes porque cambian constantemente
+          const { data: dsData } = await supabase.from('dispatch_sheets').select('*, dispatch_sales(sale_id)');
+          if (dsData) {
+             const mappedDs = dsData.map((d: any) => ({
+                ...d,
+                sale_ids: d.dispatch_sales ? d.dispatch_sales.map((ds: any) => ds.sale_id) : []
+             }));
+             useStore.setState({ dispatchSheets: mappedDs });
           }
-          if (state.dispatchLiquidations.length === 0) {
-             const { data } = await supabase.from('dispatch_liquidations').select('*');
-             if (data) useStore.setState({ dispatchLiquidations: data as any[] });
-          }
+
+          // Siempre obtener las liquidaciones más recientes
+          const { data: liqData } = await supabase.from('dispatch_liquidations').select('*');
+          if (liqData) useStore.setState({ dispatchLiquidations: liqData as any[] });
           if (state.vehicles.length === 0) {
              const { data } = await supabase.from('vehicles').select('*');
              if (data) useStore.setState({ vehicles: data as any[] });
