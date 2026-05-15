@@ -22,7 +22,7 @@ interface DisplayDocument {
 }
 
 export const DocumentManager: React.FC = () => {
-   const { dispatchLiquidations, company } = useStore();
+   const { dispatchLiquidations, dispatchSheets, sellers, users, company } = useStore();
    const [dbDocuments, setDbDocuments] = useState<any[]>([]);
    const [isLoading, setIsLoading] = useState(false);
 
@@ -116,6 +116,26 @@ export const DocumentManager: React.FC = () => {
 
    // Fetch initial data on mount
    React.useEffect(() => {
+       const fetchCatalogs = async () => {
+          const state = useStore.getState();
+          if (state.dispatchSheets.length === 0) {
+             const { data } = await supabase.from('dispatch_sheets').select('*');
+             if (data) useStore.setState({ dispatchSheets: data as any[] });
+          }
+          if (state.dispatchLiquidations.length === 0) {
+             const { data } = await supabase.from('dispatch_liquidations').select('*');
+             if (data) useStore.setState({ dispatchLiquidations: data as any[] });
+          }
+          if (state.sellers.length === 0) {
+             const { data } = await supabase.from('sellers').select('*');
+             if (data) useStore.setState({ sellers: data as any[] });
+          }
+          if (state.users.length === 0) {
+             const { data } = await supabase.from('erp_users').select('*');
+             if (data) useStore.setState({ users: data as any[] });
+          }
+       };
+       fetchCatalogs();
        fetchDocuments(0, false);
    }, []);
 
@@ -437,9 +457,25 @@ export const DocumentManager: React.FC = () => {
                      </table>
                   </div>
 
-                  <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
-                     <div className="text-xs text-slate-500">
-                        Fecha Emisión: {new Date(selectedDoc.date).toLocaleString()}
+                  <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-start">
+                     <div className="text-xs text-slate-500 space-y-1">
+                        <div><span className="font-bold text-slate-700">Fecha Emisión:</span> {new Date(selectedDoc.date).toLocaleString()}</div>
+                        <div><span className="font-bold text-slate-700">Vendedor Asignado:</span> {
+                           sellers.find(s => s.id === selectedDoc.originalRef?.seller_id)?.name || 'Sin Vendedor'
+                        }</div>
+                        <div><span className="font-bold text-slate-700">Usuario Creador:</span> {
+                           users.find(u => u.id === selectedDoc.originalRef?.seller_id)?.name || 
+                           sellers.find(s => s.id === selectedDoc.originalRef?.seller_id)?.name || 
+                           'Sistema'
+                        }</div>
+                        <div><span className="font-bold text-slate-700">Planilla de Reparto:</span> {
+                           (() => {
+                              const ds = dispatchSheets.find(d => d.sale_ids?.includes(selectedDoc.id));
+                              if (!ds) return 'No Asignado a Ruta';
+                              const liq = dispatchLiquidations.find(l => l.dispatch_sheet_id === ds.id);
+                              return liq ? `Liquidado en Hoja ${ds.code}` : `En Ruta ${ds.code}`;
+                           })()
+                        }</div>
                      </div>
                      <div className="text-right">
                         <span className="text-sm font-bold text-slate-600 mr-4">TOTAL DOCUMENTO:</span>
