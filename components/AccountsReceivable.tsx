@@ -12,7 +12,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../services/supabase';
 
 export const AccountsReceivable: React.FC = () => {
-  const { sales, clients, sellers, collectionRecords, collectionPlanillas } = useStore();
+  const { sales, clients, sellers, users, collectionRecords, collectionPlanillas } = useStore();
 
   const [localSales, setLocalSales] = useState<Sale[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -495,15 +495,19 @@ export const AccountsReceivable: React.FC = () => {
                     <table className="w-full text-xs text-left">
                       <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
                         <tr>
-                          <th className="p-3 pl-4">Fecha Pago</th>
-                          <th className="p-3">Recaudador / Medio</th>
+                          <th className="p-3 pl-4">Fecha y Hora</th>
+                          <th className="p-3">Referencia / Documento</th>
+                          <th className="p-3">Usuario (Recaudador)</th>
                           <th className="p-3 text-right">Importe</th>
-                          <th className="p-3 pr-4 text-center">Estado Caja</th>
+                          <th className="p-3 pr-4 text-center">Estado / Planilla</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {historyRecords.map(r => {
                           const sellerMatch = sellers.find(s => s.id === r.seller_id);
+                          const userMatch = users.find(u => u.id === r.seller_id);
+                          const creatorName = sellerMatch?.name || userMatch?.name || r.seller_id;
+                          
                           let statusLabel = 'Pendiente Caja';
                           let statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
                           
@@ -515,33 +519,40 @@ export const AccountsReceivable: React.FC = () => {
                           if (r.planilla_id) {
                              const pl = collectionPlanillas.find(p => p.id === r.planilla_id);
                              if (pl?.status === 'ACTIVE') {
-                                statusLabel = pl.code ? `Liquidado (${pl.code})` : 'Liquidado';
+                                statusLabel = pl.code ? `Planilla ${pl.code}` : 'Liquidado';
                                 statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
                              } else if (pl?.status === 'ANNULLED') {
-                                statusLabel = 'Anulado';
+                                statusLabel = pl.code ? `Planilla ${pl.code} (Anulada)` : 'Anulado';
                                 statusColor = 'text-red-700 bg-red-50 border-red-200 line-through';
                              }
                           }
+
+                          const isCreditNote = r.document_ref?.startsWith('NC');
 
                           return (
                             <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                               <td className="p-3 pl-4">
                                 <div className="font-bold text-slate-700">{new Date(r.date_reported).toLocaleDateString()}</div>
                                 <div className="text-[10px] text-slate-400 font-mono mt-0.5">
-                                  {new Date(r.date_reported).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                  {new Date(r.date_reported).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                </div>
+                              </td>
+                              <td className="p-3">
+                                <div className="font-bold text-slate-800 flex items-center">
+                                  {r.document_ref || 'PAGO REGULAR'}
+                                </div>
+                                <div className={`text-[9px] font-black px-1.5 py-0.5 rounded inline-block mt-1 uppercase tracking-widest ${isCreditNote ? 'text-purple-700 bg-purple-100' : 'text-slate-500 bg-slate-200'}`}>
+                                  {r.payment_method || (isCreditNote ? 'NOTA DE CRÉDITO' : 'PAGO')}
                                 </div>
                               </td>
                               <td className="p-3">
                                 <div className="font-bold text-slate-800 flex items-center">
                                   <User className="w-3 h-3 mr-1 text-slate-400" />
-                                  {sellerMatch?.name || r.seller_id}
-                                </div>
-                                <div className="text-[9px] font-black text-slate-500 bg-slate-200 px-1.5 py-0.5 rounded inline-block mt-1 uppercase tracking-widest">
-                                  {r.payment_method}
+                                  <span className="truncate max-w-[150px]" title={creatorName}>{creatorName}</span>
                                 </div>
                               </td>
                               <td className="p-3 text-right">
-                                <div className="font-black text-emerald-600 text-sm tracking-tight">S/ {r.amount_reported.toFixed(2)}</div>
+                                <div className={`font-black text-sm tracking-tight ${isCreditNote ? 'text-purple-600' : 'text-emerald-600'}`}>S/ {r.amount_reported.toFixed(2)}</div>
                               </td>
                               <td className="p-3 pr-4 text-center align-middle">
                                 <span className={`px-2 py-1 rounded-md text-[10px] uppercase font-bold border inline-flex items-center shadow-sm ${statusColor}`}>
