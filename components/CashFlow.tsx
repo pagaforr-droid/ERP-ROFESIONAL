@@ -1174,7 +1174,7 @@ export const CashFlow: React.FC = () => {
             </div>
 
             {/* List of Shift Transactions */}
-            <div className="flex-1 bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
+            <div className="flex-1 bg-white p-6 rounded-3xl shadow-sm border border-slate-200 flex flex-col overflow-hidden min-h-0">
                <h3 className="font-black text-xl text-slate-800 mb-6 flex items-center pb-4 border-b-2 border-slate-50">
                   Transacciones del Turno <span className="ml-3 px-3 py-1 bg-slate-100 text-slate-500 text-xs rounded-full uppercase tracking-widest font-bold">{shiftTransactions.length} regs</span>
                </h3>

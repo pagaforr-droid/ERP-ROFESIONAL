@@ -32,7 +32,12 @@ export const CollectionConsolidation: React.FC = () => {
 
    // Filters & Selection
    const [selectedSeller, setSelectedSeller] = useState('ALL');
-   const [dateFilter, setDateFilter] = useState('');
+   const [startDateFilter, setStartDateFilter] = useState(() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().split('T')[0];
+   });
+   const [endDateFilter, setEndDateFilter] = useState(() => new Date().toISOString().split('T')[0]);
    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
    const [selectedPlanillaId, setSelectedPlanillaId] = useState<string | null>(null);
 
@@ -93,7 +98,12 @@ export const CollectionConsolidation: React.FC = () => {
       collectionPlanillas.forEach(p => {
          const recs = collectionRecords.filter(r => r.planilla_id === p.id);
          if (selectedSeller !== 'ALL' && !recs.some(r => r.seller_id === selectedSeller)) return;
-         if (dateFilter && p.date && !p.date.startsWith(dateFilter)) return;
+         
+         if (p.date) {
+            const pDate = p.date.split('T')[0];
+            if (startDateFilter && pDate < startDateFilter) return;
+            if (endDateFilter && pDate > endDateFilter) return;
+         }
 
          unified.push({
             type: 'COLLECTION',
@@ -1360,14 +1370,25 @@ export const CollectionConsolidation: React.FC = () => {
             </div>
 
             {activeTab === 'HISTORY' && (
-               <div className="flex-1 min-w-[150px] max-w-[200px]">
-                  <label className="block text-xs font-bold text-slate-500 mb-1">Fecha</label>
-                  <input
-                     type="date"
-                     className="w-full border border-slate-300 rounded p-1.5 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500"
-                     value={dateFilter}
-                     onChange={(e) => setDateFilter(e.target.value)}
-                  />
+               <div className="flex-1 min-w-[300px] max-w-[400px] flex gap-2">
+                  <div className="flex-1">
+                     <label className="block text-xs font-bold text-slate-500 mb-1">Desde</label>
+                     <input
+                        type="date"
+                        className="w-full border border-slate-300 rounded p-1.5 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500"
+                        value={startDateFilter}
+                        onChange={(e) => setStartDateFilter(e.target.value)}
+                     />
+                  </div>
+                  <div className="flex-1">
+                     <label className="block text-xs font-bold text-slate-500 mb-1">Hasta</label>
+                     <input
+                        type="date"
+                        className="w-full border border-slate-300 rounded p-1.5 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500"
+                        value={endDateFilter}
+                        onChange={(e) => setEndDateFilter(e.target.value)}
+                     />
+                  </div>
                </div>
             )}
 
