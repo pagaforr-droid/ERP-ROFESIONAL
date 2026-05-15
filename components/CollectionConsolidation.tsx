@@ -155,7 +155,7 @@ export const CollectionConsolidation: React.FC = () => {
          const timeB = b.date ? new Date(b.date).getTime() : 0;
          return timeB - timeA;
       });
-   }, [collectionPlanillas, dateFilter, selectedSeller, collectionRecords, hasDraft, currentUser]);
+   }, [collectionPlanillas, appliedStartDate, appliedEndDate, selectedSeller, collectionRecords, hasDraft, currentUser]);
 
    const totals = useMemo(() => {
       return pendingCollections.reduce((acc, curr) => {
