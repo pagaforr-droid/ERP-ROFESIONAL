@@ -330,6 +330,7 @@ export const OrderProcessing: React.FC = () => {
                   origin_order_id: order.id,
                   is_final_chunk: isFinalChunk,
                   seller_id: order.seller_id,
+                  created_by_user_id: currentUser?.id,
                   previous_debt: order.previous_debt,
                   items: chunk.map(item => {
                      const productRef = dbProducts.find(p => p.id === item.product_id) || products.find(p => p.id === item.product_id);

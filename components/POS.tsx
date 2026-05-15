@@ -586,6 +586,7 @@ export const POS: React.FC = () => {
           client_ruc: clientData.doc_number || '00000000',
           client_address: clientData.address || '',
           seller_id: posSeller ? posSeller.id : currentUser?.id,
+          created_by_user_id: currentUser?.id,
           subtotal, igv, total: grandTotal,
           status: 'completed', dispatch_status: 'pending', delivery_mode: 'EXPRESS_MISMO_DIA', 
           created_at: new Date().toISOString(),

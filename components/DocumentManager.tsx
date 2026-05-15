@@ -119,12 +119,30 @@ export const DocumentManager: React.FC = () => {
        const fetchCatalogs = async () => {
           const state = useStore.getState();
           if (state.dispatchSheets.length === 0) {
-             const { data } = await supabase.from('dispatch_sheets').select('*');
-             if (data) useStore.setState({ dispatchSheets: data as any[] });
+             const { data } = await supabase.from('dispatch_sheets').select('*, dispatch_sales(sale_id)');
+             if (data) {
+                const mappedDs = data.map((d: any) => ({
+                   ...d,
+                   sale_ids: d.dispatch_sales ? d.dispatch_sales.map((ds: any) => ds.sale_id) : []
+                }));
+                useStore.setState({ dispatchSheets: mappedDs });
+             }
           }
           if (state.dispatchLiquidations.length === 0) {
              const { data } = await supabase.from('dispatch_liquidations').select('*');
              if (data) useStore.setState({ dispatchLiquidations: data as any[] });
+          }
+          if (state.vehicles.length === 0) {
+             const { data } = await supabase.from('vehicles').select('*');
+             if (data) useStore.setState({ vehicles: data as any[] });
+          }
+          if (state.transporters.length === 0) {
+             const { data } = await supabase.from('transporters').select('*');
+             if (data) useStore.setState({ transporters: data as any[] });
+          }
+          if (state.drivers.length === 0) {
+             const { data } = await supabase.from('drivers').select('*');
+             if (data) useStore.setState({ drivers: data as any[] });
           }
           if (state.sellers.length === 0) {
              const { data } = await supabase.from('sellers').select('*');
@@ -464,16 +482,26 @@ export const DocumentManager: React.FC = () => {
                            sellers.find(s => s.id === selectedDoc.originalRef?.seller_id)?.name || 'Sin Vendedor'
                         }</div>
                         <div><span className="font-bold text-slate-700">Usuario Creador:</span> {
-                           users.find(u => u.id === selectedDoc.originalRef?.seller_id)?.name || 
-                           sellers.find(s => s.id === selectedDoc.originalRef?.seller_id)?.name || 
-                           'Sistema'
+                           selectedDoc.originalRef?.created_by_user_id
+                              ? users.find(u => u.id === selectedDoc.originalRef?.created_by_user_id)?.name || 'Desconocido'
+                              : (users.find(u => u.id === selectedDoc.originalRef?.seller_id)?.name || sellers.find(s => s.id === selectedDoc.originalRef?.seller_id)?.name || 'Sistema (Legacy)')
                         }</div>
                         <div><span className="font-bold text-slate-700">Planilla de Reparto:</span> {
                            (() => {
                               const ds = dispatchSheets.find(d => d.sale_ids?.includes(selectedDoc.id));
                               if (!ds) return 'No Asignado a Ruta';
+                              const vehicle = vehicles.find(v => v.id === ds.vehicle_id);
+                              const transporter = transporters.find(t => t.id === vehicle?.transporter_id);
+                              const driver = drivers.find(dr => dr.id === vehicle?.driver_id);
+                              const transpName = transporter?.name || driver?.name || 'Desconocido';
+                              
                               const liq = dispatchLiquidations.find(l => l.dispatch_sheet_id === ds.id);
-                              return liq ? `Liquidado en Hoja ${ds.code}` : `En Ruta ${ds.code}`;
+                              return (
+                                 <span>
+                                    {liq ? `Liquidado en Hoja ${ds.code}` : `En Ruta ${ds.code}`}
+                                    <br/><span className="text-[10px] text-slate-400">Transportista: {transpName}</span>
+                                 </span>
+                              );
                            })()
                         }</div>
                      </div>

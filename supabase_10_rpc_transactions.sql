@@ -240,7 +240,7 @@ BEGIN
     -- Inserción Cabecera Venta
     INSERT INTO sales (
         id, document_type, series, number, payment_method, payment_status, balance,
-        client_name, client_ruc, client_address, seller_id, client_id, subtotal, igv, total,
+        client_name, client_ruc, client_address, seller_id, created_by_user_id, client_id, subtotal, igv, total,
         status, dispatch_status, sunat_status, origin_order_id, previous_debt
     ) VALUES (
         COALESCE(NULLIF(p_sale_data->>'id', ''), uuid_generate_v4()::text)::uuid,
@@ -254,6 +254,7 @@ BEGIN
         p_sale_data->>'client_ruc',
         p_sale_data->>'client_address',
         NULLIF(p_sale_data->>'seller_id', '')::uuid,
+        NULLIF(p_sale_data->>'created_by_user_id', '')::uuid,
         NULLIF(p_sale_data->>'client_id', '')::uuid,
         (p_sale_data->>'subtotal')::numeric,
         (p_sale_data->>'igv')::numeric,

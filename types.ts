@@ -476,7 +476,8 @@ export interface Sale {
   history?: SaleHistoryEvent[]; // NEW: Audit history
 
   client_id?: string;
-  seller_id?: string; // NEW: Assigned seller for this sale
+  seller_id?: string; // Assigned seller for this sale
+  created_by_user_id?: string; // NEW: The user who actually created the transaction
   client_name: string;
   client_ruc: string;
   client_address: string;

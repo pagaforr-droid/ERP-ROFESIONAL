@@ -371,6 +371,7 @@ CREATE TABLE sales (
     sunat_message TEXT,
     printed BOOLEAN DEFAULT false,
     printed_at TIMESTAMP WITH TIME ZONE,
+    created_by_user_id UUID,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

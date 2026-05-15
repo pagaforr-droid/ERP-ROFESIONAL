@@ -637,6 +637,7 @@ export const NewSale: React.FC = () => {
          client_ruc: clientData.doc_number || '00000000',
          client_address: clientData.address || '',
          seller_id: selectedSellerId || undefined,
+         created_by_user_id: currentUser?.id,
          client_id: selectedClientId || undefined,
          subtotal,
          igv,
