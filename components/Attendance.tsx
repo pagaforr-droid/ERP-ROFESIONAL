@@ -597,7 +597,7 @@ export const Attendance: React.FC = () => {
                      <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden transform transition-all">
                         {/* Header Minimalista y Colorido */}
                         <div className={`p-6 pb-8 relative text-center ${
-                           authModal.mode === 'IN' ? 'bg-gradient-to-br from-green-500 to-emerald-600' : 
+                           authModal.mode === 'IN' ? 'bg-gradient-to-br from-blue-800 to-slate-900' : 
                            authModal.mode === 'BREAK_OUT' ? 'bg-gradient-to-br from-orange-400 to-amber-500' :
                            authModal.mode === 'BREAK_IN' ? 'bg-gradient-to-br from-blue-500 to-indigo-600' :
                            'bg-gradient-to-br from-rose-500 to-red-600'
@@ -672,7 +672,8 @@ export const Attendance: React.FC = () => {
                               type="submit"
                               disabled={!pinInput || isLoadingAuth}
                               className={`w-full py-4 rounded-2xl font-black text-sm uppercase tracking-wider text-white shadow-xl transition-all active:scale-[0.98] flex justify-center items-center ${
-                                 authModal.mode === 'IN' || authModal.mode === 'BREAK_IN' ? 'bg-green-600 hover:bg-green-700 shadow-green-600/20' : 
+                                 authModal.mode === 'IN' ? 'bg-slate-800 hover:bg-slate-900 shadow-slate-900/20' : 
+                                 authModal.mode === 'BREAK_IN' ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20' : 
                                  authModal.mode === 'BREAK_OUT' ? 'bg-orange-500 hover:bg-orange-600 shadow-orange-500/20' : 
                                  'bg-rose-600 hover:bg-rose-700 shadow-rose-600/20'
                               } ${(!pinInput || isLoadingAuth) ? 'opacity-50 cursor-not-allowed shadow-none' : 'hover:-translate-y-0.5'}`}
