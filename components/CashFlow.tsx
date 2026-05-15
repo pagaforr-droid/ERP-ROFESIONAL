@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
 import { CashMovement, ExpenseCategory, ScheduledTransaction } from '../types';
-import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, XCircle, BarChart3, Briefcase, Store, Truck, Coins, Loader2, Edit2, FileSpreadsheet } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, PieChart, Plus, Minus, Filter, Calendar, Save, Trash2, ArrowRight, Settings, Clock, User, AlertTriangle, CheckCircle, XCircle, BarChart3, Briefcase, Store, Truck, Coins, Loader2, Edit2, FileSpreadsheet, Users } from 'lucide-react';
 import { supabase } from '../services/supabase';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 
 type Tab = 'SESSION' | 'DASHBOARD' | 'MOVEMENTS' | 'PLANNER' | 'CONFIG';
 
@@ -137,9 +138,17 @@ export const CashFlow: React.FC = () => {
       }, []);
 
       const upcomingPayments = store.scheduledTransactions
-         .filter(t => t.is_active)
+         .filter(t => t.is_active && t.beneficiary_type !== 'EMPLOYEE')
          .sort((a, b) => new Date(a.next_due_date).getTime() - new Date(b.next_due_date).getTime())
          .slice(0, 3);
+
+      const personnelPayments = store.scheduledTransactions
+         .filter(t => t.is_active && (t.beneficiary_type === 'EMPLOYEE' || t.name.toLowerCase().includes('sueldo') || t.name.toLowerCase().includes('planilla')))
+         .sort((a, b) => new Date(a.next_due_date).getTime() - new Date(b.next_due_date).getTime());
+
+      const comparisonData = [
+         { name: 'Comparativo', Ingresos: totalIncome, Egresos: totalExpense }
+      ];
 
       return (
          <div className="space-y-6 animate-fade-in-up">
@@ -176,7 +185,7 @@ export const CashFlow: React.FC = () => {
                </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-6 h-80">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                {/* Expense Breakdown */}
                <div className="bg-white p-6 rounded-lg shadow border border-slate-200 flex flex-col">
                   <h4 className="font-bold text-slate-800 mb-4 flex items-center"><BarChart3 className="w-4 h-4 mr-2" /> Top Gastos del Periodo</h4>
@@ -196,10 +205,30 @@ export const CashFlow: React.FC = () => {
                   </div>
                </div>
 
+               {/* Comparativo de Gastos e Ingresos */}
+               <div className="bg-white p-6 rounded-lg shadow border border-slate-200 flex flex-col h-80">
+                  <h4 className="font-bold text-slate-800 mb-4 flex items-center"><TrendingUp className="w-4 h-4 mr-2" /> Comparativo de Flujo</h4>
+                  <div className="flex-1 min-h-0 w-full">
+                     <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={comparisonData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                           <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
+                           <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} tickFormatter={(val) => `S/${val/1000}k`} />
+                           <Tooltip cursor={{fill: '#f1f5f9'}} contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} formatter={(value: number) => `S/ ${value.toFixed(2)}`} />
+                           <Legend iconType="circle" />
+                           <Bar dataKey="Ingresos" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={60} />
+                           <Bar dataKey="Egresos" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={60} />
+                        </BarChart>
+                     </ResponsiveContainer>
+                  </div>
+               </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-80">
                {/* Upcoming Payments Alert */}
                <div className="bg-white p-6 rounded-lg shadow border border-slate-200 flex flex-col">
-                  <h4 className="font-bold text-slate-800 mb-4 flex items-center"><Clock className="w-4 h-4 mr-2" /> Próximos Vencimientos (Programados)</h4>
-                  <div className="space-y-3">
+                  <h4 className="font-bold text-slate-800 mb-4 flex items-center"><Clock className="w-4 h-4 mr-2" /> Próximos Vencimientos (Generales)</h4>
+                  <div className="space-y-3 overflow-auto flex-1">
                      {upcomingPayments.map(t => {
                         const daysLeft = Math.ceil((new Date(t.next_due_date).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
                         const isOverdue = daysLeft < 0;
@@ -218,7 +247,33 @@ export const CashFlow: React.FC = () => {
                            </div>
                         );
                      })}
-                     {upcomingPayments.length === 0 && <div className="text-center text-slate-400 italic mt-10">No hay pagos programados próximos.</div>}
+                     {upcomingPayments.length === 0 && <div className="text-center text-slate-400 italic mt-10">No hay pagos generales próximos.</div>}
+                  </div>
+               </div>
+
+               {/* Personnel Payments Alert */}
+               <div className="bg-white p-6 rounded-lg shadow border border-slate-200 flex flex-col">
+                  <h4 className="font-bold text-slate-800 mb-4 flex items-center"><Users className="w-4 h-4 mr-2" /> Pagos de Personal por Vencer</h4>
+                  <div className="space-y-3 overflow-auto flex-1">
+                     {personnelPayments.slice(0, 4).map(t => {
+                        const daysLeft = Math.ceil((new Date(t.next_due_date).getTime() - new Date().getTime()) / (1000 * 3600 * 24));
+                        const isOverdue = daysLeft < 0;
+                        return (
+                           <div key={t.id} className={`p-3 rounded border flex justify-between items-center ${isOverdue ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                              <div>
+                                 <p className="font-bold text-slate-800 text-sm">{t.name}</p>
+                                 <p className="text-xs text-slate-500">{t.frequency} - Vence: {t.next_due_date}</p>
+                              </div>
+                              <div className="text-right">
+                                 <p className="font-bold text-slate-900">S/ {t.amount.toFixed(2)}</p>
+                                 <p className={`text-[10px] font-bold ${isOverdue ? 'text-amber-600' : 'text-blue-600'}`}>
+                                    {isOverdue ? `Vencido hace ${Math.abs(daysLeft)} días` : `En ${daysLeft} días`}
+                                 </p>
+                              </div>
+                           </div>
+                        );
+                     })}
+                     {personnelPayments.length === 0 && <div className="text-center text-slate-400 italic mt-10">No hay pagos de personal próximos.</div>}
                   </div>
                </div>
             </div>
@@ -1018,9 +1073,24 @@ export const CashFlow: React.FC = () => {
                               return user ? (user.name === 'Nuevo Usuario' ? user.username : user.name) : activeSession.opened_by;
                            })()}
                         </p>
-                        <p className="text-indigo-300/80 text-xs mt-1 font-medium flex items-center">
-                           <Clock className="w-3 h-3 mr-1" /> Apertura: {new Date(activeSession.open_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                        </p>
+                        <div className="text-indigo-300/80 text-xs mt-1 font-medium flex flex-col gap-1.5">
+                           <p className="flex items-center">
+                              <Clock className="w-3 h-3 mr-1.5" /> 
+                              Apertura: {new Date(activeSession.open_time).toLocaleDateString('es-PE', {day: '2-digit', month: 'short', year: 'numeric'})} - {new Date(activeSession.open_time).toLocaleTimeString('es-PE', {hour: '2-digit', minute:'2-digit'})}
+                           </p>
+                           <p className="flex items-center">
+                              <Calendar className="w-3 h-3 mr-1.5" />
+                              {(() => {
+                                 const openDate = new Date(activeSession.open_time);
+                                 const today = new Date();
+                                 const diffTime = Math.abs(today.getTime() - openDate.getTime());
+                                 const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+                                 if (diffDays === 0) return "Abierto el día de hoy";
+                                 if (diffDays === 1) return "Abierto hace 1 día";
+                                 return `Abierto hace ${diffDays} días`;
+                              })()}
+                           </p>
+                        </div>
                      </div>
 
                   <div className="space-y-4 relative z-10 bg-white/5 p-5 rounded-2xl backdrop-blur-sm border border-white/10">
