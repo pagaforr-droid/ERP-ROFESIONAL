@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../services/store';
-import { Wallet, CheckSquare, Square, Save, Printer, User, Filter, AlertCircle, FileText, Loader2, CheckCircle2, Clock, HelpCircle, History, Download, XCircle, Search, Trash2, Edit, UserPlus, ChevronRight } from 'lucide-react';
+import { Wallet, CheckSquare, Square, Save, Printer, User, Filter, AlertCircle, FileText, Loader2, CheckCircle2, Clock, HelpCircle, History, Download, XCircle, Search, Trash2, Edit, UserPlus, ChevronRight, Calendar } from 'lucide-react';
 import { CollectionPlanilla, CollectionRecord, Client } from '../types';
 import * as XLSX from 'xlsx';
 import { supabase } from '../services/supabase';
@@ -38,6 +38,8 @@ export const CollectionConsolidation: React.FC = () => {
       return d.toISOString().split('T')[0];
    });
    const [endDateFilter, setEndDateFilter] = useState(() => new Date().toISOString().split('T')[0]);
+   const [appliedStartDate, setAppliedStartDate] = useState(startDateFilter);
+   const [appliedEndDate, setAppliedEndDate] = useState(endDateFilter);
    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
    const [selectedPlanillaId, setSelectedPlanillaId] = useState<string | null>(null);
 
@@ -101,8 +103,8 @@ export const CollectionConsolidation: React.FC = () => {
          
          if (p.date) {
             const pDate = p.date.split('T')[0];
-            if (startDateFilter && pDate < startDateFilter) return;
-            if (endDateFilter && pDate > endDateFilter) return;
+            if (appliedStartDate && pDate < appliedStartDate) return;
+            if (appliedEndDate && pDate > appliedEndDate) return;
          }
 
          unified.push({
@@ -1370,25 +1372,40 @@ export const CollectionConsolidation: React.FC = () => {
             </div>
 
             {activeTab === 'HISTORY' && (
-               <div className="flex-1 min-w-[300px] max-w-[400px] flex gap-2">
+               <div className="flex-1 min-w-[350px] flex gap-3 items-end">
                   <div className="flex-1">
-                     <label className="block text-xs font-bold text-slate-500 mb-1">Desde</label>
-                     <input
-                        type="date"
-                        className="w-full border border-slate-300 rounded p-1.5 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500"
-                        value={startDateFilter}
-                        onChange={(e) => setStartDateFilter(e.target.value)}
-                     />
+                     <label className="block text-[10px] font-black text-slate-500 mb-1 uppercase tracking-wider">Fecha Inicio</label>
+                     <div className="relative">
+                        <Calendar className="w-4 h-4 text-slate-400 absolute left-2.5 top-2" />
+                        <input
+                           type="date"
+                           className="w-full border border-slate-300 rounded p-1.5 pl-8 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-shadow"
+                           value={startDateFilter}
+                           onChange={(e) => setStartDateFilter(e.target.value)}
+                        />
+                     </div>
                   </div>
                   <div className="flex-1">
-                     <label className="block text-xs font-bold text-slate-500 mb-1">Hasta</label>
-                     <input
-                        type="date"
-                        className="w-full border border-slate-300 rounded p-1.5 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500"
-                        value={endDateFilter}
-                        onChange={(e) => setEndDateFilter(e.target.value)}
-                     />
+                     <label className="block text-[10px] font-black text-slate-500 mb-1 uppercase tracking-wider">Fecha Fin</label>
+                     <div className="relative">
+                        <Calendar className="w-4 h-4 text-slate-400 absolute left-2.5 top-2" />
+                        <input
+                           type="date"
+                           className="w-full border border-slate-300 rounded p-1.5 pl-8 text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-shadow"
+                           value={endDateFilter}
+                           onChange={(e) => setEndDateFilter(e.target.value)}
+                        />
+                     </div>
                   </div>
+                  <button 
+                     onClick={() => {
+                        setAppliedStartDate(startDateFilter);
+                        setAppliedEndDate(endDateFilter);
+                     }}
+                     className="bg-slate-900 text-white px-5 py-1.5 rounded font-bold hover:bg-slate-800 transition-colors flex items-center h-[34px] shadow-sm border border-slate-950 active:scale-95"
+                  >
+                     <Search className="w-4 h-4 mr-2" /> Buscar
+                  </button>
                </div>
             )}
 
