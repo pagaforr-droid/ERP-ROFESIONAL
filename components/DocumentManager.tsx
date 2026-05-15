@@ -3,7 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useStore } from '../services/store';
 import { Sale, LiquidationDocument } from '../types';
 import { Search, Printer, Eye, FileText, Filter, X, Calendar, Download, Trash2, Copy, Lock, Loader2, ArrowDown } from 'lucide-react';
-import { generateMassiveInvoicePDF } from '../utils/invoicePdfGenerator';
+import { PdfEngine } from './PdfEngine';
 import { supabase } from '../services/supabase';
 
 // Normalized interface for display purposes
@@ -124,9 +124,14 @@ export const DocumentManager: React.FC = () => {
    const filteredDocs = allDocuments;
 
    // --- HANDLERS ---
-   const handlePrint = (doc: DisplayDocument) => {
+   const handlePrint = async (doc: DisplayDocument) => {
       if (doc.originalRef) {
-         generateMassiveInvoicePDF(company, [doc.originalRef]);
+         try {
+            await PdfEngine.openDocument([doc.originalRef], 'BATCH', company);
+         } catch (error) {
+            console.error(error);
+            showAlert("Error al generar el documento PDF.", 'error');
+         }
       }
    };
 
