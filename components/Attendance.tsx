@@ -184,6 +184,28 @@ export const Attendance: React.FC = () => {
       return attendanceRecords.find(r => r.user_id === employeeId && r.date === today && r.status === 'OPEN');
    };
 
+   const employeeStats = useMemo(() => {
+      const stats: Record<string, { monthlyMs: number, todayMs: number }> = {};
+      const now = new Date();
+      const currentMonthStr = now.toISOString().slice(0, 7); // YYYY-MM
+      const todayStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
+      
+      attendanceRecords.forEach(r => {
+         // Accumulate hours for completed shifts
+         if (r.date.startsWith(currentMonthStr) && r.check_in && r.check_out) {
+            const duration = new Date(r.check_out).getTime() - new Date(r.check_in).getTime();
+            if (duration > 0) {
+               if (!stats[r.user_id]) stats[r.user_id] = { monthlyMs: 0, todayMs: 0 };
+               stats[r.user_id].monthlyMs += duration;
+               if (r.date === todayStr) {
+                  stats[r.user_id].todayMs += duration;
+               }
+            }
+         }
+      });
+      return stats;
+   }, [attendanceRecords]);
+
    const handleEmployeeClick = (employeeId: string) => {
       const currentRecord = getEmployeeStatus(employeeId);
       let mode: 'IN' | 'OUT' | 'BREAK_OUT' | 'BREAK_IN' = 'IN';
@@ -447,8 +469,8 @@ export const Attendance: React.FC = () => {
                   </div>
                </div>
 
-               <div className="flex-1 overflow-auto p-4 md:p-6 bg-slate-50">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
+               <div className="flex-1 overflow-auto p-6 md:p-8 bg-slate-50">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                      {employees.map(employee => {
                         const activeRecord = getEmployeeStatus(employee.id);
                         const isOnBreak = activeRecord?.break_start && !activeRecord?.break_end;
@@ -458,66 +480,113 @@ export const Attendance: React.FC = () => {
                            <button
                               key={employee.id}
                               onClick={() => handleEmployeeClick(employee.id)}
-                              className={`group relative bg-white flex items-center p-3.5 rounded-2xl border transition-all duration-300 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                                 isOnShift ? 'border-green-200 shadow-sm shadow-green-100/50 hover:border-green-400' 
-                                 : isOnBreak ? 'border-orange-200 shadow-sm shadow-orange-100/50 hover:border-orange-400' 
-                                 : 'border-slate-200 shadow-sm hover:border-blue-300'
+                              className={`group relative flex flex-col p-5 rounded-[2rem] border-2 transition-all duration-300 focus:outline-none focus:ring-4 focus:ring-blue-500/20 text-left w-full h-full shadow-sm hover:shadow-xl hover:-translate-y-1 ${
+                                 isOnShift ? 'bg-gradient-to-b from-white to-green-50 border-green-200 hover:border-green-400' 
+                                 : isOnBreak ? 'bg-gradient-to-b from-white to-orange-50 border-orange-200 hover:border-orange-400' 
+                                 : 'bg-gradient-to-b from-white to-slate-50 border-slate-200 hover:border-blue-300'
                               }`}
                            >
-                              {/* Glowing Status Dot */}
-                              <div className={`absolute top-0 right-0 -mt-1 -mr-1 w-3.5 h-3.5 rounded-full border-2 border-white z-10 transition-colors ${
-                                 isOnShift ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' 
-                                 : isOnBreak ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.6)]' 
-                                 : 'bg-slate-300'
-                              }`}></div>
-
-                              {/* Settings Icon */}
-                              <div 
-                                 onClick={(e) => { e.stopPropagation(); setConfigModal({ isOpen: true, employeeId: employee.id }); setConfigPin(''); setConfigPhoto(null); }} 
-                                 className="absolute top-1/2 -translate-y-1/2 right-3 opacity-0 group-hover:opacity-100 p-2 bg-slate-100 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all z-10" 
-                                 title="Configurar Foto/PIN"
-                              >
-                                 <Settings className="w-4 h-4" />
-                              </div>
-
-                              <div className={`shrink-0 w-12 h-12 rounded-xl flex items-center justify-center mr-3.5 transition-colors ${
-                                 isOnShift ? 'bg-green-50 text-green-600 border border-green-100' : isOnBreak ? 'bg-orange-50 text-orange-600 border border-orange-100' : 'bg-slate-50 text-slate-400 border border-slate-100 group-hover:bg-blue-50 group-hover:text-blue-600 group-hover:border-blue-100'
-                              }`}>
-                                 {employee.photo_url ? (
-                                    <img src={employee.photo_url} alt={employee.name} className="w-full h-full rounded-xl object-cover" />
-                                 ) : (
-                                    <UserIcon className="w-5 h-5" />
-                                 )}
-                              </div>
-
-                              <div className="flex-1 text-left min-w-0 pr-8">
-                                 <h3 className="font-extrabold text-sm text-slate-800 truncate leading-tight group-hover:text-blue-600 transition-colors">{employee.name}</h3>
-                                 <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5 truncate">{employee.dni}</p>
-                                 
-                                 <div className="mt-1.5 h-5 flex items-center">
-                                    {isOnShift || isOnBreak ? (
-                                       <div className={`inline-flex items-center px-1.5 py-0.5 rounded border ${
-                                          isOnBreak ? 'bg-orange-50/50 text-orange-700 border-orange-200' : 'bg-green-50/50 text-green-700 border-green-200'
+                              {/* Header: Photo and Info */}
+                              <div className="flex items-start justify-between w-full mb-5 relative z-10">
+                                 <div className="flex items-center gap-4">
+                                    <div className="relative">
+                                       <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 border-2 transition-colors overflow-hidden ${
+                                          isOnShift ? 'bg-green-100 text-green-600 border-green-200 shadow-inner' : isOnBreak ? 'bg-orange-100 text-orange-600 border-orange-200 shadow-inner' : 'bg-slate-100 text-slate-400 border-slate-200 group-hover:bg-blue-100 group-hover:text-blue-600 group-hover:border-blue-200'
                                        }`}>
-                                          {isOnBreak ? <Coffee className="w-2.5 h-2.5 mr-1" /> : <Clock className="w-2.5 h-2.5 mr-1" />}
-                                          <span className="font-mono text-[10px] font-bold">
-                                             {formatDuration(currentTime.getTime() - new Date(activeRecord.check_in).getTime())}
-                                          </span>
+                                          {employee.photo_url ? (
+                                             <img src={employee.photo_url} alt={employee.name} className="w-full h-full object-cover" />
+                                          ) : (
+                                             <UserIcon className="w-7 h-7" />
+                                          )}
                                        </div>
-                                    ) : (
-                                       <span className="text-[9px] font-bold text-slate-300 uppercase tracking-wider group-hover:text-blue-400 transition-colors">
-                                          Iniciar Turno
-                                       </span>
-                                    )}
+                                       {/* Status Dot */}
+                                       <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white transition-colors ${
+                                          isOnShift ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse' 
+                                          : isOnBreak ? 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.6)]' 
+                                          : 'bg-slate-300'
+                                       }`}></div>
+                                    </div>
+                                    <div>
+                                       <h3 className="font-black text-lg text-slate-800 leading-tight group-hover:text-blue-600 transition-colors line-clamp-1" title={employee.name}>{employee.name}</h3>
+                                       <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mt-1 bg-white border border-slate-100 px-2.5 py-0.5 rounded-full inline-block shadow-sm">{employee.dni}</p>
+                                    </div>
                                  </div>
+                                 {/* Settings Icon */}
+                                 <div 
+                                    onClick={(e) => { e.stopPropagation(); setConfigModal({ isOpen: true, employeeId: employee.id }); setConfigPin(''); setConfigPhoto(null); }} 
+                                    className="opacity-0 group-hover:opacity-100 p-2.5 bg-slate-100 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-all z-20 shrink-0" 
+                                    title="Configurar Foto/PIN"
+                                 >
+                                    <Settings className="w-5 h-5" />
+                                 </div>
+                              </div>
+
+                              {/* Metrics */}
+                              {(() => {
+                                 const stats = employeeStats[employee.id] || { monthlyMs: 0, todayMs: 0 };
+                                 let liveTodayMs = stats.todayMs;
+                                 if (activeRecord && activeRecord.check_in) {
+                                    const diff = currentTime.getTime() - new Date(activeRecord.check_in).getTime();
+                                    liveTodayMs += diff;
+                                    if (isOnBreak && activeRecord.break_start) {
+                                       const breakDiff = currentTime.getTime() - new Date(activeRecord.break_start).getTime();
+                                       liveTodayMs -= breakDiff; // Restar tiempo de descanso actual
+                                    }
+                                 }
+                                 
+                                 return (
+                                    <div className="grid grid-cols-2 gap-3 w-full mb-5">
+                                       <div className={`rounded-xl p-3 border transition-colors ${liveTodayMs > 0 ? 'bg-blue-50/50 border-blue-100' : 'bg-white border-slate-100 group-hover:border-blue-100'}`}>
+                                          <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+                                             <Clock className={`w-3.5 h-3.5 ${liveTodayMs > 0 ? 'text-blue-500' : ''}`} />
+                                             <span className={`text-[10px] font-bold uppercase tracking-wider ${liveTodayMs > 0 ? 'text-blue-600' : ''}`}>Hoy</span>
+                                          </div>
+                                          <div className={`font-mono text-lg font-black ${liveTodayMs > 0 ? 'text-blue-700' : 'text-slate-700'}`}>
+                                             {formatDuration(liveTodayMs)}
+                                          </div>
+                                       </div>
+                                       <div className="bg-white rounded-xl p-3 border border-slate-100 group-hover:border-blue-100 group-hover:bg-blue-50/30 transition-colors">
+                                          <div className="flex items-center gap-1.5 text-slate-400 mb-1">
+                                             <Calendar className="w-3.5 h-3.5" />
+                                             <span className="text-[10px] font-bold uppercase tracking-wider">Mes Actual</span>
+                                          </div>
+                                          <div className="font-mono text-lg font-black text-slate-700">
+                                             {formatDuration(stats.monthlyMs + (liveTodayMs - stats.todayMs))}
+                                          </div>
+                                       </div>
+                                    </div>
+                                 );
+                              })()}
+
+                              {/* Footer Status / Timer */}
+                              <div className={`mt-auto w-full rounded-xl p-3.5 flex items-center justify-center gap-2 border transition-colors shadow-sm ${
+                                 isOnShift ? 'bg-green-100 border-green-200 text-green-700' 
+                                 : isOnBreak ? 'bg-orange-100 border-orange-200 text-orange-700' 
+                                 : 'bg-white border-slate-200 text-slate-400 group-hover:bg-blue-50 group-hover:border-blue-200 group-hover:text-blue-600'
+                              }`}>
+                                 {isOnShift || isOnBreak ? (
+                                    <>
+                                       {isOnBreak ? <Coffee className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
+                                       <span className="text-xs font-bold uppercase tracking-widest mr-1">
+                                          {isOnBreak ? 'Pausa' : 'Turno'}:
+                                       </span>
+                                       <span className="font-mono text-[15px] font-black">
+                                          {formatDuration(currentTime.getTime() - new Date(activeRecord.check_in).getTime())}
+                                       </span>
+                                    </>
+                                 ) : (
+                                    <span className="text-[11px] font-black uppercase tracking-widest">
+                                       Iniciar Turno
+                                    </span>
+                                 )}
                               </div>
                            </button>
                         );
                      })}
                      {employees.length === 0 && !isLoading && (
-                        <div className="col-span-full text-center text-slate-500 p-12">
+                        <div className="col-span-full text-center text-slate-500 p-12 bg-white rounded-3xl border border-slate-200">
                            <UserIcon className="w-16 h-16 mx-auto mb-4 text-slate-300" />
-                           <p>No hay colaboradores registrados en el sistema.</p>
+                           <p className="font-bold">No hay colaboradores registrados en el sistema.</p>
                         </div>
                      )}
                   </div>
