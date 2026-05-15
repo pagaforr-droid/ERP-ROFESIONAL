@@ -593,7 +593,14 @@ export const Attendance: React.FC = () => {
                </div>
 
                {authModal.isOpen && (
-                  <div className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                  <div 
+                     className="absolute inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+                     onClick={(e) => {
+                        if (e.target === e.currentTarget) {
+                           setAuthModal({ isOpen: false, employeeId: null, mode: null });
+                        }
+                     }}
+                  >
                      <div className="bg-white w-full max-w-sm rounded-[2rem] shadow-2xl overflow-hidden transform transition-all">
                         {/* Header Minimalista y Colorido */}
                         <div className={`p-6 pb-8 relative text-center ${
@@ -607,8 +614,8 @@ export const Attendance: React.FC = () => {
                               <div className="absolute bottom-0 right-0 w-32 h-32 rounded-full bg-white blur-2xl"></div>
                            </div>
 
-                           <button onClick={() => setAuthModal({ isOpen: false, employeeId: null, mode: null })} className="absolute top-4 right-4 text-white/80 hover:text-white bg-black/10 hover:bg-black/20 p-2 rounded-full backdrop-blur-sm transition-all z-10">
-                              <X className="w-5 h-5" />
+                           <button type="button" onClick={() => setAuthModal({ isOpen: false, employeeId: null, mode: null })} className="absolute top-4 right-4 text-white/90 hover:text-white bg-black/20 hover:bg-black/40 p-2 rounded-full backdrop-blur-sm transition-all z-[100] cursor-pointer">
+                              <X className="w-5 h-5 pointer-events-none" />
                            </button>
 
                            <div className="relative z-10">
