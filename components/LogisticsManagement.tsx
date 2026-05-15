@@ -17,28 +17,26 @@ export const LogisticsManagement: React.FC = () => {
   // --- CUSTOM MODALS ---
   const [systemModal, setSystemModal] = useState<{ isOpen: boolean, type: 'error' | 'warning' | 'info' | 'success', message: string }>({ isOpen: false, type: 'info', message: '' });
 
-  const [realTransporters, setRealTransporters] = useState<Transporter[]>([]);
-  const [realDrivers, setRealDrivers] = useState<Driver[]>([]);
-  const [realVehicles, setRealVehicles] = useState<Vehicle[]>([]);
+  const transporters = store.transporters;
+  const drivers = store.drivers;
+  const vehicles = store.vehicles;
 
   useEffect(() => {
     if (!USE_MOCK_DB) {
       const fetchData = async () => {
          const { data: tData } = await supabase.from('transporters').select('*');
-         if (tData) setRealTransporters(tData as Transporter[]);
          const { data: dData } = await supabase.from('drivers').select('*');
-         if (dData) setRealDrivers(dData as Driver[]);
          const { data: vData } = await supabase.from('vehicles').select('*');
-         if (vData) setRealVehicles(vData as Vehicle[]);
+         
+         useStore.setState({
+            transporters: tData as Transporter[] || [],
+            drivers: dData as Driver[] || [],
+            vehicles: vData as Vehicle[] || []
+         });
       }
       fetchData();
     }
   }, []);
-
-  const transporters = USE_MOCK_DB ? store.transporters : realTransporters;
-  const drivers = USE_MOCK_DB ? store.drivers : realDrivers;
-  const vehicles = USE_MOCK_DB ? store.vehicles : realVehicles;
-
 
   // Forms State
   const [transporterForm, setTransporterForm] = useState<Partial<Transporter>>({});
@@ -76,12 +74,11 @@ export const LogisticsManagement: React.FC = () => {
          } else {
              if (editingId) {
                await supabase.from('transporters').update(payload).eq('id', editingId);
-               setRealTransporters(prev => prev.map(t => t.id === editingId ? payload : t));
+               useStore.setState(s => ({ transporters: s.transporters.map(t => t.id === editingId ? payload : t) }));
              } else {
                await supabase.from('transporters').insert([payload]);
-               setRealTransporters(prev => [...prev, payload]);
+               useStore.setState(s => ({ transporters: [...s.transporters, payload] }));
              }
-             store.addTransporter(payload);
          }
       } else if (activeTab === 'CHOFERES') {
          if(!driverForm.dni || !driverForm.name) return;
@@ -91,12 +88,11 @@ export const LogisticsManagement: React.FC = () => {
          } else {
              if (editingId) {
                await supabase.from('drivers').update(payload).eq('id', editingId);
-               setRealDrivers(prev => prev.map(d => d.id === editingId ? payload : d));
+               useStore.setState(s => ({ drivers: s.drivers.map(d => d.id === editingId ? payload : d) }));
              } else {
                await supabase.from('drivers').insert([payload]);
-               setRealDrivers(prev => [...prev, payload]);
+               useStore.setState(s => ({ drivers: [...s.drivers, payload] }));
              }
-             store.addDriver(payload);
          }
       } else if (activeTab === 'VEHICULOS') {
          if(!vehicleForm.plate || !vehicleForm.transporter_id || !vehicleForm.driver_id) return;
@@ -107,12 +103,10 @@ export const LogisticsManagement: React.FC = () => {
          } else {
              if (editingId) {
                await supabase.from('vehicles').update(payload).eq('id', editingId);
-               setRealVehicles(prev => prev.map(v => v.id === editingId ? payload : v));
-               if (store.updateVehicle) store.updateVehicle(payload);
+               useStore.setState(s => ({ vehicles: s.vehicles.map(v => v.id === editingId ? payload : v) }));
              } else {
                await supabase.from('vehicles').insert([payload]);
-               setRealVehicles(prev => [...prev, payload]);
-               store.addVehicle(payload);
+               useStore.setState(s => ({ vehicles: [...s.vehicles, payload] }));
              }
          }
       }
