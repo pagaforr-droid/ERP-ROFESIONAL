@@ -492,13 +492,13 @@ export const DocumentManager: React.FC = () => {
                               const vehicle = vehicles.find(v => v.id === ds.vehicle_id);
                               const transporter = transporters.find(t => t.id === vehicle?.transporter_id);
                               const driver = drivers.find(dr => dr.id === vehicle?.driver_id);
-                              const transpName = transporter?.name || driver?.name || 'Desconocido';
+                              const driverName = driver?.name || 'Desconocido';
                               
                               const liq = dispatchLiquidations.find(l => l.dispatch_sheet_id === ds.id);
                               return (
                                  <span>
                                     {liq ? `Liquidado en Hoja ${ds.code}` : `En Ruta ${ds.code}`}
-                                    <br/><span className="text-[10px] text-slate-400">Transportista: {transpName}</span>
+                                    <br/><span className="text-[10px] text-slate-400">Chofer: {driverName}</span>
                                  </span>
                               );
                            })()
