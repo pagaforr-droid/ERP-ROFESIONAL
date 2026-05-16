@@ -163,7 +163,7 @@ export const GuiaManager: React.FC = () => {
         
         try {
             const idsArray = Array.from(selectedIds) as string[];
-            generateGuiasFromSales(idsArray, transportModality, guiaTransporterId, guiaDriverId, guiaVehicleId);
+            await generateGuiasFromSales(idsArray, transportModality, guiaTransporterId, guiaDriverId, guiaVehicleId);
             
             setIsGenerateModalOpen(false);
             setSelectedIds(new Set());

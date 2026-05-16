@@ -123,7 +123,7 @@ interface AppState {
    saveDispatchLiquidationDraft: (liquidation: DispatchLiquidation, userId: string) => Promise<{ success: boolean; msg: string; liquidation_id?: string }>;
    confirmDispatchLiquidationKardex: (liquidationId: string, userId: string) => Promise<{ success: boolean; msg: string }>;
    markDocumentsAsPrinted: (saleIds: string[]) => Promise<void>;
-   generateGuiasFromSales: (saleIds: string[], modality: 'PUBLIC' | 'PRIVATE', transporterId: string, driverId?: string, vehicleId?: string) => void;
+   generateGuiasFromSales: (saleIds: string[], modality: 'PUBLIC' | 'PRIVATE', transporterId: string, driverId?: string, vehicleId?: string) => Promise<void>;
 
    // Auditory and Modifications
    addSaleHistoryEvent: (saleId: string, event: import('../types').SaleHistoryEvent) => void;
@@ -1013,8 +1013,9 @@ export const useStore = create<AppState>((set, get) => ({
       };
    }),
 
-   generateGuiasFromSales: (saleIds, modality, transporterId, driverId, vehicleId) => set(s => {
-      if (saleIds.length === 0) return s;
+   generateGuiasFromSales: async (saleIds, modality, transporterId, driverId, vehicleId) => {
+      const s = get();
+      if (saleIds.length === 0) return;
 
       const currentSeriesState = [...s.company.series];
       const seriesObj = currentSeriesState.find(ser => ser.type === 'GUIA' && ser.is_active);
@@ -1025,6 +1026,7 @@ export const useStore = create<AppState>((set, get) => ({
       let nextNum = seriesObj.current_number;
       
       const newDispatchSheets: DispatchSheet[] = [];
+      const salesUpdates: any[] = [];
       const updatedSales = [...s.sales];
 
       saleIds.forEach(saleId => {
@@ -1037,22 +1039,28 @@ export const useStore = create<AppState>((set, get) => ({
          const newDispatch: DispatchSheet = {
             id: generateUUID(),
             code,
-            vehicle_id: vehicleId,
+            vehicle_id: vehicleId || '',
             status: 'pending',
             date: new Date().toISOString(),
             sale_ids: [saleId],
-            sunat_status: 'PENDING'
+            sunat_status: 'PENDING',
+            guide_transport_modality: modality
          };
 
          newDispatchSheets.push(newDispatch);
          
-         updatedSales[saleIndex] = {
-            ...updatedSales[saleIndex],
+         const sUpdate = {
             dispatch_status: 'assigned',
             guide_transport_modality: modality,
             guide_transporter_id: transporterId,
-            guide_driver_id: modality === 'PRIVATE' ? driverId : undefined,
-            guide_vehicle_id: modality === 'PRIVATE' ? vehicleId : undefined,
+            guide_driver_id: modality === 'PRIVATE' ? driverId : null,
+            guide_vehicle_id: modality === 'PRIVATE' ? vehicleId : null,
+         };
+         salesUpdates.push({ id: saleId, ...sUpdate });
+
+         updatedSales[saleIndex] = {
+            ...updatedSales[saleIndex],
+            ...sUpdate
          };
       });
 
@@ -1060,12 +1068,27 @@ export const useStore = create<AppState>((set, get) => ({
          ser.id === seriesObj.id ? { ...ser, current_number: nextNum } : ser
       );
 
-      return {
+      // Persist to Supabase
+      const { error: cErr } = await supabase.from('companies').update({ series: finalSeriesState }).eq('id', s.company.id);
+      if (cErr) throw new Error("Error guardando el correlativo: " + cErr.message);
+
+      if (newDispatchSheets.length > 0) {
+         const { error: dsErr } = await supabase.from('dispatch_sheets').insert(newDispatchSheets);
+         if (dsErr) throw new Error("Error creando guías en BD: " + dsErr.message);
+      }
+
+      for (const su of salesUpdates) {
+         const { id, ...payload } = su;
+         const { error: sErr } = await supabase.from('sales').update(payload).eq('id', id);
+         if (sErr) throw new Error("Error actualizando la factura en BD: " + sErr.message);
+      }
+
+      set({
          dispatchSheets: [...newDispatchSheets, ...s.dispatchSheets],
          sales: updatedSales,
          company: { ...s.company, series: finalSeriesState }
-      };
-   }),
+      });
+   },
 
    returnItemsToKardex: (items) => set((s) => {
       let currentBatches = [...s.batches];
