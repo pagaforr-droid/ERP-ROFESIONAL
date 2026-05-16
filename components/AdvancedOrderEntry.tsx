@@ -126,11 +126,11 @@ export const AdvancedOrderEntry: React.FC = () => {
           supabase.from('company_config').select('*').limit(1).maybeSingle(),
           supabase.from('sellers').select('*').order('name'),
           supabase.from('price_lists').select('*').order('name'),
-          supabase.from('auto_promotions').select('*'),
-          supabase.from('products').select('*'),
+          supabase.from('auto_promotions').select('*').eq('is_active', true),
+          supabase.from('products').select('*').eq('is_active', true),
           supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true),
           supabase.from('zones').select('*'),
-          supabase.from('promotions').select('*')
+          supabase.from('promotions').select('*').eq('is_active', true)
         ]);
         
         if (compRes.data) setDbCompany(compRes.data);
