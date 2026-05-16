@@ -361,6 +361,10 @@ export const AdvancedOrderEntry: React.FC = () => {
   }
 
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
+      if (isEditMode) {
+          setCart(currentCart);
+          return;
+      }
       const context = {
          channel: 'IN_STORE' as const,
          city: selectedClient?.city || '',

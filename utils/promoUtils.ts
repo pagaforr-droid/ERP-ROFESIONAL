@@ -105,7 +105,7 @@ export const applyAutoPromotionsEngine = (
   context: PromoContext,
   clientUsage: ClientPromoUsage = {}
 ): { newCart: any[], warnings: string[] } => {
-  let newCart = cart.filter(item => !item.is_bonus && !item.auto_promo_id);
+  let newCart = cart.filter(item => !item.auto_promo_id);
   let warnings: string[] = [];
 
   // Filter valid promos by context

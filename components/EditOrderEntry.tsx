@@ -120,30 +120,7 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
     });
 
     setCart(newCart);
-    applyElitePromotions(newCart);
-  };
 
-  const applyElitePromotions = (currentCart: any[]) => {
-    const context = {
-         channel: 'IN_STORE' as const,
-         city: orderData?.client_city || '', 
-         sellerId: orderData?.seller_id || currentUser?.id,
-         userRole: currentUser?.role,
-         priceListId: priceListId,
-         clientId: orderData?.client_id
-    };
-    
-    const { newCart } = applyAutoPromotionsEngine(
-         currentCart, 
-         dbAutoPromos, 
-         dbProducts, 
-         [], // No batches needed right here since it's just edit
-         context, 
-         clientPromoUsage
-    );
-    
-    setCart(newCart);
-  };
 
   const handleSaveEdit = async () => {
     if (!orderData) return;
@@ -278,7 +255,6 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
                                 newCart[idx].quantity = newQty;
                                 newCart[idx].total_price = newQty * newCart[idx].unit_price;
                                 setCart(newCart);
-                                applyElitePromotions(newCart); 
                             }}
                             />
                         ) : (
@@ -293,7 +269,7 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
                             <button 
                                 onClick={() => {
                                     const newCart = cart.filter((_, i) => i !== idx);
-                                    applyElitePromotions(newCart);
+                                    setCart(newCart);
                                 }}
                                 className="text-slate-400 hover:text-red-500 transition-colors"
                             >
