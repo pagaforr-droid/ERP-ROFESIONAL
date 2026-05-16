@@ -120,8 +120,35 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
     });
 
     setCart(newCart);
+    applyElitePromotions(newCart);
+  };
 
+  const applyElitePromotions = (currentCart: any[]) => {
+    const evalDate = orderData?.created_at ? new Date(orderData.created_at) : new Date();
+    const effectiveChannel = orderData?.seller_id ? 'SELLER_APP' : 'IN_STORE';
 
+    const context = {
+         channel: effectiveChannel as const,
+         city: orderData?.client_city || '', 
+         sellerId: orderData?.seller_id || currentUser?.id,
+         userRole: currentUser?.role,
+         priceListId: priceListId,
+         clientId: orderData?.client_id,
+         evaluationDate: evalDate
+    };
+    
+    const { newCart } = applyAutoPromotionsEngine(
+         currentCart, 
+         dbAutoPromos, 
+         dbProducts, 
+         [],
+         context, 
+         clientPromoUsage
+    );
+    
+    setCart(newCart);
+  };
+  
   const handleSaveEdit = async () => {
     if (!orderData) return;
     setIsSaving(true);
@@ -255,6 +282,7 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
                                 newCart[idx].quantity = newQty;
                                 newCart[idx].total_price = newQty * newCart[idx].unit_price;
                                 setCart(newCart);
+                                applyElitePromotions(newCart);
                             }}
                             />
                         ) : (
@@ -270,6 +298,7 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
                                 onClick={() => {
                                     const newCart = cart.filter((_, i) => i !== idx);
                                     setCart(newCart);
+                                    applyElitePromotions(newCart);
                                 }}
                                 className="text-slate-400 hover:text-red-500 transition-colors"
                             >

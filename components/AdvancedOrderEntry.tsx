@@ -361,17 +361,18 @@ export const AdvancedOrderEntry: React.FC = () => {
   }
 
   const applyPromotions = (currentCart: CartItem[], listId: string) => {
-      if (isEditMode) {
-          setCart(currentCart);
-          return;
-      }
+      const isHistorical = isEditMode && originalOrder?.created_at;
+      const evalDate = isHistorical ? new Date(originalOrder.created_at) : new Date();
+      const effectiveChannel = isHistorical && originalOrder?.seller_id ? 'SELLER_APP' : 'IN_STORE';
+
       const context = {
-         channel: 'IN_STORE' as const,
+         channel: effectiveChannel as const,
          city: selectedClient?.city || '',
          sellerId: sellerId || currentUser?.id,
          userRole: currentUser?.role,
          priceListId: listId,
-         clientId: selectedClient?.id
+         clientId: selectedClient?.id,
+         evaluationDate: evalDate
       };
       
       const { newCart, warnings } = applyAutoPromotionsEngine(

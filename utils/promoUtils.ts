@@ -1,10 +1,10 @@
 import { Promotion, Combo, AutoPromotion, BatchAllocation, Batch } from '../types';
 import { allocateBatchesFIFO } from './productUtils';
 
-export const isPromoCurrentlyActive = (promo: Promotion | Combo | AutoPromotion): boolean => {
+export const isPromoCurrentlyActive = (promo: Promotion | Combo | AutoPromotion, evaluationDate?: Date): boolean => {
   if (!promo.is_active) return false;
 
-  const now = new Date();
+  const now = evaluationDate || new Date();
   
   // Set time of start_date to 00:00:00
   const startDate = new Date(promo.start_date);
@@ -31,9 +31,10 @@ export const isPromoValidForContext = (
   channel: 'IN_STORE' | 'SELLER_APP' | 'DIRECT_SALE', 
   clientCityInput?: string,
   sellerId?: string,
-  userRole?: string
+  userRole?: string,
+  evaluationDate?: Date
 ): boolean => {
-  if (!isPromoCurrentlyActive(promo)) return false;
+  if (!isPromoCurrentlyActive(promo, evaluationDate)) return false;
 
   if (promo.channels && promo.channels.length > 0) {
     if (!promo.channels.includes(channel)) return false;
@@ -64,11 +65,11 @@ export const isPromoValidForContext = (
   return true;
 };
 
-export const isHappyHourActive = (promo: AutoPromotion): boolean => {
+export const isHappyHourActive = (promo: AutoPromotion, evaluationDate?: Date): boolean => {
   if (!promo.is_happy_hour) return true;
   if (!promo.start_time || !promo.end_time) return true;
 
-  const now = new Date();
+  const now = evaluationDate || new Date();
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
   
@@ -90,6 +91,7 @@ export interface PromoContext {
   userRole?: string;
   priceListId?: string;
   clientId?: string;
+  evaluationDate?: Date;
 }
 
 export interface ClientPromoUsage {
@@ -110,11 +112,11 @@ export const applyAutoPromotionsEngine = (
 
   // Filter valid promos by context
   let validPromos = allAutoPromos.filter(ap => {
-    if (!isPromoValidForContext(ap, context.channel, context.city, context.sellerId, context.userRole)) return false;
+    if (!isPromoValidForContext(ap, context.channel, context.city, context.sellerId, context.userRole, context.evaluationDate)) return false;
     if (ap.target_price_list_ids && ap.target_price_list_ids.length > 0 && !ap.target_price_list_ids.includes('ALL')) {
       if (!context.priceListId || !ap.target_price_list_ids.includes(context.priceListId)) return false;
     }
-    if (!isHappyHourActive(ap)) return false;
+    if (!isHappyHourActive(ap, context.evaluationDate)) return false;
     
     // Check Global Limit
     if (ap.global_reward_limit && ap.global_reward_limit > 0) {
