@@ -1069,7 +1069,7 @@ export const useStore = create<AppState>((set, get) => ({
       );
 
       // Persist to Supabase
-      const { error: cErr } = await supabase.from('companies').update({ series: finalSeriesState }).eq('id', s.company.id);
+      const { error: cErr } = await supabase.from('document_series').update({ current_number: nextNum }).eq('id', seriesObj.id);
       if (cErr) throw new Error("Error guardando el correlativo: " + cErr.message);
 
       if (newDispatchSheets.length > 0) {
