@@ -323,7 +323,7 @@ export const MobileOrders: React.FC = () => {
 
       const activePromo = dbPromos.find(promo => {
          if (!(promo.product_ids || []).includes(p.id)) return false;
-         if (!isPromoValidForContext(promo, 'IN_STORE', selectedClient?.city || '', currentSellerId || currentUser?.id, currentUser?.role)) return false;
+         if (!isPromoValidForContext(promo, 'SELLER_APP', selectedClient?.city || '', currentSellerId || currentUser?.id, currentUser?.role)) return false;
          if (promo.target_price_list_ids?.length > 0 && listId && !promo.target_price_list_ids.includes('ALL') && !promo.target_price_list_ids.includes(listId)) return false;
          return true;
       });
@@ -353,7 +353,7 @@ export const MobileOrders: React.FC = () => {
       };
 
       const validPromos = dbAutoPromos.filter(ap => {
-         if (!isPromoValidForContext(ap, 'IN_STORE', selectedClient?.city || '', currentSellerId || currentUser?.id, currentUser?.role)) return false;
+         if (!isPromoValidForContext(ap, 'SELLER_APP', selectedClient?.city || '', currentSellerId || currentUser?.id, currentUser?.role)) return false;
          if (ap.target_price_list_ids && ap.target_price_list_ids.length > 0 && listId) {
             if (!ap.target_price_list_ids.includes('ALL') && !ap.target_price_list_ids.includes(listId)) return false;
          }
