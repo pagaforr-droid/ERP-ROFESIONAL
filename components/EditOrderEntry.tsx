@@ -24,6 +24,7 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
   const [cart, setCart] = useState<any[]>([]);
   const [priceListId, setPriceListId] = useState('');
   const [clientPromoUsage, setClientPromoUsage] = useState<Record<string, number>>({});
+  const [loadedBatches, setLoadedBatches] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     const fetchClientPromoUsage = async () => {
@@ -89,7 +90,21 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
 
       setDbProducts(prodsRes.data || []);
       setDbPriceLists(plRes.data || []);
-      setDbAutoPromos(apRes.data || []);
+      
+      if (apRes.data) {
+          setDbAutoPromos(apRes.data);
+          const rewardPids = [...new Set(apRes.data.map(ap => ap.reward_product_id).filter(Boolean))];
+          if (rewardPids.length > 0) {
+              const { data: bData } = await supabase.from('batches').select('*').in('product_id', rewardPids).gt('quantity_current', 0);
+              if (bData) {
+                  const newCache: Record<string, any[]> = {};
+                  rewardPids.forEach(pid => {
+                      newCache[pid] = bData.filter(b => b.product_id === pid);
+                  });
+                  setLoadedBatches(newCache);
+              }
+          }
+      }
     } catch (error) {
       console.error("Error cargando edición:", error);
     } finally {
@@ -141,7 +156,7 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
          currentCart, 
          dbAutoPromos, 
          dbProducts, 
-         [],
+         Object.values(loadedBatches).flat(),
          context, 
          clientPromoUsage
     );

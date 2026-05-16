@@ -136,10 +136,26 @@ export const AdvancedOrderEntry: React.FC = () => {
         if (compRes.data) setDbCompany(compRes.data);
         if (sellRes.data) setDbSellers(sellRes.data);
         if (plRes.data) setDbPriceLists(plRes.data);
-        if (apRes.data) setDbAutoPromos(apRes.data);
         if (prodRes.data) setDbProducts(prodRes.data as Product[]);
         if (zoneRes.data) setDbZones(zoneRes.data);
         if (promRes.data) setDbPromos(promRes.data);
+
+        if (apRes.data) {
+            setDbAutoPromos(apRes.data);
+            const rewardPids = [...new Set(apRes.data.map(ap => ap.reward_product_id).filter(Boolean))];
+            if (rewardPids.length > 0) {
+                const { data: bData } = await supabase.from('batches').select('*').in('product_id', rewardPids).gt('quantity_current', 0);
+                if (bData) {
+                    setLoadedBatches(prev => {
+                        const newCache = { ...prev };
+                        rewardPids.forEach(pid => {
+                            newCache[pid] = bData.filter(b => b.product_id === pid);
+                        });
+                        return newCache;
+                    });
+                }
+            }
+        }
         if (serRes.data && serRes.data.length > 0 && !isEditMode) {
           setDbSeries(serRes.data);
           setPedidoSeries(serRes.data[0].series);
@@ -379,7 +395,7 @@ export const AdvancedOrderEntry: React.FC = () => {
          currentCart, 
          dbAutoPromos, 
          dbProducts, 
-         [], // No full batches available here initially, we can leave empty or pass loadedBatches later
+         Object.values(loadedBatches).flat(), // Lotes de los productos de regalo precargados
          context, 
          clientPromoUsage
       );
