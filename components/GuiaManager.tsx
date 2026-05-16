@@ -40,6 +40,22 @@ export const GuiaManager: React.FC = () => {
             
             if (salesData) setRealSales(salesData as Sale[]);
             if (dsData) setRealDispatchSheets(dsData as DispatchSheet[]);
+
+            // Load logistics entities if missing
+            const state = useStore.getState();
+            if (state.transporters.length === 0) {
+                 const { data } = await supabase.from('transporters').select('*');
+                 if (data) useStore.setState({ transporters: data as any[] });
+            }
+            if (state.vehicles.length === 0) {
+                 const { data } = await supabase.from('vehicles').select('*');
+                 if (data) useStore.setState({ vehicles: data as any[] });
+            }
+            if (state.drivers.length === 0) {
+                 const { data } = await supabase.from('drivers').select('*');
+                 if (data) useStore.setState({ drivers: data as any[] });
+            }
+
         } catch (error) {
             console.error("Error fetching Guia docs:", error);
         } finally {
@@ -220,7 +236,7 @@ export const GuiaManager: React.FC = () => {
             <div className="flex justify-between items-center mb-6 flex-shrink-0">
                 <div>
                     <h1 className="text-3xl font-black text-slate-800 flex items-center gap-3">
-                        <span className="bg-emerald-600 text-white p-2 rounded-lg"><Truck className="w-6 h-6" /></span>
+                        <span className="bg-blue-600 text-white p-2 rounded-lg"><Truck className="w-6 h-6" /></span>
                         Guías de Remisión (GRE)
                     </h1>
                     <p className="text-slate-500 mt-1 font-medium">Generación y control de Guías de Remisión Remitente (Transporte Público y Privado).</p>
@@ -230,13 +246,13 @@ export const GuiaManager: React.FC = () => {
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex-1 flex flex-col">
                 <div className="flex border-b border-slate-200 bg-slate-50 flex-shrink-0">
                     <button
-                        className={`flex-1 py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'pendientes' ? 'border-emerald-600 text-emerald-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                        className={`flex-1 py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'pendientes' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
                         onClick={() => setActiveTab('pendientes')}
                     >
                         Comprobantes sin Guía ({pendientes.length})
                     </button>
                     <button
-                        className={`flex-1 py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'emitidas' ? 'border-emerald-600 text-emerald-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                        className={`flex-1 py-4 text-sm font-bold border-b-2 transition-colors ${activeTab === 'emitidas' ? 'border-blue-600 text-blue-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
                         onClick={() => setActiveTab('emitidas')}
                     >
                         Guías Emitidas ({emitidas.length})
@@ -250,20 +266,20 @@ export const GuiaManager: React.FC = () => {
                             <input
                                 type="text"
                                 placeholder={activeTab === 'pendientes' ? "Buscar por documento o cliente..." : "Buscar por número de guía..."}
-                                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm"
+                                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         </div>
                         <input
                             type="date"
-                            className="border border-slate-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-700"
+                            className="border border-slate-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-700"
                             value={dateFilter}
                             onChange={(e) => setDateFilter(e.target.value)}
                         />
                         {activeTab === 'pendientes' && (
                             <select
-                                className="border border-slate-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 outline-none text-slate-700 font-bold"
+                                className="border border-slate-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-700 font-bold"
                                 value={docTypeFilter}
                                 onChange={(e) => setDocTypeFilter(e.target.value as any)}
                             >
@@ -287,7 +303,7 @@ export const GuiaManager: React.FC = () => {
                                     <th className="p-4 border-b border-slate-200 w-12 text-center">
                                         <input 
                                             type="checkbox" 
-                                            className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
                                             checked={selectedIds.size === pendientes.length && pendientes.length > 0}
                                             onChange={handleToggleSelectAll}
                                         />
@@ -313,16 +329,16 @@ export const GuiaManager: React.FC = () => {
                         <tbody className="divide-y divide-slate-100">
                             {activeTab === 'pendientes' && pendientes.map((sale) => {
                                 const isFactura = sale.document_type === 'FACTURA';
-                                const rowBg = selectedIds.has(sale.id) ? 'bg-emerald-50' : (isFactura ? 'bg-blue-50/20' : 'bg-orange-50/20');
+                                const rowBg = selectedIds.has(sale.id) ? 'bg-blue-50' : (isFactura ? 'bg-blue-50/20' : 'bg-orange-50/20');
                                 const d = new Date(sale.created_at);
                                 const timeString = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
                                 return (
-                                <tr key={sale.id} className={`hover:bg-emerald-50/50 transition-colors ${rowBg}`}>
+                                <tr key={sale.id} className={`hover:bg-blue-50/50 transition-colors ${rowBg}`}>
                                     <td className="p-4 text-center">
                                         <input 
                                             type="checkbox" 
-                                            className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
                                             checked={selectedIds.has(sale.id)}
                                             onChange={() => handleToggleSelect(sale.id)}
                                         />
@@ -354,7 +370,7 @@ export const GuiaManager: React.FC = () => {
                                         <td className="p-4 text-sm text-slate-600">{new Date(guia.date).toLocaleDateString()}</td>
                                         <td className="p-4">
                                             <div className="font-bold text-slate-800">GUIA DE REMISIÓN</div>
-                                            <div className="text-xs text-emerald-600 font-bold">{guia.code}</div>
+                                            <div className="text-xs text-blue-600 font-bold">{guia.code}</div>
                                         </td>
                                         <td className="p-4">
                                             {vehicle ? (
@@ -377,7 +393,7 @@ export const GuiaManager: React.FC = () => {
                                             </span>
                                         </td>
                                         <td className="p-4 text-center">
-                                             <button onClick={() => handleViewPdf(guia)} className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors" title="Ver PDF">
+                                             <button onClick={() => handleViewPdf(guia)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" title="Ver PDF">
                                                 <Eye className="w-5 h-5" />
                                             </button>
                                         </td>
@@ -405,7 +421,7 @@ export const GuiaManager: React.FC = () => {
                             className={`px-6 py-2.5 rounded-xl text-sm font-bold shadow-md transition-all flex items-center gap-2
                                 ${selectedIds.size === 0
                                     ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200 shadow-none'
-                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
                                 }`}
                         >
                             <FileText className="w-5 h-5" /> Generar Guías para Lote
@@ -420,7 +436,7 @@ export const GuiaManager: React.FC = () => {
                     <div className="bg-white rounded-2xl shadow-xl w-[550px] border border-slate-200 overflow-hidden animate-scale-up">
                         <div className="bg-slate-50 border-b border-slate-200 p-5 flex items-center justify-between">
                             <h2 className="text-xl font-black text-slate-800 flex items-center gap-2">
-                                <Truck className="w-6 h-6 text-emerald-600" />
+                                <Truck className="w-6 h-6 text-blue-600" />
                                 Nueva Guía de Remisión (GRE)
                             </h2>
                             <button onClick={() => setIsGenerateModalOpen(false)} className="text-slate-400 hover:text-slate-600">
@@ -428,7 +444,7 @@ export const GuiaManager: React.FC = () => {
                             </button>
                         </div>
                         <div className="p-6">
-                            <div className="mb-6 p-4 bg-emerald-50 rounded-xl border border-emerald-100 text-emerald-800">
+                            <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-100 text-blue-800">
                                 <p className="font-bold text-sm mb-1">Resumen de Generación</p>
                                 <p className="text-xs">Se generarán <span className="font-extrabold">{selectedIds.size}</span> guías de remisión (Tipo Remitente). Por favor, defina la modalidad de traslado según la normativa SUNAT.</p>
                             </div>
@@ -437,23 +453,23 @@ export const GuiaManager: React.FC = () => {
                                 <div>
                                     <label className="block text-sm font-bold text-slate-700 mb-2">Modalidad de Traslado (SUNAT)</label>
                                     <div className="flex gap-4">
-                                        <label className={`flex-1 flex items-center gap-2 p-3 border-2 rounded-xl cursor-pointer transition-colors ${transportModality === 'PRIVATE' ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 hover:border-emerald-300'}`}>
+                                        <label className={`flex-1 flex items-center gap-2 p-3 border-2 rounded-xl cursor-pointer transition-colors ${transportModality === 'PRIVATE' ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-slate-200 hover:border-blue-300'}`}>
                                             <input 
                                                 type="radio" 
                                                 name="modality" 
                                                 checked={transportModality === 'PRIVATE'} 
                                                 onChange={() => setTransportModality('PRIVATE')}
-                                                className="text-emerald-600 focus:ring-emerald-500"
+                                                className="text-blue-600 focus:ring-blue-500"
                                             />
                                             <span className="font-bold text-sm">Transporte Privado (01)</span>
                                         </label>
-                                        <label className={`flex-1 flex items-center gap-2 p-3 border-2 rounded-xl cursor-pointer transition-colors ${transportModality === 'PUBLIC' ? 'border-emerald-600 bg-emerald-50 text-emerald-800' : 'border-slate-200 hover:border-emerald-300'}`}>
+                                        <label className={`flex-1 flex items-center gap-2 p-3 border-2 rounded-xl cursor-pointer transition-colors ${transportModality === 'PUBLIC' ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-slate-200 hover:border-blue-300'}`}>
                                             <input 
                                                 type="radio" 
                                                 name="modality" 
                                                 checked={transportModality === 'PUBLIC'} 
                                                 onChange={() => setTransportModality('PUBLIC')}
-                                                className="text-emerald-600 focus:ring-emerald-500"
+                                                className="text-blue-600 focus:ring-blue-500"
                                             />
                                             <span className="font-bold text-sm">Transporte Público (02)</span>
                                         </label>
@@ -466,7 +482,7 @@ export const GuiaManager: React.FC = () => {
                                             {transportModality === 'PUBLIC' ? 'Empresa de Transporte Contratada (Courier)' : 'Empresa de Transporte (Propietaria)'}
                                         </label>
                                         <select
-                                            className="w-full border-2 border-slate-200 rounded-lg px-4 py-2 bg-white focus:border-emerald-500 focus:ring-0 text-sm font-bold"
+                                            className="w-full border-2 border-slate-200 rounded-lg px-4 py-2 bg-white focus:border-blue-500 focus:ring-0 text-sm font-bold"
                                             value={guiaTransporterId}
                                             onChange={(e) => setGuiaTransporterId(e.target.value)}
                                         >
@@ -482,7 +498,7 @@ export const GuiaManager: React.FC = () => {
                                             <div>
                                                 <label className="block text-sm font-bold text-slate-700 mb-1">Vehículo de Traslado</label>
                                                 <select
-                                                    className="w-full border-2 border-slate-200 rounded-lg px-4 py-2 bg-white focus:border-emerald-500 focus:ring-0 text-sm font-bold"
+                                                    className="w-full border-2 border-slate-200 rounded-lg px-4 py-2 bg-white focus:border-blue-500 focus:ring-0 text-sm font-bold"
                                                     value={guiaVehicleId}
                                                     onChange={(e) => setGuiaVehicleId(e.target.value)}
                                                 >
@@ -495,7 +511,7 @@ export const GuiaManager: React.FC = () => {
                                             <div>
                                                 <label className="block text-sm font-bold text-slate-700 mb-1">Conductor Asignado</label>
                                                 <select
-                                                    className="w-full border-2 border-slate-200 rounded-lg px-4 py-2 bg-white focus:border-emerald-500 focus:ring-0 text-sm font-bold"
+                                                    className="w-full border-2 border-slate-200 rounded-lg px-4 py-2 bg-white focus:border-blue-500 focus:ring-0 text-sm font-bold"
                                                     value={guiaDriverId}
                                                     onChange={(e) => setGuiaDriverId(e.target.value)}
                                                 >
@@ -525,7 +541,7 @@ export const GuiaManager: React.FC = () => {
                             </button>
                             <button
                                 onClick={handleConfirmGenerateGuias}
-                                className="px-5 py-2.5 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-200 transition-all flex items-center gap-2"
+                                className="px-5 py-2.5 rounded-xl font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200 transition-all flex items-center gap-2"
                             >
                                 <CheckSquare className="w-5 h-5" /> Generar Guías
                             </button>
