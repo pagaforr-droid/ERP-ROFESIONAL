@@ -199,7 +199,8 @@ export const AdvancedOrderEntry: React.FC = () => {
   const getMultiplier = (listId: string) => {
     if (!listId) return 1;
     const list = dbPriceLists.find(pl => pl.id === listId);
-    return list ? Number(list.multiplier || list.factor || 1) : 1;
+    const val = list ? (list.multiplier ?? list.factor_multiplier ?? list.factor ?? list.value ?? 1) : 1;
+    return Number(val) || 1;
   };
 
   const calculateCalculatedPrice = (p: Product, unit: string, listId: string) => {

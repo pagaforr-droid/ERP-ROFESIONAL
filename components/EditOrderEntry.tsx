@@ -114,7 +114,8 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
 
   const handleUpdateAllPrices = () => {
     const list = dbPriceLists.find(l => l.id === priceListId);
-    const multiplier = list ? Number(list.multiplier || list.factor || 1) : 1;
+    const val = list ? (list.multiplier ?? list.factor_multiplier ?? list.factor ?? list.value ?? 1) : 1;
+    const multiplier = Number(val) || 1;
 
     const newCart = cart.map(item => {
       if (item.is_bonus) return item;
