@@ -3,7 +3,7 @@ import { useStore } from '../services/store';
 import { Product, Order, AutoPromotion } from '../types';
 import { Save, X, RefreshCw, Trash2, Loader2, Edit } from 'lucide-react';
 import { supabase } from '../services/supabase';
-import { calculateBaseQuantity } from '../utils/productUtils';
+import { calculateBaseQuantity, isPackageUnit } from '../utils/productUtils';
 import { applyAutoPromotionsEngine } from '../utils/promoUtils';
 
 interface EditOrderProps {
@@ -122,7 +122,7 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
       const p = item.product_ref;
       let basePrice = Number(p.price_unit || 0);
       
-      if (item.unit_type === p.package_type) {
+      if (isPackageUnit(item.unit_type || item.selected_unit || '', p)) {
         basePrice = p.price_package ? Number(p.price_package) : basePrice * Number(p.package_content || 1);
       }
 
