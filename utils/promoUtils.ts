@@ -252,8 +252,10 @@ export const applyAutoPromotionsEngine = (
              id: crypto.randomUUID(), 
              sale_id: '', 
              product_id: rewardProd.id, 
-             product_sku: rewardProd.sku, 
-             product_name: rewardProd.name, 
+             product_sku: rewardProd.sku,
+             sku: rewardProd.sku,
+             product_name: rewardProd.name,
+             name: rewardProd.name,
              quantity_base: rewardQty * conversionFactor, 
              batch_allocations: allocateBatchesFIFO(rewardQty * conversionFactor, sortedProductBatches), 
              quantity: rewardQty, 
@@ -263,6 +265,7 @@ export const applyAutoPromotionsEngine = (
              discount_amount: 0, 
              total_price: 0, 
              selected_unit: realUnitName, 
+             unit_type: realUnitName,
              is_bonus: true, 
              auto_promo_id: ap.id, 
              product: rewardProd 
@@ -272,5 +275,4 @@ export const applyAutoPromotionsEngine = (
   }
 
   return { newCart, warnings };
-};
 
