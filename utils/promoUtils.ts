@@ -2,7 +2,8 @@ import { Promotion, Combo, AutoPromotion, BatchAllocation, Batch } from '../type
 import { allocateBatchesFIFO } from './productUtils';
 
 export const isPromoCurrentlyActive = (promo: Promotion | Combo | AutoPromotion, evaluationDate?: Date): boolean => {
-  if (!promo.is_active) return false;
+  // Solo bloqueamos por is_active si NO es una evaluación histórica.
+  if (!evaluationDate && !promo.is_active) return false;
 
   const now = evaluationDate || new Date();
   
@@ -119,12 +120,12 @@ export const applyAutoPromotionsEngine = (
     if (!isHappyHourActive(ap, context.evaluationDate)) return false;
     
     // Check Global Limit
-    if (ap.global_reward_limit && ap.global_reward_limit > 0) {
+    if (ap.global_reward_limit && ap.global_reward_limit > 0 && !context.evaluationDate) {
        if ((ap.current_reward_uses || 0) >= ap.global_reward_limit) return false;
     }
 
     // Check Client Limit
-    if (ap.max_uses_per_client && ap.max_uses_per_client > 0) {
+    if (ap.max_uses_per_client && ap.max_uses_per_client > 0 && !context.evaluationDate) {
        const uses = clientUsage[ap.id] || 0;
        if (uses >= ap.max_uses_per_client) return false;
     }

@@ -50,9 +50,9 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
       const [orderRes, itemsRes, prodsRes, plRes, apRes] = await Promise.all([
         supabase.from('orders').select('*').eq('id', orderId).single(),
         supabase.from('order_items').select('*').eq('order_id', orderId),
-        supabase.from('products').select('*').eq('is_active', true),
+        supabase.from('products').select('*'),
         supabase.from('price_lists').select('*').order('name'),
-        supabase.from('auto_promotions').select('*').eq('is_active', true)
+        supabase.from('auto_promotions').select('*')
       ]);
 
       if (orderRes.data) {

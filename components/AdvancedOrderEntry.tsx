@@ -126,11 +126,11 @@ export const AdvancedOrderEntry: React.FC = () => {
           supabase.from('company_config').select('*').limit(1).maybeSingle(),
           supabase.from('sellers').select('*').order('name'),
           supabase.from('price_lists').select('*').order('name'),
-          supabase.from('auto_promotions').select('*').eq('is_active', true),
-          supabase.from('products').select('*').eq('is_active', true),
+          supabase.from('auto_promotions').select('*'),
+          supabase.from('products').select('*'),
           supabase.from('document_series').select('*').eq('type', 'PEDIDO').eq('is_active', true),
           supabase.from('zones').select('*'),
-          supabase.from('promotions').select('*').eq('is_active', true)
+          supabase.from('promotions').select('*')
         ]);
         
         if (compRes.data) setDbCompany(compRes.data);
@@ -378,7 +378,7 @@ export const AdvancedOrderEntry: React.FC = () => {
       const { newCart, warnings } = applyAutoPromotionsEngine(
          currentCart, 
          dbAutoPromos, 
-         Object.values(cartProductsCache), 
+         dbProducts, 
          [], // No full batches available here initially, we can leave empty or pass loadedBatches later
          context, 
          clientPromoUsage
@@ -593,6 +593,7 @@ export const AdvancedOrderEntry: React.FC = () => {
             }, {});
 
             setLoadedBatches(batchCache);
+            setCartProductsCache(prev => ({...prev, ...prodMap}));
 
             loadedItems = orderItemsData.map((item: any) => {
                 const pRef = prodMap[item.product_id] || dbProducts.find(p => p.id === item.product_id) || {} as Product;
