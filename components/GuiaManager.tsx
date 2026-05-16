@@ -38,8 +38,14 @@ export const GuiaManager: React.FC = () => {
             const { data: salesData } = await supabase.from('sales').select('*').in('document_type', ['FACTURA', 'BOLETA']).order('created_at', { ascending: false }).limit(500);
             const { data: dsData } = await supabase.from('dispatch_sheets').select('*').order('created_at', { ascending: false }).limit(500);
             
-            if (salesData) setRealSales(salesData as Sale[]);
-            if (dsData) setRealDispatchSheets(dsData as DispatchSheet[]);
+            if (salesData) {
+                setRealSales(salesData as Sale[]);
+                useStore.setState({ sales: salesData as Sale[] });
+            }
+            if (dsData) {
+                setRealDispatchSheets(dsData as DispatchSheet[]);
+                useStore.setState({ dispatchSheets: dsData as DispatchSheet[] });
+            }
 
             // Load logistics entities if missing
             const state = useStore.getState();
