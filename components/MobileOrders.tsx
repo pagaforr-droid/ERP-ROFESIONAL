@@ -316,10 +316,15 @@ export const MobileOrders: React.FC = () => {
    };
 
    const calculateCalculatedPrice = (p: Product, unit: string, listId: string) => {
-      let baseUnitPrice = Number(p.price_unit || 0);
-      let defaultDiscount = 0;
+      let basePrice = 0;
+      if (p.package_type && unit === p.package_type) {
+         basePrice = Number(p.price_package || (p.price_unit * Number(p.package_content || 1)));
+      } else {
+         basePrice = Number(p.price_unit || 0);
+      }
 
-      baseUnitPrice = baseUnitPrice * getMultiplier(listId);
+      let finalPrice = basePrice * getMultiplier(listId);
+      let defaultDiscount = 0;
 
       const activePromo = dbPromos.find(promo => {
          if (!(promo.product_ids || []).includes(p.id)) return false;
@@ -332,13 +337,8 @@ export const MobileOrders: React.FC = () => {
          if (activePromo.type === 'PERCENTAGE_DISCOUNT') {
             defaultDiscount = Number(activePromo.value || 0);
          } else if (activePromo.type === 'FIXED_PRICE') {
-            baseUnitPrice = Number(activePromo.value || 0);
+            finalPrice = Number(activePromo.value || 0);
          }
-      }
-
-      let finalPrice = baseUnitPrice;
-      if (p.package_type && unit === p.package_type) {
-         finalPrice = baseUnitPrice * Number(p.package_content || 1);
       }
 
       return { price: finalPrice, discount: defaultDiscount };
@@ -1376,7 +1376,7 @@ export const MobileOrders: React.FC = () => {
                            </div>
                         </div>
                         <div className="text-right flex flex-col items-end justify-center">
-                           <div className="font-black text-blue-600 text-sm mb-1">S/ {Number(p.price_unit || 0).toFixed(2)}</div>
+                           <div className="font-black text-blue-600 text-sm mb-1">S/ {Number((p.price_unit || 0) * getMultiplier(priceListId)).toFixed(2)}</div>
                            <div className="bg-slate-900 text-white rounded-md p-1 shadow-sm"><Plus className="w-3 h-3" /></div>
                         </div>
                      </div>
