@@ -1023,7 +1023,7 @@ export const AdvancedOrderEntry: React.FC = () => {
                         <tr key={p.id} onMouseDown={() => handleSelectProduct(p)} className={`cursor-pointer text-sm border-b border-slate-50 ${highlightedIndex === i ? 'bg-blue-100' : 'hover:bg-blue-50'}`}>
                           <td className="p-2 font-mono font-bold text-blue-800">{p.sku}</td>
                           <td className="p-2 text-slate-800">{p.name}</td>
-                          <td className="p-2 text-right text-slate-600">S/ {Number(p.price_unit).toFixed(2)}</td>
+                          <td className="p-2 text-right text-slate-600">S/ {Number(p.price_unit * getMultiplier(priceListId)).toFixed(2)}</td>
                           <td className={`p-2 text-right font-black ${p.current_stock > 0 ? 'text-green-600' : 'text-red-500'}`}>{p.current_stock}</td>
                         </tr>
                       ))}
