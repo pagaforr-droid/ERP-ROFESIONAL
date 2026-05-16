@@ -127,10 +127,13 @@ export const EditOrderEntry: React.FC<EditOrderProps> = ({ orderId, onClose }) =
       }
 
       const newUnitPrice = basePrice * multiplier;
+      const tGross = newUnitPrice * item.quantity;
+      const currentDiscount = Number(item.discount_percent || 0);
+
       return {
         ...item,
         unit_price: newUnitPrice,
-        total_price: newUnitPrice * item.quantity 
+        total_price: tGross - (tGross * (currentDiscount / 100))
       };
     });
 

@@ -477,7 +477,7 @@ export const AdvancedOrderEntry: React.FC = () => {
   };
 
   const handleUpdateCartPrices = (overrideListId?: string) => {
-    const effectiveListId = overrideListId !== undefined ? overrideListId : priceListId;
+    const effectiveListId = (typeof overrideListId === 'string') ? overrideListId : priceListId;
     let tempCart = cart.map(item => {
       if (item.is_bonus || item.auto_promo_id) return item;
       const pRef = item.product_ref;
@@ -956,7 +956,7 @@ export const AdvancedOrderEntry: React.FC = () => {
               <div className="flex-1">
                 <label className="block text-[10px] font-bold text-slate-500 mb-1">Forma Pago</label>
                 <div className="flex gap-1">
-                  <button onClick={handleUpdateCartPrices} className="bg-blue-100 text-blue-700 px-2 rounded hover:bg-blue-200" title="Actualizar precios del carrito">
+                  <button onClick={() => handleUpdateCartPrices()} className="bg-blue-100 text-blue-700 px-2 rounded hover:bg-blue-200" title="Actualizar precios del carrito">
                     <RefreshCw className="w-4 h-4" />
                   </button>
                   <select className="w-full py-1 px-2 border border-slate-300 rounded text-sm font-bold text-slate-800 outline-none" value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}>
