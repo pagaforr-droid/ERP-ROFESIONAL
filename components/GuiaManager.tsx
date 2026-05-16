@@ -55,6 +55,12 @@ export const GuiaManager: React.FC = () => {
                  const { data } = await supabase.from('drivers').select('*');
                  if (data) useStore.setState({ drivers: data as any[] });
             }
+            if (!state.company.series || state.company.series.length === 0) {
+                 const { data } = await supabase.from('document_series').select('*').eq('is_active', true);
+                 if (data && data.length > 0) {
+                      useStore.getState().updateCompany({ ...state.company, series: data as any[] });
+                 }
+            }
 
         } catch (error) {
             console.error("Error fetching Guia docs:", error);
