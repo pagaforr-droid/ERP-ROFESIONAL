@@ -1026,6 +1026,8 @@ export const useStore = create<AppState>((set, get) => ({
       let nextNum = seriesObj.current_number;
       
       const newDispatchSheets: DispatchSheet[] = [];
+      const dispatchSheetsToInsert: any[] = [];
+      const dispatchSalesToInsert: any[] = [];
       const salesUpdates: any[] = [];
       const updatedSales = [...s.sales];
 
@@ -1035,9 +1037,10 @@ export const useStore = create<AppState>((set, get) => ({
 
          nextNum++;
          const code = `${seriesObj.series}-${String(nextNum).padStart(8, '0')}`;
+         const newDispatchId = generateUUID();
 
          const newDispatch: DispatchSheet = {
-            id: generateUUID(),
+            id: newDispatchId,
             code,
             vehicle_id: vehicleId || '',
             status: 'pending',
@@ -1048,6 +1051,10 @@ export const useStore = create<AppState>((set, get) => ({
          };
 
          newDispatchSheets.push(newDispatch);
+
+         const { sale_ids, ...dsPayload } = newDispatch;
+         dispatchSheetsToInsert.push(dsPayload);
+         dispatchSalesToInsert.push({ dispatch_sheet_id: newDispatchId, sale_id: saleId });
          
          const sUpdate = {
             dispatch_status: 'assigned',
@@ -1072,9 +1079,12 @@ export const useStore = create<AppState>((set, get) => ({
       const { error: cErr } = await supabase.from('document_series').update({ current_number: nextNum }).eq('id', seriesObj.id);
       if (cErr) throw new Error("Error guardando el correlativo: " + cErr.message);
 
-      if (newDispatchSheets.length > 0) {
-         const { error: dsErr } = await supabase.from('dispatch_sheets').insert(newDispatchSheets);
+      if (dispatchSheetsToInsert.length > 0) {
+         const { error: dsErr } = await supabase.from('dispatch_sheets').insert(dispatchSheetsToInsert);
          if (dsErr) throw new Error("Error creando guías en BD: " + dsErr.message);
+
+         const { error: dsSalesErr } = await supabase.from('dispatch_sales').insert(dispatchSalesToInsert);
+         if (dsSalesErr) throw new Error("Error vinculando ventas a guías: " + dsSalesErr.message);
       }
 
       for (const su of salesUpdates) {
