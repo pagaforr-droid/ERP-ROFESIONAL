@@ -387,7 +387,7 @@ export const GuiaManager: React.FC = () => {
                                 const vehicle = vehicles.find(v => v.id === guia.vehicle_id);
                                 return (
                                     <tr key={guia.id} className="hover:bg-slate-50 transition-colors bg-white">
-                                        <td className="p-4 text-sm text-slate-600">{new Date(guia.date).toLocaleDateString()}</td>
+                                        <td className="p-4 text-sm text-slate-600">{new Date(guia.created_at || guia.date).toLocaleDateString()}</td>
                                         <td className="p-4">
                                             <div className="font-bold text-slate-800">GUIA DE REMISIÓN</div>
                                             <div className="text-xs text-blue-600 font-bold">{guia.code}</div>
