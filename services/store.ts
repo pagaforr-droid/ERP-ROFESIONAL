@@ -123,7 +123,7 @@ interface AppState {
    saveDispatchLiquidationDraft: (liquidation: DispatchLiquidation, userId: string) => Promise<{ success: boolean; msg: string; liquidation_id?: string }>;
    confirmDispatchLiquidationKardex: (liquidationId: string, userId: string) => Promise<{ success: boolean; msg: string }>;
    markDocumentsAsPrinted: (saleIds: string[]) => Promise<void>;
-   generateGuiasFromSales: (saleIds: string[], transporterId: string, driverId: string, vehicleId: string) => void;
+   generateGuiasFromSales: (saleIds: string[], modality: 'PUBLIC' | 'PRIVATE', transporterId: string, driverId?: string, vehicleId?: string) => void;
 
    // Auditory and Modifications
    addSaleHistoryEvent: (saleId: string, event: import('../types').SaleHistoryEvent) => void;
@@ -1013,7 +1013,7 @@ export const useStore = create<AppState>((set, get) => ({
       };
    }),
 
-   generateGuiasFromSales: (saleIds, transporterId, driverId, vehicleId) => set(s => {
+   generateGuiasFromSales: (saleIds, modality, transporterId, driverId, vehicleId) => set(s => {
       if (saleIds.length === 0) return s;
 
       const currentSeriesState = [...s.company.series];
@@ -1050,9 +1050,10 @@ export const useStore = create<AppState>((set, get) => ({
          updatedSales[saleIndex] = {
             ...updatedSales[saleIndex],
             dispatch_status: 'assigned',
+            guide_transport_modality: modality,
             guide_transporter_id: transporterId,
-            guide_driver_id: driverId,
-            guide_vehicle_id: vehicleId,
+            guide_driver_id: modality === 'PRIVATE' ? driverId : undefined,
+            guide_vehicle_id: modality === 'PRIVATE' ? vehicleId : undefined,
          };
       });
 

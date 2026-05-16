@@ -500,6 +500,7 @@ export interface Sale {
   guide_transporter_id?: string;
   guide_driver_id?: string;
   guide_vehicle_id?: string;
+  guide_transport_modality?: 'PUBLIC' | 'PRIVATE';
 
   // Delivery Metadata (Mobile Delivery)
   delivery_reason?: string;
@@ -564,6 +565,9 @@ export interface DispatchSheet {
   sunat_status?: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED';
   sunat_sent_at?: string;
   sunat_message?: string;
+  
+  // Logistics Meta
+  guide_transport_modality?: 'PUBLIC' | 'PRIVATE';
 }
 
 // === LIQUIDATION TYPES ===
@@ -795,7 +799,9 @@ export type ViewState =
   | 'personnel-management'
   | 'pos' // NEW: Punto de Venta
   | 'seller-tracking'
-  | 'legacy-debts'; // NEW: Cuentas por Cobrar Migración
+  | 'legacy-debts'
+  | 'guia-manager'
+  | 'edit-sale'; // NEW: Cuentas por Cobrar Migración
 
 export interface PosSession {
     id: string;

@@ -360,6 +360,15 @@ const BoletaPagoTemplate = ({ data, companyInfo }: { data: any, companyInfo: any
 
 const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any, type: string }) => {
   const code = data.code || `${data.series || 'T001'}-${data.number || '00000000'}`;
+  
+  const isPrivate = data.guide_transport_modality === 'PRIVATE';
+  const modalityLabel = isPrivate ? 'Transporte Privado (01)' : 'Transporte Público (02)';
+
+  // QR Data para GRE: RUC Emisor | Tipo Doc | Serie | Número | ...
+  const docDate = (data.created_at || data.date || new Date().toISOString()).split('T')[0];
+  const qrData = `${companyInfo.ruc || '20000000001'}|09|${data.series || 'T001'}|${data.number || '00000000'}|${docDate}|${data.client_ruc || '00000000'}|HASH|FIRMA`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(qrData)}`;
+
   return (
     <>
       <View style={styles.headerRow}>
@@ -374,37 +383,75 @@ const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any
         </View>
       </View>
       <View style={styles.guiaInfoSection}>
-         <View style={styles.guiaInfoRow}>
-          <Text style={styles.guiaInfoLabel}>Fecha Inicio de Traslado:</Text>
-          <Text style={styles.guiaInfoValue}>{new Date(data.created_at || data.date || Date.now()).toLocaleDateString()}</Text>
-        </View>
-        <View style={styles.guiaInfoRow}>
-          <Text style={styles.guiaInfoLabel}>Punto de Partida:</Text>
-          <Text style={styles.guiaInfoValue}>(080101) {companyInfo.address}</Text>
-        </View>
-        <View style={styles.guiaInfoRow}>
-          <Text style={styles.guiaInfoLabel}>Punto de Llegada:</Text>
-          <Text style={styles.guiaInfoValue}>(000000) {type.includes('CONSOLIDADA') ? 'Ruta Local' : (data.delivery_address || 'Dirección del cliente')}</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <View style={{ width: '60%' }}>
+                <View style={styles.guiaInfoRow}>
+                <Text style={styles.guiaInfoLabel}>Fecha Emisión:</Text>
+                <Text style={styles.guiaInfoValue}>{new Date(data.created_at || data.date || Date.now()).toLocaleDateString()}</Text>
+                </View>
+                <View style={styles.guiaInfoRow}>
+                <Text style={styles.guiaInfoLabel}>Punto de Partida:</Text>
+                <Text style={styles.guiaInfoValue}>(080101) {companyInfo.address}</Text>
+                </View>
+                <View style={styles.guiaInfoRow}>
+                <Text style={styles.guiaInfoLabel}>Punto de Llegada:</Text>
+                <Text style={styles.guiaInfoValue}>(000000) {type.includes('CONSOLIDADA') ? 'Ruta Local' : (data.delivery_address || 'Dirección del cliente')}</Text>
+                </View>
+                <View style={styles.guiaInfoRow}>
+                <Text style={styles.guiaInfoLabel}>Motivo Traslado:</Text>
+                <Text style={styles.guiaInfoValue}>Venta (01)</Text>
+                </View>
+                <View style={styles.guiaInfoRow}>
+                <Text style={styles.guiaInfoLabel}>Modalidad:</Text>
+                <Text style={styles.guiaInfoValue}>{modalityLabel}</Text>
+                </View>
+                <View style={styles.guiaInfoRow}>
+                <Text style={styles.guiaInfoLabel}>Doc. Referencia:</Text>
+                <Text style={styles.guiaInfoValue}>{data.sale_ref || '-'}</Text>
+                </View>
+            </View>
+            <View style={{ width: '40%', alignItems: 'flex-end', justifyContent: 'flex-start' }}>
+               <PdfImage source={{ uri: qrUrl, method: 'GET' }} style={{ width: 60, height: 60, margin: 1, borderWidth: 1, borderColor: '#ccc' }} />
+            </View>
         </View>
       </View>
       <View style={styles.guiaEntitiesSection}>
         <View style={styles.guiaEntityBox}>
           <Text style={styles.guiaEntityTitle}>DATOS DEL DESTINATARIO</Text>
           <View style={styles.guiaEntityRow}>
-            <Text style={styles.guiaEntityLabel}>Señores:</Text>
+            <Text style={styles.guiaEntityLabel}>Razón Social:</Text>
             <Text style={styles.guiaEntityValue}>{data.client_name || 'Varios / Petición del Emisor'}</Text>
           </View>
           <View style={styles.guiaEntityRow}>
-            <Text style={styles.guiaEntityLabel}>R.U.C.:</Text>
+            <Text style={styles.guiaEntityLabel}>R.U.C./D.N.I.:</Text>
             <Text style={styles.guiaEntityValue}>{data.client_ruc || data.client_id || '00000000'}</Text>
           </View>
         </View>
         <View style={styles.guiaEntityBox}>
-          <Text style={styles.guiaEntityTitle}>DATOS DEL TRANSPORTISTA</Text>
+          <Text style={styles.guiaEntityTitle}>DATOS DEL TRANSPORTISTA / CONDUCTOR</Text>
           <View style={styles.guiaEntityRow}>
-            <Text style={styles.guiaEntityLabel}>Razón Social:</Text>
-            <Text style={styles.guiaEntityValue}>PROPIO</Text>
+            <Text style={styles.guiaEntityLabel}>{isPrivate ? 'Empresa / Propia:' : 'Emp. Transporte:'}</Text>
+            <Text style={styles.guiaEntityValue}>{data.transporter_name || 'PROPIO'} {data.transporter_ruc ? `(RUC: ${data.transporter_ruc})` : ''}</Text>
           </View>
+          {isPrivate && (
+              <>
+                <View style={styles.guiaEntityRow}>
+                    <Text style={styles.guiaEntityLabel}>Conductor:</Text>
+                    <Text style={styles.guiaEntityValue}>{data.driver_name || '-'} {data.driver_license ? `(Lic: ${data.driver_license})` : ''}</Text>
+                </View>
+                <View style={styles.guiaEntityRow}>
+                    <Text style={styles.guiaEntityLabel}>Vehículo (Placa):</Text>
+                    <Text style={styles.guiaEntityValue}>{data.vehicle_plate || '-'}</Text>
+                </View>
+              </>
+          )}
+          {!isPrivate && (
+              <View style={styles.guiaEntityRow}>
+                    <Text style={{ fontSize: 7, color: '#666', marginTop: 4, width: '100%' }}>
+                        * El transportista emitirá la Guía de Remisión Transportista.
+                    </Text>
+              </View>
+          )}
         </View>
       </View>
       <View style={styles.tableBox}>
@@ -413,7 +460,7 @@ const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any
           <Text style={[styles.th, styles.tableColQtyGuia]}>CANT.</Text>
           <Text style={[styles.th, styles.tableColUndGuia]}>UNI.</Text>
           <Text style={[styles.th, styles.tableColDescGuia]}>DESCRIPCIÓN</Text>
-          <Text style={[styles.th, styles.tableColWeight]}>PESO</Text>
+          <Text style={[styles.th, styles.tableColWeight]}>PESO (KG)</Text>
         </View>
         {(data.items || []).map((item: any, i: number) => {
            const sku = item.product?.sku || item.product_sku || item.sku || item.product_id?.substring(0,8) || '001';
@@ -433,21 +480,27 @@ const GuiaTemplate = ({ data, companyInfo, type }: { data: any, companyInfo: any
                formattedUm = `${shortUnit}X${content}`;
            }
 
+           const baseWeight = item.product?.weight || 0.5; // Default weight
+           const totalWeight = qty * baseWeight;
+
            return (
               <View key={i} style={styles.tableRowItem}>
                 <Text style={[styles.td, styles.tableColCodeGuia]}>{sku}</Text>
                 <Text style={[styles.td, styles.tableColQtyGuia]}>{qty}</Text>
                 <Text style={[styles.td, styles.tableColUndGuia]}>{formattedUm}</Text>
                 <Text style={[styles.td, styles.tableColDescGuia]}>{name}</Text>
-                <Text style={[styles.td, styles.tableColWeight]}>{(qty * 0.5).toFixed(2)}</Text>
+                <Text style={[styles.td, styles.tableColWeight]}>{totalWeight.toFixed(2)}</Text>
               </View>
            );
         })}
         <View style={styles.weightTotalRow}>
-           <Text style={styles.weightTotalLabel}>PESO TOTAL KG</Text>
-           <Text style={styles.weightTotalValue}>0.00</Text>
+           <Text style={styles.weightTotalLabel}>PESO BRUTO TOTAL KG</Text>
+           <Text style={styles.weightTotalValue}>
+               {((data.items || []).reduce((acc: number, item: any) => acc + (item.quantity_presentation ?? item.quantity ?? item.quantity_base ?? 0) * (item.product?.weight || 0.5), 0)).toFixed(2)}
+           </Text>
         </View>
       </View>
+      <Text style={styles.legalText}>Representación impresa de la Guía de Remisión Electrónica. Generado por Tandao ERP®</Text>
     </>
   );
 };
