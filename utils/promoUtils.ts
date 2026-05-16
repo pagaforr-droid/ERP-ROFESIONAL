@@ -275,4 +275,4 @@ export const applyAutoPromotionsEngine = (
   }
 
   return { newCart, warnings };
-
+};
