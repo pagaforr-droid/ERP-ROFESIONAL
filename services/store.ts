@@ -1019,8 +1019,7 @@ export const useStore = create<AppState>((set, get) => ({
       const currentSeriesState = [...s.company.series];
       const seriesObj = currentSeriesState.find(ser => ser.type === 'GUIA' && ser.is_active);
       if (!seriesObj) {
-         alert("No hay serie activa configurada para Guías de Remisión.");
-         return s;
+         throw new Error("No hay serie activa configurada para Guías de Remisión.\nPor favor, dirígete a la configuración de la empresa y crea/activa una serie (ej: T001) para GUIA.");
       }
       
       let nextNum = seriesObj.current_number;
