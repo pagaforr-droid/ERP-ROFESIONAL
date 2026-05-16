@@ -190,13 +190,21 @@ export const GuiaManager: React.FC = () => {
         try {
             // Reconstruimos la data para la plantilla
             let originSale: Sale | null = null;
-            if (guia.sale_ids && guia.sale_ids.length > 0) {
-                // Fetch de la venta y sus items si es necesario, o buscarla en realSales (aunque realSales puede no tener todas)
-                const s = realSales.find(x => x.id === guia.sale_ids[0]);
+            
+            // 1. Obtener la relación de la venta desde dispatch_sales
+            const { data: dsSales } = await supabase.from('dispatch_sales').select('sale_id').eq('dispatch_sheet_id', guia.id);
+            const saleId = dsSales && dsSales.length > 0 ? dsSales[0].sale_id : null;
+
+            if (saleId) {
+                // Fetch de la venta y sus items si es necesario, o buscarla en realSales
+                const s = realSales.find(x => x.id === saleId);
                 if (s) {
-                    originSale = s;
+                    originSale = { ...s } as Sale;
+                    // ALWAYS fetch items because realSales doesn't have them
+                    const { data: itemsData } = await supabase.from('sale_items').select('*').eq('sale_id', originSale.id);
+                    if (itemsData) originSale.items = itemsData as any[];
                 } else {
-                     const { data } = await supabase.from('sales').select('*, sale_items(*)').eq('id', guia.sale_ids[0]).maybeSingle();
+                     const { data } = await supabase.from('sales').select('*, items:sale_items(*)').eq('id', saleId).maybeSingle();
                      if (data) originSale = data as any;
                 }
             }
@@ -213,7 +221,7 @@ export const GuiaManager: React.FC = () => {
                 client_name: originSale?.client_name,
                 delivery_address: originSale?.client_address,
                 items: originSale?.items || [],
-                guide_transport_modality: originSale?.guide_transport_modality || 'PUBLIC',
+                guide_transport_modality: guia.guide_transport_modality || originSale?.guide_transport_modality || 'PUBLIC',
                 transporter_name: transporter?.name,
                 transporter_ruc: transporter?.ruc,
                 vehicle_plate: vehicle?.plate,
