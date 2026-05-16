@@ -130,6 +130,10 @@ export const EditSale: React.FC = () => {
 
    const [isSearchModalOpen, setIsSearchModalOpen] = useState(true); 
    const [saleSearchTerm, setSaleSearchTerm] = useState('');
+   const [filterSeries, setFilterSeries] = useState('');
+   const [filterNumber, setFilterNumber] = useState('');
+   const [filterStartDate, setFilterStartDate] = useState('');
+   const [filterEndDate, setFilterEndDate] = useState('');
    const [searchedSales, setSearchedSales] = useState<Sale[]>([]);
    const [isSearchingSale, setIsSearchingSale] = useState(false);
 
@@ -138,7 +142,25 @@ export const EditSale: React.FC = () => {
        const timer = setTimeout(async () => {
            setIsSearchingSale(true);
            try {
-               let query = supabase.from('sales').select('*').order('created_at', { ascending: false }).limit(15);
+               let query = supabase.from('sales')
+                   .select('*')
+                   .in('document_type', ['FACTURA', 'BOLETA'])
+                   .order('created_at', { ascending: false })
+                   .limit(30);
+
+               if (filterStartDate) {
+                   query = query.gte('created_at', `${filterStartDate}T00:00:00`);
+               }
+               if (filterEndDate) {
+                   query = query.lte('created_at', `${filterEndDate}T23:59:59`);
+               }
+               if (filterSeries.trim().length > 0) {
+                   query = query.ilike('series', `%${filterSeries.trim().toUpperCase()}%`);
+               }
+               if (filterNumber.trim().length > 0) {
+                   query = query.ilike('number', `%${filterNumber.trim()}%`);
+               }
+
                if (saleSearchTerm.trim().length > 0) {
                   query = query.or(`number.ilike.%${saleSearchTerm}%,client_name.ilike.%${saleSearchTerm}%,client_ruc.ilike.%${saleSearchTerm}%`);
                }
@@ -149,7 +171,7 @@ export const EditSale: React.FC = () => {
            } finally { setIsSearchingSale(false); }
        }, 400);
        return () => clearTimeout(timer);
-   }, [saleSearchTerm, isSearchModalOpen]);
+   }, [saleSearchTerm, filterSeries, filterNumber, filterStartDate, filterEndDate, isSearchModalOpen]);
 
    const isItemPackage = (itemUnitName: string, prod: any) => {
        if (!prod || !itemUnitName) return false;
@@ -1087,17 +1109,60 @@ export const EditSale: React.FC = () => {
                      <button type="button" onClick={() => setIsSearchModalOpen(false)} className="text-slate-400 hover:text-white" title="Cerrar Búsqueda"><X className="w-6 h-6" /></button>
                   </div>
                   <div className="p-4 bg-slate-50 border-b border-slate-200 relative">
-                     <input
-                        autoFocus
-                        className="w-full border-2 border-slate-300 rounded p-4 text-xl font-bold focus:border-amber-500 outline-none"
-                        placeholder="Escriba Nro Documento (Ej. F001), RUC o Cliente..."
-                        value={saleSearchTerm}
-                        onChange={e => setSaleSearchTerm(e.target.value)}
-                     />
-                     <p className="text-[11px] text-amber-600 mt-2 font-bold">
-                        ⚠️ ATENCIÓN: Solo se pueden auditar/editar documentos que NO hayan sido enviados a SUNAT.
-                     </p>
-                     {isSearchingSale && <Loader2 className="absolute right-8 top-8 w-6 h-6 text-amber-500 animate-spin" />}
+                     <div className="grid grid-cols-12 gap-3 mb-3">
+                        <div className="col-span-12 md:col-span-4">
+                           <label className="block text-xs font-bold text-slate-600 mb-1">Buscar Cliente / RUC / Doc.</label>
+                           <input
+                              autoFocus
+                              className="w-full border-2 border-slate-300 rounded p-2 text-sm font-bold focus:border-amber-500 outline-none"
+                              placeholder="Nombre, RUC..."
+                              value={saleSearchTerm}
+                              onChange={e => setSaleSearchTerm(e.target.value)}
+                           />
+                        </div>
+                        <div className="col-span-6 md:col-span-2">
+                           <label className="block text-xs font-bold text-slate-600 mb-1">Serie</label>
+                           <input
+                              className="w-full border-2 border-slate-300 rounded p-2 text-sm font-bold focus:border-amber-500 outline-none uppercase"
+                              placeholder="Ej. F001"
+                              value={filterSeries}
+                              onChange={e => setFilterSeries(e.target.value)}
+                           />
+                        </div>
+                        <div className="col-span-6 md:col-span-2">
+                           <label className="block text-xs font-bold text-slate-600 mb-1">Número Exacto</label>
+                           <input
+                              className="w-full border-2 border-slate-300 rounded p-2 text-sm font-bold focus:border-amber-500 outline-none"
+                              placeholder="Ej. 123"
+                              value={filterNumber}
+                              onChange={e => setFilterNumber(e.target.value)}
+                           />
+                        </div>
+                        <div className="col-span-6 md:col-span-2">
+                           <label className="block text-xs font-bold text-slate-600 mb-1">Desde Fecha</label>
+                           <input
+                              type="date"
+                              className="w-full border-2 border-slate-300 rounded p-2 text-sm font-bold focus:border-amber-500 outline-none"
+                              value={filterStartDate}
+                              onChange={e => setFilterStartDate(e.target.value)}
+                           />
+                        </div>
+                        <div className="col-span-6 md:col-span-2">
+                           <label className="block text-xs font-bold text-slate-600 mb-1">Hasta Fecha</label>
+                           <input
+                              type="date"
+                              className="w-full border-2 border-slate-300 rounded p-2 text-sm font-bold focus:border-amber-500 outline-none"
+                              value={filterEndDate}
+                              onChange={e => setFilterEndDate(e.target.value)}
+                           />
+                        </div>
+                     </div>
+                     <div className="flex items-center justify-between mt-1">
+                        <p className="text-[11px] text-amber-600 font-bold">
+                           ⚠️ ATENCIÓN: Solo se muestran FACTURAS y BOLETAS. Doc. aceptados por SUNAT están bloqueados.
+                        </p>
+                        {isSearchingSale && <Loader2 className="w-5 h-5 text-amber-500 animate-spin" />}
+                     </div>
                   </div>
                   <div className="flex-1 overflow-auto bg-white relative">
                      <table className="w-full text-left text-sm border-collapse">
