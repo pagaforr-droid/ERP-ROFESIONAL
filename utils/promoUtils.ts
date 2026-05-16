@@ -218,7 +218,15 @@ export const applyAutoPromotionsEngine = (
           const requestedBaseQty = ap.reward_quantity * multiplyFactor * (ap.reward_unit_type === 'PKG' ? Number(rewardProd.package_content || 1) : 1);
           
           // VERIFICACION DE STOCK FISICO
-          const totalStockAvailable = batches.filter(b => b.product_id === rewardProd.id && b.quantity_current > 0).reduce((sum, b) => sum + b.quantity_current, 0);
+          const productBatches = batches.filter(b => b.product_id === rewardProd.id && b.quantity_current > 0);
+          let totalStockAvailable = 0;
+          
+          if (productBatches.length > 0) {
+              totalStockAvailable = productBatches.reduce((sum, b) => sum + Number(b.quantity_current), 0);
+          } else {
+              // Fallback si no se inyectaron lotes desde el frontend (ej. al editar)
+              totalStockAvailable = Number((rewardProd as any).current_stock || rewardProd.stock || 0);
+          }
 
           if (totalStockAvailable < requestedBaseQty) {
               warnings.push(`¡Alerta! El cliente ganó el bono "${ap.name}", pero NO HAY STOCK FÍSICO suficiente del premio (${rewardProd.name}). Stock disponible: ${totalStockAvailable}`);
