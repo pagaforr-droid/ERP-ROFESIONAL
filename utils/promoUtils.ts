@@ -268,6 +268,7 @@ export const applyAutoPromotionsEngine = (
              unit_type: realUnitName,
              is_bonus: true, 
              auto_promo_id: ap.id, 
+             promo_name: 'BONIFICACIÓN',
              product: rewardProd 
           } as any);
        }
