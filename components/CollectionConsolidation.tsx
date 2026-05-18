@@ -56,8 +56,7 @@ export const CollectionConsolidation: React.FC = () => {
    const [adminAuthError, setAdminAuthError] = useState('');
    const [lastTotal, setLastTotal] = useState(0);
 
-   // Reject State
-   const [showRejectModal, setShowRejectModal] = useState<{ recordId: string, saleId: string, docRef: string } | null>(null);
+   const [showRejectModal, setShowRejectModal] = useState<{ recordId: string, saleId: string, docRef: string, amountReported: number } | null>(null);
 
    interface ManualCartItem {
       saleId: string;
@@ -414,10 +413,21 @@ export const CollectionConsolidation: React.FC = () => {
          const { error: delErr } = await supabase.from('collection_records').delete().eq('id', showRejectModal.recordId);
          if (delErr) throw delErr;
 
-         // 2. Revertir estado de la factura a NONE
+         // 2. Revertir estado de la factura a NONE y RESTAURAR EL SALDO
          if (showRejectModal.saleId) {
-            const { error: updErr } = await supabase.from('sales').update({ collection_status: 'NONE' }).eq('id', showRejectModal.saleId);
-            if (updErr) throw updErr;
+            const { data: saleData, error: saleErr } = await supabase.from('sales').select('balance, total').eq('id', showRejectModal.saleId).single();
+            if (saleErr) throw saleErr;
+            
+            if (saleData) {
+               const currentBalance = saleData.balance !== undefined && saleData.balance !== null ? saleData.balance : saleData.total;
+               const newBalance = Number(currentBalance) + Number(showRejectModal.amountReported);
+               
+               const { error: updErr } = await supabase.from('sales').update({ 
+                  collection_status: 'NONE', 
+                  balance: newBalance 
+               }).eq('id', showRejectModal.saleId);
+               if (updErr) throw updErr;
+            }
          }
 
          await syncSupabaseData();
@@ -1642,7 +1652,7 @@ export const CollectionConsolidation: React.FC = () => {
                                     <td className="p-3 font-mono text-slate-600">{rec.document_ref}</td>
                                     <td className="p-3 text-right font-bold text-slate-900">{Number(rec.amount_reported || 0).toFixed(2)}</td>
                                     <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
-                                       <button onClick={() => setShowRejectModal({ recordId: rec.id, saleId: rec.sale_id, docRef: rec.document_ref })} className="text-red-500 hover:text-red-700 bg-red-50 p-2 rounded-lg hover:bg-red-100 transition-colors shadow-sm" title="Rechazar y devolver como deuda">
+                                       <button onClick={() => setShowRejectModal({ recordId: rec.id, saleId: rec.sale_id, docRef: rec.document_ref, amountReported: Number(rec.amount_reported || 0) })} className="text-red-500 hover:text-red-700 bg-red-50 p-2 rounded-lg hover:bg-red-100 transition-colors shadow-sm" title="Rechazar y devolver como deuda">
                                           <Trash2 className="w-4 h-4" />
                                        </button>
                                     </td>
