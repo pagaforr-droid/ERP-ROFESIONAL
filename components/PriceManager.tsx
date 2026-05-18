@@ -217,10 +217,11 @@ export const PriceManager: React.FC = () => {
 
        return {
           ...p,
+          supplierName: suppliers.find(s => s.id === p.supplier_id)?.name || '-',
           listPrices
        };
     });
-  }, [products, repSupplier, repCategory, repSubcategory, repBrand, priceLists]);
+  }, [products, repSupplier, repCategory, repSubcategory, repBrand, priceLists, suppliers]);
 
   const toggleSelect = (id: string) => {
      const newSet = new Set(selectedIds);
@@ -411,9 +412,10 @@ export const PriceManager: React.FC = () => {
     doc.text(`Total Registros: ${reportData.length}`, 14, 30);
 
     const tableColumn = [
-      "SKU", 
-      "Producto", 
+      "Proveedor",
       "Categoría",
+      "Producto", 
+      "SKU", 
       "U. Med", 
       "Caja", 
       "Costo Base", 
@@ -422,9 +424,10 @@ export const PriceManager: React.FC = () => {
     ];
 
     const tableRows = reportData.map(p => [
-      p.sku,
-      p.name,
+      (p as any).supplierName,
       p.category || '-',
+      p.name,
+      p.sku,
       p.unit_type,
       p.package_content.toString(),
       `S/ ${(p.last_cost || 0).toFixed(3)}`,
@@ -440,9 +443,9 @@ export const PriceManager: React.FC = () => {
       headStyles: { fillColor: primaryColor as [number, number, number], textColor: 255, fontStyle: 'bold' },
       alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: {
-        5: { halign: 'right', fontStyle: 'bold' },
-        6: { halign: 'right', fontStyle: 'bold', textColor: [22, 163, 74] }, // Verde para Precio Tienda
-        ...priceLists.reduce((acc, _, i) => ({ ...acc, [7 + i]: { halign: 'right', fontStyle: 'bold', textColor: [37, 99, 235] } }), {})
+        6: { halign: 'right', fontStyle: 'bold' },
+        7: { halign: 'right', fontStyle: 'bold', textColor: [22, 163, 74] }, // Verde para Precio Tienda
+        ...priceLists.reduce((acc, _, i) => ({ ...acc, [8 + i]: { halign: 'right', fontStyle: 'bold', textColor: [37, 99, 235] } }), {})
       }
     });
 
@@ -452,10 +455,11 @@ export const PriceManager: React.FC = () => {
   const handleExportXLS = () => {
     const wsData = reportData.map(p => {
       const row: any = {
-        'CÓDIGO SKU': p.sku,
-        'NOMBRE DEL PRODUCTO': p.name,
-        'LÍNEA': p.line || '-',
+        'PROVEEDOR': (p as any).supplierName,
         'CATEGORÍA': p.category || '-',
+        'NOMBRE DEL PRODUCTO': p.name,
+        'CÓDIGO SKU': p.sku,
+        'LÍNEA': p.line || '-',
         'SUBCATEGORÍA': p.subcategory || '-',
         'MARCA': p.brand || '-',
         'UNIDAD DE MEDIDA': p.unit_type,
@@ -814,9 +818,9 @@ export const PriceManager: React.FC = () => {
                    </div>
                 </div>
                 
-                <div className="flex-1 flex flex-col justify-center px-4">
+                <div className="flex-1 flex flex-col px-4 overflow-y-auto custom-scrollbar pt-6 pb-6">
                    {editingList ? (
-                      <form onSubmit={handleSaveList} className="bg-white p-10 rounded-3xl shadow-xl border border-slate-200/80 max-w-xl mx-auto w-full relative overflow-hidden animate-fade-in-up">
+                      <form onSubmit={handleSaveList} className="bg-white p-10 rounded-3xl shadow-xl border border-slate-200/80 max-w-xl mx-auto w-full relative overflow-hidden animate-fade-in-up my-auto flex-shrink-0">
                          <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
                          
                          <h3 className="font-black text-2xl mb-8 text-slate-800 flex items-center">
@@ -1067,8 +1071,12 @@ export const PriceManager: React.FC = () => {
                    <table className="w-full text-sm text-left border-collapse whitespace-nowrap">
                       <thead className="bg-slate-900 text-slate-300 font-black sticky top-0 z-20 uppercase text-[10px] tracking-widest shadow-md">
                          <tr>
+                            <th className="p-4 border-b border-slate-700">Proveedor</th>
+                            <th className="p-4 border-b border-slate-700">Categoría</th>
                             <th className="p-4 border-b border-slate-700">Producto</th>
-                            <th className="p-4 text-center border-b border-slate-700">U. Med / Caja</th>
+                            <th className="p-4 text-center border-b border-slate-700">SKU</th>
+                            <th className="p-4 text-center border-b border-slate-700">U. Med</th>
+                            <th className="p-4 text-center border-b border-slate-700">Caja</th>
                             <th className="p-4 text-right border-b border-slate-700">Costo Base</th>
                             <th className="p-4 text-right border-b border-slate-700 text-emerald-400">P. Base Tienda</th>
                             {priceLists.map(l => (
@@ -1081,14 +1089,12 @@ export const PriceManager: React.FC = () => {
                       <tbody className="divide-y divide-slate-100">
                          {reportData.map(p => (
                             <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                               <td className="p-4">
-                                  <div className="font-black text-slate-800 text-sm">{p.name}</div>
-                                  <div className="text-[10px] font-mono font-bold text-slate-400 mt-0.5">{p.sku} | {p.brand}</div>
-                               </td>
-                               <td className="p-4 text-center">
-                                  <div className="font-black text-slate-600">{p.unit_type}</div>
-                                  <div className="text-[10px] font-bold text-slate-400 mt-0.5">Factor: {p.package_content}</div>
-                               </td>
+                               <td className="p-4 text-slate-500 font-bold">{(p as any).supplierName}</td>
+                               <td className="p-4 text-slate-600 font-bold uppercase">{p.category || '-'}</td>
+                               <td className="p-4 font-black text-slate-800 text-sm">{p.name}</td>
+                               <td className="p-4 text-center font-mono font-bold text-slate-400">{p.sku}</td>
+                               <td className="p-4 text-center font-black text-slate-600">{p.unit_type}</td>
+                               <td className="p-4 text-center font-bold text-slate-600">{p.package_content}</td>
                                <td className="p-4 text-right font-bold text-slate-500">S/ {p.last_cost.toFixed(3)}</td>
                                <td className="p-4 text-right font-black text-emerald-700 bg-emerald-50/30">S/ {p.price_unit.toFixed(2)}</td>
                                {priceLists.map(l => (
@@ -1099,7 +1105,7 @@ export const PriceManager: React.FC = () => {
                             </tr>
                          ))}
                          {reportData.length === 0 && (
-                            <tr><td colSpan={4 + priceLists.length} className="p-16 text-center text-slate-400 font-black uppercase tracking-widest">No hay datos para exportar con los filtros actuales.</td></tr>
+                            <tr><td colSpan={8 + priceLists.length} className="p-16 text-center text-slate-400 font-black uppercase tracking-widest">No hay datos para exportar con los filtros actuales.</td></tr>
                          )}
                       </tbody>
                    </table>
