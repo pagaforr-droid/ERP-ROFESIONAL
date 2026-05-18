@@ -1269,7 +1269,7 @@ export const MobileOrders: React.FC = () => {
          )}
 
             {clientTab === 'COLLECTION' && (
-               <div className="flex-1 overflow-auto p-3 space-y-3">
+               <div className="flex-1 overflow-y-auto min-h-0 p-3 space-y-3 pb-[100px] custom-scrollbar">
                   {pendingBills.length === 0 ? (
                      <div className="flex flex-col items-center justify-center h-64 text-slate-400 text-center">
                         <CheckCircle className="w-12 h-12 mb-3 text-green-200" />
