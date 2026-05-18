@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { Client, Sale, Order, CollectionRecord, DispatchLiquidation } from '../types';
-import { Search, MapPin, Phone, Mail, DollarSign, Calendar, Truck, FileText, FileX, CreditCard, ChevronDown, ChevronRight, CheckCircle, Package, AlertCircle, ArrowLeftRight } from 'lucide-react';
+import { Search, MapPin, Phone, Mail, DollarSign, Calendar, Truck, FileText, FileX, CreditCard, ChevronDown, ChevronRight, CheckCircle, Package, AlertCircle, ArrowLeftRight, Printer, X, Eye } from 'lucide-react';
+import { useStore } from '../services/store';
+import { PdfEngine } from './PdfEngine';
 
 export const ClientPurchaseAudit: React.FC = () => {
+  const { company, sellers, users, dispatchSheets, vehicles, transporters, drivers } = useStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<Client[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
@@ -14,10 +17,11 @@ export const ClientPurchaseAudit: React.FC = () => {
   
   // Filter state
   const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [appliedDateRange, setAppliedDateRange] = useState({ start: '', end: '' });
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'COMPLETED' | 'CANCELED'>('ALL');
   const [docTypeFilter, setDocTypeFilter] = useState<'ALL' | 'FACTURA' | 'BOLETA' | 'NOTA_CREDITO'>('ALL');
   
-  const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
+  const [selectedDocModal, setSelectedDocModal] = useState<Sale | null>(null);
 
   // Search clients
   useEffect(() => {
@@ -98,10 +102,20 @@ export const ClientPurchaseAudit: React.FC = () => {
   const filteredSales = sales.filter(s => {
     if (statusFilter !== 'ALL' && s.status !== statusFilter.toLowerCase()) return false;
     if (docTypeFilter !== 'ALL' && s.document_type !== docTypeFilter) return false;
-    if (dateRange.start && new Date(s.created_at) < new Date(dateRange.start)) return false;
-    if (dateRange.end && new Date(s.created_at) > new Date(dateRange.end + 'T23:59:59')) return false;
+    if (appliedDateRange.start && new Date(s.created_at) < new Date(appliedDateRange.start)) return false;
+    if (appliedDateRange.end && new Date(s.created_at) > new Date(appliedDateRange.end + 'T23:59:59')) return false;
     return true;
   });
+
+  const handlePrint = async (sale: Sale) => {
+    try {
+      // In ClientPurchaseAudit, 'sale' is already a Supabase sale object similar to originalRef in DocumentManager
+      await PdfEngine.openDocument([sale], 'BATCH', company);
+    } catch (error) {
+      console.error(error);
+      alert("Error al generar el documento PDF para reimpresión.");
+    }
+  };
 
   return (
     <div className="flex flex-col h-full bg-slate-50 p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -206,6 +220,14 @@ export const ClientPurchaseAudit: React.FC = () => {
               <option value="BOLETA">Boletas</option>
               <option value="NOTA_CREDITO">Notas de Crédito</option>
             </select>
+
+            <button 
+              onClick={() => setAppliedDateRange(dateRange)}
+              className="ml-auto bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg text-sm flex items-center transition-colors shadow-sm"
+            >
+              <Search className="w-4 h-4 mr-2" />
+              Buscar
+            </button>
           </div>
 
           {/* LIST */}
@@ -226,13 +248,12 @@ export const ClientPurchaseAudit: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredSales.map(sale => {
-                  const isExpanded = expandedDoc === sale.id;
                   const isAnulado = sale.status === 'canceled';
                   const isNC = sale.document_type === 'NOTA_CREDITO';
                   
                   return (
                     <React.Fragment key={sale.id}>
-                      <tr className={`hover:bg-slate-50 transition-colors ${isAnulado ? 'opacity-70' : ''} ${isExpanded ? 'bg-blue-50/50' : ''}`}>
+                      <tr className={`hover:bg-slate-50 transition-colors ${isAnulado ? 'opacity-70' : ''}`}>
                         <td className="px-6 py-4 whitespace-nowrap text-slate-600 font-medium">
                           {new Date(sale.created_at).toLocaleDateString()}
                           <div className="text-[10px] text-slate-400">{new Date(sale.created_at).toLocaleTimeString()}</div>
@@ -267,80 +288,14 @@ export const ClientPurchaseAudit: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">
                           <button 
-                            onClick={() => setExpandedDoc(isExpanded ? null : sale.id)}
-                            className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors"
+                            onClick={() => setSelectedDocModal(sale)}
+                            className="p-1.5 bg-slate-100 hover:bg-blue-50 text-slate-500 hover:text-blue-600 rounded-md transition-colors shadow-sm"
+                            title="Ver Detalle"
                           >
-                            {isExpanded ? <ChevronDown className="w-4 h-4 text-slate-600" /> : <ChevronRight className="w-4 h-4 text-slate-600" />}
+                            <ChevronRight className="w-4 h-4" />
                           </button>
                         </td>
                       </tr>
-                      
-                      {/* EXPANDED DETAILS */}
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan={7} className="px-0 py-0 bg-slate-50 border-b-2 border-slate-200">
-                            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in-up">
-                              
-                              {/* ITEMS */}
-                              <div>
-                                <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2"><Package className="w-4 h-4" /> Detalle de Productos</h4>
-                                <div className="space-y-2">
-                                  {sale.items && sale.items.map((item: any, idx: number) => (
-                                    <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-lg border border-slate-200 shadow-sm">
-                                      <div className="flex-1">
-                                        <div className="font-bold text-slate-800 text-sm leading-tight">{item.product_name}</div>
-                                        <div className="text-xs text-slate-500 font-mono mt-0.5">{item.product_sku}</div>
-                                      </div>
-                                      <div className="text-right ml-4">
-                                        <div className="font-black text-slate-800 text-sm">{item.quantity_presentation} {item.selected_unit}</div>
-                                        <div className="text-xs text-slate-500">S/ {item.total_price.toFixed(2)}</div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                              
-                              {/* AUDIT TRACE */}
-                              <div>
-                                <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-3 flex items-center gap-2"><FileText className="w-4 h-4" /> Trazabilidad Extendida</h4>
-                                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-4">
-                                  
-                                  <div>
-                                    <div className="text-xs font-bold text-slate-400 uppercase mb-1">Método de Pago / Condición</div>
-                                    <div className="font-bold text-slate-800 flex items-center gap-2">
-                                      <CreditCard className="w-4 h-4 text-slate-400" />
-                                      {sale.payment_method}
-                                    </div>
-                                  </div>
-
-                                  <div className="border-t border-slate-100 pt-4">
-                                    <div className="text-xs font-bold text-slate-400 uppercase mb-1">Rastreo Logístico</div>
-                                    {sale.dispatch_status ? (
-                                      <div className="font-medium text-sm text-slate-700">
-                                        Estado actual: <span className="font-bold text-slate-900">{sale.dispatch_status.toUpperCase()}</span>
-                                      </div>
-                                    ) : (
-                                      <div className="text-sm text-slate-500 italic">No asignado a despacho.</div>
-                                    )}
-                                  </div>
-
-                                  {(sale.collection_status === 'COLLECTED' || sale.collection_status === 'PARTIAL' || sale.collection_status === 'REPORTED') && (
-                                    <div className="border-t border-slate-100 pt-4">
-                                      <div className="text-xs font-bold text-slate-400 uppercase mb-1">Auditoría de Pagos</div>
-                                      <div className="bg-green-50 text-green-800 p-3 rounded-lg border border-green-200 text-sm font-medium">
-                                        Documento presenta registro de cobranza. 
-                                        <br/>Estado de pago: <span className="font-bold">{sale.collection_status}</span>
-                                      </div>
-                                    </div>
-                                  )}
-
-                                </div>
-                              </div>
-
-                            </div>
-                          </td>
-                        </tr>
-                      )}
                     </React.Fragment>
                   );
                 })}
@@ -363,6 +318,104 @@ export const ClientPurchaseAudit: React.FC = () => {
         <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
           <Search className="w-20 h-20 mb-4 text-slate-200" />
           <p className="text-xl font-black text-slate-300">Busque un cliente para visualizar su auditoría.</p>
+        </div>
+      )}
+
+      {/* DETAIL MODAL */}
+      {selectedDocModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden animate-scale-up flex flex-col max-h-[90vh]">
+            <div className="bg-slate-900 p-5 text-white flex justify-between items-start">
+              <div>
+                <h3 className="text-xl font-black flex items-center tracking-wide">
+                  {selectedDocModal.document_type.replace('_', ' ')}: {selectedDocModal.series}-{selectedDocModal.number}
+                </h3>
+                <p className="text-sm text-slate-300 font-medium mt-1 uppercase tracking-wide">
+                  {selectedClient?.name} ({selectedClient?.doc_number})
+                </p>
+              </div>
+              <button onClick={() => setSelectedDocModal(null)} className="text-slate-400 hover:text-white transition-colors bg-white/10 hover:bg-white/20 p-1.5 rounded-lg">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-0">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 sticky top-0">
+                  <tr>
+                    <th className="p-4 text-center">Cant.</th>
+                    <th className="p-4 text-center">Unid.</th>
+                    <th className="p-4">Descripción</th>
+                    <th className="p-4 text-right">P. Unit</th>
+                    <th className="p-4 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {selectedDocModal.items?.map((item: any, idx: number) => (
+                    <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                      <td className="p-4 font-black text-center text-slate-800">{item.quantity_presentation}</td>
+                      <td className="p-4 text-xs text-slate-500 font-mono text-center">{item.selected_unit}</td>
+                      <td className="p-4 text-slate-800 font-bold">
+                        {item.product_name}
+                        {item.is_bonus && <span className="ml-2 text-[9px] bg-green-100 text-green-800 font-black px-1.5 py-0.5 rounded uppercase">BONIF</span>}
+                      </td>
+                      <td className="p-4 text-right text-slate-600 font-mono">{item.unit_price.toFixed(2)}</td>
+                      <td className="p-4 text-right font-black text-slate-900 font-mono">{item.total_price.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-6 bg-slate-50 border-t border-slate-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="text-xs text-slate-500 space-y-1.5 flex-1">
+                <div><span className="font-bold text-slate-700 uppercase tracking-wide">Fecha Emisión:</span> {new Date(selectedDocModal.created_at).toLocaleString()}</div>
+                <div>
+                  <span className="font-bold text-slate-700 uppercase tracking-wide">Vendedor Asignado:</span> {
+                    sellers.find(s => s.id === selectedDocModal.seller_id)?.name || 'Desconocido'
+                  }
+                </div>
+                <div>
+                  <span className="font-bold text-slate-700 uppercase tracking-wide">Usuario Creador:</span> {
+                    selectedDocModal.created_by_user_id 
+                      ? users.find(u => u.id === selectedDocModal.created_by_user_id)?.name || 'Sistema'
+                      : (users.find(u => u.id === selectedDocModal.seller_id)?.name || sellers.find(s => s.id === selectedDocModal.seller_id)?.name || 'Sistema (Legacy)')
+                  }
+                </div>
+                <div>
+                  <span className="font-bold text-slate-700 uppercase tracking-wide">Planilla de Reparto:</span> {
+                    (() => {
+                      const ds = dispatchSheets.find(d => d.sale_ids?.includes(selectedDocModal.id));
+                      if (!ds) return 'No asignado a ruta';
+                      const vehicle = vehicles.find(v => v.id === ds.vehicle_id);
+                      const driver = drivers.find(dr => dr.id === vehicle?.driver_id);
+                      return (
+                        <span className="ml-1 font-medium text-slate-700">
+                          En Ruta {ds.code} <span className="text-slate-400">| Chofer: {driver?.name || 'No asignado'}</span>
+                        </span>
+                      );
+                    })()
+                  }
+                </div>
+              </div>
+              <div className="text-right shrink-0">
+                <div className="text-sm font-black text-slate-500 uppercase mb-1 tracking-widest">TOTAL DOCUMENTO:</div>
+                <div className="text-3xl font-black text-slate-900 tracking-tighter">S/ {selectedDocModal.total.toFixed(2)}</div>
+              </div>
+            </div>
+
+            <div className="p-5 bg-white border-t border-slate-200 flex justify-end gap-3">
+              <button onClick={() => setSelectedDocModal(null)} className="px-6 py-2.5 border-2 border-slate-200 rounded-xl text-slate-600 hover:text-slate-900 hover:border-slate-300 hover:bg-slate-50 font-bold transition-all">
+                Cerrar
+              </button>
+              <button 
+                onClick={() => handlePrint(selectedDocModal)} 
+                className="px-6 py-2.5 bg-slate-900 text-white rounded-xl hover:bg-blue-600 font-bold flex items-center transition-all shadow-lg hover:shadow-blue-500/25"
+              >
+                <Printer className="w-5 h-5 mr-2" /> Reimprimir
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
