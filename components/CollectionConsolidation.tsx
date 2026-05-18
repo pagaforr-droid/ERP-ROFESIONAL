@@ -56,6 +56,9 @@ export const CollectionConsolidation: React.FC = () => {
    const [adminAuthError, setAdminAuthError] = useState('');
    const [lastTotal, setLastTotal] = useState(0);
 
+   // Reject State
+   const [showRejectModal, setShowRejectModal] = useState<{ recordId: string, saleId: string, docRef: string } | null>(null);
+
    interface ManualCartItem {
       saleId: string;
       clientName: string;
@@ -397,6 +400,42 @@ export const CollectionConsolidation: React.FC = () => {
          setIsProcessing(false);
          isSavingRef.current = false;
          showAlert("Ocurrió un error al procesar la planilla.", 'error');
+      }
+   };
+
+   const confirmRejectCollection = async () => {
+      if (!showRejectModal) return;
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
+      setIsProcessing(true);
+
+      try {
+         // 1. Borrar de collection_records
+         const { error: delErr } = await supabase.from('collection_records').delete().eq('id', showRejectModal.recordId);
+         if (delErr) throw delErr;
+
+         // 2. Revertir estado de la factura a NONE
+         if (showRejectModal.saleId) {
+            const { error: updErr } = await supabase.from('sales').update({ collection_status: 'NONE' }).eq('id', showRejectModal.saleId);
+            if (updErr) throw updErr;
+         }
+
+         await syncSupabaseData();
+         
+         if (selectedIds.has(showRejectModal.recordId)) {
+             const newSet = new Set(selectedIds);
+             newSet.delete(showRejectModal.recordId);
+             setSelectedIds(newSet);
+         }
+
+         showAlert(`Cobranza de ${showRejectModal.docRef} rechazada con éxito. Volvió a ser deuda.`, 'success');
+      } catch (error: any) {
+         console.error("Error rechazando cobranza:", error);
+         showAlert(`Error al rechazar cobranza: ${error.message}`, 'error');
+      } finally {
+         setShowRejectModal(null);
+         isSavingRef.current = false;
+         setIsProcessing(false);
       }
    };
 
@@ -1250,6 +1289,38 @@ export const CollectionConsolidation: React.FC = () => {
                <p className="text-slate-500 mt-2 font-medium">Validando pagos y generando ingresos</p>
             </div>
          )}
+         {/* REJECT MODAL */}
+         {showRejectModal && (
+            <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 animate-fade-in">
+               <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl scale-in">
+                  <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-white shadow-sm">
+                     <AlertCircle className="w-8 h-8 text-red-600" />
+                  </div>
+                  <h3 className="text-xl font-black text-center text-slate-800 mb-2">Rechazar Cobranza</h3>
+                  <p className="text-center text-slate-600 font-medium mb-6">
+                     ¿Está seguro de rechazar y eliminar este reporte de cobranza para el documento <span className="font-bold text-slate-800">{showRejectModal.docRef}</span>? 
+                     <br/><br/>
+                     <span className="text-red-600 font-bold">El documento volverá a aparecer como deuda activa pendiente para el vendedor inmediatamente.</span>
+                  </p>
+                  <div className="flex gap-3">
+                     <button
+                        onClick={() => setShowRejectModal(null)}
+                        className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+                        disabled={isProcessing}
+                     >
+                        Cancelar
+                     </button>
+                     <button
+                        onClick={confirmRejectCollection}
+                        className="flex-1 px-4 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-colors shadow-lg shadow-red-600/30 flex items-center justify-center disabled:opacity-50"
+                        disabled={isProcessing}
+                     >
+                        {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Rechazar y Eliminar'}
+                     </button>
+                  </div>
+               </div>
+            </div>
+         )}
 
          {showSuccessModal && (
             <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center backdrop-blur-sm p-4 animate-fade-in print:hidden">
@@ -1544,6 +1615,7 @@ export const CollectionConsolidation: React.FC = () => {
                               <th className="p-3">Cliente</th>
                               <th className="p-3">Doc Ref.</th>
                               <th className="p-3 text-right">Monto (S/)</th>
+                              <th className="p-3 w-16 text-center"></th>
                            </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
@@ -1569,12 +1641,17 @@ export const CollectionConsolidation: React.FC = () => {
                                     <td className="p-3 font-bold text-slate-800">{rec.client_name}</td>
                                     <td className="p-3 font-mono text-slate-600">{rec.document_ref}</td>
                                     <td className="p-3 text-right font-bold text-slate-900">{Number(rec.amount_reported || 0).toFixed(2)}</td>
+                                    <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                                       <button onClick={() => setShowRejectModal({ recordId: rec.id, saleId: rec.sale_id, docRef: rec.document_ref })} className="text-red-500 hover:text-red-700 bg-red-50 p-2 rounded-lg hover:bg-red-100 transition-colors shadow-sm" title="Rechazar y devolver como deuda">
+                                          <Trash2 className="w-4 h-4" />
+                                       </button>
+                                    </td>
                                  </tr>
                               );
                            })}
                            {pendingCollections.length === 0 && (
                               <tr>
-                                 <td colSpan={6} className="p-16 text-center">
+                                 <td colSpan={7} className="p-16 text-center">
                                     <div className="flex flex-col items-center justify-center text-slate-400">
                                        <CheckCircle2 className="w-12 h-12 mb-3 opacity-30 text-green-500" />
                                        <p className="text-lg font-bold text-slate-600">Bandeja Limpia</p>
