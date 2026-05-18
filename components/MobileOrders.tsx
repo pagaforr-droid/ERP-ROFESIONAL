@@ -1145,7 +1145,7 @@ export const MobileOrders: React.FC = () => {
       const branchList = Array.isArray(selectedClient.branches) ? selectedClient.branches : [];
 
       return (
-         <div className="fixed inset-0 flex flex-col bg-slate-50 relative pb-safe overflow-hidden">
+         <div className="fixed inset-0 h-[100dvh] flex flex-col bg-slate-50 overflow-hidden">
 
             {isSaving && <div className="absolute inset-0 bg-white/90 z-[100] flex flex-col items-center justify-center"><Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-2" /><p className="font-bold text-slate-600 px-6 text-center">{savingMessage}</p></div>}
 
