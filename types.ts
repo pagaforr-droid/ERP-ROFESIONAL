@@ -795,6 +795,7 @@ export type ViewState =
   | 'advanced-orders'
   | 'mobile-delivery'
   | 'accounts-receivable' // NEW: Cuentas por Cobrar
+  | 'client-audit' // NEW: Auditoría 360 de Clientes
   | 'supplier-credit-notes' // NEW: NC Proveedores
   | 'personnel-management'
   | 'pos' // NEW: Punto de Venta

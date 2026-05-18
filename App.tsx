@@ -31,6 +31,7 @@ import { VirtualStore } from './components/VirtualStore';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CollectionConsolidation } from './components/CollectionConsolidation';
 import { AccountsReceivable } from './components/AccountsReceivable'; // NUEVO MÓDULO
+import { ClientPurchaseAudit } from './components/ClientPurchaseAudit'; // NUEVO MÓDULO
 import { LegacyDebts } from './components/LegacyDebts';
 import { SunatManager } from './components/SunatManager';
 import { GuiaManager } from './components/GuiaManager';
@@ -111,6 +112,7 @@ const SIDEBAR_SECTIONS = [
       { view: 'sunat-manager', icon: FileCheck, label: 'Facturación SUNAT' },
       { view: 'guia-manager', icon: Truck, label: 'Guías de Remisión (GRE)' },
       { view: 'document-manager', icon: FileText, label: 'Historial Documentos' },
+      { view: 'client-audit', icon: Search, label: 'Auditoría de Cliente' },
       { view: 'print-batch', icon: Printer, label: 'Impresión por Lotes' },
     ]
   },
@@ -166,7 +168,7 @@ const SIDEBAR_SECTIONS = [
 ];
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'supplier-credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'pos' | 'system-maintenance' | 'legacy-debts' | 'guia-manager'>('dashboard');
+  const [currentView, setCurrentView] = useState<ViewState | 'document-manager' | 'reports' | 'accounting-reports' | 'kardex' | 'users' | 'attendance' | 'promo-manager' | 'virtual-store' | 'price-manager' | 'collection-consolidation' | 'credit-notes' | 'supplier-credit-notes' | 'advanced-orders' | 'quota-manager' | 'edit-sale' | 'pos' | 'system-maintenance' | 'legacy-debts' | 'guia-manager' | 'client-audit'>('dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false);
   const [showGodMode, setShowGodMode] = useState(false);
@@ -221,8 +223,13 @@ export default function App() {
       return false; // El módulo está "apagado" globalmente
     }
     
+    // Restricción estricta de Auditoría 360 para Gerencia/Admin
+    if (view === 'client-audit' && currentUser.role !== 'ADMIN' && currentUser.role !== 'SUPERADMIN') {
+      return false;
+    }
+    
     // 2. Validar Permisos de Usuario
-    return currentUser.permissions?.includes(view) || view === 'edit-sale' || view === 'pos' || view === 'accounts-receivable' || view === 'seller-tracking' || view === 'supplier-credit-notes' || view === 'legacy-debts' || view === 'guia-manager'; 
+    return currentUser.permissions?.includes(view) || view === 'edit-sale' || view === 'pos' || view === 'accounts-receivable' || view === 'seller-tracking' || view === 'supplier-credit-notes' || view === 'legacy-debts' || view === 'guia-manager' || view === 'client-audit'; 
   };
 
   const renderContent = () => {
@@ -242,6 +249,7 @@ export default function App() {
       case 'cash-flow': return <CashFlow />;
       case 'collection-consolidation': return <CollectionConsolidation />;
       case 'accounts-receivable': return <AccountsReceivable />; // RENDER DEL NUEVO MÓDULO
+      case 'client-audit': return <ClientPurchaseAudit />; // RENDER DEL NUEVO MÓDULO
       case 'legacy-debts': return <LegacyDebts />;
       case 'sunat-manager': return <SunatManager />;
       case 'guia-manager': return <GuiaManager />;
