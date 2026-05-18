@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
 import { Client, Sale, Order, CollectionRecord, DispatchLiquidation } from '../types';
-import { Search, MapPin, Phone, Mail, DollarSign, Calendar, Truck, FileText, FileX, CreditCard, ChevronDown, ChevronRight, CheckCircle, Package, AlertCircle } from 'lucide-react';
+import { Search, MapPin, Phone, Mail, DollarSign, Calendar, Truck, FileText, FileX, CreditCard, ChevronDown, ChevronRight, CheckCircle, Package, AlertCircle, ArrowLeftRight } from 'lucide-react';
 
 export const ClientPurchaseAudit: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
