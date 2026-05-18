@@ -86,9 +86,6 @@ export const PriceManager: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [notification, setNotification] = useState<{msg: string, type: 'success'|'error'} | null>(null);
 
-  const [modalConfig, setModalConfig] = useState<{isOpen: boolean, type: 'info'|'warning'|'error'|'confirm', message: string, onConfirm?: () => void}>({ isOpen: false, type: 'info', message: '' });
-  const showConfirm = (message: string, onConfirm: () => void) => setModalConfig({ isOpen: true, type: 'confirm', message, onConfirm });
-  
   const [manualPrices, setManualPrices] = useState<Record<string, number>>({});
 
   const handleManualPriceChange = (id: string, val: string) => {
@@ -245,6 +242,8 @@ export const PriceManager: React.FC = () => {
         return;
      }
      
+     if (!window.confirm(`¿Está seguro de aplicar los nuevos precios a ${selectedIds.size} producto(s)?`)) return;
+
      if (isSavingRef.current) return;
      isSavingRef.current = true;
      setIsSaving(true);
@@ -333,23 +332,24 @@ export const PriceManager: React.FC = () => {
 
   const handleDeleteList = async (id: string, e: React.MouseEvent) => {
      e.stopPropagation();
-     showConfirm('¿Eliminar esta lista? Si hay clientes o vendedores en esta lista, podrían perder su asignación.', async () => {
-         if (isSavingRef.current) return;
-         isSavingRef.current = true;
-         setIsSaving(true);
-         try {
-            const { error } = await supabase.from('price_lists').delete().eq('id', id);
-            if (error) throw error;
-            setPriceLists(prev => prev.filter(l => l.id !== id));
-            setNotification({ msg: "Lista eliminada permanentemente.", type: 'success' });
-         } catch(err: any) {
-            setNotification({ msg: "Error al eliminar: " + err.message, type: 'error' });
-         } finally {
-            isSavingRef.current = false;
-            setIsSaving(false);
-            setTimeout(() => setNotification(null), 3000);
-         }
-     });
+     
+     if (!window.confirm('¿Eliminar esta lista? Si hay clientes o vendedores asignados, podrían perder su configuración.')) return;
+
+     if (isSavingRef.current) return;
+     isSavingRef.current = true;
+     setIsSaving(true);
+     try {
+        const { error } = await supabase.from('price_lists').delete().eq('id', id);
+        if (error) throw error;
+        setPriceLists(prev => prev.filter(l => l.id !== id));
+        setNotification({ msg: "Lista eliminada permanentemente.", type: 'success' });
+     } catch(err: any) {
+        setNotification({ msg: "Error al eliminar: " + err.message, type: 'error' });
+     } finally {
+        isSavingRef.current = false;
+        setIsSaving(false);
+        setTimeout(() => setNotification(null), 3000);
+     }
   }
 
   // --- 3. ASIGNACIÓN DE VENDEDORES ---
@@ -365,6 +365,9 @@ export const PriceManager: React.FC = () => {
 
   const saveAssignments = async () => {
      if (!hasChanges) return;
+     
+     if (!window.confirm('¿Está seguro de sincronizar las asignaciones de vendedores con la base de datos?')) return;
+
      if (isSavingRef.current) return;
      isSavingRef.current = true;
      setIsSaving(true);
@@ -483,21 +486,6 @@ export const PriceManager: React.FC = () => {
          }
        `}</style>
        {notification && <Notification msg={notification.msg} type={notification.type} onClose={() => setNotification(null)} />}
-
-       {/* --- CUSTOM CONFIRM MODAL --- */}
-       {modalConfig.isOpen && (
-          <div className="absolute inset-0 z-[200] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
-             <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center animate-scale-up">
-                {modalConfig.type === 'confirm' && <AlertCircle className="w-12 h-12 text-blue-500 mx-auto mb-4" />}
-                <h3 className="text-lg font-black text-slate-800 mb-2">Confirmar Acción</h3>
-                <p className="text-sm text-slate-600 mb-6">{modalConfig.message}</p>
-                <div className="flex gap-3 justify-center">
-                   <button onClick={() => setModalConfig({...modalConfig, isOpen: false})} className="px-6 py-2 rounded-lg font-bold text-slate-600 bg-slate-100 hover:bg-slate-200">Cancelar</button>
-                   <button onClick={() => { setModalConfig({...modalConfig, isOpen: false}); modalConfig.onConfirm?.(); }} className="px-6 py-2 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700">Confirmar</button>
-                </div>
-             </div>
-          </div>
-       )}
 
        {/* HEADER ELITE */}
        <div className="flex justify-between items-center bg-white/80 backdrop-blur-md p-5 rounded-2xl shadow-sm border border-slate-200/60 relative overflow-hidden">
@@ -763,8 +751,8 @@ export const PriceManager: React.FC = () => {
                       </button>
                    </div>
                    
-                   <div className="space-y-4 overflow-y-auto pr-2 relative z-10 custom-scrollbar">
-                      <div className="p-5 rounded-2xl border-2 border-slate-200 bg-slate-100 opacity-80">
+                   <div className="flex-1 space-y-4 overflow-y-auto pr-2 relative z-10 custom-scrollbar pb-4">
+                      <div className="p-5 rounded-2xl border-2 border-slate-300 bg-slate-50 shadow-sm relative overflow-hidden group hover:border-slate-400 transition-colors">
                          <div className="flex justify-between items-start mb-2">
                              <div>
                                 <div className="font-black text-slate-800 text-base">PRECIO BASE (TIENDA)</div>
@@ -795,7 +783,7 @@ export const PriceManager: React.FC = () => {
                             <div 
                               key={list.id} 
                               onClick={() => setEditingList(list)} 
-                              className={`p-5 rounded-2xl border-2 transition-all cursor-pointer group relative shadow-sm hover:shadow-md ${editingList?.id === list.id ? 'border-blue-500 bg-blue-50/10' : 'border-slate-200 bg-white hover:border-blue-300'}`}
+                              className={`p-5 rounded-2xl border-2 transition-all duration-300 cursor-pointer group relative shadow-sm hover:shadow-md hover:-translate-y-1 ${editingList?.id === list.id ? 'border-blue-500 bg-blue-50/40 shadow-blue-500/20' : 'border-slate-200 bg-white hover:border-blue-300'}`}
                             >
                                <div className="flex justify-between items-start mb-3">
                                   <div>

@@ -168,15 +168,15 @@ export interface CompanyConfig {
   sunat_provider?: 'PSE' | 'OSE' | 'SUNAT' | ''; // Proveedor e.g. Nubefact/APIPeru
   sunat_api_url?: string;
   sunat_api_token?: string;
-  
+
   // API Consultas Externas (DNI/RUC)
   api_dni_ruc_url?: string;
   api_dni_ruc_token?: string;
-  
+
   // Impresion Masiva
   max_items_factura?: number;
   max_items_boleta?: number;
-  
+
   // Feature Flags
   feature_flags?: FeatureFlags;
 }
@@ -495,7 +495,7 @@ export interface Sale {
   delivery_mode?: 'REGULAR' | 'EXPRESS_MISMO_DIA'; // Added for order type
   created_at: string;
   previous_debt?: number; // Snapshot of debt at creation time
-  
+
   // Transport Metadata (For Guides)
   guide_transporter_id?: string;
   guide_driver_id?: string;
@@ -565,7 +565,7 @@ export interface DispatchSheet {
   sunat_status?: 'PENDING' | 'SENT' | 'ACCEPTED' | 'REJECTED' | 'EXCEPTED';
   sunat_sent_at?: string;
   sunat_message?: string;
-  
+
   // Logistics Meta
   guide_transport_modality?: 'PUBLIC' | 'PRIVATE';
 }
@@ -660,9 +660,9 @@ export interface Purchase {
   detraccion?: number; // NEW: Amount detracted
 
   payment_status: 'PAID' | 'PENDING';
-  collection_status?: 'NONE' | 'PARTIAL' | 'COLLECTED'; 
-  paid_amount?: number; 
-  balance?: number;     
+  collection_status?: 'NONE' | 'PARTIAL' | 'COLLECTED';
+  paid_amount?: number;
+  balance?: number;
   payments?: PurchasePayment[];
 
   origin_purchase_id?: string; // Para NC de proveedores
@@ -804,18 +804,18 @@ export type ViewState =
   | 'edit-sale'; // NEW: Cuentas por Cobrar Migración
 
 export interface PosSession {
-    id: string;
-    open_time: string;
-    close_time?: string;
-    opened_by: string;
-    closed_by?: string;
-    status: 'OPEN' | 'CLOSED';
-    system_opening_amount: number;
-    system_expected_close?: number;
-    declared_cash?: number;
-    declared_card?: number;
-    declared_total?: number;
-    difference?: number;
+  id: string;
+  open_time: string;
+  close_time?: string;
+  opened_by: string;
+  closed_by?: string;
+  status: 'OPEN' | 'CLOSED';
+  system_opening_amount: number;
+  system_expected_close?: number;
+  declared_cash?: number;
+  declared_card?: number;
+  declared_total?: number;
+  difference?: number;
 }
 
 // === LEGACY DEBTS (CUENTAS POR COBRAR MIGRACIÓN) ===
